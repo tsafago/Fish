@@ -1,0 +1,66 @@
+    public void attachOutput(java.io.OutputStream output) {
+        bout = new java.io.BufferedOutputStream(output);
+        connected = true;
+        sfParser = new WTDSFParser(this);
+        bk = new Stream5250();
+    }
+
+    private boolean rejectUnsupportedDisplayField() {
+        throw new IllegalStateException("Unsupported enhanced display structured field; session stopped to preserve synchronization.");
+    }
+
+    public void acceptRecord(byte[] record) {
+        if (!javax.swing.SwingUtilities.isEventDispatchThread())
+            throw new IllegalStateException("Core records must be processed on the EDT.");
+        bk.initialize(record);
+        screen52.setCursorActive(false);
+        switch (bk.getOpCode()) {
+            case 0: break;
+            case 1:
+                parseIncoming();
+                pendingUnlock = true;
+                cursorOn = true;
+                setInvited();
+                break;
+            case 2:
+                parseIncoming();
+                break;
+            case 3:
+                parseIncoming();
+                setInvited();
+                break;
+            case 4:
+            case 5:
+                parseIncoming();
+                break;
+            case 6:
+                sendAidKey(0);
+                break;
+            case 8:
+                try { readScreen(); }
+                catch (java.io.IOException e) { throw new IllegalStateException("Read screen reply failed", e); }
+                break;
+            case 10:
+                cancelInvite();
+                break;
+            case 11:
+                screen52.getOIA().setMessageLightOn();
+                break;
+            case 12:
+                screen52.getOIA().setMessageLightOff();
+                break;
+            default:
+                throw new IllegalStateException("Unsupported GDS opcode: " + bk.getOpCode());
+        }
+        if (strpccmd)
+            throw new IllegalStateException("Host STRPCCMD execution is disabled.");
+        screen52.updateDirty();
+        if (pendingUnlock && !screen52.isStatusErrorCode()) {
+            screen52.getOIA().setKeyBoardLocked(false);
+            pendingUnlock = false;
+        }
+        if (cursorOn && !screen52.getOIA().isKeyBoardLocked()) {
+            screen52.setCursorActive(true);
+            cursorOn = false;
+        }
+    }

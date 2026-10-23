@@ -1,0 +1,58 @@
+# Pane5250
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+adaptive
+
+Windows-first native desktop application; not a website or mobile application.
+
+## Users
+
+IBM i users working with multiple independent interactive 5250 display sessions.
+
+## Product Purpose
+
+A lightweight, keyboard-first 5250 workspace. Correct host interaction matters
+more than presentation. The application must be functional, not a terminal mockup.
+
+## Operating Context
+
+Direct plain TN5250 TCP connections to a local IBM i, normally on port 23.
+Only IBM-3477-FC is offered. Host screens may be 24 by 80 or 27 by 132.
+Pane resizing must never change the host's presentation space.
+
+## Capabilities and Constraints
+
+Independent dockable panes, persistent layouts and workstation profiles,
+field-aware input, host keys, fixed-width rendering, clipboard, zoom and
+optional inexpensive visual presets. Remembered passwords belong in Windows
+Credential Manager. TLS, AI features and Kerberos are not required.
+
+The user approved a GPL-licensed application using the mature TN5250J core.
+Full ACS compatibility remains an acceptance target, never an unverified claim.
+
+## Brand Commitments
+
+The attached reference is binding: near-black flat panes, very thin dividers,
+small pane headers, crisp monospace host text, green and white host attributes,
+minimal application chrome. No cards, promotional text or oversized toolbars.
+
+## Evidence on Hand
+
+One visual reference. No IBM i endpoint, credentials, ACS installation or
+real-session captures. Local synthetic fixtures must be clearly identified.
+
+## Product Principles
+
+- Keep host state independent of pane geometry.
+- Preserve protocol synchronization and report unsupported behavior.
+- Make common actions accessible without taking host function keys.
+- Keep credentials out of profiles and logs.
+- Track demonstrated behavior separately from compatibility goals.
+
+## Accessibility & Inclusion
+
+Entirely keyboard navigable, predictable focus, visible focus indicators,
+configurable keyboard bindings, DPI-aware rendering and readable host colors.

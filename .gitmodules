@@ -1,0 +1,3 @@
+[submodule "vendor/tn5250j"]
+	path = vendor/tn5250j
+	url = https://github.com/tn5250j/tn5250j.git

@@ -1,0 +1,6 @@
+.tools/
+build/
+dist/
+*.log
+.idea/
+*.iml

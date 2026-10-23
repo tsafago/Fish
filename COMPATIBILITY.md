@@ -24,11 +24,28 @@ live in `tests\pane5250\Tests.java`; the live host is `demo\DemoHost`.
 | Code pages | Bidirectional engine mappings and usable UI encoders for every offered SBCS page |
 | Credentials | Real Windows Credential Manager write/read/delete round trip, uniquely named synthetic fixture, Unicode secret |
 | Desktop | Three independent real TCP sockets, physical keyboard focus/edit, keyboard pane navigation, socket-preserving center/edge docking, real close/reopen persistence |
+| Desktop correction | Poisoned-buffer redraw regression, real continuous window/divider resize, physical pane-header docking, all eight edge/corner directions and minimum size, custom move/maximize/restore/minimize/close, native/custom window menus, keyboard move/size, focus outlines and cancelable close |
 | Profiles/layout | Identity-safe duplication, all docking directions, atomic XML persistence, writer locking, explicit corrupt-state handling, reserved shortcut namespace |
 
 SBCS pages offered: **37, 273, 277, 278, 280, 284, 285, 297, 500, 870, 871,
 1140, 1141, 1147, 1148**. Mapping round trips do not establish the correctness
 of every national keyboard combination against a real host.
+
+The desktop correction run passed **166 core/application checks plus 61
+rendering/window checks** on Windows at native **150% DPI**. During real corner
+and split-divider drags, 185 measured dirty-region paints had a 4.08ms median,
+10.76ms p95 and 17.74ms maximum. EDT round-trip latency was 8.24ms p95 / 15.40ms
+maximum, compared with the pre-correction 114.13ms p95 / 196.43ms maximum.
+These are local observations, not a hardware-independent latency SLA.
+Repeated menu close, maximize/restore and exposed terminal margins were clean;
+the exact connection count remained three and every host screen size was
+unchanged. The actual desktop capture is `build\desktop-render-native.png`.
+
+The original corruption was a violated Swing opaque-component contract:
+the bare terminal component did not clear its background, so old shared-buffer
+pixels accumulated across panes and menus. Explicit clearing fixes the cause.
+Cached fixed-cell glyph runs remove per-character layout/allocation from resize,
+and cursor-only idle repaints avoid unnecessarily redrawing whole panes.
 
 ## Known implementation gaps
 
@@ -41,8 +58,8 @@ of every national keyboard combination against a real host.
 | Extended startup/confirmation records and optional IBM environment extensions | Not requested. Unexpected unsupported record types produce an explicit error, not a guessed success response. |
 | DBCS and other terminal models | Unsupported; only IBM-3477-FC and the listed SBCS pages are offered. |
 | TLS / Kerberos | Not implemented; TLS is out of scope and Kerberos was optional. |
-| Accessibility / DPI matrices | Keyboard routes and Java2D fixed-cell rendering are implemented; screen-reader terminal semantics, mixed-DPI monitors and all Windows scaling/keyboard layouts need hands-on acceptance. |
-| Performance | Bounded output, off-UI I/O, no third-party runtime JARs; no startup-latency or memory SLA is claimed. |
+| Accessibility / DPI matrices | Native 150% DPI, real window controls and keyboard/focus routes are locally checked. Screen-reader terminal semantics, mixed-DPI monitors and other Windows scaling/keyboard layouts still need hands-on acceptance. |
+| Performance | Continuous desktop resize is locally measured above; startup latency and memory have no claimed SLA. Other hardware and live-host workloads remain unverified. |
 
 Only the basic Query capabilities actually intended for this implementation
 are announced: both screen sizes, color, alternate MDT reads and Move Cursor;

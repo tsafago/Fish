@@ -16,6 +16,8 @@ public final class Keymap {
             int modifiers = key.getModifiers();
             if ((modifiers & InputEvent.CTRL_DOWN_MASK) != 0 && (modifiers & InputEvent.ALT_DOWN_MASK) != 0)
                 throw new IllegalArgumentException("Ctrl+Alt is reserved for application shortcuts: " + stroke);
+            if (key.equals(KeyStroke.getKeyStroke("alt SPACE")) || key.equals(KeyStroke.getKeyStroke("alt F4")))
+                throw new IllegalArgumentException("Alt+Space and Alt+F4 are reserved for window controls: " + stroke);
             KeyMnemonic mnemonic;
             try { mnemonic = KeyMnemonic.valueOf(value); }
             catch (IllegalArgumentException e) { throw new IllegalArgumentException("Unknown host action: " + value, e); }

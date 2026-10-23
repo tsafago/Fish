@@ -155,6 +155,8 @@ public final class Tests {
         fails(() -> new Keymap(Map.of("ctrl alt F1","PF1")),"Application shortcut namespace cannot be remapped to host keys.");
         fails(() -> Keymap.parse("F1 = NOT_A_KEY"),"Unknown key mappings are errors.");
         check(Keymap.parse("ctrl ENTER = FIELD_EXIT\nF12 = PF24").size() == 2,"Custom host mappings parse.");
+        fails(() -> Keymap.parse("alt SPACE = ENTER"),"Host overrides cannot steal the native window menu.");
+        fails(() -> Keymap.parse("alt F4 = PF4"),"Host overrides cannot steal window close.");
         Path directory = Files.createTempDirectory(Path.of("build"),"state-test-");
         try (StateStore store = new StateStore(directory)) {
             Profile saved = first.withLayout(original.encode());
@@ -373,6 +375,7 @@ public final class Tests {
         StateStore store = new StateStore(directory);
         Workspace workspace = edt(() -> {
             Workspace window = new Workspace(store,Main.demoState(host.port()),Path.of("scripts").resolve("credential-store.ps1"),true);
+            window.setAlwaysOnTop(true);
             window.setVisible(true); window.connectAll();
             return window;
         });

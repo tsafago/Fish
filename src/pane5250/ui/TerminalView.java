@@ -4,18 +4,25 @@ import java.awt.*;
 import java.awt.datatransfer.*;
 import java.awt.event.*;
 import java.awt.font.FontRenderContext;
+import java.awt.font.GlyphVector;
 import java.awt.geom.*;
 import java.io.IOException;
 import javax.accessibility.*;
 import javax.swing.*;
 import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.keyboard.KeyMnemonic;
-import pane5250.model.Profile;
 import static org.tn5250j.TN5250jConstants.*;
 
 public final class TerminalView extends JComponent implements Scrollable {
     private final SessionPane pane;
     private final Font face;
+    private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null,true,true);
+    private static final Color SELECTION = new Color(0x4b6574);
+    private static final java.util.Map<String,Color[]> PALETTES = java.util.Map.of(
+            "Phosphor",palette("Phosphor"),"Cool",palette("Cool"),"Warm",palette("Warm"));
+    private final double baseWidth, baseHeight, ascent;
+    private RenderFrame rendered;
+    private Screen5250 renderedScreen;
     private double cellWidth = 9, cellHeight = 18, originX = 12, originY = 10;
     private int anchor = -1, end = -1;
     private boolean dragging;
@@ -29,6 +36,10 @@ public final class TerminalView extends JComponent implements Scrollable {
         String family = java.util.Arrays.asList(fonts).contains("Cascadia Mono") ? "Cascadia Mono"
                 : java.util.Arrays.asList(fonts).contains("Consolas") ? "Consolas" : Font.MONOSPACED;
         face = new Font(family, Font.PLAIN, 16);
+        baseWidth = face.getStringBounds("M",TEXT_CONTEXT).getWidth();
+        var metrics = face.getLineMetrics("M",TEXT_CONTEXT);
+        baseHeight = metrics.getHeight();
+        ascent = metrics.getAscent();
         setBackground(Ui.BACKGROUND);
         setForeground(Ui.TEXT);
         setOpaque(true);
@@ -92,7 +103,17 @@ public final class TerminalView extends JComponent implements Scrollable {
         };
         addMouseListener(mouse);
         addMouseMotionListener(mouse);
-        blink = new Timer(550, e -> { phase = !phase; if (isShowing()) repaint(); });
+        blink = new Timer(550, e -> {
+            phase = !phase;
+            if (!isShowing()) return;
+            if (rendered != null && rendered.blinking) repaint();
+            else if (hasFocus() && pane.screen() != null) {
+                int pos = pane.screen().getCurrentPos() - 1;
+                repaint((int)(originX + pos % pane.screen().getColumns() * cellWidth) - 2,
+                        (int)(originY + pos / pane.screen().getColumns() * cellHeight) - 2,
+                        (int)Math.ceil(cellWidth) + 5,(int)Math.ceil(cellHeight) + 5);
+            }
+        });
     }
 
     @Override public void addNotify() { super.addNotify(); blink.start(); }
@@ -100,6 +121,7 @@ public final class TerminalView extends JComponent implements Scrollable {
     public void dispose() { blink.stop(); }
     public void setFit(boolean value) { fit = value; revalidate(); repaint(); }
     public boolean isFit() { return fit; }
+    public void screenChanged() { rendered = null; repaint(); }
     public void resetSelection() { anchor = end = -1; repaint(); }
 
     public String visibleText() {
@@ -169,23 +191,20 @@ public final class TerminalView extends JComponent implements Scrollable {
     }
 
     @Override protected void paintComponent(Graphics graphics) {
-        super.paintComponent(graphics);
         Graphics2D g = (Graphics2D) graphics.create();
         try {
+            // A bare JComponent has no UI delegate to honor its opaque-background contract.
+            g.setColor(getBackground());
+            g.fillRect(0,0,getWidth(),getHeight());
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
             g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
             Screen5250 screen = pane.screen();
             int rows = screen == null ? 24 : screen.getRows(), cols = screen == null ? 80 : screen.getColumns();
-            FontRenderContext frc = g.getFontRenderContext();
-            double baseWidth = face.getStringBounds("M", frc).getWidth() / 16;
-            double baseHeight = face.getLineMetrics("M", frc).getHeight() / 16;
-            double size = fit ? Math.max(3, Math.min(28, Math.min((getWidth() - 24) / cols / baseWidth,
-                    (getHeight() - 20) / rows / baseHeight))) : 16 * pane.profile().zoom();
-            Font font = face.deriveFont((float) size);
-            g.setFont(font);
-            cellWidth = font.getStringBounds("M", frc).getWidth();
-            cellHeight = font.getLineMetrics("M", frc).getHeight();
-            double ascent = font.getLineMetrics("M", frc).getAscent();
+            double scale = fit ? Math.max(3.0 / 16,Math.min(28.0 / 16,
+                    Math.min((getWidth() - 24) / (cols * baseWidth),(getHeight() - 20) / (rows * baseHeight))))
+                    : pane.profile().zoom();
+            cellWidth = baseWidth * scale;
+            cellHeight = baseHeight * scale;
             originX = Math.max(12, (getWidth() - cols * cellWidth) / 2);
             originY = Math.max(10, (getHeight() - rows * cellHeight) / 2);
             if (screen == null) {
@@ -196,46 +215,57 @@ public final class TerminalView extends JComponent implements Scrollable {
                 g.drawString("Ctrl+Alt+P  Profiles     Ctrl+Alt+R  Connect", 24, 65);
                 return;
             }
-            char[] text = plane(screen, PLANE_TEXT), colors = plane(screen, PLANE_COLOR);
-            char[] extended = plane(screen, PLANE_EXTENDED), attributes = plane(screen, PLANE_IS_ATTR_PLACE);
-            Color[] palette = palette(pane.profile().theme());
-            for (int row = 0; row < rows; row++) {
-                for (int col = 0; col < cols; col++) {
-                    int pos = row * cols + col;
-                    double x = originX + col * cellWidth, y = originY + row * cellHeight;
-                    int fg = colors[pos] & 255, bg = colors[pos] >> 8 & 255;
-                    Color foreground = palette[Math.min(15, fg)], background = palette[Math.min(15, bg)];
-                    if (bg != 0) { g.setColor(background); g.fill(new Rectangle2D.Double(x,y,cellWidth,cellHeight)); }
-                    if (selected(pos, cols)) {
-                        g.setColor(new Color(0x4b6574)); g.fill(new Rectangle2D.Double(x,y,cellWidth,cellHeight));
-                    }
-                    if (attributes[pos] != 0 || (extended[pos] & EXTENDED_5250_NON_DSP) != 0) continue;
-                    boolean blinking = (extended[pos] & EXTENDED_5250_BLINK) != 0;
-                    if (!blinking || phase) {
-                        char character = text[pos] >= 32 ? text[pos] : ' ';
-                        if (character != ' ') {
-                            if (pane.profile().effect().equals("Soft glow")) {
-                                g.setColor(new Color(foreground.getRed(), foreground.getGreen(), foreground.getBlue(), 45));
-                                g.drawString(String.valueOf(character), (float) x + 0.7f, (float) (y + ascent) + 0.7f);
-                            }
-                            if (pane.profile().effect().equals("Prism") && bg == 0) {
-                                float mix = (float) row / Math.max(1, rows - 1) * .12f;
-                                foreground = new Color(Math.min(255, foreground.getRed() + (int) (mix * 80)),
-                                        foreground.getGreen(), Math.min(255, foreground.getBlue() + (int) (mix * 80)));
-                            }
-                            g.setColor(foreground);
-                            g.drawString(String.valueOf(character), (float) x, (float) (y + ascent));
-                        }
-                        g.setColor(foreground);
-                        if ((extended[pos] & EXTENDED_5250_UNDERLINE) != 0)
-                            g.draw(new Line2D.Double(x,y + ascent + 1,x + cellWidth,y + ascent + 1));
-                        if ((extended[pos] & EXTENDED_5250_COL_SEP) != 0) {
-                            g.draw(new Line2D.Double(x,y + cellHeight - 3,x,y + cellHeight));
-                            g.draw(new Line2D.Double(x + cellWidth,y + cellHeight - 3,x + cellWidth,y + cellHeight));
-                        }
+            if (rendered == null || renderedScreen != screen) {
+                rendered = snapshot(screen);
+                renderedScreen = screen;
+            }
+            Graphics2D cells = (Graphics2D)g.create();
+            try {
+                cells.translate(originX,originY);
+                cells.scale(scale,scale);
+                cells.setStroke(new BasicStroke((float)(1 / scale)));
+                Color[] palette = PALETTES.get(pane.profile().theme());
+                Rectangle clip = cells.getClipBounds();
+                for (RenderRun run : rendered.runs) {
+                    if (run.background != 0 && intersects(run,clip)) {
+                        cells.setColor(palette[run.background]);
+                        cells.fill(new Rectangle2D.Double(run.start * baseWidth,run.row * baseHeight,
+                                (run.end - run.start) * baseWidth,baseHeight));
                     }
                 }
-            }
+                if (anchor >= 0 && end >= 0) {
+                    int left = Math.min(anchor % cols,end % cols), top = Math.min(anchor / cols,end / cols);
+                    cells.setColor(SELECTION);
+                    cells.fill(new Rectangle2D.Double(left * baseWidth,top * baseHeight,
+                            (Math.abs(anchor % cols - end % cols) + 1) * baseWidth,
+                            (Math.abs(anchor / cols - end / cols) + 1) * baseHeight));
+                }
+                String effect = pane.profile().effect();
+                for (RenderRun run : rendered.runs) {
+                    if (!intersects(run,clip) || run.hidden
+                            || ((run.flags & EXTENDED_5250_BLINK) != 0 && !phase)) continue;
+                    Color foreground = palette[run.foreground];
+                    if (effect.equals("Prism") && run.background == 0) {
+                        float mix = (float)run.row / Math.max(1,rows - 1) * .12f;
+                        foreground = new Color(Math.min(255,foreground.getRed() + (int)(mix * 80)),
+                                foreground.getGreen(),Math.min(255,foreground.getBlue() + (int)(mix * 80)));
+                    }
+                    if (run.glyphs != null) {
+                        float x = (float)(run.inkStart * baseWidth), y = (float)(run.row * baseHeight + ascent);
+                        if (effect.equals("Soft glow")) {
+                            cells.setColor(new Color(foreground.getRed(),foreground.getGreen(),foreground.getBlue(),45));
+                            cells.drawGlyphVector(run.glyphs,x + .7f,y + .7f);
+                        }
+                        cells.setColor(foreground);
+                        cells.drawGlyphVector(run.glyphs,x,y);
+                    }
+                    cells.setColor(foreground);
+                    if ((run.flags & EXTENDED_5250_UNDERLINE) != 0)
+                        cells.draw(new Line2D.Double(run.start * baseWidth,run.row * baseHeight + ascent + 1,
+                                run.end * baseWidth,run.row * baseHeight + ascent + 1));
+                    if (run.separators != null) cells.draw(run.separators);
+                }
+            } finally { cells.dispose(); }
             if (hasFocus() && pane.connected() && screen.isCursorActive() && phase) {
                 int pos = Math.min(screen.getCurrentPos() - 1, rows * cols - 1);
                 g.setColor(new Color(0xb0f0ac));
@@ -249,12 +279,57 @@ public final class TerminalView extends JComponent implements Scrollable {
         } finally { g.dispose(); }
     }
 
-    private boolean selected(int pos, int cols) {
-        return anchor >= 0 && end >= 0 && pos / cols >= Math.min(anchor / cols, end / cols)
-                && pos / cols <= Math.max(anchor / cols, end / cols)
-                && pos % cols >= Math.min(anchor % cols, end % cols)
-                && pos % cols <= Math.max(anchor % cols, end % cols);
+    private boolean intersects(RenderRun run,Rectangle clip) {
+        return clip == null || clip.intersects(run.start * baseWidth - 2,run.row * baseHeight - 2,
+                (run.end - run.start) * baseWidth + 4,baseHeight + 4);
     }
+    private RenderFrame snapshot(Screen5250 screen) {
+        char[] text = plane(screen,PLANE_TEXT), colors = plane(screen,PLANE_COLOR);
+        char[] flags = plane(screen,PLANE_EXTENDED), attributes = plane(screen,PLANE_IS_ATTR_PLACE);
+        java.util.List<RenderRun> runs = new java.util.ArrayList<>();
+        boolean blinking = false;
+        int cols = screen.getColumns();
+        for (int row = 0; row < screen.getRows(); row++) {
+            int col = 0;
+            while (col < cols) {
+                int start = col, pos = row * cols + col;
+                boolean hidden = attributes[pos] != 0 || (flags[pos] & EXTENDED_5250_NON_DSP) != 0;
+                while (++col < cols) {
+                    int next = row * cols + col;
+                    if (colors[next] != colors[pos] || flags[next] != flags[pos]
+                            || (attributes[next] != 0) != (attributes[pos] != 0)) break;
+                }
+                GlyphVector glyphs = null;
+                int first = pos, last = row * cols + col;
+                if (!hidden) {
+                    while (first < last && text[first] <= ' ') first++;
+                    while (last > first && text[last - 1] <= ' ') last--;
+                    if (first < last) {
+                        char[] ink = java.util.Arrays.copyOfRange(text,first,last);
+                        for (int i = 0; i < ink.length; i++) if (ink[i] < 32) ink[i] = ' ';
+                        glyphs = face.createGlyphVector(TEXT_CONTEXT,ink);
+                        for (int i = 0; i <= glyphs.getNumGlyphs(); i++)
+                            glyphs.setGlyphPosition(i,new Point2D.Double(i * baseWidth,0));
+                    }
+                }
+                Path2D separators = null;
+                if (!hidden && (flags[pos] & EXTENDED_5250_COL_SEP) != 0) {
+                    separators = new Path2D.Double();
+                    for (int x = start; x <= col; x++) {
+                        separators.moveTo(x * baseWidth,(row + 1) * baseHeight - 3);
+                        separators.lineTo(x * baseWidth,(row + 1) * baseHeight);
+                    }
+                }
+                blinking |= !hidden && (flags[pos] & EXTENDED_5250_BLINK) != 0;
+                runs.add(new RenderRun(row,start,col,Math.min(15,colors[pos] & 255),
+                        Math.min(15,colors[pos] >> 8 & 255),flags[pos],hidden,glyphs,first % cols,separators));
+            }
+        }
+        return new RenderFrame(runs,blinking);
+    }
+    private record RenderFrame(java.util.List<RenderRun> runs,boolean blinking) {}
+    private record RenderRun(int row,int start,int end,int foreground,int background,int flags,
+                             boolean hidden,GlyphVector glyphs,int inkStart,Path2D separators) {}
     private static Color[] palette(String theme) {
         int[] values = {0x101213,0x8daefa,0x9bdb98,0x84d9df,0xf69b9b,0xd8a0db,0xe3d78c,0xe4e5df,
                 0xb5b9bc,0xacc7ff,0xb1edab,0xa0f0ee,0xffb4b4,0xf4b8f2,0xffeca3,0xffffff};
@@ -267,8 +342,8 @@ public final class TerminalView extends JComponent implements Scrollable {
     @Override public Dimension getPreferredSize() {
         Screen5250 screen = pane.screen();
         int cols = screen == null ? 80 : screen.getColumns(), rows = screen == null ? 24 : screen.getRows();
-        return fit ? new Dimension(240,140) : new Dimension((int) (cols * 9.7 * pane.profile().zoom()) + 24,
-                (int) (rows * 19 * pane.profile().zoom()) + 20);
+        return fit ? new Dimension(240,140) : new Dimension((int)Math.ceil(cols * baseWidth * pane.profile().zoom()) + 24,
+                (int)Math.ceil(rows * baseHeight * pane.profile().zoom()) + 20);
     }
     @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
     @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return 20; }

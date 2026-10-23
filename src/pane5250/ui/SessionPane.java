@@ -78,7 +78,7 @@ public final class SessionPane extends JPanel {
         keys = new Keymap(value.keymap());
         updateHeader();
         view.revalidate();
-        view.repaint();
+        view.screenChanged();
     }
     public void updateHeader() {
         title.setText(workspace.paneName(id) + "   " + profile.name());
@@ -151,7 +151,7 @@ public final class SessionPane extends JPanel {
                 if (generation == token && !disposed) {
                     core.accept(record);
                     view.revalidate();
-                    view.repaint();
+                    view.screenChanged();
                     updateOia();
                 }
             }, text -> SwingUtilities.invokeLater(() -> {
@@ -160,13 +160,13 @@ public final class SessionPane extends JPanel {
                     if (text.startsWith("Connected") || text.startsWith("Disconnected")) connecting = false;
                     updateHeader();
                     updateOia();
-                    view.repaint();
+                    view.screenChanged();
                 }
             }));
             core = new Session5250(profile.name(), profile.codePage(), network.output(), this::problem);
             core.getScreen().addScreenListener(new ScreenListener() {
-                @Override public void onScreenChanged(int u,int r,int c,int er,int ec) { view.repaint(); updateOia(); }
-                @Override public void onScreenSizeChanged(int r,int c) { view.resetSelection(); view.revalidate(); view.repaint(); }
+                @Override public void onScreenChanged(int u,int r,int c,int er,int ec) { view.screenChanged(); updateOia(); }
+                @Override public void onScreenSizeChanged(int r,int c) { view.resetSelection(); view.screenChanged(); view.revalidate(); }
             });
             core.getScreen().getOIA().addOIAListener((o,change) -> updateOia());
             network.connect(profile.host(), profile.port(), environment);
@@ -191,7 +191,7 @@ public final class SessionPane extends JPanel {
         network = null;
         connecting = false;
         updateHeader();
-        view.repaint();
+        view.screenChanged();
     }
     public void reconnect() { disconnect(); connect(); }
     public void dispose() { disposed = true; disconnect(); view.dispose(); }
@@ -229,7 +229,7 @@ public final class SessionPane extends JPanel {
             screen().sendKeys(key);
             notice = "Connected - IBM-3477-FC";
             updateOia();
-            view.repaint();
+            view.screenChanged();
             return true;
         } catch (RuntimeException e) { problem("Host key failed: " + e.getMessage()); return false; }
     }
@@ -247,7 +247,7 @@ public final class SessionPane extends JPanel {
         try {
             screen().sendKeys(text);
             notice = "Connected - IBM-3477-FC";
-            updateOia(); view.repaint();
+            updateOia(); view.screenChanged();
             return !screen().getOIA().isKeyBoardLocked();
         } catch (RuntimeException e) { problem("Input failed: " + e.getMessage()); return false; }
     }

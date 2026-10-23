@@ -72,13 +72,29 @@ and a JDK are already present.
 & "$env:JAVA_HOME\bin\java.exe" -jar .\dist\Pane5250.jar --demo
 ```
 
-`Test` needs an unlocked, interactive Windows desktop: it opens the app,
-uses the physical keyboard/mouse through `Robot`, and temporarily takes focus.
+`Test` needs an unlocked, idle Windows desktop: it opens the app,
+uses the physical keyboard/mouse through `Robot`, and temporarily takes focus
+with an always-on-top test window. Keep other windows out of the way.
 It also creates, reads and removes a uniquely named **synthetic** Windows
 credential. It never connects to an IBM i. The rendered artifact is
-`build\workspace-test.png`.
+`build\workspace-test.png`. The additional real-desktop rendering/window suite
+captures `build\desktop-render-native.png` and prints continuous-resize paint
+and event-thread latency measurements. It verifies background clearing against
+poisoned pixels, actual divider/header drags, all eight window resize directions,
+window controls, keyboard move/size, focus, and unchanged session connections
+and host dimensions.
 
 ## Sessions and profiles
+
+The main workspace has one compact, dark 28px title/menu row, not a second
+native titlebar. Drag the blank title area or application name to move it;
+double-click to maximize/restore. The three upper-right controls minimize,
+maximize/restore and close. Drag any window edge/corner to resize.
+**Alt+Space** keeps the standard Windows window menu; **Ctrl+Alt+Space**
+opens the application's dark window menu (also available by right-clicking
+the title area). Its Move/Size commands use arrows in 10px steps, Shift+arrows
+for 1px, Enter to commit and Escape to cancel. Closing connected sessions
+still requires confirmation.
 
 Drag a pane header to another pane: edges dock it, the center swaps it.
 Drop previews show the proposed position. Drag the hairline split handles
@@ -117,6 +133,7 @@ removes it on normal exit.
 ## Keyboard
 
 Application shortcuts use **Ctrl+Alt**; host mappings cannot claim that namespace.
+**Alt+Space** and **Alt+F4** are also reserved for standard window operations.
 
 | Action | Shortcut |
 |---|---|
@@ -132,6 +149,8 @@ Application shortcuts use **Ctrl+Alt**; host mappings cannot claim that namespac
 | Rectangular selection | Shift+arrows, or mouse drag |
 | Insert profile username / remembered password | Ctrl+Alt+U / Ctrl+Alt+Shift+P |
 | Host key chooser / application menu | Ctrl+Alt+F / Ctrl+Alt+M |
+| Dark window menu / standard Windows window menu | Ctrl+Alt+Space / Alt+Space |
+| Close window (with connected-session confirmation) | Alt+F4 |
 | Quit | Ctrl+Alt+Q |
 
 | Host action | Default key |

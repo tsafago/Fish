@@ -39,6 +39,7 @@ public final class Workspace extends JFrame {
 
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
         super("Pane5250" + (demonstration ? " - local synthetic host" : ""));
+        setUndecorated(true);
         this.store = store;
         this.demonstration = demonstration;
         credentials = new CredentialStore(credentialHelper);
@@ -53,8 +54,12 @@ public final class Workspace extends JFrame {
         setLocationRelativeTo(null);
         setBackground(Ui.BACKGROUND);
         content.setBackground(Ui.BACKGROUND);
-        setContentPane(content);
-        setJMenuBar(menus());
+        JPanel shell = new JPanel(new BorderLayout());
+        shell.setBackground(Ui.BACKGROUND);
+        setContentPane(shell);
+        getRootPane().setBorder(BorderFactory.createMatteBorder(1,1,1,1,Ui.LINE));
+        shell.add(new WindowChrome(this,menus()),BorderLayout.NORTH);
+        shell.add(content,BorderLayout.CENTER);
         buildTree();
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { close(false); }
@@ -335,7 +340,9 @@ public final class Workspace extends JFrame {
                 Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H/V: Split     Ctrl+Alt+D: Dock\n"
                 + "Ctrl+Alt+Left/Right: Focus pane     Ctrl+Alt+1..9: Focus pane number\n"
                 + "Ctrl+Alt+[/]: Resize divider     Ctrl+Alt+0: Fit\nCtrl+Alt+Shift+C/V: Copy/paste\n"
-                + "Shift+Arrows: Rectangular selection     Drag: Mouse selection",
+                + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
+                + "Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
+                + "Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels",
                 "Keyboard reference",JOptionPane.PLAIN_MESSAGE));
         action(help,"Compatibility and connection safety",null,() -> JOptionPane.showMessageDialog(this,
                 "TN5250J-based 5250 engine; only IBM-3477-FC.\nPlain TCP is not encrypted. Use only on a trusted network.\n"

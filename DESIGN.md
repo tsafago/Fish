@@ -59,6 +59,10 @@ panes. The real workspace is a persistent binary split tree. A divider has a
 4px draggable target but paints a 1px line. Headers are 25px high with 8px
 horizontal insets. Display origins retain at least 12px horizontal and 10px
 vertical padding. Resizing does not resize the host's presentation space.
+The main window is undecorated: one 28px dark title/menu row replaces the native
+titlebar and separate menu row. The draggable title area stays empty between
+menus and three 36px window controls. A transparent 5px edge target provides
+eight-direction resizing without overlaying the terminal interior.
 
 ## Elevation & Depth
 
@@ -78,6 +82,16 @@ Pane headers identify the profile and connection, support dragging and expose
 a right-click menu. A terminal status line reports connection, inhibition,
 dimensions and cursor position. Profile editing is a compact modal list and
 three-tab form; labels and mnemonics accompany controls.
+Custom window controls retain visible keyboard focus. Native Alt+Space is not
+shadowed by a second popup; Ctrl+Alt+Space exposes the dark window menu.
+
+## Painting and resize
+
+Every terminal paint explicitly clears its clipped background. An opaque bare
+Swing component cannot rely on a UI delegate to do this. Regular-weight glyph
+runs and their fixed cell positions are cached until host/input state changes;
+resizing changes only the display transform. Idle cursor blinking repaints its
+small region unless host blinking text requires a full terminal redraw.
 
 ## Do's and Don'ts
 

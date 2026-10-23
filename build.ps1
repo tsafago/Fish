@@ -44,12 +44,14 @@ if ($Task -eq 'Test') {
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.Tests
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.DesktopRendering
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
 }
 if ($Task -eq 'Package') {
     if (Test-Path dist\Pane5250) { throw 'dist\Pane5250 exists. Move it aside before packaging again.' }
     New-Item -ItemType Directory -Force build\package-input | Out-Null
     Copy-Item dist\Pane5250.jar,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
-    & "$Jdk\bin\jpackage.exe" --type app-image --name Pane5250 --app-version 0.1.0 `
+    & "$Jdk\bin\jpackage.exe" --type app-image --name Pane5250 --app-version 0.1.1 `
         --input build\package-input --main-jar Pane5250.jar --main-class pane5250.Main `
         --dest dist --vendor Pane5250 --java-options '-Xmx192m' `
         --add-modules java.base,java.desktop,java.xml,java.logging,jdk.charsets

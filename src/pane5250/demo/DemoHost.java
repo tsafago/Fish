@@ -13,12 +13,14 @@ public final class DemoHost implements AutoCloseable {
     private final Set<Socket> clients = ConcurrentHashMap.newKeySet();
     private final Queue<String> failures = new ConcurrentLinkedQueue<>();
     private volatile boolean closed;
+    private volatile int connections;
     public DemoHost() throws IOException {
         server = new ServerSocket(0,16,InetAddress.getByName("127.0.0.1"));
         Thread.ofPlatform().daemon().name("synthetic-host").start(() -> {
             while (!closed) {
                 try {
                     Socket socket = server.accept();
+                    connections++;
                     clients.add(socket);
                     Thread.ofPlatform().daemon().name("synthetic-session").start(() -> serve(socket));
                 } catch (IOException e) {
@@ -28,6 +30,7 @@ public final class DemoHost implements AutoCloseable {
         });
     }
     public int port() { return server.getLocalPort(); }
+    public int connectionCount() { return connections; }
     public List<String> failures() { return List.copyOf(failures); }
     private void serve(Socket socket) {
         try (socket) {

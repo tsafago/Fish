@@ -22,6 +22,8 @@ public final class SessionPane extends JPanel {
     private Profile profile;
     private Keymap keys;
     private final JPanel header = new JPanel(new BorderLayout(8,0));
+    private final JPanel footer = new JPanel(new BorderLayout(6,0));
+    private final JButton reset,close;
     private final JLabel title = new JLabel(), connection = new JLabel(), oia = new JLabel("Disconnected");
     private final TerminalView view;
     private NetworkSession network;
@@ -40,7 +42,7 @@ public final class SessionPane extends JPanel {
         setMinimumSize(new Dimension(180,110));
         setBackground(Ui.BACKGROUND);
         header.setBackground(Ui.BACKGROUND);
-        header.setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE));
+        header.setBorder(BorderFactory.createEmptyBorder());
         header.setPreferredSize(new Dimension(100,25));
         title.setBorder(BorderFactory.createEmptyBorder(0,8,0,0));
         title.setForeground(Ui.MUTED);
@@ -48,7 +50,12 @@ public final class SessionPane extends JPanel {
         connection.setBorder(BorderFactory.createEmptyBorder(0,0,0,8));
         connection.setFont(new Font("Segoe UI",Font.PLAIN,11));
         header.add(title, BorderLayout.CENTER);
-        header.add(connection, BorderLayout.EAST);
+        JPanel controls=new JPanel(new BorderLayout(3,0)); controls.setOpaque(false);
+        controls.add(connection,BorderLayout.CENTER);
+        close=Ui.iconButton("Close pane "+profile.name(),"close",() -> workspace.closePane(this));
+        close.setToolTipText("Close pane / disconnect "+profile.name()+" (Ctrl+Alt+W for focused pane)");
+        controls.add(close,BorderLayout.EAST);
+        header.add(controls, BorderLayout.EAST);
         add(header, BorderLayout.NORTH);
         view = new TerminalView(this);
         JScrollPane scroll = new JScrollPane(view);
@@ -58,10 +65,16 @@ public final class SessionPane extends JPanel {
         oia.setFont(new Font("Consolas",Font.PLAIN,11));
         oia.setForeground(Ui.MUTED);
         oia.setBorder(BorderFactory.createEmptyBorder(2,8,2,8));
-        add(oia, BorderLayout.SOUTH);
+        footer.add(oia,BorderLayout.CENTER);
+        reset=Ui.button("Reset",KeyEvent.VK_UNDEFINED,() -> { activate(); send(KeyMnemonic.RESET); focusTerminal(); });
+        reset.setToolTipText("Recover this input error without sending Enter (default key: Esc)");
+        reset.getAccessibleContext().setAccessibleName("Reset input error");
+        reset.setBorder(BorderFactory.createEmptyBorder(2,8,2,8));
+        reset.setVisible(false); footer.add(reset,BorderLayout.EAST);
+        add(footer, BorderLayout.SOUTH);
         view.setFit(profile.zoom() == 1);
         installDrag();
-        updateHeader();
+        themeChanged();
     }
 
     public UUID id() { return id; }
@@ -81,11 +94,31 @@ public final class SessionPane extends JPanel {
         view.screenChanged();
     }
     public void updateHeader() {
+        boolean active=workspace.active()==this;
         title.setText(workspace.paneName(id) + "   " + profile.name());
-        title.setForeground(workspace.active() == this ? Ui.TEXT : Ui.MUTED);
+        title.setForeground(active ? Ui.TEXT : Ui.MUTED);
+        Color surface=Ui.paneBackground(active);
+        setBackground(surface); header.setBackground(surface); footer.setBackground(surface);
+        connection.setForeground(active ? Ui.TEXT : Ui.MUTED);
+        view.setBackground(surface);
+        if (view.getParent() instanceof JViewport viewport) viewport.setBackground(surface);
         connection.setText(connecting ? "Connecting" : connected() ? "TCP " + profile.host() : "Offline");
+        close.getAccessibleContext().setAccessibleName("Close pane "+profile.name());
+        close.setToolTipText("Close / disconnect "+profile.name()+" (Ctrl+Alt+W for focused pane)");
         header.setToolTipText("Drag to dock. Right-click for actions. Ctrl+Alt+D docks with the keyboard.");
         getAccessibleContext().setAccessibleName(title.getText());
+        setBorder(BorderFactory.createLineBorder(active ? Ui.FOCUS : Ui.BACKGROUND));
+        updateOia();
+    }
+    public void themeChanged() {
+        setBackground(Ui.BACKGROUND); header.setBackground(Ui.BACKGROUND); footer.setBackground(Ui.BACKGROUND);
+        connection.setForeground(Ui.MUTED); oia.setForeground(Ui.MUTED);
+        if (view.getParent() instanceof JViewport viewport) viewport.setBackground(Ui.BACKGROUND);
+        updateHeader(); view.themeChanged(); updateOia();
+    }
+    public boolean recoverableInputError() {
+        return connected() && screen()!=null && screen().getOIA().isKeyBoardLocked()
+                && core.recoverableInputError();
     }
 
     public void connect() {
@@ -111,9 +144,7 @@ public final class SessionPane extends JPanel {
                         JPanel panel = new JPanel(new BorderLayout(0,8));
                         panel.add(new JLabel("Plain TCP: the password and session are not encrypted."), BorderLayout.NORTH);
                         panel.add(input, BorderLayout.CENTER);
-                        int choice = JOptionPane.showConfirmDialog(SessionPane.this, panel,
-                                "Sign on as " + profile.username(), JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
-                        if (choice != JOptionPane.OK_OPTION) { disconnect(); return; }
+                        if (!Ui.form(SessionPane.this,"Sign on as "+profile.username(),panel,"Connect")) { disconnect(); return; }
                         password = input.getPassword();
                         input.setText("");
                     }
@@ -209,20 +240,24 @@ public final class SessionPane extends JPanel {
         String dimensions = screen == null ? "" : "  " + screen.getRows() + "x" + screen.getColumns()
                 + "  " + screen.getCurrentRow() + ":" + screen.getCurrentCol();
         String state = screen == null || !connected() ? notice : screen.getOIA().isKeyBoardLocked()
-                ? "Input inhibited - Reset / Attention / System Request available"
+                ? recoverableInputError() ? "Input error - Reset to continue" : "Waiting for host - input inhibited"
                 : notice + (screen.getOIA().isInsertMode() ? "  INS" : "");
         if (screen != null && screen.getOIA().getInhibitedText() != null && screen.getOIA().isKeyBoardLocked())
             state += "  " + screen.getOIA().getInhibitedText();
         oia.setText(state + dimensions);
         oia.setToolTipText(state + dimensions);
-        oia.setForeground(notice.startsWith("Disconnected -") ? Ui.ERROR : Ui.MUTED);
+        oia.setForeground(recoverableInputError() || notice.startsWith("Disconnected -") ? Ui.ERROR
+                : workspace.active()==this ? Ui.TEXT : Ui.MUTED);
+        reset.setVisible(recoverableInputError());
+        workspace.refreshCommands();
     }
 
     public boolean send(KeyMnemonic key) {
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
         if (screen().getOIA().isKeyBoardLocked() && key != KeyMnemonic.RESET
                 && key != KeyMnemonic.ATTN && key != KeyMnemonic.SYSREQ) {
-            problem("Input inhibited. Use Reset, Attention or System Request; no keys were queued.");
+            problem(recoverableInputError() ? "Input error. Use Reset or Esc; no keys were queued."
+                    : "Waiting for host. Attention / System Request available; no keys were queued.");
             return false;
         }
         try {
@@ -398,7 +433,7 @@ public final class SessionPane extends JPanel {
             case CENTER -> {}
         }
         Graphics2D g = (Graphics2D) graphics.create();
-        g.setColor(new Color(110,180,200,45)); g.fill(area);
+        g.setColor(new Color(Ui.FOCUS.getRed(),Ui.FOCUS.getGreen(),Ui.FOCUS.getBlue(),45)); g.fill(area);
         g.setColor(Ui.FOCUS); g.drawRect(area.x + 1,area.y + 1,area.width - 3,area.height - 3);
         g.setColor(Ui.TEXT);
         g.drawString(preview == Layout.Dock.CENTER ? "Swap panes" : "Dock " + preview.name().toLowerCase(Locale.ROOT),

@@ -56,7 +56,7 @@ public final class ProfilesDialog extends JDialog {
         field(connection,row++,"Remembered password",password,KeyEvent.VK_W);
         JLabel hint = new JLabel("<html>Leave blank to keep an existing remembered password.<br>"
                 + "Plain TCP does not encrypt passwords or host data.<br>Manual sign-on never guesses the host's field positions.</html>");
-        hint.setForeground(Ui.MUTED);
+        Ui.role(hint,"muted");
         wide(connection,row,hint);
         tabs.addTab("Connection",connection); tabs.setMnemonicAt(0,KeyEvent.VK_1);
         JPanel display = new JPanel(new GridBagLayout());
@@ -73,6 +73,7 @@ public final class ProfilesDialog extends JDialog {
         defaults.setFocusable(false);
         defaults.setFont(new Font(Font.MONOSPACED,Font.PLAIN,11));
         defaults.setBackground(Ui.PANEL);
+        defaults.setBorder(BorderFactory.createEmptyBorder());
         keyboard.add(defaults,BorderLayout.NORTH);
         keymap.setFont(new Font(Font.MONOSPACED,Font.PLAIN,12));
         keymap.getAccessibleContext().setAccessibleName("Keyboard overrides: KEY = ACTION");
@@ -83,7 +84,7 @@ public final class ProfilesDialog extends JDialog {
         body.add(sidebar,BorderLayout.WEST); body.add(tabs,BorderLayout.CENTER);
         JPanel bottom = new JPanel(new BorderLayout(8,0));
         bottom.setBorder(BorderFactory.createEmptyBorder(0,12,12,12));
-        error.setForeground(Ui.ERROR);
+        Ui.role(error,"error");
         bottom.add(error,BorderLayout.CENTER);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT,6,0));
         cancel = Ui.button("Cancel",KeyEvent.VK_L,this::dismiss);
@@ -94,7 +95,6 @@ public final class ProfilesDialog extends JDialog {
         getRootPane().setDefaultButton(use);
         getRootPane().registerKeyboardAction(e -> dismiss(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
-        addWindowListener(new WindowAdapter() { @Override public void windowClosing(WindowEvent e) { dismiss(); } });
         DocumentListener changes = new DocumentListener() {
             private void changed() { if (!loading) dirty = true; }
             @Override public void insertUpdate(DocumentEvent e) { changed(); }
@@ -115,7 +115,11 @@ public final class ProfilesDialog extends JDialog {
         selected = initial;
         list.setSelectedValue(initial,true);
         if (name.getText().isEmpty()) load(initial);
-        setSize(850,610);
+        Ui.decorate(this,this::dismiss);
+        addWindowListener(new WindowAdapter() {
+            @Override public void windowOpened(WindowEvent e) { name.requestFocusInWindow(); }
+        });
+        setSize(850,650);
         setMinimumSize(new Dimension(760,550));
         setLocationRelativeTo(workspace);
     }
@@ -134,8 +138,7 @@ public final class ProfilesDialog extends JDialog {
         dirty = false; loading = false;
     }
     private boolean discardChanges() {
-        return !dirty || JOptionPane.showConfirmDialog(this,"Discard unsaved profile edits?","Unsaved edits",
-                JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
+        return !dirty || Ui.confirm(this,"Discard unsaved profile edits?","Unsaved edits");
     }
     private void dismiss() {
         if (!saving && discardChanges()) { password.setText(""); dispose(); }

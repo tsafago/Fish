@@ -29,6 +29,9 @@ public final class DesktopRendering {
         StateStore store = new StateStore(directory);
         Workspace window = edt(() -> {
             Workspace frame = new Workspace(store,Main.demoState(host.port()),Path.of("scripts","credential-store.ps1"),true);
+            String effect=System.getProperty("pane5250.effect","None");
+            if (!effect.equals("None"))
+                for (var profile : frame.profileList()) frame.putProfile(profile.withDisplay(profile.theme(),effect));
             frame.setAlwaysOnTop(true);
             frame.setVisible(true); frame.connectAll(); return frame;
         });
@@ -142,8 +145,8 @@ public final class DesktopRendering {
         }
         double paint95 = percentile(meter.paints,95), lag95 = percentile(lags,95);
         System.out.printf(Locale.ROOT,
-                "%s resize: DPI=%s, paints=%d, paint median=%.2fms p95=%.2fms max=%.2fms, EDT lag p95=%.2fms max=%.2fms%n",
-                BASELINE ? "BASELINE" : "MEASURED",edt(() -> window.getGraphicsConfiguration().getDefaultTransform()),
+                "%s resize (%s): DPI=%s, paints=%d, paint median=%.2fms p95=%.2fms max=%.2fms, EDT lag p95=%.2fms max=%.2fms%n",
+                BASELINE ? "BASELINE" : "MEASURED",System.getProperty("pane5250.effect","None"),edt(() -> window.getGraphicsConfiguration().getDefaultTransform()),
                 meter.paints.size(),percentile(meter.paints,50),paint95,percentile(meter.paints,100),lag95,percentile(lags,100));
         require(meter.paints.size() >= 8,"Resize measurement includes real dirty-region paints.");
         require(paint95 < 30 && lag95 < 75,"Resize p95 paint is below 30ms and EDT response below 75ms.");
@@ -168,11 +171,12 @@ public final class DesktopRendering {
         for (SessionPane pane : edt(window::sessionPanes)) {
             Point origin = edt(() -> pane.view().getLocationOnScreen());
             BufferedImage margin = robot.createScreenCapture(new Rectangle(origin.x + 4,origin.y + 4,3,3));
-            require(margin.getRGB(1,1) == Ui.BACKGROUND.getRGB(),"Actual exposed terminal margin is clean, not old menu/pane pixels.");
+            require(margin.getRGB(1,1) == pane.view().getBackground().getRGB(),"Actual exposed terminal margin is clean, not old menu/pane pixels.");
         }
         BufferedImage capture = robot.createScreenCapture(edt(window::getBounds));
         String scale = System.getProperty("sun.java2d.uiScale","native").replace('.','-');
-        ImageIO.write(capture,"png",Path.of("build","desktop-render-" + (BASELINE ? "baseline-" : "") + scale + ".png").toFile());
+        ImageIO.write(capture,"png",Path.of("build","desktop-render-" + (BASELINE ? "baseline-" : "")
+                +System.getProperty("pane5250.effect","None").toLowerCase(Locale.ROOT)+"-"+scale+".png").toFile());
         System.out.println(BASELINE ? "Baseline diagnostics recorded." : "PASS " + checks + " desktop rendering, resize and custom-window checks.");
     }
 

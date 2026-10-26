@@ -15,6 +15,7 @@ live in `tests\pane5250\Tests.java`; the live host is `demo\DemoHost`.
 |---|---|
 | Stream framing | Byte-at-a-time negotiation, interleaved options, repeated requests, IAC quoting, GDS length/type/header checks, malformed/truncated input failures |
 | TN5250 negotiation | IBM-3477-FC only; bidirectional BINARY/EOR; optional option refusal; TERMINAL-TYPE SEND; NEW-ENVIRON names, workstation and keyboard/code-page values |
+| Named devices/startup | Exact ordered RFC 1572 SEND/IS bytes, no unsolicited IS, VAR/USERVAR wildcards, undefined unknown names, control-byte escaping/IAC quoting, collision diagnostics without renaming; exact RFC 4777 I902/8902 fixtures, unknown/malformed rejection, actual loopback named-device connections |
 | Optional plain sign-on | Exact RFC 4777 USER / empty IBMRSEED / IBMSUBSPW bytes; visible refusal; no credentials negotiated in manual mode |
 | Presentation | Actual 24x80 and 27x132 datastreams, host-driven transitions in both directions; pane/window resize does not change dimensions |
 | Fields/input | Host-defined fields, protected/numeric validation, Field Exit, literal bracket safety, local-error Reset and preserved host inhibition |
@@ -26,6 +27,8 @@ live in `tests\pane5250\Tests.java`; the live host is `demo\DemoHost`.
 | Desktop | Three independent real TCP sockets, physical keyboard focus/edit, keyboard pane navigation, socket-preserving center/edge docking, real close/reopen persistence |
 | Desktop correction | Poisoned-buffer redraw regression, real continuous window/divider resize, physical pane-header docking, all eight edge/corner directions and minimum size, custom move/maximize/restore/minimize/close, native/custom window menus, keyboard move/size, focus outlines and cancelable close |
 | Profiles/layout | Identity-safe duplication, all docking directions, atomic XML persistence, writer locking, explicit corrupt-state handling, reserved shortcut namespace |
+| UI revisions | Whole-pane header/display/footer highlight; no header underline; far-right X close/cancel and actual socket release; immediate add/direction controls; empty workspace/add-back; searchable palette aliases, disabled states, keyboard navigation/focus and host-input isolation |
+| Appearance/recovery | Four live/persistent application themes, version-1 migration, seven host palettes and readable text/focus contrast fixtures; actual themed forms/confirmations/errors/profile/key-mapping/System Request routes; visible opt-in effect pixel differences; contextual Reset clears local error with no transaction and cannot unlock host busy |
 
 SBCS pages offered: **37, 273, 277, 278, 280, 284, 285, 297, 500, 870, 871,
 1140, 1141, 1147, 1148**. Mapping round trips do not establish the correctness
@@ -39,7 +42,55 @@ maximum, compared with the pre-correction 114.13ms p95 / 196.43ms maximum.
 These are local observations, not a hardware-independent latency SLA.
 Repeated menu close, maximize/restore and exposed terminal margins were clean;
 the exact connection count remained three and every host screen size was
-unchanged. The actual desktop capture is `build\desktop-render-native.png`.
+unchanged. These historical 0.1.1 numbers are retained for comparison, not
+substituted for measurements of the revised 0.2.0 controls and effects.
+
+The final revision fixtures pass **669 non-interactive protocol/model/theme/render
+checks**, with real desktop,
+credential-store and foreground interaction suites checked separately. The
+revised interaction suite covers pane/recovery/theme/effect/palette/dialog behavior, and the rendering/window suite
+passes **61 checks per effect mode**.
+
+The revision run at native **150% DPI** separately measured effects off
+(168 paints: 6.94ms median, 22.52ms p95; EDT lag 30.10ms p95) and Neon
+(152 paints: 13.25ms median, 26.54ms p95; EDT lag 31.55ms p95). Both satisfied
+the actual test thresholds of paint p95 below 30ms and EDT lag p95 below 75ms,
+with unchanged sockets/host dimensions. Run `Test` for current machine results;
+these are observations, not universal latency guarantees. Captures are
+`build\desktop-render-none-native.png`, `build\desktop-render-neon-native.png`
+and `build\revision-*.png`. `Check` executes protocol/model/theme fixtures only,
+without foreground desktop input or credential-store access.
+Earlier stress runs exposed unnecessary oversampling and transparent-image
+resampling across empty terminal regions (39-40ms paint p95). Resolution-tier,
+tight opaque row caches remove that cost while retaining higher-resolution
+ink for larger physical text, accurate selection/reverse backgrounds and
+neighboring-row ink. No threshold was relaxed to hide the result.
+
+**Final timing limitation:** the shared Windows machine subsequently reported
+100% CPU with no Pane5250 test process left running. A later effects-off run
+measured 34.08ms paint p95 / 49.55ms EDT lag p95 and failed the unchanged 30ms
+paint threshold. Thus the earlier passing results above are not a repeatable
+final timing guarantee under that load. The user chose to finish packaging and
+report this limitation rather than run more foreground checks. Re-run `Test`
+on an idle machine before treating the resize performance gate as closed.
+Functional UI checks and hidden/offscreen cache regressions are distinct from
+that timing limitation.
+
+### Explicit device-name correction and remaining gate
+
+The previous transport sent NEW-ENVIRON IS immediately on DO and again on SEND.
+RFC 1572 requires the initial IS to answer SEND; the duplicate allocation attempt
+is removed. Replies preserve requested variable order/types and exact DEVNAME.
+RFC 4777 `IBMSENDCONFREC=YES` requests a startup result; supported startup
+confirmations are consumed separately from display records. Known errors such
+as 8902 (device unavailable) include the actual system/device when supplied.
+Allocation is never labeled authentication. Refusal, collision and a different
+allocated name cannot silently satisfy an explicit-device request.
+
+This is an independently reproduced transport defect, **not proof of the cause
+of the user's IBM i rejection**. A retry against that host and its actual startup
+code (or a sanitized negotiation trace if no code is sent) is still needed.
+No endpoint or host rejection details have been supplied.
 
 The original corruption was a violated Swing opaque-component contract:
 the bare terminal component did not clear its background, so old shared-buffer
@@ -55,7 +106,7 @@ and cursor-only idle repaints avoid unnecessarily redrawing whole panes.
 | WEA extended attributes and WSF beyond the basic Query | Explicit failure rather than silent skipping. Additional valid IBM i datastreams may therefore be rejected. |
 | Full applicable 5250 order/FCW validation | Mature upstream behavior is inherited where not adapted; exhaustive conformance, transparent field FCWs and all signed/continued/mandatory-field combinations are not independently established. |
 | Cryptographically substituted automatic sign-on | DES/SHA substitutions and server-specific password-policy variants are not implemented. Only opt-in RFC 4777 plain sign-on is offered. |
-| Extended startup/confirmation records and optional IBM environment extensions | Not requested. Unexpected unsupported record types produce an explicit error, not a guessed success response. |
+| Other startup/confirmation variants and optional IBM environment extensions | RFC 4777 display startup confirmation is now requested and parsed. Unknown results/formats fail explicitly; other IBM environment extensions are not implemented or guessed. |
 | DBCS and other terminal models | Unsupported; only IBM-3477-FC and the listed SBCS pages are offered. |
 | TLS / Kerberos | Not implemented; TLS is out of scope and Kerberos was optional. |
 | Accessibility / DPI matrices | Native 150% DPI, real window controls and keyboard/focus routes are locally checked. Screen-reader terminal semantics, mixed-DPI monitors and other Windows scaling/keyboard layouts still need hands-on acceptance. |
@@ -109,8 +160,11 @@ the client production-ready, fully TN5250-conformant or ACS-compatible.
 
 - [RFC 1205](https://www.rfc-editor.org/rfc/rfc1205), especially framing,
   operation flows, transparent data, alternate reads and the basic Query.
-- [RFC 4777](https://www.rfc-editor.org/rfc/rfc4777), IBM i NEW-ENVIRON and
-  optional plain automatic sign-on.
+- [RFC 4777](https://www.rfc-editor.org/rfc/rfc4777), sections 3/4/7/10:
+  IBM i NEW-ENVIRON, device negotiation, optional plain sign-on and startup
+  confirmation codes/byte example.
+- [RFC 1572](https://www.rfc-editor.org/rfc/rfc1572), ordered SEND/IS exchange,
+  variable types/wildcards, undefined variables and escaping.
 - RFC 854/855/856, 885, 1091 and 1572 for Telnet option semantics.
 - [TN5250J](https://github.com/tn5250j/tn5250j/tree/d160492db8adec5d7cf309c6f4feefa162e6565d),
   pinned source, original licenses retained.

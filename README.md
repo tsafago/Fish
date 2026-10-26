@@ -12,7 +12,7 @@ to a production system.
 
 ## Run the delivered application
 
-Keep the entire application-image directory together:
+The current local package is **0.2.0**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Pane5250\Pane5250.exe
@@ -45,6 +45,7 @@ git submodule update --init --recursive
 # Use a maintained JDK 21 by setting JAVA_HOME, or obtain the pinned portable SDK:
 .\scripts\bootstrap.ps1
 .\build.ps1 Build
+.\build.ps1 Check     # fixtures only; no foreground input or credential access
 .\build.ps1 Test
 .\build.ps1 Package
 ```
@@ -78,11 +79,16 @@ with an always-on-top test window. Keep other windows out of the way.
 It also creates, reads and removes a uniquely named **synthetic** Windows
 credential. It never connects to an IBM i. The rendered artifact is
 `build\workspace-test.png`. The additional real-desktop rendering/window suite
-captures `build\desktop-render-native.png` and prints continuous-resize paint
+captures `build\desktop-render-none-native.png` and
+`build\desktop-render-neon-native.png` and prints continuous-resize paint
 and event-thread latency measurements. It verifies background clearing against
 poisoned pixels, actual divider/header drags, all eight window resize directions,
 window controls, keyboard move/size, focus, and unchanged session connections
-and host dimensions.
+and host dimensions, with effects off and Neon enabled. The revision suite
+exercises actual pane X/add controls, palette search/navigation and focus,
+local-error Reset versus host inhibition, live themes, dialog routes, effect
+differences, empty-workspace behavior and persistence. Its app-only captures
+are `build\revision-*.png`.
 
 ## Sessions and profiles
 
@@ -100,6 +106,18 @@ Drag a pane header to another pane: edges dock it, the center swaps it.
 Drop previews show the proposed position. Drag the hairline split handles
 to resize. Moving panes keeps their existing socket and terminal state.
 Splitting creates a new, independent, initially offline session.
+The immediately visible **+ Pane** adds to the right; its adjacent arrow
+offers left/right or top/bottom splits. The **X at the far right of each pane
+header** closes only that pane, with confirmation when connected/connecting.
+Closing the last pane leaves an empty workspace; + Pane adds one back.
+The active pane has a single subtle tinted surface across its header, terminal
+and footer, with an outer focus outline and no header underline.
+
+**Commands** or **Ctrl+Alt+K** opens searchable commands with descriptions,
+shortcuts and aliases. Search `add pane`, `add window`, `new session`, `split`,
+`reset`, `theme` or a host key. Up/Down selects, Enter runs and Escape returns
+to the intended terminal. Disabled actions stay disabled; palette typing
+never edits host fields. Menus and palette use the same action handlers.
 
 Profiles store host, port, optional device name, username, manual/automatic
 sign-on preferences, SBCS code page, host key overrides, palette, effect,
@@ -115,6 +133,16 @@ field. Optional automatic sign-on uses RFC 4777 `USER`, empty `IBMRSEED`, and
 plain-text `IBMSUBSPW` when the server agrees to NEW-ENVIRON. A connected socket
 is never labeled a successful sign-on.
 
+An explicit device name is sent exactly as the normalized profile specifies,
+only in response to NEW-ENVIRON SEND, not unsolicited on DO. Automatic naming
+omits DEVNAME. RFC 4777 startup confirmations report the allocated/rejected
+device and known rejection reason when supplied by the host. A collision does
+not silently generate a different name. NEW-ENVIRON refusal cannot silently
+fall back to automatic naming when an explicit name was requested. The exact
+user-reported IBM i failure still needs a real-host retry/rejection code;
+local fixtures and loopback named-device connections do not establish that
+host's acceptance. See [COMPATIBILITY.md](COMPATIBILITY.md).
+
 Remembered passwords are generic credentials in **Windows Credential Manager**,
 under `Pane5250/<profile UUID>/<host>:<port>/<username>`, scoped to the current
 Windows user. Uncheck Remember and save to remove a remembered credential.
@@ -124,6 +152,9 @@ guaranteed to be securely erased.
 
 Workspace state is atomically saved to `%APPDATA%\Pane5250\workspace.xml`.
 The last pane layout and window size are restored **offline** next launch.
+Application appearance is saved with the workspace. Existing version-1 state
+migrates to Charcoal while retaining profiles and layouts; version-2 state also
+supports an empty workspace.
 **Ctrl+Alt+S/L** additionally saves/restores a profile-specific layout.
 The workspace is locked against concurrent writers. Corrupt state produces
 an error and is preserved, never silently replaced. `--data-dir DIRECTORY`
@@ -149,6 +180,7 @@ Application shortcuts use **Ctrl+Alt**; host mappings cannot claim that namespac
 | Rectangular selection | Shift+arrows, or mouse drag |
 | Insert profile username / remembered password | Ctrl+Alt+U / Ctrl+Alt+Shift+P |
 | Host key chooser / application menu | Ctrl+Alt+F / Ctrl+Alt+M |
+| Search commands / appearance | Ctrl+Alt+K / Ctrl+Alt+T |
 | Dark window menu / standard Windows window menu | Ctrl+Alt+Space / Alt+Space |
 | Close window (with connected-session confirmation) | Alt+F4 |
 | Quit | Ctrl+Alt+Q |
@@ -174,8 +206,23 @@ are rejected before editing; input errors or host inhibition stop further input.
 Newlines and tabs navigate rather than sending Enter. Non-display text is
 masked in copy/export. Fit and zoom never alter host screen dimensions.
 
-Phosphor, Cool and Warm palettes retain host attribute distinctions. Optional
-Soft glow and Prism effects are disabled by default. The application has no
+For a recoverable terminal input error, a contextual **Reset** button appears
+in that pane's footer. It clears the core's actual local pre-help/error state
+without submitting Enter. It is not offered as an unlock for host-busy or
+network failures. Enter retains its host meaning; Escape remains the default
+Reset key.
+
+**Appearance** offers four persistent application themes: Charcoal, Graphite,
+Midnight and Paper. They cover custom chrome, headers/footers, menus/popups,
+dialogs, fields, lists, tabs, selection, disabled/hover/pressed/focus states,
+dividers and text. Application themes are independent of workstation host
+palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid and High contrast. Host
+color/reverse/underline/blink/non-display distinctions remain intact.
+Optional Soft glow, column-gradient Prism and pronounced Neon effects are
+disabled by default. Effect ink is cached in tight, background-composited row
+tiles at one of two resolution levels suited to the physical display size.
+Selection, reverse backgrounds and blink remain accurate; resizing does not
+recreate per-character glyphs/effects on every frame. The application has no
 AI features, telemetry, embedded browser, dashboard or promotional UI.
 
 ## Source organization and license

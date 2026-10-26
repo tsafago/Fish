@@ -15,7 +15,7 @@ final class WindowChrome extends JPanel {
     private boolean keyboardSizing;
     private final KeyEventDispatcher windowKeys = this::keyboardEvent;
 
-    WindowChrome(JFrame window,JMenuBar menus) {
+    WindowChrome(JFrame window,JMenuBar menus,JComponent tools) {
         super(new BorderLayout(8,0));
         this.window = window;
         normalBounds = window.getBounds();
@@ -30,7 +30,9 @@ final class WindowChrome extends JPanel {
         caption.setFont(new Font("Segoe UI",Font.PLAIN,11));
         caption.setToolTipText(window.getTitle());
         left.add(caption,BorderLayout.WEST);
-        left.add(menus,BorderLayout.CENTER);
+        JPanel actions=new JPanel(new FlowLayout(FlowLayout.LEFT,5,0)); actions.setOpaque(false);
+        actions.add(menus); actions.add(tools);
+        left.add(actions,BorderLayout.CENTER);
         add(left,BorderLayout.WEST);
         JPanel dragArea = new JPanel();
         dragArea.setOpaque(false);
@@ -68,6 +70,7 @@ final class WindowChrome extends JPanel {
             @Override public void windowLostFocus(WindowEvent e) { finishKeyboard(true); }
         });
     }
+    void themeChanged() { setBackground(Ui.PANEL); caption.setForeground(Ui.MUTED); setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE)); }
 
     private boolean isMaximized() { return (window.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0; }
     private void rememberNormal() {
@@ -250,9 +253,9 @@ final class WindowChrome extends JPanel {
             Graphics2D g = (Graphics2D)graphics.create();
             try {
                 g.setColor(getModel().isRollover() || getModel().isPressed()
-                        ? kind.equals("close") ? new Color(0x81353d) : new Color(0x30383c) : Ui.PANEL);
+                        ? kind.equals("close") ? Ui.ERROR : Ui.HOVER : Ui.PANEL);
                 g.fillRect(0,0,getWidth(),getHeight());
-                g.setColor(Ui.TEXT);
+                g.setColor(kind.equals("close") && (getModel().isRollover() || getModel().isPressed()) ? Ui.BACKGROUND : Ui.TEXT);
                 int x = (getWidth() - 10) / 2, y = (getHeight() - 10) / 2;
                 if (kind.equals("minimize")) g.drawLine(x,y + 7,x + 9,y + 7);
                 else if (kind.equals("close")) { g.drawLine(x,y,x + 9,y + 9); g.drawLine(x + 9,y,x,y + 9); }

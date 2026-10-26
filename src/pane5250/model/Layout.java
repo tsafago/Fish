@@ -3,7 +3,8 @@ package pane5250.model;
 import java.util.*;
 import java.util.function.UnaryOperator;
 
-public sealed interface Layout permits Layout.Leaf, Layout.Split {
+public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
+    record Empty() implements Layout {}
     record Leaf(UUID pane, UUID profile) implements Layout {
         public Leaf { Objects.requireNonNull(pane); Objects.requireNonNull(profile); }
     }
@@ -13,11 +14,13 @@ public sealed interface Layout permits Layout.Leaf, Layout.Split {
                 throw new IllegalArgumentException("Invalid divider ratio.");
             Objects.requireNonNull(first);
             Objects.requireNonNull(second);
+            if (first instanceof Empty || second instanceof Empty) throw new IllegalArgumentException("Empty split child.");
         }
     }
     enum Dock { CENTER, LEFT, RIGHT, TOP, BOTTOM }
 
     default List<Leaf> leaves() {
+        if (this instanceof Empty) return List.of();
         if (this instanceof Leaf leaf) return List.of(leaf);
         Split split = (Split) this;
         List<Leaf> result = new ArrayList<>(split.first.leaves());
@@ -26,12 +29,14 @@ public sealed interface Layout permits Layout.Leaf, Layout.Split {
     }
 
     default Layout mapLeaf(UUID pane, UnaryOperator<Leaf> update) {
+        if (this instanceof Empty) return this;
         if (this instanceof Leaf leaf) return leaf.pane.equals(pane) ? update.apply(leaf) : leaf;
         Split split = (Split) this;
         return new Split(split.horizontal, split.ratio, split.first.mapLeaf(pane, update), split.second.mapLeaf(pane, update));
     }
 
     default Layout remove(UUID pane) {
+        if (this instanceof Empty) return this;
         if (this instanceof Leaf leaf) return leaf.pane.equals(pane) ? null : leaf;
         Split split = (Split) this;
         Layout first = split.first.remove(pane), second = split.second.remove(pane);
@@ -41,6 +46,7 @@ public sealed interface Layout permits Layout.Leaf, Layout.Split {
     }
 
     default Layout insert(UUID target, Leaf added, Dock dock) {
+        if (this instanceof Empty) return added;
         if (this instanceof Leaf leaf) {
             if (!leaf.pane.equals(target)) return leaf;
             boolean before = dock == Dock.LEFT || dock == Dock.TOP;
@@ -71,6 +77,7 @@ public sealed interface Layout permits Layout.Leaf, Layout.Split {
     }
 
     default String encode() {
+        if (this instanceof Empty) return "E";
         if (this instanceof Leaf leaf) return "L|" + leaf.pane + "|" + leaf.profile;
         Split split = (Split) this;
         return (split.horizontal ? "H|" : "V|") + split.ratio + "|" + split.first.encode() + "|" + split.second.encode();
@@ -98,6 +105,7 @@ public sealed interface Layout permits Layout.Leaf, Layout.Split {
         Layout read(int depth) {
             if (depth > 64) throw new IllegalArgumentException("Layout exceeds safe nesting depth.");
             String type = next();
+            if (type.equals("E")) return new Empty();
             if (type.equals("L")) return new Leaf(UUID.fromString(next()), UUID.fromString(next()));
             if (!type.equals("H") && !type.equals("V")) throw new IllegalArgumentException("Unknown layout node.");
             double ratio = Double.parseDouble(next());

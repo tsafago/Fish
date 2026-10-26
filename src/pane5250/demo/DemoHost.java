@@ -14,6 +14,7 @@ public final class DemoHost implements AutoCloseable {
     private final Queue<String> failures = new ConcurrentLinkedQueue<>();
     private volatile boolean closed;
     private volatile int connections;
+    private final java.util.concurrent.atomic.AtomicInteger requests=new java.util.concurrent.atomic.AtomicInteger();
     public DemoHost() throws IOException {
         server = new ServerSocket(0,16,InetAddress.getByName("127.0.0.1"));
         Thread.ofPlatform().daemon().name("synthetic-host").start(() -> {
@@ -31,6 +32,8 @@ public final class DemoHost implements AutoCloseable {
     }
     public int port() { return server.getLocalPort(); }
     public int connectionCount() { return connections; }
+    public int activeConnections() { return clients.size(); }
+    public int requestCount() { return requests.get(); }
     public List<String> failures() { return List.copyOf(failures); }
     private void serve(Socket socket) {
         try (socket) {
@@ -39,14 +42,18 @@ public final class DemoHost implements AutoCloseable {
             InputStream input = socket.getInputStream();
             OutputStream output = socket.getOutputStream();
             byte[] invitation = {(byte)255,(byte)253,39,(byte)255,(byte)253,24,
+                    (byte)255,(byte)250,39,1,0,3,(byte)255,(byte)240,
                     (byte)255,(byte)250,24,1,(byte)255,(byte)240,
                     (byte)255,(byte)253,0,(byte)255,(byte)251,0,
-                    (byte)255,(byte)253,25,(byte)255,(byte)251,25,
-                    (byte)255,(byte)250,39,1,0,3,(byte)255,(byte)240};
+                    (byte)255,(byte)253,25,(byte)255,(byte)251,25};
             // Intentionally fragment Telnet triples to exercise real stream framing.
             for (byte value : invitation) { output.write(value); output.flush(); }
             String device = handshake(input);
             int kind = device.contains("DEMOA2") ? 2 : device.contains("DEMOA3") ? 3 : 1;
+            byte[] startup=new byte[73];
+            System.arraycopy(HexFormat.of().parseHex("004912a090000560060020c0003d0000"),0,startup,0,16);
+            System.arraycopy(("I902DEMOHOST"+String.format("%-10s",device)).getBytes(java.nio.charset.Charset.forName("Cp037")),0,startup,16,22);
+            output.write(TelnetCodec.frame(startup));
             output.write(TelnetCodec.frame(DemoScreens.screen(kind,false,"")));
             output.flush();
             socket.setSoTimeout(0);
@@ -54,6 +61,9 @@ public final class DemoHost implements AutoCloseable {
             boolean wide = false;
             while (!closed && !socket.isClosed()) {
                 byte[] record = clientRecord(input);
+                // Local input-error reports are not transaction AIDs and must not unlock the screen.
+                if ((record[7]&0x81)!=0) continue;
+                requests.incrementAndGet();
                 count++;
                 int aid = record.length > 12 ? record[12] & 255 : 0;
                 if (aid == 0x35) wide = true;
@@ -87,8 +97,13 @@ public final class DemoHost implements AutoCloseable {
                 if (option == 39) {
                     environment = true;
                     String text = new String(sub,StandardCharsets.US_ASCII);
-                    if (text.contains("DEMOA2")) device = "DEMOA2";
-                    else if (text.contains("DEMOA3")) device = "DEMOA3";
+                    String marker="\3DEVNAME\1";
+                    int at=text.indexOf(marker);
+                    if (at>=0) {
+                        int end=at+marker.length();
+                        while (end<text.length() && text.charAt(end)>3) end++;
+                        device=text.substring(at+marker.length(),end);
+                    } else device="AUTODEMO";
                 }
             } else {
                 if (command == 251 && option == 0) binaryWill = true;

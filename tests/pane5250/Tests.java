@@ -38,11 +38,12 @@ public final class Tests {
             Ui.install();
             codec();
             models();
+            themesAndCommands();
             core();
-            credentials();
-            desktop();
+            effectRendering();
+            if (!Arrays.asList(args).contains("--core-only")) { credentials(); desktop(); }
             check(asynchronousFailure == null,"No uncaught EDT or background-thread errors.");
-            System.out.println("PASS - " + checks + " checks: Telnet, 5250 fields/AIDs, profiles, credentials, docking and live desktop.");
+            System.out.println("PASS - " + checks + " checks"+(args.length>0 ? " (non-interactive fixtures)." : ", including credentials and live desktop."));
         } catch (Throwable e) {
             e.printStackTrace();
             for (Window window : Window.getWindows()) SwingUtilities.invokeAndWait(window::dispose);
@@ -115,8 +116,10 @@ public final class Tests {
         check(envResponse.contains("DEVNAME\1WORK01"),"Workstation name is negotiated.");
         check(envResponse.contains("KBDTYPE\1USB") && envResponse.contains("CODEPAGE\1" + "37"),"Code page includes required keyboard type.");
         check(!Profile.create("Manual").environment(new char[0]).containsKey("USER"),"Manual sign-on does not negotiate credentials.");
+        namedDevices();
         output.reset(); notices.clear();
-        readCodec(concat(hex("fffe27"),TelnetCodec.frame(CLASSIC)),output,environment,notices);
+        Map<String,String> autoDevice=new LinkedHashMap<>(environment); autoDevice.remove("DEVNAME");
+        readCodec(concat(hex("fffe27"),TelnetCodec.frame(CLASSIC)),output,autoDevice,notices);
         check(notices.size() == 1 && notices.getFirst().contains("not negotiated"),"Declined auto-sign-on is visible, never success-shaped.");
         fails(() -> readCodec(hex("000a12a00000040000ffef"),new ByteArrayOutputStream(),Map.of(),new ArrayList<>()),"Truncated GDS is rejected.");
         fails(() -> readCodec(hex("000a12a0000004000000ff"),new ByteArrayOutputStream(),Map.of(),new ArrayList<>()),"Truncated IAC is rejected.");
@@ -127,6 +130,58 @@ public final class Tests {
         check(Arrays.equals(readCodec(TelnetCodec.frame(extendedHeader),new ByteArrayOutputStream(),Map.of(),new ArrayList<>()),extendedHeader),
                 "Longer valid variable headers are accepted.");
         System.out.println("PASS Telnet framing and RFC negotiation");
+    }
+    private static void namedDevices() throws Exception {
+        Map<String,String> explicit=new LinkedHashMap<>();
+        explicit.put("DEVNAME","WORK@01"); explicit.put("IBMSENDCONFREC","YES");
+        ByteArrayOutputStream out=new ByteArrayOutputStream(); List<String> notices=new ArrayList<>();
+        byte[] request=hex("fffd27fffa2701034445564e414d450349424d53454e44434f4e46524543fff0");
+        byte[] reply=hex("fffb27fffa2700034445564e414d4501574f524b4030310349424d53454e44434f4e4652454301594553fff0");
+        readCodec(concat(request,TelnetCodec.frame(CLASSIC)),out,explicit,notices);
+        check(Arrays.equals(out.toByteArray(),reply),"Exactly one requested explicit-device IS response; no unsolicited allocation attempt.");
+        out.reset();
+        readCodec(concat(hex("fffd27fffa270100fff0"),TelnetCodec.frame(CLASSIC)),out,Map.of("CODEPAGE","WRONG","USER","RIGHT"),notices);
+        // A VAR-only wildcard must not leak USERVAR values.
+        check(Arrays.equals(out.toByteArray(),hex("fffb27fffa27000055534552015249474854fff0")),"VAR-only wildcard respects RFC 1572 variable types.");
+        out.reset();
+        readCodec(concat(hex("fffd27fffa270103fff0"),TelnetCodec.frame(CLASSIC)),out,Map.of(),notices);
+        check(Arrays.equals(out.toByteArray(),hex("fffb27fffa2700fff0")),"Automatic device selection sends no invented DEVNAME.");
+        out.reset();
+        readCodec(concat(hex("fffd27fffa270103580203fff0"),TelnetCodec.frame(CLASSIC)),out,Map.of("X\3","\0\1\2\3\u00ff"),notices);
+        check(Arrays.equals(out.toByteArray(),hex("fffb27fffa270003580203010200020102020203fffffff0")),"NEW-ENVIRON escaping and IAC doubling are byte-exact.");
+        out.reset();
+        readCodec(concat(hex("fffd27fffa270103554e4b4e4f574e034445564e414d45fff0"),TelnetCodec.frame(CLASSIC)),out,explicit,notices);
+        check(Arrays.equals(out.toByteArray(),hex("fffb27fffa270003554e4b4e4f574e034445564e414d4501574f524b403031fff0")),
+                "Explicit SEND order and undefined unknown variables are preserved.");
+        fails(() -> readCodec(concat(hex("fffe27"),TelnetCodec.frame(CLASSIC)),new ByteArrayOutputStream(),explicit,new ArrayList<>()),
+                "A requested device cannot silently fall back when NEW-ENVIRON is refused.");
+        fails(() -> readCodec(TelnetCodec.frame(CLASSIC),new ByteArrayOutputStream(),explicit,new ArrayList<>()),
+                "A requested device cannot silently fall back when the host never requests environment.");
+        byte[] success=concat(hex("004912a090000560060020c0003d0000c9f9f0f2e3c1d9c7c5e34040d7c3d7d9c9d5e3c5d940"),new byte[35]);
+        out.reset(); notices.clear();
+        check(Arrays.equals(readCodec(concat(TelnetCodec.frame(success),TelnetCodec.frame(CLASSIC)),out,Map.of(),notices),CLASSIC)
+                        && notices.getFirst().contains("I902") && notices.getFirst().contains("PCPRINTER"),
+                "Exact RFC 4777 success fixture is consumed without reaching the display engine.");
+        byte[] rejection=success.clone(); rejection[10]=(byte)0x82; rejection[11]=0;
+        System.arraycopy(hex("f8f9f0f2"),0,rejection,16,4);
+        try {
+            readCodec(TelnetCodec.frame(rejection),new ByteArrayOutputStream(),Map.of(),new ArrayList<>());
+            check(false,"Startup rejection must fail.");
+        } catch (IOException e) {
+            check(e.getMessage().contains("8902") && e.getMessage().contains("Device not available") && e.getMessage().contains("PCPRINTER"),
+                    "Startup 8902 identifies the actual rejected device and availability reason.");
+        }
+        byte[] unknown=success.clone(); System.arraycopy(hex("c9f9f9f9"),0,unknown,16,4);
+        fails(() -> readCodec(TelnetCodec.frame(unknown),new ByteArrayOutputStream(),Map.of(),new ArrayList<>()),"Unknown startup results never invent success.");
+        fails(() -> readCodec(concat(request,TelnetCodec.frame(success)),new ByteArrayOutputStream(),explicit,new ArrayList<>()),
+                "A different allocated device cannot silently satisfy an explicit requested device.");
+        byte[] malformed=success.clone(); malformed[13]=0x3c;
+        fails(() -> readCodec(TelnetCodec.frame(malformed),new ByteArrayOutputStream(),Map.of(),new ArrayList<>()),
+                "Startup diagnostic length must match its actual record.");
+        out.reset(); notices.clear();
+        readCodec(concat(request,hex("fffa2701034445564e414d45fff0"),TelnetCodec.frame(CLASSIC)),out,explicit,notices);
+        check(notices.stream().anyMatch(n -> n.contains("collision")) && count(new String(out.toByteArray(),StandardCharsets.ISO_8859_1),"WORK@01")==2,
+                "Collision retry retains the requested name and produces a diagnostic, never a fabricated alternative.");
     }
     private static int count(String text,String needle) {
         int count = 0, position = 0;
@@ -149,6 +204,8 @@ public final class Tests {
             check(Layout.decode(moved.encode()).equals(moved),"Dock " + dock + " is persistent.");
         }
         check(original.remove(a.pane()).leaves().size() == 2,"Removing a pane collapses its parent split.");
+        check(Layout.decode("E") instanceof Layout.Empty && Layout.decode("E").leaves().isEmpty(),"An empty workspace round trips without a phantom session.");
+        check(new Layout.Empty().insert(null,a,Layout.Dock.RIGHT).equals(a),"Adding to an empty workspace creates exactly one leaf.");
         fails(() -> Layout.decode("H|NaN|" + a.encode() + "|" + b.encode()),"Invalid ratios are rejected.");
         fails(() -> Layout.decode("H|0.5|" + a.encode() + "|" + a.encode()),"Duplicate pane IDs are rejected.");
         fails(() -> Layout.decode("L|bad|bad"),"Malformed layout is not silently reset.");
@@ -160,11 +217,17 @@ public final class Tests {
         Path directory = Files.createTempDirectory(Path.of("build"),"state-test-");
         try (StateStore store = new StateStore(directory)) {
             Profile saved = first.withLayout(original.encode());
-            store.save(new StateStore.State(List.of(saved,second),original,1280,800));
+            store.save(new StateStore.State(List.of(saved,second),original,1280,800,AppTheme.Midnight));
             StateStore.State loaded = store.load();
             check(loaded.profiles().getFirst().equals(saved) && loaded.layout().equals(original),"Profiles and per-profile layouts round trip.");
+            check(loaded.appTheme()==AppTheme.Midnight,"Application theme persists independently of host palettes.");
             String xml = Files.readString(store.file());
             check(!xml.contains("IBMSUBSPW") && !xml.contains("password</"),"Workspace persistence contains no password property.");
+            Properties legacy=new Properties(); legacy.loadFromXML(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+            legacy.setProperty("version","1"); legacy.remove("appTheme");
+            try (OutputStream migrated=Files.newOutputStream(store.file())) { legacy.storeToXML(migrated,"Legacy fixture"); }
+            check(store.load().appTheme()==AppTheme.Charcoal && store.load().profiles().getFirst().equals(saved),
+                    "Existing version-1 profiles/layouts migrate with the original application theme.");
             fails(() -> new StateStore(directory),"Concurrent workspace writers are blocked.");
             Files.writeString(store.file(),"<bad>");
             fails(store::load,"Corrupt workspace is surfaced, never overwritten with defaults.");
@@ -175,6 +238,51 @@ public final class Tests {
         }
         System.out.println("PASS layout, profiles and persistence");
     }
+    private static void themesAndCommands() throws Exception {
+            edt(() -> {
+                JComboBox<String> persistentChoice=new JComboBox<>(new String[]{"One","Two"});
+                for (AppTheme theme : AppTheme.values()) {
+                    Ui.applyTheme(theme);
+                    SwingUtilities.updateComponentTreeUI(persistentChoice);
+                    persistentChoice.getRenderer().getListCellRendererComponent(new JList<>(),"One",-1,false,false);
+                    check(persistentChoice.getRenderer() instanceof javax.swing.plaf.UIResource,
+                            "Live combo theme refresh replaces the renderer with its owning delegate.");
+                    for (Color background : List.of(Ui.PANEL,Ui.FIELD,Ui.SELECTION)) {
+                        check(contrast(Ui.TEXT,background)>=4.5,"Primary text contrast in "+theme);
+                        check(contrast(Ui.MUTED,background)>=4.5,"Secondary/disabled text contrast in "+theme);
+                    }
+                    check(contrast(Ui.FOCUS,Ui.BACKGROUND)>=3,"Visible focus contrast in "+theme);
+                    for (String palette : Profile.THEMES) {
+                        Color[] colors=HostPalette.colors(palette);
+                        check(colors.length==16 && colors[0].equals(Ui.BACKGROUND),"Full host palette follows "+theme+" background.");
+                        for (int i=1;i<16;i++) check(contrast(colors[i],colors[0])>=4.5,"Readable host color "+i+" in "+theme+"/"+palette);
+                    }
+                    JButton button=Ui.button("Example",KeyEvent.VK_E,() -> {});
+                    check(button.getUI() instanceof FlatControls.Button,"Buttons use the shared flat delegate in "+theme);
+                    check(new JComboBox<>(new String[]{"One","Two"}).getUI() instanceof FlatControls.Combo,"Choices use the shared flat delegate.");
+                }
+                Ui.applyTheme(AppTheme.Charcoal);
+                return null;
+            });
+            java.util.concurrent.atomic.AtomicBoolean available=new java.util.concurrent.atomic.AtomicBoolean(false);
+            int[] runs={0};
+            AppCommand add=new AppCommand("Split left / right","Create an independent session","ctrl alt H",
+                    () -> runs[0]++,available::get,"add pane","add window","new session");
+            check(add.matches("add window") && add.matches("new session") && add.matches("independent") && !add.matches("unrelated"),
+                    "Command search supports descriptions and common aliases.");
+            add.actionPerformed(null); check(runs[0]==0,"Unavailable commands do not execute.");
+            available.set(true); add.actionPerformed(null); check(runs[0]==1,"All command routes execute the shared enabled handler.");
+            System.out.println("PASS application themes, contrast, host palettes, flat delegates and command aliases");
+        }
+        private static double contrast(Color a,Color b) {
+            double x=luminance(a),y=luminance(b);
+            return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);
+        }
+        private static double luminance(Color color) {
+            double[] rgb={color.getRed()/255.0,color.getGreen()/255.0,color.getBlue()/255.0};
+            for (int i=0;i<3;i++) rgb[i]=rgb[i]<=.04045 ? rgb[i]/12.92 : Math.pow((rgb[i]+.055)/1.055,2.4);
+            return .2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];
+        }
     private record Core(Session5250 session,ByteArrayOutputStream output) {}
     private static Core fresh(byte[] fixture) throws Exception {
         TelnetCodec.validateRecord(fixture);
@@ -351,6 +459,61 @@ public final class Tests {
         });
         System.out.println("PASS 5250 datastreams, host AIDs, validation, attributes and screen state");
     }
+    private static void effectRendering() throws Exception {
+        Path directory=Files.createTempDirectory(Path.of("build"),"effect-test-");
+        DemoHost host=new DemoHost();
+        StateStore store=new StateStore(directory);
+        CountDownLatch closed=new CountDownLatch(1);
+        Workspace workspace=edt(() -> {
+            Workspace window=new Workspace(store,Main.demoState(host.port()),Path.of("scripts","credential-store.ps1"),true);
+            window.onClosed(closed::countDown);
+            window.connectAll();
+            return window;
+        });
+        try {
+            await(() -> edtBool(() -> workspace.sessionPanes().stream().allMatch(SessionPane::connected)),12000,
+                    "Hidden rendering fixtures connect without taking desktop focus.");
+            edt(() -> {
+                SessionPane pane=workspace.active();
+                TerminalView view=pane.view();
+                view.setSize(640,400);
+                for (String effect : Profile.EFFECTS) {
+                    workspace.putProfile(pane.profile().withDisplay("Phosphor",effect));
+                    BufferedImage original=paint(view);
+                    KeyEvent selection=new KeyEvent(view,KeyEvent.KEY_PRESSED,System.currentTimeMillis(),
+                            InputEvent.SHIFT_DOWN_MASK,KeyEvent.VK_RIGHT,KeyEvent.CHAR_UNDEFINED);
+                    for (KeyListener listener : view.getKeyListeners()) listener.keyPressed(selection);
+                    check(differentPixels(original,paint(view))>5,"Selection invalidates cached "+effect+" tiles.");
+                    view.resetSelection();
+                    check(differentPixels(original,paint(view))==0,"Clearing selection exactly restores "+effect+" rendering.");
+                    workspace.activate(workspace.sessionPanes().get(1));
+                    check(paint(view).getRGB(0,0)==Ui.BACKGROUND.getRGB(),"Inactive "+effect+" tiles use the new pane background.");
+                    workspace.activate(pane);
+                    check(paint(view).getRGB(0,0)==pane.getBackground().getRGB(),"Active "+effect+" tiles use the coherent pane background.");
+                }
+                check(!workspace.isVisible(),"Effect fixtures never show a foreground window.");
+                return null;
+            });
+        } finally {
+            edt(() -> { workspace.close(true); return null; });
+            check(closed.await(5,TimeUnit.SECONDS),"Hidden render workspace closes and releases its store.");
+            host.close();
+            Files.deleteIfExists(directory.resolve("workspace.xml"));
+            Files.deleteIfExists(directory.resolve("workspace.lock"));
+            Files.deleteIfExists(directory.resolve("workspace.xml.tmp"));
+            Files.delete(directory);
+        }
+        System.out.println("PASS cached effects, selection and pane-background invalidation without foreground input");
+    }
+    private static BufferedImage paint(JComponent component) {
+        BufferedImage image=new BufferedImage(component.getWidth(),component.getHeight(),BufferedImage.TYPE_INT_RGB);
+        Graphics2D g=image.createGraphics(); component.paint(g); g.dispose(); return image;
+    }
+    private static int differentPixels(BufferedImage a,BufferedImage b) {
+        int changed=0;
+        for (int y=0;y<a.getHeight();y++) for (int x=0;x<a.getWidth();x++) if (a.getRGB(x,y)!=b.getRGB(x,y)) changed++;
+        return changed;
+    }
     private static void credentials() throws Exception {
         if (!System.getProperty("os.name").startsWith("Windows")) {
             System.out.println("SKIP Windows Credential Manager (not Windows)");
@@ -418,7 +581,8 @@ public final class Tests {
             edt(() -> {
                 check(workspace.active().screen().getScreenAsChars()[inputPosition] == '7',
                         "A mapped keypad Field Plus does not also type a literal plus into the next field.");
-                workspace.active().send(KeyMnemonic.ENTER);
+                check(workspace.active().send(KeyMnemonic.ENTER),"Enter is accepted after keypad input; recoverable="
+                        +workspace.active().recoverableInputError()+", position="+workspace.active().screen().getCurrentPos());
                 return null;
             });
             await(() -> edtBool(() -> workspace.sessionPanes().get(0).view().visibleText().contains("Host received Enter")),5000,

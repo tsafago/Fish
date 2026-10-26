@@ -10,8 +10,8 @@ public record Profile(UUID id, String name, String host, int port, String device
                       String savedLayout) {
     public static final List<String> CODE_PAGES = List.of("37", "273", "277", "278", "280",
             "284", "285", "297", "500", "870", "871", "1140", "1141", "1147", "1148");
-    public static final List<String> THEMES = List.of("Phosphor", "Cool", "Warm");
-    public static final List<String> EFFECTS = List.of("None", "Soft glow", "Prism");
+    public static final List<String> THEMES = List.of("Phosphor", "Cool", "Warm", "Amber", "Ice", "Orchid", "High contrast");
+    public static final List<String> EFFECTS = List.of("None", "Soft glow", "Prism", "Neon");
 
     public Profile {
         Objects.requireNonNull(id);
@@ -54,6 +54,10 @@ public record Profile(UUID id, String name, String host, int port, String device
         return new Profile(id, name, host, port, device, username, automaticSignOn, rememberPassword,
                 codePage, theme, effect, value, keymap, savedLayout);
     }
+    public Profile withDisplay(String palette,String textEffect) {
+        return new Profile(id,name,host,port,device,username,automaticSignOn,rememberPassword,
+                codePage,palette,textEffect,zoom,keymap,savedLayout);
+    }
 
     public Charset charset() {
         return Charset.forName("Cp" + (codePage.equals("37") ? "037" : codePage));
@@ -81,6 +85,7 @@ public record Profile(UUID id, String name, String host, int port, String device
             values.put("CHARSET", "695");
         }
         if (!device.isEmpty()) values.put("DEVNAME", device);
+        values.put("IBMSENDCONFREC","YES");
         if (automaticSignOn) {
             if (password.length == 0 || password.length > 128)
                 throw new IllegalArgumentException("Automatic sign-on needs a 1-128 character password.");

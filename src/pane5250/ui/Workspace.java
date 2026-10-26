@@ -7,8 +7,6 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
 import javax.swing.*;
-import javax.swing.plaf.basic.BasicSplitPaneUI;
-import javax.swing.plaf.basic.BasicSplitPaneDivider;
 import org.tn5250j.keyboard.KeyMnemonic;
 import pane5250.model.*;
 import pane5250.security.CredentialStore;
@@ -25,6 +23,7 @@ public final class Workspace extends JFrame {
     private final CredentialStore credentials;
     private final LinkedHashMap<UUID,Profile> profiles = new LinkedHashMap<>();
     private final Map<UUID,SessionPane> panes = new LinkedHashMap<>();
+    private final List<AppCommand> commands = new ArrayList<>();
     private final JPanel content = new JPanel(new BorderLayout());
     private final ExecutorService persistence = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r,"workspace-save"); thread.setDaemon(true); return thread;
@@ -40,6 +39,7 @@ public final class Workspace extends JFrame {
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
         super("Pane5250" + (demonstration ? " - local synthetic host" : ""));
         setUndecorated(true);
+        if (Ui.theme()!=state.appTheme()) Ui.applyTheme(state.appTheme());
         this.store = store;
         this.demonstration = demonstration;
         credentials = new CredentialStore(credentialHelper);
@@ -58,7 +58,23 @@ public final class Workspace extends JFrame {
         shell.setBackground(Ui.BACKGROUND);
         setContentPane(shell);
         getRootPane().setBorder(BorderFactory.createMatteBorder(1,1,1,1,Ui.LINE));
-        shell.add(new WindowChrome(this,menus()),BorderLayout.NORTH);
+        JMenuBar menus=menus();
+        JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,3,0)); tools.setOpaque(false);
+        JButton addPane=new JButton(command("Split left / right")); addPane.setText("+ Pane");
+        addPane.setToolTipText("Add a pane to the right (Ctrl+Alt+H)");
+        addPane.getAccessibleContext().setAccessibleName("Add pane");
+        JButton directions=Ui.iconButton("Choose split direction","down",() -> {});
+        directions.addActionListener(e -> {
+            JPopupMenu popup=new JPopupMenu();
+            popup.add(new JMenuItem(command("Split left / right")));
+            popup.add(new JMenuItem(command("Split top / bottom")));
+            popup.show(directions,0,directions.getHeight());
+        });
+        JButton find=new JButton(command("Search commands...")); find.setText("Commands");
+        find.setToolTipText("Search commands (Ctrl+Alt+K)");
+        find.getAccessibleContext().setAccessibleName("Search commands");
+        for (JButton b : List.of(addPane,directions,find)) { b.setBorder(BorderFactory.createEmptyBorder(4,7,4,7)); tools.add(b); }
+        shell.add(new WindowChrome(this,menus,tools),BorderLayout.NORTH);
         shell.add(content,BorderLayout.CENTER);
         buildTree();
         addWindowListener(new WindowAdapter() {
@@ -73,6 +89,21 @@ public final class Workspace extends JFrame {
     public List<Profile> profileList() { return List.copyOf(profiles.values()); }
     public boolean hasPane(UUID id) { return panes.containsKey(id); }
     public List<SessionPane> sessionPanes() { return layout.leaves().stream().map(l -> panes.get(l.pane())).toList(); }
+    public List<AppCommand> commands() { return List.copyOf(commands); }
+    private AppCommand command(String name) { return commands.stream().filter(c -> c.title.equals(name)).findFirst().orElseThrow(); }
+    public void refreshCommands() { commands.forEach(AppCommand::refresh); }
+    public void themeChanged() {
+        content.setBackground(Ui.BACKGROUND);
+        if (getContentPane()!=null) getContentPane().setBackground(Ui.BACKGROUND);
+        getRootPane().setBorder(BorderFactory.createLineBorder(Ui.LINE));
+    }
+    public void applyTheme(AppTheme theme) { Ui.applyTheme(theme); changed(); }
+    public void commandPalette() {
+        SessionPane target=active;
+        CommandPalette palette=new CommandPalette(this); palette.setVisible(true);
+        if (target!=null && panes.containsKey(target.id())) { activate(target); target.focusTerminal(); }
+        if (palette.chosen()!=null) palette.chosen().actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"palette"));
+    }
     public String paneName(UUID id) {
         int index = 1;
         for (Layout.Leaf leaf : layout.leaves()) {
@@ -84,6 +115,7 @@ public final class Workspace extends JFrame {
     public void activate(SessionPane pane) {
         active = pane;
         panes.values().forEach(SessionPane::updateHeader);
+        refreshCommands();
     }
     public void onClosed(Runnable action) { afterClose = action; }
     public void connectAll() { sessionPanes().forEach(SessionPane::connect); }
@@ -100,13 +132,19 @@ public final class Workspace extends JFrame {
         content.removeAll();
         tree = component(layout);
         content.add(tree,BorderLayout.CENTER);
-        if (active == null || !live.contains(active.id())) active = panes.get(layout.leaves().getFirst().pane());
+        if (active == null || !live.contains(active.id())) active = live.isEmpty() ? null : panes.get(layout.leaves().getFirst().pane());
         panes.values().forEach(SessionPane::updateHeader);
         content.revalidate();
         content.repaint();
+        refreshCommands();
         SwingUtilities.invokeLater(() -> { if (active != null) active.focusTerminal(); });
     }
     private Component component(Layout node) {
+        if (node instanceof Layout.Empty) {
+            JPanel empty=new JPanel(new GridBagLayout()); empty.setBackground(Ui.BACKGROUND);
+            empty.add(Ui.button("Add pane",KeyEvent.VK_A,() -> split(true)));
+            return empty;
+        }
         if (node instanceof Layout.Leaf leaf)
             return panes.computeIfAbsent(leaf.pane(),id -> new SessionPane(this,id,Objects.requireNonNull(profiles.get(leaf.profile()))));
         Layout.Split split = (Layout.Split) node;
@@ -119,22 +157,7 @@ public final class Workspace extends JFrame {
         divider.setResizeWeight(split.ratio());
         divider.setOneTouchExpandable(false);
         divider.setBackground(Ui.LINE);
-        divider.setUI(new BasicSplitPaneUI() {
-            @Override public BasicSplitPaneDivider createDefaultDivider() {
-                BasicSplitPaneDivider handle = new BasicSplitPaneDivider(this) {
-                    @Override public void paint(Graphics g) {
-                        g.setColor(Ui.BACKGROUND);
-                        g.fillRect(0,0,getWidth(),getHeight());
-                        g.setColor(Ui.LINE);
-                        if (getOrientation() == JSplitPane.HORIZONTAL_SPLIT)
-                            g.drawLine(getWidth() / 2,0,getWidth() / 2,getHeight());
-                        else g.drawLine(0,getHeight() / 2,getWidth(),getHeight() / 2);
-                    }
-                };
-                handle.setBorder(BorderFactory.createEmptyBorder());
-                return handle;
-            }
-        });
+        divider.setUI(new FlatControls.Split());
         divider.addComponentListener(new ComponentAdapter() {
             private boolean first = true;
             @Override public void componentResized(ComponentEvent e) {
@@ -148,6 +171,7 @@ public final class Workspace extends JFrame {
         return divider;
     }
     private Layout capture(Component component) {
+        if (component==tree && layout instanceof Layout.Empty) return layout;
         if (component instanceof SessionPane pane) return new Layout.Leaf(pane.id(),pane.profile().id());
         JSplitPane split = (JSplitPane) component;
         int total = (split.getOrientation() == JSplitPane.HORIZONTAL_SPLIT ? split.getWidth() : split.getHeight()) - split.getDividerSize();
@@ -157,7 +181,7 @@ public final class Workspace extends JFrame {
                 Math.max(.05,Math.min(.95,ratio)),capture(split.getLeftComponent()),capture(split.getRightComponent()));
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
-    private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight()); }
+    private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme()); }
     public void saveAsync() {
         StateStore.State snapshot = state();
         persistence.submit(() -> {
@@ -166,10 +190,12 @@ public final class Workspace extends JFrame {
         });
     }
     public void split(boolean horizontal) {
-        if (active == null) return;
-        layout = currentLayout().insert(active.id(), new Layout.Leaf(UUID.randomUUID(),active.profile().id()),
+        UUID id=UUID.randomUUID();
+        UUID profile=active==null ? profileList().getFirst().id() : active.profile().id();
+        layout = currentLayout().insert(active==null ? null : active.id(), new Layout.Leaf(id,profile),
                 horizontal ? Layout.Dock.RIGHT : Layout.Dock.BOTTOM);
         buildTree();
+        activate(panes.get(id)); active.focusTerminal();
         changed();
     }
     public void dock(UUID source, UUID target, Layout.Dock dock) {
@@ -182,15 +208,18 @@ public final class Workspace extends JFrame {
     }
     public void clearPreviews() { panes.values().forEach(SessionPane::clearPreview); }
     public void closePane() {
-        if (layout.leaves().size() == 1) { active.problem("The last pane stays open. Disconnect it or close the application."); return; }
-        if (active.busy() && JOptionPane.showConfirmDialog(this,"Disconnect and close this pane?","Close pane",
-                JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
-        layout = Objects.requireNonNull(currentLayout().remove(active.id()));
+        if (active!=null) closePane(active);
+    }
+    public void closePane(SessionPane pane) {
+        if (pane.busy() && !Ui.confirm(this,"Disconnect "+pane.profile().name()+" and close this pane?","Close pane")) return;
+        Layout remaining=currentLayout().remove(pane.id());
+        layout=remaining==null ? new Layout.Empty() : remaining;
         buildTree();
         changed();
     }
     public void cycle(int delta) {
         List<SessionPane> ordered = sessionPanes();
+        if (ordered.isEmpty()) return;
         int index = Math.floorMod(ordered.indexOf(active) + delta,ordered.size());
         activate(ordered.get(index));
         active.focusTerminal();
@@ -212,18 +241,16 @@ public final class Workspace extends JFrame {
         JLabel targetLabel = new JLabel("Target pane"); targetLabel.setLabelFor(target);
         JLabel directionLabel = new JLabel("Position (center swaps)"); directionLabel.setLabelFor(direction);
         form.add(targetLabel); form.add(target); form.add(directionLabel); form.add(direction);
-        if (JOptionPane.showConfirmDialog(this,form,"Dock " + paneName(source.id()),JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION)
+        if (Ui.form(this,"Dock "+paneName(source.id()),form,"Dock"))
             dock(source.id(),targets.get(target.getSelectedIndex()).id(),(Layout.Dock) direction.getSelectedItem());
     }
 
-    public void profiles() { new ProfilesDialog(this,active.profile()).setVisible(true); }
+    public void profiles() { new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true); }
     public boolean confirmProfileChange(Profile value) {
         Profile old = profiles.get(value.id());
         if (old == null || !connectionChanged(old,value)) return true;
         boolean live = panes.values().stream().anyMatch(p -> p.profile().id().equals(value.id()) && p.busy());
-        return !live || JOptionPane.showConfirmDialog(this,"Connection settings changed. Disconnect panes using this profile?",
-                "Apply profile",JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE) == JOptionPane.OK_OPTION;
+        return !live || Ui.confirm(this,"Connection settings changed. Disconnect panes using this profile?","Apply profile");
     }
     private static boolean connectionChanged(Profile a, Profile b) {
         return !a.host().equals(b.host()) || a.port() != b.port() || !a.device().equals(b.device())
@@ -240,9 +267,11 @@ public final class Workspace extends JFrame {
         changed();
     }
     public void useProfile(Profile value) {
+        if (active==null) {
+            layout=new Layout.Leaf(UUID.randomUUID(),value.id()); buildTree();
+        }
         if (!active.profile().id().equals(value.id())) {
-            if (active.busy() && JOptionPane.showConfirmDialog(this,"Disconnect this pane and switch to " + value.name() + "?",
-                    "Switch profile",JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+            if (active.busy() && !Ui.confirm(this,"Disconnect this pane and switch to "+value.name()+"?","Switch profile")) return;
             active.disconnect();
             active.updateProfile(value);
             layout = currentLayout();
@@ -254,8 +283,7 @@ public final class Workspace extends JFrame {
     private void quickSwitch() {
         JComboBox<Profile> choices = new JComboBox<>(profileList().toArray(Profile[]::new));
         choices.setSelectedItem(active.profile());
-        if (JOptionPane.showConfirmDialog(this,choices,"Switch workstation",JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) useProfile((Profile) choices.getSelectedItem());
+        if (Ui.form(this,"Switch workstation",choices,"Switch")) useProfile((Profile) choices.getSelectedItem());
     }
     private void saveProfileLayout() {
         Profile updated = active.profile().withLayout(currentLayout().encode());
@@ -270,9 +298,8 @@ public final class Workspace extends JFrame {
             for (Layout.Leaf leaf : restored.leaves()) {
                 if (!profiles.containsKey(leaf.profile())) throw new IllegalArgumentException("Saved profile no longer exists.");
             }
-            if (panes.values().stream().anyMatch(SessionPane::busy) && JOptionPane.showConfirmDialog(this,
-                    "Restore the saved layout? Sessions in removed panes will disconnect.","Restore layout",
-                    JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+            if (panes.values().stream().anyMatch(SessionPane::busy) && !Ui.confirm(this,
+                    "Restore the saved layout? Sessions in removed panes will disconnect.","Restore layout")) return;
             layout = restored;
             buildTree();
             changed();
@@ -291,9 +318,29 @@ public final class Workspace extends JFrame {
     private void hostKeys() {
         JComboBox<KeyMnemonic> keys = new JComboBox<>(Keymap.hostActions().toArray(KeyMnemonic[]::new));
         keys.setSelectedItem(KeyMnemonic.ENTER);
-        if (JOptionPane.showConfirmDialog(this,keys,"Send host key",JOptionPane.OK_CANCEL_OPTION,
-                JOptionPane.PLAIN_MESSAGE) == JOptionPane.OK_OPTION) active.send((KeyMnemonic) keys.getSelectedItem());
+        if (Ui.form(this,"Send host key",keys,"Send")) active.send((KeyMnemonic) keys.getSelectedItem());
         active.focusTerminal();
+    }
+    public void appearance() {
+        JPanel form=new JPanel(new GridLayout(0,2,12,12));
+        JComboBox<AppTheme> themes=new JComboBox<>(AppTheme.values()); themes.setSelectedItem(Ui.theme());
+        JLabel application=new JLabel("Application theme"); application.setLabelFor(themes);
+        form.add(application); form.add(themes);
+        themes.addActionListener(e -> applyTheme((AppTheme)themes.getSelectedItem()));
+        if (active!=null) {
+            SessionPane pane=active;
+            JComboBox<String> palettes=new JComboBox<>(Profile.THEMES.toArray(String[]::new));
+            JComboBox<String> effects=new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
+            palettes.setSelectedItem(pane.profile().theme()); effects.setSelectedItem(pane.profile().effect());
+            JLabel palette=new JLabel("Host palette"), effect=new JLabel("Text effect (opt-in)");
+            palette.setLabelFor(palettes); effect.setLabelFor(effects);
+            form.add(palette); form.add(palettes); form.add(effect); form.add(effects);
+            ActionListener display=e -> putProfile(pane.profile().withDisplay((String)palettes.getSelectedItem(),(String)effects.getSelectedItem()));
+            palettes.addActionListener(display); effects.addActionListener(display);
+        }
+        JPanel body=new JPanel(new BorderLayout(0,12));
+        body.add(form,BorderLayout.CENTER); body.add(new JLabel("Changes apply immediately and are saved."),BorderLayout.SOUTH);
+        Ui.present(this,"Appearance",body,"Done");
     }
 
     private JMenuBar menus() {
@@ -324,6 +371,14 @@ public final class Workspace extends JFrame {
         action(layoutMenu,"Save layout to profile","ctrl alt S",this::saveProfileLayout);
         action(layoutMenu,"Restore profile layout","ctrl alt L",this::restoreProfileLayout);
         JMenu view = menu(bar,"View",KeyEvent.VK_V);
+        action(view,"Search commands...","ctrl alt K",this::commandPalette);
+        action(view,"Appearance...","ctrl alt T",this::appearance);
+        for (AppTheme theme : AppTheme.values()) {
+            AppCommand change=new AppCommand("Theme: "+theme,"Application theme; does not reconnect sessions",null,
+                    () -> applyTheme(theme),() -> !closing,"appearance color scheme "+theme.name());
+            commands.add(change);
+        }
+        view.addSeparator();
         action(view,"Fit host screen","ctrl alt 0",this::fit);
         action(view,"Zoom in","ctrl alt EQUALS",() -> zoom(.1));
         action(view,"Zoom out","ctrl alt MINUS",() -> zoom(-.1));
@@ -336,19 +391,26 @@ public final class Workspace extends JFrame {
                 KeyMnemonic.RESET,KeyMnemonic.ATTN,KeyMnemonic.SYSREQ,KeyMnemonic.CLEAR,KeyMnemonic.HELP,KeyMnemonic.PAGE_UP,KeyMnemonic.PAGE_DOWN))
             action(host,key.name().replace('_',' '),null,() -> active.send(key));
         JMenu help = menu(bar,"Help",KeyEvent.VK_E);
-        action(help,"Keyboard reference",null,() -> JOptionPane.showMessageDialog(this,
+        action(help,"Keyboard reference",null,() -> Ui.message(this,
                 Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H/V: Split     Ctrl+Alt+D: Dock\n"
                 + "Ctrl+Alt+Left/Right: Focus pane     Ctrl+Alt+1..9: Focus pane number\n"
                 + "Ctrl+Alt+[/]: Resize divider     Ctrl+Alt+0: Fit\nCtrl+Alt+Shift+C/V: Copy/paste\n"
                 + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
                 + "Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
-                + "Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels",
-                "Keyboard reference",JOptionPane.PLAIN_MESSAGE));
-        action(help,"Compatibility and connection safety",null,() -> JOptionPane.showMessageDialog(this,
+                + "Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels\n"
+                + "Ctrl+Alt+K: Search commands     Ctrl+Alt+T: Appearance",
+                "Keyboard reference"));
+        action(help,"Compatibility and connection safety",null,() -> Ui.message(this,
                 "TN5250J-based 5250 engine; only IBM-3477-FC.\nPlain TCP is not encrypted. Use only on a trusted network.\n"
                 + "No real IBM i / ACS acceptance has been performed.\nEnhanced display structured fields and WEA stop the session explicitly.\n"
                 + "See COMPATIBILITY.md for the demonstrated scope and acceptance checklist.\n"
-                + "GPL-2.0-or-later. No warranty.", "Compatibility",JOptionPane.INFORMATION_MESSAGE));
+                + "GPL-2.0-or-later. No warranty.", "Compatibility"));
+        for (int i=1;i<=24;i++) {
+            KeyMnemonic key=KeyMnemonic.valueOf("PF"+i);
+            commands.add(new AppCommand("Host F"+i,"Send function key to the focused session",i<=12 ? "F"+i : "shift F"+(i-12),
+                    () -> active.send(key),() -> active!=null && active.connected() && !active.screen().getOIA().isKeyBoardLocked(),
+                    "PF"+i+" function key"));
+        }
         bind("ctrl alt M",() -> { bar.getMenu(0).doClick(); });
         for (int i = 1; i <= 9; i++) {
             final int index = i - 1;
@@ -362,10 +424,33 @@ public final class Workspace extends JFrame {
         JMenu menu = new JMenu(name); menu.setMnemonic(mnemonic); bar.add(menu); return menu;
     }
     private void action(JMenu menu,String text,String stroke,Runnable command) {
-        JMenuItem item = new JMenuItem(text);
-        item.addActionListener(e -> command.run());
-        if (stroke != null) { item.setAccelerator(KeyStroke.getKeyStroke(stroke)); bind(stroke,command); }
-        menu.add(item);
+        String aliases=switch (text) {
+            case "Split left / right" -> "add pane add window new session horizontal side by side";
+            case "Split top / bottom" -> "add pane add window new session vertical stacked";
+            case "Close pane" -> "remove pane disconnect window";
+            case "Profiles..." -> "settings workstation host device credentials";
+            case "Search commands..." -> "command palette find action search";
+            case "Appearance..." -> "settings theme palette color effects glow prism";
+            case "RESET" -> "unlock recover input error hung stuck";
+            case "Reconnect" -> "retry connect restart session";
+            default -> "";
+        };
+        AppCommand action=new AppCommand(text,menu.getText()+" / "+text,stroke,command,() -> {
+            if (closing) return false;
+            if (List.of("Profiles...","Quit","Search commands...","Appearance...","Keyboard reference",
+                    "Compatibility and connection safety","Split left / right","Split top / bottom").contains(text)) return true;
+            if (active==null) return false;
+            if (List.of("Dock / rearrange...","Next pane","Previous pane").contains(text)) return panes.size()>1;
+            if (text.equals("Restore profile layout")) return !active.profile().savedLayout().isEmpty();
+            if (menu.getText().equals("Host") || text.startsWith("Insert ") || text.startsWith("Paste")) {
+                return active.connected() && (!active.screen().getOIA().isKeyBoardLocked()
+                        || List.of("RESET","ATTN","SYSREQ").contains(text));
+            }
+            return true;
+        },aliases);
+        commands.add(action);
+        if (stroke!=null) bind(stroke,() -> action.actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,text)));
+        menu.add(new JMenuItem(action));
     }
     private void bind(String stroke,Runnable command) {
         KeyStroke key = KeyStroke.getKeyStroke(stroke);
@@ -376,19 +461,16 @@ public final class Workspace extends JFrame {
         });
     }
     public JPopupMenu paneMenu(SessionPane pane) {
+        activate(pane);
         JPopupMenu menu = new JPopupMenu();
-        String[] names = {"Connect / disconnect","Reconnect","Split left / right","Split top / bottom","Dock...","Profiles..."};
-        Runnable[] commands = {pane::connect,pane::reconnect,() -> split(true),() -> split(false),this::dockingDialog,this::profiles};
-        for (int i = 0; i < names.length; i++) {
-            JMenuItem item = new JMenuItem(names[i]); Runnable command = commands[i];
-            item.addActionListener(e -> { activate(pane); command.run(); }); menu.add(item);
-        }
+        for (String name : List.of("Connect / disconnect","Reconnect","Split left / right","Split top / bottom",
+                "Dock / rearrange...","Close pane","Profiles...","Appearance...")) menu.add(new JMenuItem(command(name)));
         return menu;
     }
     public void close(boolean force) {
         if (closing) return;
-        if (!force && panes.values().stream().anyMatch(SessionPane::busy) && JOptionPane.showConfirmDialog(this,
-                "Disconnect sessions and close Pane5250?","Close workspace",JOptionPane.OK_CANCEL_OPTION) != JOptionPane.OK_OPTION) return;
+        if (!force && panes.values().stream().anyMatch(SessionPane::busy) && !Ui.confirm(this,
+                "Disconnect sessions and close Pane5250?","Close workspace")) return;
         saveTimer.stop();
         StateStore.State snapshot = state();
         closing = true;

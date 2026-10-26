@@ -6,6 +6,7 @@ import java.awt.event.*;
 import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.geom.*;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import javax.accessibility.*;
 import javax.swing.*;
@@ -17,9 +18,10 @@ public final class TerminalView extends JComponent implements Scrollable {
     private final SessionPane pane;
     private final Font face;
     private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null,true,true);
-    private static final Color SELECTION = new Color(0x4b6574);
-    private static final java.util.Map<String,Color[]> PALETTES = java.util.Map.of(
-            "Phosphor",palette("Phosphor"),"Cool",palette("Cool"),"Warm",palette("Warm"));
+    private EffectLayer litEffect,dimEffect;
+    private int effectResolution;
+    private Color effectBackground;
+    private int effectAnchor,effectEnd;
     private final double baseWidth, baseHeight, ascent;
     private RenderFrame rendered;
     private Screen5250 renderedScreen;
@@ -121,7 +123,8 @@ public final class TerminalView extends JComponent implements Scrollable {
     public void dispose() { blink.stop(); }
     public void setFit(boolean value) { fit = value; revalidate(); repaint(); }
     public boolean isFit() { return fit; }
-    public void screenChanged() { rendered = null; repaint(); }
+    public void screenChanged() { rendered = null; litEffect=dimEffect=null; repaint(); }
+    public void themeChanged() { setBackground(pane.getBackground()); screenChanged(); }
     public void resetSelection() { anchor = end = -1; repaint(); }
 
     public String visibleText() {
@@ -224,59 +227,116 @@ public final class TerminalView extends JComponent implements Scrollable {
                 cells.translate(originX,originY);
                 cells.scale(scale,scale);
                 cells.setStroke(new BasicStroke((float)(1 / scale)));
-                Color[] palette = PALETTES.get(pane.profile().theme());
+                Color[] palette = HostPalette.colors(pane.profile().theme());
                 Rectangle clip = cells.getClipBounds();
-                for (RenderRun run : rendered.runs) {
-                    if (run.background != 0 && intersects(run,clip)) {
-                        cells.setColor(palette[run.background]);
-                        cells.fill(new Rectangle2D.Double(run.start * baseWidth,run.row * baseHeight,
-                                (run.end - run.start) * baseWidth,baseHeight));
-                    }
-                }
-                if (anchor >= 0 && end >= 0) {
-                    int left = Math.min(anchor % cols,end % cols), top = Math.min(anchor / cols,end / cols);
-                    cells.setColor(SELECTION);
-                    cells.fill(new Rectangle2D.Double(left * baseWidth,top * baseHeight,
-                            (Math.abs(anchor % cols - end % cols) + 1) * baseWidth,
-                            (Math.abs(anchor / cols - end / cols) + 1) * baseHeight));
-                }
+                paintBackgrounds(cells,palette,cols,clip);
                 String effect = pane.profile().effect();
-                for (RenderRun run : rendered.runs) {
-                    if (!intersects(run,clip) || run.hidden
-                            || ((run.flags & EXTENDED_5250_BLINK) != 0 && !phase)) continue;
-                    Color foreground = palette[run.foreground];
-                    if (effect.equals("Prism") && run.background == 0) {
-                        float mix = (float)run.row / Math.max(1,rows - 1) * .12f;
-                        foreground = new Color(Math.min(255,foreground.getRed() + (int)(mix * 80)),
-                                foreground.getGreen(),Math.min(255,foreground.getBlue() + (int)(mix * 80)));
+                if (effect.equals("None")) paintInk(cells,palette,effect,cols,phase,clip);
+                else {
+                    int resolution=scale*Math.abs(g.getTransform().getScaleX())<=1.1 ? 1 : 2;
+                    if (effectResolution!=resolution || !getBackground().equals(effectBackground)
+                            || anchor!=effectAnchor || end!=effectEnd) {
+                        litEffect=dimEffect=null;
+                        effectResolution=resolution;
+                        effectBackground=getBackground(); effectAnchor=anchor; effectEnd=end;
                     }
-                    if (run.glyphs != null) {
-                        float x = (float)(run.inkStart * baseWidth), y = (float)(run.row * baseHeight + ascent);
-                        if (effect.equals("Soft glow")) {
-                            cells.setColor(new Color(foreground.getRed(),foreground.getGreen(),foreground.getBlue(),45));
-                            cells.drawGlyphVector(run.glyphs,x + .7f,y + .7f);
-                        }
-                        cells.setColor(foreground);
-                        cells.drawGlyphVector(run.glyphs,x,y);
+                    boolean lit=phase || !rendered.blinking;
+                    EffectLayer layer=lit ? litEffect : dimEffect;
+                    if (layer==null) {
+                        layer=effectLayer(palette,effect,rows,cols,lit,resolution);
+                        if (lit) litEffect=layer; else dimEffect=layer;
                     }
-                    cells.setColor(foreground);
-                    if ((run.flags & EXTENDED_5250_UNDERLINE) != 0)
-                        cells.draw(new Line2D.Double(run.start * baseWidth,run.row * baseHeight + ascent + 1,
-                                run.end * baseWidth,run.row * baseHeight + ascent + 1));
-                    if (run.separators != null) cells.draw(run.separators);
+                    cells.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    for (EffectTile tile : layer.tiles)
+                        if (clip==null || clip.intersects(tile.bounds)) cells.drawImage(tile.image,tile.placement,null);
                 }
             } finally { cells.dispose(); }
             if (hasFocus() && pane.connected() && screen.isCursorActive() && phase) {
                 int pos = Math.min(screen.getCurrentPos() - 1, rows * cols - 1);
-                g.setColor(new Color(0xb0f0ac));
+                g.setColor(Ui.FOCUS);
                 g.draw(new Rectangle2D.Double(originX + pos % cols * cellWidth,
                         originY + pos / cols * cellHeight, Math.max(1, cellWidth - 1), Math.max(1, cellHeight - 1)));
             }
-            if (hasFocus()) {
-                g.setColor(Ui.FOCUS);
-                g.drawRect(0,0,getWidth() - 1,getHeight() - 1);
-            }
         } finally { g.dispose(); }
+    }
+    private void paintBackgrounds(Graphics2D cells,Color[] palette,int cols,Rectangle clip) {
+        for (RenderRun run : rendered.runs) {
+            if (run.background!=0 && intersects(run,clip)) {
+                cells.setColor(palette[run.background]);
+                cells.fill(new Rectangle2D.Double(run.start*baseWidth,run.row*baseHeight,
+                        (run.end-run.start)*baseWidth,baseHeight));
+            }
+        }
+        if (anchor>=0 && end>=0) {
+            int left=Math.min(anchor%cols,end%cols),top=Math.min(anchor/cols,end/cols);
+            cells.setColor(Ui.SELECTION);
+            cells.fill(new Rectangle2D.Double(left*baseWidth,top*baseHeight,
+                    (Math.abs(anchor%cols-end%cols)+1)*baseWidth,(Math.abs(anchor/cols-end/cols)+1)*baseHeight));
+        }
+    }
+    private EffectLayer effectLayer(Color[] palette,String effect,int rows,int cols,boolean visiblePhase,int resolution) {
+        java.util.List<EffectTile> tiles=new java.util.ArrayList<>();
+        for (int row=0;row<rows;row++) {
+            double left=Double.POSITIVE_INFINITY,right=0;
+            for (RenderRun run : rendered.runs) {
+                if (run.row!=row || run.hidden || ((run.flags&EXTENDED_5250_BLINK)!=0 && !visiblePhase)) continue;
+                if (run.glyphs!=null) {
+                    Rectangle2D ink=run.glyphs.getVisualBounds();
+                    left=Math.min(left,run.inkStart*baseWidth+ink.getMinX());
+                    right=Math.max(right,run.inkStart*baseWidth+ink.getMaxX());
+                }
+                if ((run.flags&EXTENDED_5250_UNDERLINE)!=0 || run.separators!=null) {
+                    left=Math.min(left,run.start*baseWidth); right=Math.max(right,run.end*baseWidth);
+                }
+            }
+            if (!Double.isFinite(left)) continue;
+            Rectangle bounds=new Rectangle((int)Math.floor(left)-4,(int)Math.floor(row*baseHeight)-4,
+                    (int)Math.ceil(right)-(int)Math.floor(left)+8,(int)Math.ceil((row+1)*baseHeight)-(int)Math.floor(row*baseHeight)+8);
+            BufferedImage image=new BufferedImage(bounds.width*resolution,bounds.height*resolution,BufferedImage.TYPE_INT_RGB);
+            Graphics2D ink=image.createGraphics();
+            try {
+                ink.setColor(getBackground()); ink.fillRect(0,0,image.getWidth(),image.getHeight());
+                ink.scale(resolution,resolution); ink.translate(-bounds.x,-bounds.y);
+                ink.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+                ink.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+                paintBackgrounds(ink,palette,cols,bounds);
+                // Neighboring ink must survive the overlap between opaque row tiles.
+                paintInk(ink,palette,effect,cols,visiblePhase,bounds);
+            } finally { ink.dispose(); }
+            AffineTransform placement=new AffineTransform();
+            placement.translate(bounds.x,bounds.y); placement.scale(1.0/resolution,1.0/resolution);
+            tiles.add(new EffectTile(image,placement,bounds));
+        }
+        return new EffectLayer(tiles);
+    }
+    private record EffectLayer(java.util.List<EffectTile> tiles) {}
+    private record EffectTile(BufferedImage image,AffineTransform placement,Rectangle bounds) {}
+    private void paintInk(Graphics2D cells,Color[] palette,String effect,int cols,boolean visiblePhase,Rectangle clip) {
+        for (RenderRun run : rendered.runs) {
+            if (!intersects(run,clip) || run.hidden
+                    || ((run.flags & EXTENDED_5250_BLINK)!=0 && !visiblePhase)) continue;
+            Color foreground=palette[run.foreground];
+            if (run.glyphs!=null) {
+                float x=(float)(run.inkStart*baseWidth), y=(float)(run.row*baseHeight+ascent);
+                if ((effect.equals("Soft glow") || effect.equals("Neon")) && run.background==0) {
+                    float radius=effect.equals("Neon") ? 1.8f : 1.0f;
+                    cells.setColor(new Color(foreground.getRed(),foreground.getGreen(),foreground.getBlue(),effect.equals("Neon") ? 110 : 80));
+                    cells.drawGlyphVector(run.glyphs,x-radius,y); cells.drawGlyphVector(run.glyphs,x+radius,y);
+                    cells.drawGlyphVector(run.glyphs,x,y-radius); cells.drawGlyphVector(run.glyphs,x,y+radius);
+                }
+                cells.setColor(foreground);
+                if (effect.equals("Prism") && run.background==0) {
+                    float[] hsb=Color.RGBtoHSB(foreground.getRed(),foreground.getGreen(),foreground.getBlue(),null);
+                    Color shifted=Color.getHSBColor((hsb[0]+.26f)%1,Math.max(.35f,hsb[1]),hsb[2]);
+                    cells.setPaint(new GradientPaint(0,0,foreground,(float)(cols*baseWidth),0,shifted));
+                }
+                cells.drawGlyphVector(run.glyphs,x,y);
+            }
+            cells.setColor(foreground);
+            if ((run.flags & EXTENDED_5250_UNDERLINE)!=0)
+                cells.draw(new Line2D.Double(run.start*baseWidth,run.row*baseHeight+ascent+1,run.end*baseWidth,run.row*baseHeight+ascent+1));
+            if (run.separators!=null) cells.draw(run.separators);
+        }
     }
 
     private boolean intersects(RenderRun run,Rectangle clip) {
@@ -330,15 +390,6 @@ public final class TerminalView extends JComponent implements Scrollable {
     private record RenderFrame(java.util.List<RenderRun> runs,boolean blinking) {}
     private record RenderRun(int row,int start,int end,int foreground,int background,int flags,
                              boolean hidden,GlyphVector glyphs,int inkStart,Path2D separators) {}
-    private static Color[] palette(String theme) {
-        int[] values = {0x101213,0x8daefa,0x9bdb98,0x84d9df,0xf69b9b,0xd8a0db,0xe3d78c,0xe4e5df,
-                0xb5b9bc,0xacc7ff,0xb1edab,0xa0f0ee,0xffb4b4,0xf4b8f2,0xffeca3,0xffffff};
-        if (theme.equals("Cool")) { values[2] = 0x99d4ba; values[7] = 0xddeaf2; }
-        if (theme.equals("Warm")) { values[2] = 0xbcd993; values[7] = 0xf0e4cc; }
-        Color[] result = new Color[values.length];
-        for (int i = 0; i < values.length; i++) result[i] = new Color(values[i]);
-        return result;
-    }
     @Override public Dimension getPreferredSize() {
         Screen5250 screen = pane.screen();
         int cols = screen == null ? 80 : screen.getColumns(), rows = screen == null ? 24 : screen.getRows();

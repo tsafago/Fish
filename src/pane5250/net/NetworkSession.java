@@ -66,7 +66,7 @@ public final class NetworkSession implements AutoCloseable {
                         if (first) {
                             socket.setSoTimeout(0);
                             connected = true;
-                            status.accept("Connected - IBM-3477-FC");
+                            status.accept("Connected - IBM-3477-FC"+(codec.allocatedDevice().isEmpty() ? "" : " - device "+codec.allocatedDevice()));
                             first = false;
                         }
                     }

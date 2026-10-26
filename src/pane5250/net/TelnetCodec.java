@@ -15,7 +15,8 @@ public final class TelnetCodec implements AutoCloseable {
     private final Consumer<String> notice;
     private final boolean[] local = new boolean[256], remote = new boolean[256];
     private final boolean[] requestedRemote = new boolean[256];
-    private boolean environmentSent;
+    private boolean deviceSent,deviceRetry;
+    private String allocatedDevice="";
 
     public TelnetCodec(InputStream input, OutputStream output, Map<String, String> environment,
                        Consumer<String> notice) {
@@ -31,7 +32,10 @@ public final class TelnetCodec implements AutoCloseable {
             int value = input.read();
             if (value < 0) {
                 if (record.size() > 0) throw new EOFException("Host closed during a GDS record.");
-                throw new EOFException("Host closed the connection.");
+                throw new EOFException("Host closed the connection."
+                        +(environment.containsKey("DEVNAME") && allocatedDevice.isEmpty()
+                        ? " Requested device "+environment.get("DEVNAME")+(deviceRetry ? " was requested again (possible collision)." : ".")
+                        +" No startup rejection code was supplied." : ""));
             }
             if (value != IAC) {
                 record.write(value);
@@ -43,6 +47,15 @@ public final class TelnetCodec implements AutoCloseable {
                     if (record.size() == 0) continue;
                     byte[] bytes = record.toByteArray();
                     validateRecord(bytes);
+                    if ((bytes[4]&0x80)!=0) {
+                        StartupResponse startup=StartupResponse.parse(bytes);
+                        notice.accept(startup.diagnostic(environment.getOrDefault("DEVNAME","")));
+                        allocatedDevice=startup.device();
+                        record.reset();
+                        continue;
+                    }
+                    if (environment.containsKey("DEVNAME") && !deviceSent)
+                        throw new IOException("Host began presentation without negotiating requested device "+environment.get("DEVNAME")+". No automatic-name fallback was used.");
                     return bytes;
                 } else if (command >= WILL && command <= DONT) {
                     option(command, required());
@@ -86,7 +99,6 @@ public final class TelnetCodec implements AutoCloseable {
             } else if (!local[option]) {
                 local[option] = true;
                 reply(WILL, option);
-                if (option == 39 && !environmentSent) sendEnvironment(null);
                 if ((option == 0 || option == 25) && !remote[option] && !requestedRemote[option]) {
                     requestedRemote[option] = true;
                     reply(DO, option);
@@ -106,6 +118,8 @@ public final class TelnetCodec implements AutoCloseable {
             if (option == 0 || option == 25) throw new IOException("Host refused required BINARY/EOR option.");
             if (option == 39 && environment.containsKey("IBMSUBSPW"))
                 notice.accept("Host declined NEW-ENVIRON; automatic sign-on was not negotiated. Sign on manually.");
+            if (option==39 && environment.containsKey("DEVNAME"))
+                throw new IOException("Host declined NEW-ENVIRON; requested device "+environment.get("DEVNAME")+" cannot be negotiated. No automatic-name fallback was used.");
         } else {
             if (remote[option]) reply(DONT, option);
             remote[option] = false;
@@ -147,21 +161,20 @@ public final class TelnetCodec implements AutoCloseable {
         }
     }
 
-    private static Set<String> requestedNames(byte[] data) throws IOException {
-        Set<String> names = new HashSet<>();
+    private record Requested(int type,String name) {}
+    private static java.util.List<Requested> requestedNames(byte[] data) throws IOException {
+        if (data.length==1) return null;
+        java.util.List<Requested> names = new ArrayList<>();
         ByteArrayOutputStream name = new ByteArrayOutputStream();
-        boolean inName = false, wildcard = data.length == 1;
+        int type=-1;
         for (int i = 1; i < data.length; i++) {
             int value = data[i] & 255;
             if (value == 0 || value == 3) {
-                if (inName) {
-                    if (name.size() == 0) wildcard = true;
-                    else names.add(name.toString(StandardCharsets.ISO_8859_1));
-                }
+                if (type!=-1) names.add(new Requested(type,name.toString(StandardCharsets.ISO_8859_1)));
                 name.reset();
-                inName = true;
+                type=value;
             } else {
-                if (!inName || value == 1) throw new IOException("Malformed NEW-ENVIRON SEND list.");
+                if (type==-1 || value == 1) throw new IOException("Malformed NEW-ENVIRON SEND list.");
                 if (value == 2) {
                     if (++i >= data.length) throw new IOException("Truncated NEW-ENVIRON escape.");
                     value = data[i] & 255;
@@ -169,34 +182,44 @@ public final class TelnetCodec implements AutoCloseable {
                 name.write(value);
             }
         }
-        if (inName) {
-            if (name.size() == 0) wildcard = true;
-            else names.add(name.toString(StandardCharsets.ISO_8859_1));
-        }
-        // RFC 4777 appends binary seed bytes to the requested name.
-        if (names.stream().anyMatch(s -> s.startsWith("IBMRSEED"))) names.add("IBMRSEED");
-        return wildcard ? null : names;
+        if (type!=-1) names.add(new Requested(type,name.toString(StandardCharsets.ISO_8859_1)));
+        return names;
     }
 
-    private void sendEnvironment(Set<String> requested) throws IOException {
+    private void sendEnvironment(java.util.List<Requested> requested) throws IOException {
         ByteArrayOutputStream data = new ByteArrayOutputStream();
         data.write(0);
-        for (var entry : environment.entrySet()) {
-            if (requested != null && !requested.contains(entry.getKey())) continue;
-            data.write(entry.getKey().equals("USER") ? 0 : 3);
-            escapedEnvironment(data, entry.getKey());
-            data.write(1);
-            escapedEnvironment(data, entry.getValue());
+        if (requested==null) requested=java.util.List.of(new Requested(0,""),new Requested(3,""));
+        if (deviceSent && requested.size()==1 && requested.getFirst().name.equals("DEVNAME")) {
+            deviceRetry=true;
+            notice.accept("Host requested DEVNAME again; possible device collision. Requested name "+environment.get("DEVNAME")+" is retained; no automatic retry name was invented.");
+        }
+        for (Requested request : requested) {
+            if (request.name.isEmpty()) {
+                for (var entry : environment.entrySet()) {
+                    if ((entry.getKey().equals("USER") ? 0 : 3)==request.type)
+                        environmentValue(data,request.type,entry.getKey(),entry.getValue());
+                }
+            } else {
+                String name=request.name.startsWith("IBMRSEED") ? "IBMRSEED" : request.name;
+                boolean sameType=(name.equals("USER") ? 0 : 3)==request.type;
+                environmentValue(data,request.type,name,sameType ? environment.get(name) : null);
+            }
         }
         if (data.size() > 1024) throw new IOException("RFC 4777 environment exceeds 1024 bytes.");
         sendSub(39, data.toByteArray());
-        environmentSent = true;
     }
+    private void environmentValue(ByteArrayOutputStream data,int type,String name,String value) throws IOException {
+        data.write(type); escapedEnvironment(data,name);
+        if (value!=null) { data.write(1); escapedEnvironment(data,value); }
+        if (name.equals("DEVNAME") && value!=null) deviceSent=true;
+    }
+    public String allocatedDevice() { return allocatedDevice; }
 
     private static void escapedEnvironment(ByteArrayOutputStream out, String value) throws IOException {
         for (int i = 0; i < value.length(); i++) {
             int c = value.charAt(i);
-            if (c > 127) throw new IOException("RFC 4777 plain sign-on requires US-ASCII values.");
+            if (c > 255) throw new IOException("NEW-ENVIRON requires byte-valued strings; profile sign-on values must be US-ASCII.");
             if (c <= 3) out.write(2);
             out.write(c);
         }

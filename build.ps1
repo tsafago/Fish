@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Build', 'Test', 'Package', 'Run', 'Demo')]
+    [ValidateSet('Build', 'Check', 'Test', 'Package', 'Run', 'Demo')]
     [string]$Task = 'Build',
     [string]$Jdk = $env:JAVA_HOME
 )
@@ -37,21 +37,29 @@ if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'JAR creation failed.' }
 Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
-if ($Task -eq 'Test') {
+if ($Task -eq 'Test' -or $Task -eq 'Check') {
     $testSources = Get-ChildItem tests -Recurse -Filter *.java | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -cp build\classes -d build\test-classes '@build\tests.txt'
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
-    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.Tests
+    $testArgs=@()
+    if ($Task -eq 'Check') { $testArgs+='--core-only' }
+    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.Tests @testArgs
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
-    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.DesktopRendering
-    if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
+    if ($Task -eq 'Test') {
+        & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.DesktopRendering
+        if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
+        & "$Jdk\bin\java.exe" -ea '-Dpane5250.effect=Neon' -cp 'build\classes;build\test-classes' pane5250.DesktopRendering
+        if ($LASTEXITCODE -ne 0) { throw 'Opt-in effect resize/window tests failed.' }
+        & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.UiRevisions
+        if ($LASTEXITCODE -ne 0) { throw 'Revised interaction/theme/dialog tests failed.' }
+    }
 }
 if ($Task -eq 'Package') {
     if (Test-Path dist\Pane5250) { throw 'dist\Pane5250 exists. Move it aside before packaging again.' }
     New-Item -ItemType Directory -Force build\package-input | Out-Null
     Copy-Item dist\Pane5250.jar,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
-    & "$Jdk\bin\jpackage.exe" --type app-image --name Pane5250 --app-version 0.1.1 `
+    & "$Jdk\bin\jpackage.exe" --type app-image --name Pane5250 --app-version 0.2.0 `
         --input build\package-input --main-jar Pane5250.jar --main-class pane5250.Main `
         --dest dist --vendor Pane5250 --java-options '-Xmx192m' `
         --add-modules java.base,java.desktop,java.xml,java.logging,jdk.charsets

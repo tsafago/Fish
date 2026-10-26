@@ -6,9 +6,14 @@ import java.nio.file.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public record State(List<Profile> profiles, Layout layout, int width, int height) {
+    public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme) {
+        public State(List<Profile> profiles, Layout layout, int width, int height) {
+            this(profiles,layout,width,height,AppTheme.Charcoal);
+        }
         public State {
+            Objects.requireNonNull(appTheme);
             profiles = List.copyOf(profiles);
+            if (profiles.isEmpty()) throw new IllegalArgumentException("A workspace needs at least one saved profile.");
             Set<UUID> ids = new HashSet<>();
             for (Profile p : profiles) {
                 if (!ids.add(p.id())) throw new IllegalArgumentException("Duplicate profile ID.");
@@ -47,7 +52,8 @@ public final class StateStore implements AutoCloseable {
         Properties properties = new Properties();
         try (InputStream in = Files.newInputStream(file())) { properties.loadFromXML(in); }
         try {
-            if (!"1".equals(properties.getProperty("version"))) throw new IllegalArgumentException("Unknown workspace version.");
+            String version = properties.getProperty("version");
+            if (!"1".equals(version) && !"2".equals(version)) throw new IllegalArgumentException("Unknown workspace version.");
             List<Profile> profiles = new ArrayList<>();
             for (String idText : required(properties, "profiles").split(",")) {
                 UUID id = UUID.fromString(idText);
@@ -66,7 +72,8 @@ public final class StateStore implements AutoCloseable {
             }
             return new State(profiles, Layout.decode(required(properties, "layout")),
                     Math.max(640, Math.min(10000, Integer.parseInt(required(properties, "width")))),
-                    Math.max(400, Math.min(10000, Integer.parseInt(required(properties, "height")))));
+                    Math.max(400, Math.min(10000, Integer.parseInt(required(properties, "height")))),
+                    "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")));
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid workspace; original file preserved: " + e.getMessage(), e);
         }
@@ -85,7 +92,8 @@ public final class StateStore implements AutoCloseable {
 
     public void save(State state) throws IOException {
         Properties properties = new Properties();
-        properties.setProperty("version", "1");
+        properties.setProperty("version", "2");
+        properties.setProperty("appTheme",state.appTheme.name());
         properties.setProperty("profiles", String.join(",", state.profiles.stream().map(p -> p.id().toString()).toList()));
         properties.setProperty("layout", state.layout.encode());
         properties.setProperty("width", Integer.toString(state.width));

@@ -3,7 +3,7 @@ package org.tn5250j;
 import java.awt.Toolkit;
 import java.util.Properties;
 import java.util.function.Consumer;
-import javax.swing.JOptionPane;
+import pane5250.ui.Ui;
 import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.framework.tn5250.tnvt;
 
@@ -13,7 +13,10 @@ import org.tn5250j.framework.tn5250.tnvt;
  */
 public final class Session5250 {
     private final String name;
-    private final Screen5250 screen = new Screen5250();
+    private final ErrorAwareScreen screen = new ErrorAwareScreen();
+    private static final class ErrorAwareScreen extends Screen5250 {
+        boolean hasInputError() { return isStatusErrorCode(); }
+    }
     private final tnvt engine;
     private final Consumer<String> notice;
     public Session5250(String name, String codePage, java.io.OutputStream output, Consumer<String> notice) {
@@ -27,6 +30,7 @@ public final class Session5250 {
     public String getSessionName() { return name; }
     public Properties getConnectionProperties() { return new Properties(); }
     public Screen5250 getScreen() { return screen; }
+    public boolean recoverableInputError() { return screen.hasInputError(); }
     public tnvt getVT() { return engine; }
     public void accept(byte[] record) { engine.acceptRecord(record); }
     public void fireSessionChanged(int state) {}
@@ -35,7 +39,6 @@ public final class Session5250 {
     }
     public void signalBell() { Toolkit.getDefaultToolkit().beep(); }
     public String showSystemRequest() {
-        return JOptionPane.showInputDialog(null, "System Request (empty sends the host request):",
-                name + " - System Request", JOptionPane.PLAIN_MESSAGE);
+        return Ui.input(null,name+" - System Request","System Request (empty sends the host request):");
     }
 }

@@ -64,7 +64,7 @@ if ($Task -eq 'Package') {
     Copy-Item dist\Fish.jar,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
     & "$Jdk\bin\java.exe" -cp build\classes pane5250.ui.FishIcon build\Fish.ico
     if ($LASTEXITCODE -ne 0) { throw 'Fish icon generation failed.' }
-    & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version 0.3.0 --icon build\Fish.ico `
+    & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version 0.3.1 --icon build\Fish.ico `
         --input build\package-input --main-jar Fish.jar --main-class pane5250.Main `
         --dest dist --vendor Fish --java-options '-Xmx192m' `
         --add-modules java.base,java.desktop,java.xml,java.logging,jdk.charsets

@@ -215,8 +215,18 @@ public final class Workspace extends JFrame {
         if (active!=null) closePane(active);
     }
     public void closePane(SessionPane pane) {
-        pane.disconnect();
-        activate(pane); pane.focusTerminal();
+        if (panes.size()==1) {
+            pane.disconnect();
+            activate(pane);
+        } else {
+            List<Layout.Leaf> slots=new ArrayList<>(currentLayout().leaves());
+            int index=sessionPanes().indexOf(pane);
+            slots.removeIf(leaf -> leaf.pane().equals(pane.id()));
+            if (active==pane) active=panes.get(slots.get(Math.min(index,slots.size()-1)).pane());
+            layout=Layout.bounded(slots);
+            buildTree();
+        }
+        active.focusTerminal();
         changed();
     }
     public void cycle(int delta) {
@@ -354,7 +364,7 @@ public final class Workspace extends JFrame {
         action(layoutMenu,"Add pane","ctrl alt H",() -> split(true));
         bind("ctrl alt V",() -> command("Add pane").actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"add")));
         action(layoutMenu,"Swap panes...","ctrl alt D",this::dockingDialog);
-        action(layoutMenu,"Disconnect pane","ctrl alt W",this::closePane);
+        action(layoutMenu,"Close pane","ctrl alt W",this::closePane);
         layoutMenu.addSeparator();
         action(layoutMenu,"Next pane","ctrl alt RIGHT",() -> cycle(1));
         action(layoutMenu,"Previous pane","ctrl alt LEFT",() -> cycle(-1));
@@ -420,7 +430,7 @@ public final class Workspace extends JFrame {
         String aliases=switch (text) {
             case "Add pane" -> "add window new session split side by side";
             case "Swap panes..." -> "move rearrange dock";
-            case "Disconnect pane" -> "close pane remove pane reset offline";
+            case "Close pane" -> "disconnect remove pane reset offline";
             case "Profiles..." -> "settings workstation host device credentials";
             case "Search commands..." -> "command palette find action search";
             case "Appearance..." -> "settings theme palette color effects glow prism";
@@ -458,7 +468,7 @@ public final class Workspace extends JFrame {
         activate(pane);
         JPopupMenu menu = new JPopupMenu();
         for (String name : List.of("Connect / disconnect","Reconnect","Add pane",
-                "Swap panes...","Disconnect pane","Profiles...","Appearance...")) menu.add(new JMenuItem(command(name)));
+                "Swap panes...","Close pane","Profiles...","Appearance...")) menu.add(new JMenuItem(command(name)));
         return menu;
     }
     public void close(boolean force) {

@@ -210,13 +210,17 @@ public final class FishSmoke {
                 AppCommand add=workspace.commands().stream().filter(c -> c.title.equals("Add pane")).findFirst().orElseThrow();
                 check(!add.isEnabled(),"All shared Add pane controls are disabled at eight.");
                 check(add.matches("add window") && add.matches("new session") && add.matches("split"),"Command aliases share bounded addition.");
+                int closedPanes=0;
                 for (SessionPane pane:workspace.sessionPanes()) {
                     List<Component> controls=children(pane);
                     JButton close=controls.stream().filter(c -> c instanceof JButton b
-                            && ("Disconnect pane "+pane.profile().name()).equals(b.getAccessibleContext().getAccessibleName()))
+                            && ("Close pane "+pane.profile().name()).equals(b.getAccessibleContext().getAccessibleName()))
                             .map(c -> (JButton)c).findFirst().orElseThrow();
                     close.doClick(0);
-                    check(!pane.busy() && pane.screen()==null && workspace.sessionPanes().size()==8,"X disconnects/clears but retains its slot.");
+                    check(!pane.busy() && pane.screen()==null && workspace.sessionPanes().size()==Math.max(1,8-++closedPanes),
+                            "X disconnects and removes its tile, except the final tile.");
+                    check(Layout.normalize(workspace.currentLayout()).equals(workspace.currentLayout()),"Closing reflows into bounded slots.");
+                    if (!workspace.hasPane(pane.id())) continue;
                     Container body=(Container)((BorderLayout)pane.getLayout()).getLayoutComponent(BorderLayout.CENTER);
                     Container offline=Arrays.stream(body.getComponents()).filter(Component::isVisible).map(c -> (Container)c).findFirst().orElseThrow();
                     List<Component> offlineControls=children(offline);
@@ -228,7 +232,8 @@ public final class FishSmoke {
                 check(!workspace.isVisible(),"No smoke check shows or focuses the desktop.");
                 workspace.validate();
                 BufferedImage offline=paint(workspace.getRootPane(),1);
-                ImageIO.write(offline,"png",Path.of("build","fish-offline-eight.png").toFile());
+                ImageIO.write(offline,"png",Path.of("build","fish-empty-one.png").toFile());
+                check(add.isEnabled(),"Closing tiles enables Add pane again.");
                 workspace.active().connect();
                 return null;
             });
@@ -241,7 +246,7 @@ public final class FishSmoke {
             });
             check(closed.await(5,TimeUnit.SECONDS),"State save/lock release finish after immediate close.");
             try (StateStore reopened=new StateStore(directory)) {
-                check(reopened.load().layout().leaves().size()==8,"Eight-slot layout persists.");
+                check(reopened.load().layout().leaves().size()==1,"The remaining one-pane layout persists.");
                 check(reopened.load().lastProfile().equals(original.get(2).profile().id()),"Last used preset survives restart.");
             }
             check(errors.isEmpty(),"No asynchronous failures: "+errors);

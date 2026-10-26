@@ -56,8 +56,8 @@ public final class SessionPane extends JPanel {
         header.add(title, BorderLayout.CENTER);
         JPanel controls=new JPanel(new BorderLayout(3,0)); controls.setOpaque(false);
         controls.add(connection,BorderLayout.CENTER);
-        close=Ui.iconButton("Disconnect pane "+profile.name(),"close",() -> workspace.closePane(this));
-        close.setToolTipText("Disconnect and clear this pane (Ctrl+Alt+W)");
+        close=Ui.iconButton("Close pane "+profile.name(),"close",() -> workspace.closePane(this));
+        close.setToolTipText("Close and disconnect; keep the last pane (Ctrl+Alt+W)");
         controls.add(close,BorderLayout.EAST);
         header.add(controls, BorderLayout.EAST);
         add(header, BorderLayout.NORTH);
@@ -134,8 +134,8 @@ public final class SessionPane extends JPanel {
         view.setBackground(surface);
         if (view.getParent() instanceof JViewport viewport) viewport.setBackground(surface);
         connection.setText(connecting ? "Connecting" : connected() ? "TCP " + profile.host() : "Offline");
-        close.getAccessibleContext().setAccessibleName("Disconnect pane "+profile.name());
-        close.setToolTipText("Disconnect and clear this pane (Ctrl+Alt+W)");
+        close.getAccessibleContext().setAccessibleName("Close pane "+profile.name());
+        close.setToolTipText("Close and disconnect; keep the last pane (Ctrl+Alt+W)");
         header.setToolTipText("Drag onto another pane to swap. Ctrl+Alt+D swaps with the keyboard.");
         presets.setEnabled(!busy()); connectButton.setEnabled(!busy());
         ((CardLayout)body.getLayout()).show(body,core!=null && busy() ? "terminal" : "offline");

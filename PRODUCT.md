@@ -40,7 +40,8 @@ The attached reference is binding: near-black flat panes, very thin dividers,
 small pane headers, crisp monospace host text, green and white host attributes,
 minimal application chrome. An angled gradient wireframe fish is the app mark
 and Windows icon. Offline content is only a centered preset selector and Connect.
-Pane X disconnects and clears without removing a tile; window close exits
+Pane X disconnects and removes its tile, except the final tile stays empty;
+window close exits
 without confirmation. No cards, promotional text or oversized toolbars.
 
 ## Evidence on Hand

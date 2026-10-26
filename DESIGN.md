@@ -97,7 +97,8 @@ focus outline provide structure without rounded containers or ornamental chrome.
 
 Pane headers identify the profile and connection, support dragging and expose
 a right-click menu. The close X occupies the far-right header position, outside
-the drag target. X disconnects/clears immediately and retains the tile; window
+the drag target. X disconnects and removes the pane, reflowing bounded slots;
+only the final pane is retained as an empty offline tile. Window
 close disconnects all without confirmation. An offline tile contains only a
 centered preset selector and Connect button. Newly added panes select the last
 used preset; restored slots preserve their own selection. No visible A1/A2 IDs.

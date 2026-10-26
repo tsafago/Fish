@@ -12,7 +12,7 @@ to a production system.
 
 ## Run the delivered application
 
-The current local package is **Fish 0.3.0**. Keep the entire application-image directory together:
+The current local package is **Fish 0.3.1**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe
@@ -77,7 +77,7 @@ and a JDK are already present.
 `Smoke` is the small noninteractive gate used for the Fish revision: bounded
 slots, swap-only moves, immediate disconnect/close, minimal offline controls,
 last-preset/legacy migration, physical-pixel text and real loopback sockets.
-It writes `build\fish-terminal-150.png` and `build\fish-offline-eight.png`
+It writes `build\fish-terminal-150.png` and `build\fish-empty-one.png`
 without showing a window or taking focus. No full/foreground suite was run
 for this quick revision.
 
@@ -120,8 +120,9 @@ Drag the hairline dividers to resize. Reflow and swaps retain actual session
 objects, socket connections and host state.
 
 The **X at the far right of each pane header** immediately disconnects and
-clears only that session, retaining its tile. Ctrl+Alt+W does the same; there
-is always at least one pane. Headers show preset names, never A1/A2 identifiers.
+removes that pane, reflowing the remaining slots. Only the last pane is kept
+as an empty offline tile. Ctrl+Alt+W does the same; there is always at least
+one pane. Headers show preset names, never A1/A2 identifiers.
 Offline content contains only a centered preset selector and Connect button.
 New panes preselect the last used preset; restored panes retain their saved
 preset selection. Nothing auto-connects in normal mode.
@@ -192,7 +193,7 @@ Application shortcuts use **Ctrl+Alt**; host mappings cannot claim that namespac
 | Profiles / quick profile switch | Ctrl+Alt+P / Ctrl+Alt+O |
 | Connect or disconnect / reconnect | Ctrl+Alt+R / Ctrl+Alt+Shift+R |
 | Add the next bounded pane (both shortcuts) | Ctrl+Alt+H / Ctrl+Alt+V |
-| Swap / disconnect and clear pane | Ctrl+Alt+D / Ctrl+Alt+W |
+| Swap / close and disconnect pane (keep the last tile) | Ctrl+Alt+D / Ctrl+Alt+W |
 | Next or previous pane / focus numbered pane | Ctrl+Alt+Right or Left / Ctrl+Alt+1..8 |
 | Adjust nearest divider | Ctrl+Alt+[ or ] |
 | Save / restore profile layout | Ctrl+Alt+S / Ctrl+Alt+L |

@@ -137,6 +137,7 @@ public final class Ui {
 
     public static void decorate(JDialog dialog,Runnable dismiss) {
         dialog.setUndecorated(true);
+        dialog.setIconImages(FishIcon.images());
         Container content=dialog.getContentPane();
         JPanel shell=new JPanel(new BorderLayout());
         JPanel title=new JPanel(new BorderLayout());
@@ -232,5 +233,5 @@ public final class Ui {
         form.add(label,BorderLayout.NORTH); form.add(field,BorderLayout.CENTER);
         return form(owner,title,form,"Send") ? field.getText() : null;
     }
-    public static void error(Component owner,String message) { message(owner,message,"Pane5250"); }
+    public static void error(Component owner,String message) { message(owner,message,"Fish"); }
 }

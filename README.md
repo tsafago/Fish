@@ -1,4 +1,4 @@
-# Pane5250
+# Fish
 
 A Windows-first, keyboard-driven desktop 5250 workspace. Java 21 / Swing,
 plain TN5250 TCP, a pinned TN5250J screen/field engine, and no third-party
@@ -12,11 +12,11 @@ to a production system.
 
 ## Run the delivered application
 
-The current local package is **0.2.0**. Keep the entire application-image directory together:
+The current local package is **Fish 0.3.0**. Keep the entire application-image directory together:
 
 ```powershell
-.\dist\Pane5250\Pane5250.exe
-.\dist\Pane5250\Pane5250.exe --demo
+.\dist\Fish\Fish.exe
+.\dist\Fish\Fish.exe --demo
 ```
 
 The packaged application includes a private Java runtime; no installed Java,
@@ -45,6 +45,7 @@ git submodule update --init --recursive
 # Use a maintained JDK 21 by setting JAVA_HOME, or obtain the pinned portable SDK:
 .\scripts\bootstrap.ps1
 .\build.ps1 Build
+.\build.ps1 Smoke     # quick Fish checks; hidden windows, no physical input
 .\build.ps1 Check     # fixtures only; no foreground input or credential access
 .\build.ps1 Test
 .\build.ps1 Package
@@ -55,12 +56,12 @@ and changes no system installation or PATH. It is a reproducibility pin, not
 a promise to track current JDK security updates. `JAVA_HOME` takes precedence;
 alternatively pass `-Jdk 'C:\path\to\jdk-21'` to `build.ps1`.
 
-`Build` creates `dist\Pane5250.jar`. `Package` uses `jpackage` to create the
-standalone directory `dist\Pane5250` and complete corresponding source archive
-`dist\Pane5250-source.zip`. Move an existing `dist\Pane5250` aside before
+`Build` creates `dist\Fish.jar`. `Package` uses `jpackage` to create the
+standalone directory `dist\Fish` and complete corresponding source archive
+`dist\Fish-source.zip`. Move an existing `dist\Fish` aside before
 packaging again; the script refuses to overwrite it.
 
-The matching source is also under `dist\Pane5250\app\source`. It contains the
+The matching source is also under `dist\Fish\app\source`. It contains the
 actual pinned upstream source and build adaptations, not just a retrieval
 URL. Extract the source ZIP to an empty directory, select a JDK 21, and run
 the same build commands; Git/network access is unnecessary when those sources
@@ -70,10 +71,17 @@ and a JDK are already present.
 .\build.ps1 Run       # normal desktop, keeps the launching console attached
 .\build.ps1 Demo      # local synthetic server and separate temporary workspace
 # Or, after Build:
-& "$env:JAVA_HOME\bin\java.exe" -jar .\dist\Pane5250.jar --demo
+& "$env:JAVA_HOME\bin\java.exe" -jar .\dist\Fish.jar --demo
 ```
 
-`Test` needs an unlocked, idle Windows desktop: it opens the app,
+`Smoke` is the small noninteractive gate used for the Fish revision: bounded
+slots, swap-only moves, immediate disconnect/close, minimal offline controls,
+last-preset/legacy migration, physical-pixel text and real loopback sockets.
+It writes `build\fish-terminal-150.png` and `build\fish-offline-eight.png`
+without showing a window or taking focus. No full/foreground suite was run
+for this quick revision.
+
+`Test` needs fresh consent and an unlocked, idle Windows desktop: it opens the app,
 uses the physical keyboard/mouse through `Robot`, and temporarily takes focus
 with an always-on-top test window. Keep other windows out of the way.
 It also creates, reads and removes a uniquely named **synthetic** Windows
@@ -84,32 +92,39 @@ captures `build\desktop-render-none-native.png` and
 and event-thread latency measurements. It verifies background clearing against
 poisoned pixels, actual divider/header drags, all eight window resize directions,
 window controls, keyboard move/size, focus, and unchanged session connections
-and host dimensions, with effects off and Neon enabled. The revision suite
-exercises actual pane X/add controls, palette search/navigation and focus,
-local-error Reset versus host inhibition, live themes, dialog routes, effect
-differences, empty-workspace behavior and persistence. Its app-only captures
-are `build\revision-*.png`.
+and host dimensions, with effects off and Neon enabled. `UiRevisions.java`
+is the historical 0.2.0 interaction script; its removal/confirmation/directional
+split assertions are superseded and it is not part of the Fish test command.
 
 ## Sessions and profiles
 
 The main workspace has one compact, dark 28px title/menu row, not a second
-native titlebar. Drag the blank title area or application name to move it;
+native titlebar. The angled gradient wireframe fish replaces application-name
+text and supplies the Windows executable/taskbar icon. Drag it or the blank title area to move;
 double-click to maximize/restore. The three upper-right controls minimize,
 maximize/restore and close. Drag any window edge/corner to resize.
 **Alt+Space** keeps the standard Windows window menu; **Ctrl+Alt+Space**
 opens the application's dark window menu (also available by right-clicking
 the title area). Its Move/Size commands use arrows in 10px steps, Shift+arrows
-for 1px, Enter to commit and Escape to cancel. Closing connected sessions
-still requires confirmation.
+for 1px, Enter to commit and Escape to cancel. Window close disconnects all
+sessions and closes immediately, without a confirmation. Saving and releasing
+the workspace lock finish in the background; save failures are reported to stderr.
 
-Drag a pane header to another pane: edges dock it, the center swaps it.
-Drop previews show the proposed position. Drag the hairline split handles
-to resize. Moving panes keeps their existing socket and terminal state.
-Splitting creates a new, independent, initially offline session.
-The immediately visible **+ Pane** adds to the right; its adjacent arrow
-offers left/right or top/bottom splits. The **X at the far right of each pane
-header** closes only that pane, with confirmation when connected/connecting.
-Closing the last pane leaves an empty workspace; + Pane adds one back.
+**+ Pane** adds the next slot, up to **eight panes in two rows/four columns**.
+The sequence is one full pane; two side-by-side; left full-height/right two
+stacked; four quadrants; then top/bottom rows of 3/2, 3/3, 4/3 and 4/4.
+There are no arbitrary recursive split directions. Addition is disabled at eight.
+Drag any pane header anywhere onto another pane to **swap**; the entire target
+is previewed. Ctrl+Alt+D offers the same swap by spatial position/preset.
+Drag the hairline dividers to resize. Reflow and swaps retain actual session
+objects, socket connections and host state.
+
+The **X at the far right of each pane header** immediately disconnects and
+clears only that session, retaining its tile. Ctrl+Alt+W does the same; there
+is always at least one pane. Headers show preset names, never A1/A2 identifiers.
+Offline content contains only a centered preset selector and Connect button.
+New panes preselect the last used preset; restored panes retain their saved
+preset selection. Nothing auto-connects in normal mode.
 The active pane has a single subtle tinted surface across its header, terminal
 and footer, with an outer focus outline and no header underline.
 
@@ -150,11 +165,17 @@ Passwords are not written to profile XML, process arguments, logs or the
 clipboard. JVM/PowerShell immutable strings and host screen memory are not
 guaranteed to be securely erased.
 
-Workspace state is atomically saved to `%APPDATA%\Pane5250\workspace.xml`.
+New workspace state is atomically saved to `%APPDATA%\Fish\workspace.xml`.
+If `%APPDATA%\Pane5250\workspace.xml` already exists, Fish uses that same
+legacy directory and lock instead, preserving existing profiles and passwords.
+The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored **offline** next launch.
-Application appearance is saved with the workspace. Existing version-1 state
-migrates to Charcoal while retaining profiles and layouts; version-2 state also
-supports an empty workspace.
+Application appearance and the last used preset are saved with version-3 state.
+Version-1/2 profiles and credentials are retained. Old freeform layouts reflow
+into bounded slots with a visible status notice; a legacy empty workspace
+becomes one offline tile. A legacy layout over eight panes is rejected explicitly
+without overwriting its file: reduce it using the preserved Pane5250 package
+or use another `--data-dir`. It is never silently truncated.
 **Ctrl+Alt+S/L** additionally saves/restores a profile-specific layout.
 The workspace is locked against concurrent writers. Corrupt state produces
 an error and is preserved, never silently replaced. `--data-dir DIRECTORY`
@@ -170,9 +191,9 @@ Application shortcuts use **Ctrl+Alt**; host mappings cannot claim that namespac
 |---|---|
 | Profiles / quick profile switch | Ctrl+Alt+P / Ctrl+Alt+O |
 | Connect or disconnect / reconnect | Ctrl+Alt+R / Ctrl+Alt+Shift+R |
-| Split left-right / top-bottom | Ctrl+Alt+H / Ctrl+Alt+V |
-| Dock or swap / close pane | Ctrl+Alt+D / Ctrl+Alt+W |
-| Next or previous pane / focus numbered pane | Ctrl+Alt+Right or Left / Ctrl+Alt+1..9 |
+| Add the next bounded pane (both shortcuts) | Ctrl+Alt+H / Ctrl+Alt+V |
+| Swap / disconnect and clear pane | Ctrl+Alt+D / Ctrl+Alt+W |
+| Next or previous pane / focus numbered pane | Ctrl+Alt+Right or Left / Ctrl+Alt+1..8 |
 | Adjust nearest divider | Ctrl+Alt+[ or ] |
 | Save / restore profile layout | Ctrl+Alt+S / Ctrl+Alt+L |
 | Fit / zoom in or out | Ctrl+Alt+0 / Ctrl+Alt+Equals or Minus |
@@ -182,7 +203,7 @@ Application shortcuts use **Ctrl+Alt**; host mappings cannot claim that namespac
 | Host key chooser / application menu | Ctrl+Alt+F / Ctrl+Alt+M |
 | Search commands / appearance | Ctrl+Alt+K / Ctrl+Alt+T |
 | Dark window menu / standard Windows window menu | Ctrl+Alt+Space / Alt+Space |
-| Close window (with connected-session confirmation) | Alt+F4 |
+| Immediately close window and disconnect all | Alt+F4 |
 | Quit | Ctrl+Alt+Q |
 
 | Host action | Default key |
@@ -219,10 +240,12 @@ dividers and text. Application themes are independent of workstation host
 palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid and High contrast. Host
 color/reverse/underline/blink/non-display distinctions remain intact.
 Optional Soft glow, column-gradient Prism and pronounced Neon effects are
-disabled by default. Effect ink is cached in tight, background-composited row
-tiles at one of two resolution levels suited to the physical display size.
+disabled by default. Default glyphs are created at the final physical font
+size, with integer-pixel cells/origins and LCD antialiasing; text is not scaled
+from a nominal font or bilinearly enlarged bitmap. Effect ink is cached in tight,
+background-composited row tiles at that same native physical resolution.
 Selection, reverse backgrounds and blink remain accurate; resizing does not
-recreate per-character glyphs/effects on every frame. The application has no
+recreate glyphs/effects while the fitted physical font size is unchanged. The application has no
 AI features, telemetry, embedded browser, dashboard or promotional UI.
 
 ## Source organization and license

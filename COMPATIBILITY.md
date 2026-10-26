@@ -5,7 +5,25 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Locally demonstrated
+## Fish 0.3.0 quick revision
+
+Fish rebrands the same experimental engine; unrelated protocol expansion is
+paused. This revision uses a build and small noninteractive `Smoke` checks,
+not the full foreground suites or a fresh resize stress benchmark. The focused
+checks exercise bounded 1-8 slots, whole-target swap-only moves, retained tiles
+and immediate close/disconnect, minimal offline controls, last-preset and legacy
+storage migration, native-pixel glyph caching, independent loopback sockets and
+host-controlled 24x80/27x132 switching. Offscreen captures are
+`build\fish-terminal-150.png` and `build\fish-offline-eight.png`.
+
+The prior measurements and interaction descriptions below are historical
+Pane5250 0.1.1/0.2.0 evidence, not fresh Fish acceptance. Directional docking,
+tile removal, empty workspaces and close confirmations are superseded.
+The old `UiRevisions.java` script is retained as historical source, not invoked
+by the Fish build. `Test` remains an opt-in physical-desktop regression command
+and was not run for this quick pass.
+
+## Previously demonstrated (0.1.1/0.2.0)
 
 `.\build.ps1 Test` exercises the actual selected engine and live desktop,
 not a separate presentation mock. Golden fixtures and exact byte assertions

@@ -6,9 +6,12 @@ import java.nio.file.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme) {
+    public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile) {
         public State(List<Profile> profiles, Layout layout, int width, int height) {
             this(profiles,layout,width,height,AppTheme.Charcoal);
+        }
+        public State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme) {
+            this(profiles,layout,width,height,appTheme,profiles.isEmpty() ? null : profiles.getFirst().id());
         }
         public State {
             Objects.requireNonNull(appTheme);
@@ -21,11 +24,14 @@ public final class StateStore implements AutoCloseable {
             for (Layout.Leaf leaf : layout.leaves()) {
                 if (!ids.contains(leaf.profile())) throw new IllegalArgumentException("Layout references a missing profile.");
             }
+            if (!ids.contains(lastProfile)) throw new IllegalArgumentException("Last used preset is missing.");
         }
     }
     private final Path directory;
     private final FileChannel lockChannel;
     private final FileLock lock;
+    private String loadNotice="";
+    public String loadNotice() { return loadNotice; }
 
     public StateStore(Path directory) throws IOException {
         this.directory = directory;
@@ -44,6 +50,7 @@ public final class StateStore implements AutoCloseable {
     public Path file() { return directory.resolve("workspace.xml"); }
 
     public State load() throws IOException {
+        loadNotice="";
         if (!Files.exists(file())) {
             Profile profile = Profile.create("Local IBM i");
             return new State(List.of(profile), new Layout.Leaf(UUID.randomUUID(), profile.id()), 1360, 850);
@@ -53,7 +60,7 @@ public final class StateStore implements AutoCloseable {
         try (InputStream in = Files.newInputStream(file())) { properties.loadFromXML(in); }
         try {
             String version = properties.getProperty("version");
-            if (!"1".equals(version) && !"2".equals(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3").contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             List<Profile> profiles = new ArrayList<>();
             for (String idText : required(properties, "profiles").split(",")) {
                 UUID id = UUID.fromString(idText);
@@ -70,10 +77,19 @@ public final class StateStore implements AutoCloseable {
                         required(properties, key + "effect"), Double.parseDouble(required(properties, key + "zoom")),
                         keys, required(properties, key + "layout")));
             }
-            return new State(profiles, Layout.decode(required(properties, "layout")),
+            UUID last="3".equals(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
+            Layout layout=Layout.decode(required(properties,"layout"));
+            if (!"3".equals(version) && !layout.leaves().isEmpty()) last=layout.leaves().getFirst().profile();
+            if (layout instanceof Layout.Empty) {
+                layout=new Layout.Leaf(UUID.randomUUID(),last);
+                loadNotice="Restored one offline pane from the previous empty workspace; all presets retained.";
+            }
+            Layout bounded=Layout.normalize(layout);
+            if (!bounded.equals(layout)) loadNotice="Previous pane layout rearranged into Fish's bounded slots; all presets retained.";
+            return new State(profiles, bounded,
                     Math.max(640, Math.min(10000, Integer.parseInt(required(properties, "width")))),
                     Math.max(400, Math.min(10000, Integer.parseInt(required(properties, "height")))),
-                    "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")));
+                    "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")),last);
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid workspace; original file preserved: " + e.getMessage(), e);
         }
@@ -92,7 +108,8 @@ public final class StateStore implements AutoCloseable {
 
     public void save(State state) throws IOException {
         Properties properties = new Properties();
-        properties.setProperty("version", "2");
+        properties.setProperty("version", "3");
+        properties.setProperty("lastProfile",state.lastProfile.toString());
         properties.setProperty("appTheme",state.appTheme.name());
         properties.setProperty("profiles", String.join(",", state.profiles.stream().map(p -> p.id().toString()).toList()));
         properties.setProperty("layout", state.layout.encode());
@@ -116,7 +133,7 @@ public final class StateStore implements AutoCloseable {
         }
         Path temporary = directory.resolve("workspace.xml.tmp");
         try (OutputStream out = Files.newOutputStream(temporary)) {
-            properties.storeToXML(out, "Pane5250 workspace - no passwords", "UTF-8");
+            properties.storeToXML(out, "Fish workspace - no passwords", "UTF-8");
         }
         try { Files.move(temporary, file(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
         catch (AtomicMoveNotSupportedException e) { Files.move(temporary, file(), StandardCopyOption.REPLACE_EXISTING); }

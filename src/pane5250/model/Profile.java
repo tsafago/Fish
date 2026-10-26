@@ -100,6 +100,7 @@ public record Profile(UUID id, String name, String host, int port, String device
     }
 
     public String credentialTarget() {
+        // Keep existing OS credentials reachable after the Fish rename.
         return "Pane5250/" + id + "/" + host + ":" + port + "/" + username;
     }
     @Override public String toString() { return name; }

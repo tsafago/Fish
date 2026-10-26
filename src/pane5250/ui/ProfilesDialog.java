@@ -159,7 +159,6 @@ public final class ProfilesDialog extends JDialog {
                     Objects.requireNonNull((String)effect.getSelectedItem()),selected.zoom(),Keymap.parse(keymap.getText()),selected.savedLayout());
             if (secret.length > 0 && !updated.rememberPassword())
                 throw new IllegalArgumentException("Enable Remember password to save this password, or clear the password field.");
-            if (!workspace.confirmProfileChange(updated)) { Arrays.fill(secret,'\0'); return; }
         } catch (IllegalArgumentException e) {
             Arrays.fill(secret,'\0');
             error.setText(e instanceof NumberFormatException ? "Port must be a number." : e.getMessage());

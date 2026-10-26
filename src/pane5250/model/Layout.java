@@ -18,6 +18,31 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
         }
     }
     enum Dock { CENTER, LEFT, RIGHT, TOP, BOTTOM }
+    int MAX_PANES = 8;
+
+    static Layout bounded(List<Leaf> slots) {
+        if (slots.isEmpty() || slots.size()>MAX_PANES)
+            throw new IllegalArgumentException("Fish supports 1-8 panes. Original layout and presets have not been discarded.");
+        if (slots.size()==1) return slots.getFirst();
+        if (slots.size()==2) return row(slots);
+        if (slots.size()==3) return new Split(true,.5,slots.getFirst(),
+                new Split(false,.5,slots.get(1),slots.get(2)));
+        int top=(slots.size()+1)/2;
+        return new Split(false,.5,row(slots.subList(0,top)),row(slots.subList(top,slots.size())));
+    }
+    private static Layout row(List<Leaf> slots) {
+        if (slots.size()==1) return slots.getFirst();
+        return new Split(true,1.0/slots.size(),slots.getFirst(),row(slots.subList(1,slots.size())));
+    }
+    static Layout normalize(Layout layout) {
+        Layout expected=bounded(layout.leaves());
+        return sameShape(layout,expected) ? layout : expected;
+    }
+    private static boolean sameShape(Layout a,Layout b) {
+        if (a instanceof Leaf) return b instanceof Leaf;
+        return a instanceof Split x && b instanceof Split y && x.horizontal==y.horizontal
+                && sameShape(x.first,y.first) && sameShape(x.second,y.second);
+    }
 
     default List<Leaf> leaves() {
         if (this instanceof Empty) return List.of();

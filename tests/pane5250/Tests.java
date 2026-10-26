@@ -536,8 +536,10 @@ public final class Tests {
         Path directory = Files.createTempDirectory(Path.of("build"),"desktop-test-");
         DemoHost host = new DemoHost();
         StateStore store = new StateStore(directory);
+        CountDownLatch closed=new CountDownLatch(1);
         Workspace workspace = edt(() -> {
             Workspace window = new Workspace(store,Main.demoState(host.port()),Path.of("scripts").resolve("credential-store.ps1"),true);
+            window.onClosed(closed::countDown);
             window.setAlwaysOnTop(true);
             window.setVisible(true); window.connectAll();
             return window;
@@ -630,7 +632,7 @@ public final class Tests {
             check(host.failures().isEmpty(),"Synthetic host reports no negotiation or record failures: " + host.failures());
         } finally {
             edt(() -> { workspace.close(true); return null; });
-            await(() -> !workspace.isDisplayable(),5000,"Desktop closes and persists.");
+            check(closed.await(5,TimeUnit.SECONDS),"Desktop closes and persists.");
             host.close();
             try (StateStore reopened = new StateStore(directory)) {
                 check(reopened.load().layout().leaves().size() == 3,"Desktop layout survives a real close/reopen.");

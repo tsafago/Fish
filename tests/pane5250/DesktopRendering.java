@@ -27,8 +27,10 @@ public final class DesktopRendering {
         Path directory = Files.createTempDirectory(Path.of("build"),"render-test-");
         DemoHost host = new DemoHost();
         StateStore store = new StateStore(directory);
+        CountDownLatch closed=new CountDownLatch(1);
         Workspace window = edt(() -> {
             Workspace frame = new Workspace(store,Main.demoState(host.port()),Path.of("scripts","credential-store.ps1"),true);
+            frame.onClosed(closed::countDown);
             String effect=System.getProperty("pane5250.effect","None");
             if (!effect.equals("None"))
                 for (var profile : frame.profileList()) frame.putProfile(profile.withDisplay(profile.theme(),effect));
@@ -47,7 +49,7 @@ public final class DesktopRendering {
             require(errors.isEmpty(),"No uncaught EDT or background failures: " + errors);
         } finally {
             edt(() -> { window.close(true); return null; });
-            while (window.isDisplayable()) Thread.sleep(25);
+            require(closed.await(5,TimeUnit.SECONDS),"Workspace save and lock release finish.");
             host.close();
             Files.deleteIfExists(directory.resolve("workspace.xml"));
             Files.deleteIfExists(directory.resolve("workspace.lock"));
@@ -266,13 +268,6 @@ public final class DesktopRendering {
         await(() -> (window.getExtendedState() & Frame.ICONIFIED) != 0,"Minimize button iconifies.");
         edt(() -> { window.setExtendedState(Frame.NORMAL); window.setBounds(normal); window.toFront(); return null; });
         await(() -> window.getExtendedState() == Frame.NORMAL && window.isShowing(),"Window returns after minimizing.");
-        click(robot,button(window,"Close window"));
-        cancelClose(window,robot);
-        edt(() -> { window.active().focusTerminal(); return null; });
-        robot.keyPress(KeyEvent.VK_ALT); tap(robot,KeyEvent.VK_F4); robot.keyRelease(KeyEvent.VK_ALT);
-        cancelClose(window,robot);
-        require(edt(() -> window.sessionPanes().stream().allMatch(SessionPane::connected)),
-                "Canceling close through either window route preserves every live session.");
         JButton close = button(window,"Close window");
         edt(() -> { close.requestFocusInWindow(); return null; });
         await(close::hasFocus,"Custom window buttons participate in keyboard focus.");
@@ -289,15 +284,6 @@ public final class DesktopRendering {
         Point start = center(header), destination = center(target.view());
         drag(robot,start,destination.x - start.x,destination.y - start.y);
         robot.waitForIdle();
-    }
-    private static void cancelClose(Workspace window,Robot robot) throws Exception {
-        await(() -> Arrays.stream(window.getOwnedWindows()).anyMatch(w -> w instanceof JDialog && w.isShowing()),
-                "Close requests the existing connected-session confirmation.");
-        JButton cancel = edt(() -> Arrays.stream(window.getOwnedWindows()).filter(Window::isShowing)
-                .flatMap(w -> descendants(w,JButton.class).stream()).filter(b -> "Cancel".equals(b.getText()))
-                .findFirst().orElseThrow());
-        click(robot,cancel);
-        await(() -> Arrays.stream(window.getOwnedWindows()).noneMatch(Window::isShowing),"Close can be canceled.");
     }
     private static JButton button(Workspace window,String name) throws Exception {
         return edt(() -> descendants(window,JButton.class).stream()

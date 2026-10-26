@@ -26,25 +26,29 @@ public final class Workspace extends JFrame {
     private final List<AppCommand> commands = new ArrayList<>();
     private final JPanel content = new JPanel(new BorderLayout());
     private final ExecutorService persistence = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r,"workspace-save"); thread.setDaemon(true); return thread;
+        return new Thread(r,"workspace-save");
     });
     private final javax.swing.Timer saveTimer;
     private Layout layout;
     private SessionPane active;
+    private UUID lastProfile;
     private Component tree;
     private final boolean demonstration;
     private boolean closing;
     private Runnable afterClose = () -> {};
 
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
-        super("Pane5250" + (demonstration ? " - local synthetic host" : ""));
+        super("Fish" + (demonstration ? " - local synthetic host" : ""));
         setUndecorated(true);
+        setIconImages(FishIcon.images());
+        getAccessibleContext().setAccessibleName("Fish");
         if (Ui.theme()!=state.appTheme()) Ui.applyTheme(state.appTheme());
         this.store = store;
         this.demonstration = demonstration;
         credentials = new CredentialStore(credentialHelper);
         state.profiles().forEach(p -> profiles.put(p.id(),p));
-        layout = state.layout();
+        layout = Layout.normalize(state.layout());
+        lastProfile=state.lastProfile();
         saveTimer = new javax.swing.Timer(500,e -> saveAsync());
         saveTimer.setRepeats(false);
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
@@ -60,20 +64,13 @@ public final class Workspace extends JFrame {
         getRootPane().setBorder(BorderFactory.createMatteBorder(1,1,1,1,Ui.LINE));
         JMenuBar menus=menus();
         JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,3,0)); tools.setOpaque(false);
-        JButton addPane=new JButton(command("Split left / right")); addPane.setText("+ Pane");
-        addPane.setToolTipText("Add a pane to the right (Ctrl+Alt+H)");
+        JButton addPane=new JButton(command("Add pane")); addPane.setText("+ Pane");
+        addPane.setToolTipText("Add the next pane (maximum 8; Ctrl+Alt+H)");
         addPane.getAccessibleContext().setAccessibleName("Add pane");
-        JButton directions=Ui.iconButton("Choose split direction","down",() -> {});
-        directions.addActionListener(e -> {
-            JPopupMenu popup=new JPopupMenu();
-            popup.add(new JMenuItem(command("Split left / right")));
-            popup.add(new JMenuItem(command("Split top / bottom")));
-            popup.show(directions,0,directions.getHeight());
-        });
         JButton find=new JButton(command("Search commands...")); find.setText("Commands");
         find.setToolTipText("Search commands (Ctrl+Alt+K)");
         find.getAccessibleContext().setAccessibleName("Search commands");
-        for (JButton b : List.of(addPane,directions,find)) { b.setBorder(BorderFactory.createEmptyBorder(4,7,4,7)); tools.add(b); }
+        for (JButton b : List.of(addPane,find)) { b.setBorder(BorderFactory.createEmptyBorder(4,7,4,7)); tools.add(b); }
         shell.add(new WindowChrome(this,menus,tools),BorderLayout.NORTH);
         shell.add(content,BorderLayout.CENTER);
         buildTree();
@@ -87,6 +84,12 @@ public final class Workspace extends JFrame {
     public SessionPane active() { return active; }
     public CredentialStore credentials() { return credentials; }
     public List<Profile> profileList() { return List.copyOf(profiles.values()); }
+    public Profile lastProfile() { return profiles.get(lastProfile); }
+    public void selectProfile(SessionPane pane,Profile profile) {
+        if (pane.busy()) throw new IllegalStateException("Disconnect before selecting a preset.");
+        lastProfile=profile.id(); pane.updateProfile(profile); changed();
+    }
+    public void rememberProfile(Profile profile) { lastProfile=profile.id(); changed(); }
     public boolean hasPane(UUID id) { return panes.containsKey(id); }
     public List<SessionPane> sessionPanes() { return layout.leaves().stream().map(l -> panes.get(l.pane())).toList(); }
     public List<AppCommand> commands() { return List.copyOf(commands); }
@@ -105,12 +108,13 @@ public final class Workspace extends JFrame {
         if (palette.chosen()!=null) palette.chosen().actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"palette"));
     }
     public String paneName(UUID id) {
-        int index = 1;
-        for (Layout.Leaf leaf : layout.leaves()) {
-            if (leaf.pane().equals(id)) return "A" + index;
-            index++;
-        }
-        return "A";
+        List<SessionPane> order=sessionPanes();
+        int index=order.indexOf(panes.get(id)),count=order.size();
+        if (count==1) return "Pane";
+        if (count==2) return index==0 ? "Left" : "Right";
+        if (count==3) return index==0 ? "Left" : index==1 ? "Upper right" : "Lower right";
+        int top=(count+1)/2;
+        return index<top ? "Top row, column "+(index+1) : "Bottom row, column "+(index-top+1);
     }
     public void activate(SessionPane pane) {
         active = pane;
@@ -140,11 +144,6 @@ public final class Workspace extends JFrame {
         SwingUtilities.invokeLater(() -> { if (active != null) active.focusTerminal(); });
     }
     private Component component(Layout node) {
-        if (node instanceof Layout.Empty) {
-            JPanel empty=new JPanel(new GridBagLayout()); empty.setBackground(Ui.BACKGROUND);
-            empty.add(Ui.button("Add pane",KeyEvent.VK_A,() -> split(true)));
-            return empty;
-        }
         if (node instanceof Layout.Leaf leaf)
             return panes.computeIfAbsent(leaf.pane(),id -> new SessionPane(this,id,Objects.requireNonNull(profiles.get(leaf.profile()))));
         Layout.Split split = (Layout.Split) node;
@@ -181,25 +180,30 @@ public final class Workspace extends JFrame {
                 Math.max(.05,Math.min(.95,ratio)),capture(split.getLeftComponent()),capture(split.getRightComponent()));
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
-    private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme()); }
+    private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile); }
     public void saveAsync() {
+        if (closing) return;
         StateStore.State snapshot = state();
         persistence.submit(() -> {
             try { store.save(snapshot); }
-            catch (java.io.IOException e) { SwingUtilities.invokeLater(() -> Ui.error(this,"Workspace not saved: " + e.getMessage())); }
+            catch (java.io.IOException e) { SwingUtilities.invokeLater(() -> {
+                if (closing) System.err.println("Fish workspace not saved: "+e.getMessage());
+                else Ui.error(this,"Workspace not saved: "+e.getMessage());
+            }); }
         });
     }
     public void split(boolean horizontal) {
+        if (panes.size()>=Layout.MAX_PANES) return;
         UUID id=UUID.randomUUID();
-        UUID profile=active==null ? profileList().getFirst().id() : active.profile().id();
-        layout = currentLayout().insert(active==null ? null : active.id(), new Layout.Leaf(id,profile),
-                horizontal ? Layout.Dock.RIGHT : Layout.Dock.BOTTOM);
+        List<Layout.Leaf> slots=new ArrayList<>(currentLayout().leaves());
+        slots.add(new Layout.Leaf(id,lastProfile));
+        layout=Layout.bounded(slots);
         buildTree();
         activate(panes.get(id)); active.focusTerminal();
         changed();
     }
     public void dock(UUID source, UUID target, Layout.Dock dock) {
-        layout = currentLayout().move(source,target,dock);
+        layout = currentLayout().move(source,target,Layout.Dock.CENTER);
         buildTree();
         active = panes.get(source);
         activate(active);
@@ -211,10 +215,8 @@ public final class Workspace extends JFrame {
         if (active!=null) closePane(active);
     }
     public void closePane(SessionPane pane) {
-        if (pane.busy() && !Ui.confirm(this,"Disconnect "+pane.profile().name()+" and close this pane?","Close pane")) return;
-        Layout remaining=currentLayout().remove(pane.id());
-        layout=remaining==null ? new Layout.Empty() : remaining;
-        buildTree();
+        pane.disconnect();
+        activate(pane); pane.focusTerminal();
         changed();
     }
     public void cycle(int delta) {
@@ -229,29 +231,21 @@ public final class Workspace extends JFrame {
         if (parent instanceof JSplitPane split) {
             int length = (split.getOrientation() == JSplitPane.HORIZONTAL_SPLIT ? split.getWidth() : split.getHeight()) - split.getDividerSize();
             split.setDividerLocation(Math.max(.05,Math.min(.95,split.getDividerLocation() / (double) Math.max(1,length) + delta)));
-        } else active.problem("Split this pane first; there is no divider to adjust.");
+        } else active.problem("Add another pane first; there is no divider to adjust.");
     }
     private void dockingDialog() {
-        if (panes.size() == 1) { active.problem("Add a split before docking. Ctrl+Alt+H or Ctrl+Alt+V."); return; }
+        if (panes.size() == 1) return;
         SessionPane source = active;
         List<SessionPane> targets = sessionPanes().stream().filter(p -> p != source).toList();
-        JComboBox<String> target = new JComboBox<>(targets.stream().map(p -> paneName(p.id()) + " - " + p.profile().name()).toArray(String[]::new));
-        JComboBox<Layout.Dock> direction = new JComboBox<>(Layout.Dock.values());
+        JComboBox<String> target = new JComboBox<>(targets.stream().map(p -> paneName(p.id())+" - "+p.profile().name()).toArray(String[]::new));
         JPanel form = new JPanel(new GridLayout(0,2,10,10));
         JLabel targetLabel = new JLabel("Target pane"); targetLabel.setLabelFor(target);
-        JLabel directionLabel = new JLabel("Position (center swaps)"); directionLabel.setLabelFor(direction);
-        form.add(targetLabel); form.add(target); form.add(directionLabel); form.add(direction);
-        if (Ui.form(this,"Dock "+paneName(source.id()),form,"Dock"))
-            dock(source.id(),targets.get(target.getSelectedIndex()).id(),(Layout.Dock) direction.getSelectedItem());
+        form.add(targetLabel); form.add(target);
+        if (Ui.form(this,"Swap panes",form,"Swap"))
+            dock(source.id(),targets.get(target.getSelectedIndex()).id(),Layout.Dock.CENTER);
     }
 
     public void profiles() { new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true); }
-    public boolean confirmProfileChange(Profile value) {
-        Profile old = profiles.get(value.id());
-        if (old == null || !connectionChanged(old,value)) return true;
-        boolean live = panes.values().stream().anyMatch(p -> p.profile().id().equals(value.id()) && p.busy());
-        return !live || Ui.confirm(this,"Connection settings changed. Disconnect panes using this profile?","Apply profile");
-    }
     private static boolean connectionChanged(Profile a, Profile b) {
         return !a.host().equals(b.host()) || a.port() != b.port() || !a.device().equals(b.device())
                 || !a.username().equals(b.username()) || a.automaticSignOn() != b.automaticSignOn() || !a.codePage().equals(b.codePage());
@@ -263,6 +257,7 @@ public final class Workspace extends JFrame {
                 if (old != null && connectionChanged(old,value)) pane.disconnect();
                 pane.updateProfile(value);
             }
+            pane.refreshPresets();
         }
         changed();
     }
@@ -271,13 +266,13 @@ public final class Workspace extends JFrame {
             layout=new Layout.Leaf(UUID.randomUUID(),value.id()); buildTree();
         }
         if (!active.profile().id().equals(value.id())) {
-            if (active.busy() && !Ui.confirm(this,"Disconnect this pane and switch to "+value.name()+"?","Switch profile")) return;
             active.disconnect();
             active.updateProfile(value);
             layout = currentLayout();
             changed();
         }
         if (!active.busy()) active.connect();
+        rememberProfile(value);
         active.focusTerminal();
     }
     private void quickSwitch() {
@@ -294,12 +289,10 @@ public final class Workspace extends JFrame {
         String saved = active.profile().savedLayout();
         if (saved.isEmpty()) { active.problem("This profile has no saved layout. Ctrl+Alt+S saves the current layout."); return; }
         try {
-            Layout restored = Layout.decode(saved);
+            Layout restored = Layout.normalize(Layout.decode(saved));
             for (Layout.Leaf leaf : restored.leaves()) {
                 if (!profiles.containsKey(leaf.profile())) throw new IllegalArgumentException("Saved profile no longer exists.");
             }
-            if (panes.values().stream().anyMatch(SessionPane::busy) && !Ui.confirm(this,
-                    "Restore the saved layout? Sessions in removed panes will disconnect.","Restore layout")) return;
             layout = restored;
             buildTree();
             changed();
@@ -358,10 +351,10 @@ public final class Workspace extends JFrame {
         session.addSeparator();
         action(session,"Quit","ctrl alt Q",() -> close(false));
         JMenu layoutMenu = menu(bar,"Panes",KeyEvent.VK_P);
-        action(layoutMenu,"Split left / right","ctrl alt H",() -> split(true));
-        action(layoutMenu,"Split top / bottom","ctrl alt V",() -> split(false));
-        action(layoutMenu,"Dock / rearrange...","ctrl alt D",this::dockingDialog);
-        action(layoutMenu,"Close pane","ctrl alt W",this::closePane);
+        action(layoutMenu,"Add pane","ctrl alt H",() -> split(true));
+        bind("ctrl alt V",() -> command("Add pane").actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"add")));
+        action(layoutMenu,"Swap panes...","ctrl alt D",this::dockingDialog);
+        action(layoutMenu,"Disconnect pane","ctrl alt W",this::closePane);
         layoutMenu.addSeparator();
         action(layoutMenu,"Next pane","ctrl alt RIGHT",() -> cycle(1));
         action(layoutMenu,"Previous pane","ctrl alt LEFT",() -> cycle(-1));
@@ -392,8 +385,8 @@ public final class Workspace extends JFrame {
             action(host,key.name().replace('_',' '),null,() -> active.send(key));
         JMenu help = menu(bar,"Help",KeyEvent.VK_E);
         action(help,"Keyboard reference",null,() -> Ui.message(this,
-                Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H/V: Split     Ctrl+Alt+D: Dock\n"
-                + "Ctrl+Alt+Left/Right: Focus pane     Ctrl+Alt+1..9: Focus pane number\n"
+                Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H/V: Add pane (max 8)     Ctrl+Alt+D: Swap\n"
+                + "Ctrl+Alt+Left/Right: Focus pane     Ctrl+Alt+1..8: Focus pane number\n"
                 + "Ctrl+Alt+[/]: Resize divider     Ctrl+Alt+0: Fit\nCtrl+Alt+Shift+C/V: Copy/paste\n"
                 + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
                 + "Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
@@ -412,7 +405,7 @@ public final class Workspace extends JFrame {
                     "PF"+i+" function key"));
         }
         bind("ctrl alt M",() -> { bar.getMenu(0).doClick(); });
-        for (int i = 1; i <= 9; i++) {
+        for (int i = 1; i <= 8; i++) {
             final int index = i - 1;
             bind("ctrl alt " + i,() -> {
                 if (index < sessionPanes().size()) { activate(sessionPanes().get(index)); active.focusTerminal(); }
@@ -425,9 +418,9 @@ public final class Workspace extends JFrame {
     }
     private void action(JMenu menu,String text,String stroke,Runnable command) {
         String aliases=switch (text) {
-            case "Split left / right" -> "add pane add window new session horizontal side by side";
-            case "Split top / bottom" -> "add pane add window new session vertical stacked";
-            case "Close pane" -> "remove pane disconnect window";
+            case "Add pane" -> "add window new session split side by side";
+            case "Swap panes..." -> "move rearrange dock";
+            case "Disconnect pane" -> "close pane remove pane reset offline";
             case "Profiles..." -> "settings workstation host device credentials";
             case "Search commands..." -> "command palette find action search";
             case "Appearance..." -> "settings theme palette color effects glow prism";
@@ -437,10 +430,11 @@ public final class Workspace extends JFrame {
         };
         AppCommand action=new AppCommand(text,menu.getText()+" / "+text,stroke,command,() -> {
             if (closing) return false;
+            if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
             if (List.of("Profiles...","Quit","Search commands...","Appearance...","Keyboard reference",
-                    "Compatibility and connection safety","Split left / right","Split top / bottom").contains(text)) return true;
+                    "Compatibility and connection safety").contains(text)) return true;
             if (active==null) return false;
-            if (List.of("Dock / rearrange...","Next pane","Previous pane").contains(text)) return panes.size()>1;
+            if (List.of("Swap panes...","Next pane","Previous pane").contains(text)) return panes.size()>1;
             if (text.equals("Restore profile layout")) return !active.profile().savedLayout().isEmpty();
             if (menu.getText().equals("Host") || text.startsWith("Insert ") || text.startsWith("Paste")) {
                 return active.connected() && (!active.screen().getOIA().isKeyBoardLocked()
@@ -463,29 +457,27 @@ public final class Workspace extends JFrame {
     public JPopupMenu paneMenu(SessionPane pane) {
         activate(pane);
         JPopupMenu menu = new JPopupMenu();
-        for (String name : List.of("Connect / disconnect","Reconnect","Split left / right","Split top / bottom",
-                "Dock / rearrange...","Close pane","Profiles...","Appearance...")) menu.add(new JMenuItem(command(name)));
+        for (String name : List.of("Connect / disconnect","Reconnect","Add pane",
+                "Swap panes...","Disconnect pane","Profiles...","Appearance...")) menu.add(new JMenuItem(command(name)));
         return menu;
     }
     public void close(boolean force) {
         if (closing) return;
-        if (!force && panes.values().stream().anyMatch(SessionPane::busy) && !Ui.confirm(this,
-                "Disconnect sessions and close Pane5250?","Close workspace")) return;
         saveTimer.stop();
         StateStore.State snapshot = state();
         closing = true;
         panes.values().forEach(SessionPane::dispose);
+        dispose();
         persistence.submit(() -> {
             try {
                 store.save(snapshot);
-                store.close();
-                persistence.shutdown();
-                SwingUtilities.invokeLater(() -> { dispose(); afterClose.run(); });
             } catch (java.io.IOException e) {
-                SwingUtilities.invokeLater(() -> {
-                    closing = false;
-                    Ui.error(this,"Workspace could not be saved. Window kept open: " + e.getMessage());
-                });
+                System.err.println("Fish closed; workspace could not be saved: "+e.getMessage());
+            } finally {
+                try { store.close(); }
+                catch (java.io.IOException e) { System.err.println("Fish workspace lock could not be released: "+e.getMessage()); }
+                persistence.shutdown();
+                SwingUtilities.invokeLater(afterClose);
             }
         });
     }

@@ -15,6 +15,8 @@ import pane5250.model.*;
 import pane5250.ui.*;
 
 /** Foreground interaction coverage. Run only with an idle, consented desktop. */
+/** Historical 0.2.0 Robot script; superseded pane topology/close assertions are not a Fish gate. */
+@Deprecated
 public final class UiRevisions {
     private static int checks;
     private UiRevisions() {}

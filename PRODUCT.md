@@ -1,4 +1,4 @@
-# Pane5250
+# Fish
 
 <!-- impeccable:product-schema 1 -->
 
@@ -25,7 +25,8 @@ Pane resizing must never change the host's presentation space.
 
 ## Capabilities and Constraints
 
-Independent dockable panes, persistent layouts and workstation profiles,
+One to eight independent panes in bounded two-row/four-column layouts,
+swap-only rearrangement, persistent workstation presets and last-used selection,
 field-aware input, host keys, fixed-width rendering, clipboard, zoom and
 optional inexpensive visual presets. Remembered passwords belong in Windows
 Credential Manager. TLS, AI features and Kerberos are not required.
@@ -37,7 +38,10 @@ Full ACS compatibility remains an acceptance target, never an unverified claim.
 
 The attached reference is binding: near-black flat panes, very thin dividers,
 small pane headers, crisp monospace host text, green and white host attributes,
-minimal application chrome. No cards, promotional text or oversized toolbars.
+minimal application chrome. An angled gradient wireframe fish is the app mark
+and Windows icon. Offline content is only a centered preset selector and Connect.
+Pane X disconnects and clears without removing a tile; window close exits
+without confirmation. No cards, promotional text or oversized toolbars.
 
 ## Evidence on Hand
 

@@ -8,7 +8,7 @@ import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.framework.tn5250.tnvt;
 
 /**
- * Pane5250's deliberately small controller adapter for the pinned GPL TN5250J engine.
+ * Fish's deliberately small controller adapter for the pinned GPL TN5250J engine.
  * No upstream GUI, scripting, host command execution or global session manager is loaded.
  */
 public final class Session5250 {

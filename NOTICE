@@ -1,4 +1,4 @@
-Pane5250 incorporates selected source from TN5250J:
+Fish (formerly Pane5250) incorporates selected source from TN5250J:
 https://github.com/tn5250j/tn5250j
 Revision: d160492db8adec5d7cf309c6f4feefa162e6565d
 License: GNU GPL version 2 or later. See COPYING-TN5250J / vendor/tn5250j/LICENSE.
@@ -16,7 +16,7 @@ No upstream runtime JARs, Log4j, Jython, JT400, mail or PDF dependencies are
 included in the application.
 
 Packaged application images include complete application/build/test source and
-the pinned upstream source under app/source, also supplied as Pane5250-source.zip.
+the pinned upstream source under app/source, also supplied as Fish-source.zip.
 Keep that matching source and these notices with redistributed application images.
 Do not distribute just the executable or JAR without the corresponding source
 and all applicable GPL obligations.

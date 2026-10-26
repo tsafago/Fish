@@ -17,12 +17,17 @@ import static org.tn5250j.TN5250jConstants.*;
 public final class TerminalView extends JComponent implements Scrollable {
     private final SessionPane pane;
     private final Font face;
-    private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null,true,true);
+    private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null,
+            RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+    private Font inkFace;
+    private int fontPixels;
+    private final java.util.Map<Integer,InkMetrics> fontMetrics=new java.util.HashMap<>();
     private EffectLayer litEffect,dimEffect;
     private int effectResolution;
     private Color effectBackground;
     private int effectAnchor,effectEnd;
-    private final double baseWidth, baseHeight, ascent;
+    private final double nominalWidth,nominalHeight;
+    private double baseWidth,baseHeight,ascent;
     private RenderFrame rendered;
     private Screen5250 renderedScreen;
     private double cellWidth = 9, cellHeight = 18, originX = 12, originY = 10;
@@ -38,10 +43,9 @@ public final class TerminalView extends JComponent implements Scrollable {
         String family = java.util.Arrays.asList(fonts).contains("Cascadia Mono") ? "Cascadia Mono"
                 : java.util.Arrays.asList(fonts).contains("Consolas") ? "Consolas" : Font.MONOSPACED;
         face = new Font(family, Font.PLAIN, 16);
-        baseWidth = face.getStringBounds("M",TEXT_CONTEXT).getWidth();
-        var metrics = face.getLineMetrics("M",TEXT_CONTEXT);
-        baseHeight = metrics.getHeight();
-        ascent = metrics.getAscent();
+        nominalWidth=face.getStringBounds("M",TEXT_CONTEXT).getWidth();
+        nominalHeight=face.getLineMetrics("M",TEXT_CONTEXT).getHeight();
+        configureInk(metrics(16));
         setBackground(Ui.BACKGROUND);
         setForeground(Ui.TEXT);
         setOpaque(true);
@@ -199,25 +203,24 @@ public final class TerminalView extends JComponent implements Scrollable {
             // A bare JComponent has no UI delegate to honor its opaque-background contract.
             g.setColor(getBackground());
             g.fillRect(0,0,getWidth(),getHeight());
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-            g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+            g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
             Screen5250 screen = pane.screen();
             int rows = screen == null ? 24 : screen.getRows(), cols = screen == null ? 80 : screen.getColumns();
+            if (screen==null) return;
+            double dpiX=Math.abs(g.getTransform().getScaleX()),dpiY=Math.abs(g.getTransform().getScaleY());
             double scale = fit ? Math.max(3.0 / 16,Math.min(28.0 / 16,
-                    Math.min((getWidth() - 24) / (cols * baseWidth),(getHeight() - 20) / (rows * baseHeight))))
+                    Math.min((getWidth() - 24) / (cols * nominalWidth),(getHeight() - 20) / (rows * nominalHeight))))
                     : pane.profile().zoom();
-            cellWidth = baseWidth * scale;
-            cellHeight = baseHeight * scale;
-            originX = Math.max(12, (getWidth() - cols * cellWidth) / 2);
-            originY = Math.max(10, (getHeight() - rows * cellHeight) / 2);
-            if (screen == null) {
-                g.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-                g.setColor(Ui.TEXT);
-                g.drawString(pane.profile().host().isBlank() ? "No host configured" : "Session disconnected", 24, 40);
-                g.setColor(Ui.MUTED);
-                g.drawString("Ctrl+Alt+P  Profiles     Ctrl+Alt+R  Connect", 24, 65);
-                return;
+            int pixels=Math.max(1,(int)Math.floor(16*scale*dpiY));
+            InkMetrics targetInk=metrics(pixels);
+            while (fit && pixels>1 && (cols*targetInk.width>(getWidth()-24)*dpiX || rows*targetInk.height>(getHeight()-20)*dpiY)) {
+                targetInk=metrics(--pixels);
             }
+            configureInk(targetInk);
+            cellWidth=baseWidth/dpiX; cellHeight=baseHeight/dpiY;
+            originX=Math.rint(Math.max(12,(getWidth()-cols*cellWidth)/2)*dpiX)/dpiX;
+            originY=Math.rint(Math.max(10,(getHeight()-rows*cellHeight)/2)*dpiY)/dpiY;
             if (rendered == null || renderedScreen != screen) {
                 rendered = snapshot(screen);
                 renderedScreen = screen;
@@ -225,15 +228,18 @@ public final class TerminalView extends JComponent implements Scrollable {
             Graphics2D cells = (Graphics2D)g.create();
             try {
                 cells.translate(originX,originY);
-                cells.scale(scale,scale);
-                cells.setStroke(new BasicStroke((float)(1 / scale)));
+                cells.scale(1/dpiX,1/dpiY);
+                AffineTransform target=cells.getTransform();
+                target.setTransform(1,0,0,1,Math.rint(target.getTranslateX()),Math.rint(target.getTranslateY()));
+                cells.setTransform(target);
+                cells.setStroke(new BasicStroke(1));
                 Color[] palette = HostPalette.colors(pane.profile().theme());
                 Rectangle clip = cells.getClipBounds();
                 paintBackgrounds(cells,palette,cols,clip);
                 String effect = pane.profile().effect();
                 if (effect.equals("None")) paintInk(cells,palette,effect,cols,phase,clip);
                 else {
-                    int resolution=scale*Math.abs(g.getTransform().getScaleX())<=1.1 ? 1 : 2;
+                    int resolution=1;
                     if (effectResolution!=resolution || !getBackground().equals(effectBackground)
                             || anchor!=effectAnchor || end!=effectEnd) {
                         litEffect=dimEffect=null;
@@ -246,7 +252,6 @@ public final class TerminalView extends JComponent implements Scrollable {
                         layer=effectLayer(palette,effect,rows,cols,lit,resolution);
                         if (lit) litEffect=layer; else dimEffect=layer;
                     }
-                    cells.setRenderingHint(RenderingHints.KEY_INTERPOLATION,RenderingHints.VALUE_INTERPOLATION_BILINEAR);
                     for (EffectTile tile : layer.tiles)
                         if (clip==null || clip.intersects(tile.bounds)) cells.drawImage(tile.image,tile.placement,null);
                 }
@@ -258,6 +263,22 @@ public final class TerminalView extends JComponent implements Scrollable {
                         originY + pos / cols * cellHeight, Math.max(1, cellWidth - 1), Math.max(1, cellHeight - 1)));
             }
         } finally { g.dispose(); }
+    }
+    private record InkMetrics(Font font,double width,double height,double ascent) {}
+    private InkMetrics metrics(int pixels) {
+        return fontMetrics.computeIfAbsent(pixels,size -> {
+            Font font=face.deriveFont((float)size);
+            var lines=font.getLineMetrics("M",TEXT_CONTEXT);
+            return new InkMetrics(font,Math.ceil(font.getStringBounds("M",TEXT_CONTEXT).getWidth()),
+                    Math.ceil(lines.getHeight()),Math.ceil(lines.getAscent()));
+        });
+    }
+    private void configureInk(InkMetrics metrics) {
+        int pixels=metrics.font.getSize();
+        if (fontPixels==pixels) return;
+        fontPixels=pixels; inkFace=metrics.font;
+        baseWidth=metrics.width; baseHeight=metrics.height; ascent=metrics.ascent;
+        rendered=null; litEffect=dimEffect=null;
     }
     private void paintBackgrounds(Graphics2D cells,Color[] palette,int cols,Rectangle clip) {
         for (RenderRun run : rendered.runs) {
@@ -297,8 +318,8 @@ public final class TerminalView extends JComponent implements Scrollable {
             try {
                 ink.setColor(getBackground()); ink.fillRect(0,0,image.getWidth(),image.getHeight());
                 ink.scale(resolution,resolution); ink.translate(-bounds.x,-bounds.y);
-                ink.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-                ink.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+                ink.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+                ink.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
                 paintBackgrounds(ink,palette,cols,bounds);
                 // Neighboring ink must survive the overlap between opaque row tiles.
                 paintInk(ink,palette,effect,cols,visiblePhase,bounds);
@@ -367,7 +388,7 @@ public final class TerminalView extends JComponent implements Scrollable {
                     if (first < last) {
                         char[] ink = java.util.Arrays.copyOfRange(text,first,last);
                         for (int i = 0; i < ink.length; i++) if (ink[i] < 32) ink[i] = ' ';
-                        glyphs = face.createGlyphVector(TEXT_CONTEXT,ink);
+                        glyphs = inkFace.createGlyphVector(TEXT_CONTEXT,ink);
                         for (int i = 0; i <= glyphs.getNumGlyphs(); i++)
                             glyphs.setGlyphPosition(i,new Point2D.Double(i * baseWidth,0));
                     }
@@ -393,8 +414,11 @@ public final class TerminalView extends JComponent implements Scrollable {
     @Override public Dimension getPreferredSize() {
         Screen5250 screen = pane.screen();
         int cols = screen == null ? 80 : screen.getColumns(), rows = screen == null ? 24 : screen.getRows();
-        return fit ? new Dimension(240,140) : new Dimension((int)Math.ceil(cols * baseWidth * pane.profile().zoom()) + 24,
-                (int)Math.ceil(rows * baseHeight * pane.profile().zoom()) + 20);
+        if (fit) return new Dimension(240,140);
+        AffineTransform display=getGraphicsConfiguration()==null ? new AffineTransform() : getGraphicsConfiguration().getDefaultTransform();
+        InkMetrics ink=metrics(Math.max(1,(int)Math.floor(16*pane.profile().zoom()*display.getScaleY())));
+        return new Dimension((int)Math.ceil(cols*ink.width/display.getScaleX())+24,
+                (int)Math.ceil(rows*ink.height/display.getScaleY())+20);
     }
     @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
     @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return 20; }

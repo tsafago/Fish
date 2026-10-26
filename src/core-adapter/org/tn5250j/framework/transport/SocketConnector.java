@@ -6,6 +6,6 @@ public final class SocketConnector {
         if (type != null && !"NONE".equals(type)) throw new IllegalArgumentException("TLS is out of scope.");
     }
     public java.net.Socket createSocket(String host, int port) {
-        throw new UnsupportedOperationException("Use Pane5250 NetworkSession.");
+        throw new UnsupportedOperationException("Use Fish NetworkSession.");
     }
 }

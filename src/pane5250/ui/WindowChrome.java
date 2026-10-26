@@ -7,7 +7,7 @@ import javax.swing.*;
 /** Native Swing window mechanics without a second, system-colored title/menu row. */
 final class WindowChrome extends JPanel {
     private final JFrame window;
-    private final JLabel caption = new JLabel("Pane5250");
+    private final JLabel caption = new JLabel(new FishIcon(30,26));
     private final WindowButton maximize;
     private Rectangle normalBounds;
     private Rectangle keyboardStart;
@@ -29,6 +29,7 @@ final class WindowChrome extends JPanel {
         caption.setForeground(Ui.MUTED);
         caption.setFont(new Font("Segoe UI",Font.PLAIN,11));
         caption.setToolTipText(window.getTitle());
+        caption.getAccessibleContext().setAccessibleName("Fish");
         left.add(caption,BorderLayout.WEST);
         JPanel actions=new JPanel(new FlowLayout(FlowLayout.LEFT,5,0)); actions.setOpaque(false);
         actions.add(menus); actions.add(tools);
@@ -147,7 +148,7 @@ final class WindowChrome extends JPanel {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(windowKeys);
         Rectangle saved = keyboardStart;
         keyboardStart = null;
-        caption.setText("Pane5250");
+        caption.setText("");
         if (cancel) window.setBounds(saved);
         if (keyboardFocus != null && window.isFocused()) keyboardFocus.requestFocusInWindow();
         keyboardFocus = null;

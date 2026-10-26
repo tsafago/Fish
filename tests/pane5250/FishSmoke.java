@@ -2,7 +2,10 @@ package pane5250;
 
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.datatransfer.*;
+import java.awt.geom.*;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.nio.file.*;
 import java.util.*;
@@ -11,7 +14,9 @@ import java.util.concurrent.*;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import org.tn5250j.keyboard.KeyMnemonic;
+import org.tn5250j.Session5250;
 import pane5250.demo.DemoHost;
+import pane5250.demo.DemoScreens;
 import pane5250.model.*;
 import pane5250.ui.*;
 
@@ -51,6 +56,182 @@ public final class FishSmoke {
     }
     private static Object field(Object object,String name) throws Exception {
         Field field=object.getClass().getDeclaredField(name); field.setAccessible(true); return field.get(object);
+    }
+    private static void setField(Object object,String name,Object value) throws Exception {
+        Field field=object.getClass().getDeclaredField(name); field.setAccessible(true); field.set(object,value);
+    }
+    private static void clipboard(TerminalView view,boolean copy,Clipboard clipboard) throws Exception {
+        var transfer=TerminalView.class.getDeclaredMethod("clipboard",boolean.class,java.util.function.Supplier.class);
+        transfer.setAccessible(true);
+        transfer.invoke(view,copy,(java.util.function.Supplier<Clipboard>)() -> clipboard);
+    }
+    private static byte[] inputScreen(int ffw) {
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        DemoScreens.command(out,4,0x40,4,0x11,0,8);
+        DemoScreens.at(out,1,1,0x22,"HELLO");
+        for (int row=2;row<=4;row++) DemoScreens.field(out,row,1,8,row==2 ? ffw : 0x40,0x24);
+        DemoScreens.command(out,4,0x42,0,0);
+        return DemoScreens.gds(3,out.toByteArray());
+    }
+    private static byte[] attributesScreen() {
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        DemoScreens.command(out,4,0x40,4,0x11,0,8);
+        DemoScreens.at(out,1,1,0x27,"TOPSECRET");
+        DemoScreens.at(out,2,1,0x21,"REVERSE");
+        DemoScreens.at(out,3,1,0x2a,"BLINK");
+        DemoScreens.field(out,4,1,8,0x40,0x27);
+        DemoScreens.command(out,4,0x42,0,0);
+        return DemoScreens.gds(3,out.toByteArray());
+    }
+    private static void clipboardChecks(Workspace workspace,SessionPane pane,DemoHost host) throws Exception {
+        TerminalView view=pane.view();
+        Session5250 core=(Session5250)field(pane,"core");
+        Clipboard clipboard=new Clipboard("Synthetic Fish fixture");
+        int transactions=host.requestCount();
+        core.accept(inputScreen(0x40));
+        clipboard.setContents(new StringSelection("AB[]"),null);
+        clipboard(view,false,clipboard);
+        check(new String(pane.screen().getScreenAsChars(),81,4).equals("AB[]"),"Clipboard paste edits the actual host input field, including literal brackets.");
+        setField(view,"anchor",81); setField(view,"end",84);
+        clipboard(view,true,clipboard);
+        check(clipboard.getData(DataFlavor.stringFlavor).equals("AB[]"),"Clipboard copy exports precisely the rectangular selection.");
+        view.resetSelection();
+        core.accept(inputScreen(0x40));
+        clipboard.setContents(new StringSelection("A\tB\nC"),null);
+        clipboard(view,false,clipboard);
+        check(host.requestCount()==transactions,"Clipboard newlines/tabs never submit Enter or a host transaction.");
+        core.accept(inputScreen(0x43));
+        clipboard.setContents(new StringSelection("4X5"),null);
+        clipboard(view,false,clipboard);
+        check(pane.screen().getScreenAsChars()[81]=='4' && pane.screen().getScreenAsChars()[82]!='X'
+                && pane.screen().getOIA().isKeyBoardLocked(),"Numeric rejection stops clipboard input without bypassing inhibition.");
+        JPopupMenu inhibited=workspace.clipboardMenu(pane);
+        check(inhibited.getComponentCount()==2 && !((JMenuItem)inhibited.getComponent(1)).isEnabled(),"Compact context menu disables Paste when input is inhibited.");
+        core.accept(inputScreen(0x40));
+        pane.screen().moveCursor(2);
+        clipboard.setContents(new StringSelection("Z"),null);
+        clipboard(view,false,clipboard);
+        check(new String(pane.screen().getScreenAsChars(),1,5).equals("HELLO"),"Clipboard paste cannot overwrite protected host text.");
+        core.accept(inputScreen(0x40));
+        clipboard.setContents(new StringSelection("A\u6f22B"),null);
+        char[] before=pane.screen().getScreenAsChars().clone();
+        clipboard(view,false,clipboard);
+        check(Arrays.equals(before,pane.screen().getScreenAsChars()),"Unrepresentable clipboard text is rejected before editing a prefix.");
+        core.accept(DemoScreens.gds(3,new byte[]{4,0x11,0x20,0}));
+        clipboard.setContents(new StringSelection("NO"),null);
+        clipboard(view,false,clipboard);
+        check(pane.screen().getOIA().isKeyBoardLocked() && Arrays.equals(before,pane.screen().getScreenAsChars()),
+                "Clipboard paste cannot unlock or edit a host-inhibited screen.");
+        core.accept(attributesScreen());
+        clipboard.setContents(new StringSelection("PWD"),null);
+        clipboard(view,false,clipboard);
+        clipboard(view,true,clipboard);
+        String safe=(String)clipboard.getData(DataFlavor.stringFlavor);
+        check(!safe.contains("TOPSECRET") && !safe.contains("PWD") && safe.contains("REVERSE"),"Clipboard export omits both host-hidden text and typed password fields.");
+        clipboard(view,false,new Clipboard("Empty fixture"));
+        check(((String)field(pane,"notice")).contains("does not contain text"),"A clipboard without text produces an explicit message.");
+        clipboard(view,true,new Clipboard("Busy fixture") {
+            @Override public synchronized void setContents(Transferable contents,ClipboardOwner owner) {
+                throw new IllegalStateException("Synthetic clipboard busy");
+            }
+        });
+        check(((String)field(pane,"notice")).contains("Synthetic clipboard busy"),"Clipboard copy failures are reported, not thrown on the EDT.");
+        core.accept(DemoScreens.screen(1,false,""));
+        JPopupMenu context=workspace.clipboardMenu(pane);
+        check(((JMenuItem)context.getComponent(0)).getAction()==workspace.commands().stream()
+                .filter(c -> c.matches("copy clipboard")).findFirst().orElseThrow(),"Context menu reuses the shared clipboard command.");
+        check(workspace.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).get(KeyStroke.getKeyStroke("ctrl C"))==null
+                && workspace.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).get(KeyStroke.getKeyStroke("ctrl V"))==null,
+                "Clipboard additions do not steal Ctrl+C/V from host mappings.");
+    }
+    private static int differences(BufferedImage a,BufferedImage b,int top,int bottom) {
+        int count=0;
+        for (int y=Math.max(0,top);y<Math.min(bottom,a.getHeight());y++)
+            for (int x=0;x<a.getWidth();x++) if (a.getRGB(x,y)!=b.getRGB(x,y)) count++;
+        return count;
+    }
+    private static double luminance(Color color) {
+        int[] channels={color.getRed(),color.getGreen(),color.getBlue()};
+        double[] weights={.2126,.7152,.0722};
+        double result=0;
+        for (int i=0;i<3;i++) {
+            double value=channels[i]/255.0;
+            result+=weights[i]*(value<=.04045 ? value/12.92 : Math.pow((value+.055)/1.055,2.4));
+        }
+        return result;
+    }
+    private static double contrast(Color a,Color b) {
+        double x=luminance(a),y=luminance(b);
+        return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);
+    }
+    private static void fluxChecks(Workspace workspace,SessionPane pane) throws Exception {
+        TerminalView view=pane.view();
+        workspace.commands().stream().filter(c -> c.title.equals("Flux animated text")).findFirst().orElseThrow()
+                .actionPerformed(new ActionEvent(workspace,ActionEvent.ACTION_PERFORMED,"fixture"));
+        check(pane.profile().effect().equals(Profile.FLUX),"Flux is immediately available through command search and the persistent effect list.");
+        setField(view,"fluxPhase",0.0);
+        BufferedImage first=paint(view,1.5);
+        Object glyphs=field(view,"rendered");
+        setField(view,"fluxPhase",.35);
+        BufferedImage second=paint(view,1.5);
+        check(differences(first,second,0,first.getHeight())>100,"Two deterministic Flux phases visibly change terminal text.");
+        check(glyphs==field(view,"rendered"),"Animation reuses the physical-size glyph vectors instead of allocating per-cell geometry.");
+        ImageIO.write(first,"png",Path.of("build","fish-flux-a.png").toFile());
+        ImageIO.write(second,"png",Path.of("build","fish-flux-b.png").toFile());
+        Field clock=TerminalView.class.getDeclaredField("ANIMATION"); clock.setAccessible(true);
+        javax.swing.Timer timer=(javax.swing.Timer)clock.get(null);
+        check(timer.getDelay()==50 && timer.isCoalesce() && !timer.isRunning(),"One coalescing 20fps clock is suspended for hidden terminal surfaces.");
+        Session5250 core=(Session5250)field(pane,"core");
+        core.accept(attributesScreen());
+        setField(view,"phase",true); setField(view,"fluxPhase",0.0);
+        BufferedImage attributesA=paint(view,1);
+        setField(view,"fluxPhase",.35);
+        BufferedImage attributesB=paint(view,1);
+        int y=(int)Math.round((double)field(view,"originY")),height=(int)(double)field(view,"cellHeight");
+        check(differences(attributesA,attributesB,y+height,y+height*2)==0,"Flux preserves reverse-video foreground/background colors exactly.");
+        boolean hidden=true;
+        for (int row=y;row<y+height;row++) for (int x=0;x<attributesB.getWidth();x++)
+            hidden&=attributesB.getRGB(x,row)==view.getBackground().getRGB();
+        check(hidden,"Flux never draws non-display host data.");
+        setField(view,"phase",false);
+        BufferedImage blinkOff=paint(view,1);
+        check(differences(attributesB,blinkOff,y+height*2,y+height*3)>5,"Host blink still switches glyph visibility under Flux.");
+        core.accept(DemoScreens.screen(1,false,""));
+        AppTheme originalTheme=Ui.theme();
+        for (AppTheme theme:AppTheme.values()) {
+            workspace.applyTheme(theme); paint(view,1);
+            boolean readable=true;
+            for (Paint paint:(Paint[])field(view,"fluxPaints")) if (paint instanceof LinearGradientPaint gradient) {
+                for (Color color:gradient.getColors())
+                    readable&=contrast(color,view.getBackground())>=4.5 && contrast(color,Ui.SELECTION)>=4.5;
+            }
+            check(readable,"Flux gradient stops preserve text/selection contrast in "+theme+".");
+        }
+        workspace.applyTheme(originalTheme);
+        workspace.putProfile(pane.profile().withDisplay("Phosphor","None"));
+        setField(view,"fluxPhase",0.0); BufferedImage still=paint(view,1);
+        setField(view,"fluxPhase",.7);
+        check(differences(still,paint(view,1),0,still.getHeight())==0,"Default static rendering does not animate or change users' defaults.");
+    }
+    private static void iconChecks() throws Exception {
+        Field outline=FishIcon.class.getDeclaredField("OUTLINE"); outline.setAccessible(true);
+        Shape shape=(Shape)outline.get(null);
+        List<Point2D> points=new ArrayList<>();
+        double[] xy=new double[6];
+        for (PathIterator path=shape.getPathIterator(null);!path.isDone();path.next()) {
+            if (path.currentSegment(xy)!=PathIterator.SEG_CLOSE) points.add(new Point2D.Double(xy[0],xy[1]));
+        }
+        for (int a=0;a<points.size();a++) for (int b=a+2;b<points.size();b++) {
+            if (a==0 && b==points.size()-1) continue;
+            Line2D first=new Line2D.Double(points.get(a),points.get((a+1)%points.size()));
+            Line2D second=new Line2D.Double(points.get(b),points.get((b+1)%points.size()));
+            check(!first.intersectsLine(second),"Fish outline edges never self-intersect.");
+        }
+        check(shape.getBounds2D().getCenterY()==32 && points.contains(new Point2D.Double(58,32))
+                && points.contains(new Point2D.Double(5,18)) && points.contains(new Point2D.Double(5,46)),
+                "Fish is horizontal, with its tail at left and head at right.");
+        ImageIO.write(FishIcon.image(256),"png",Path.of("build","fish-horizontal-icon.png").toFile());
+        check(Profile.create("Default").effect().equals("None"),"New profiles still default to no effects.");
     }
     private static String shape(Layout node) {
         if (node instanceof Layout.Leaf) return "L";
@@ -106,7 +287,7 @@ public final class FishSmoke {
         Files.createDirectories(migration.resolve("Pane5250"));
         Files.writeString(migration.resolve("Pane5250").resolve("workspace.xml"),"legacy");
         check(Main.defaultDirectory(migration).equals(migration.resolve("Pane5250")),"Existing storage and locking are reused.");
-        Profile one=Profile.create("One"),two=Profile.create("Two");
+        Profile one=Profile.create("One"),two=Profile.create("Two").withDisplay("Ice",Profile.FLUX);
         check(two.credentialTarget().startsWith("Pane5250/"),"Existing Credential Manager namespace is retained.");
         try (StateStore store=new StateStore(migration.resolve("state"))) {
             StateStore.State state=new StateStore.State(List.of(one,two),new Layout.Leaf(UUID.randomUUID(),two.id()),
@@ -150,6 +331,7 @@ public final class FishSmoke {
         try {
             migration(directory);
             Ui.install();
+            iconChecks();
             layouts();
             solePane(directory);
             Workspace workspace=edt(() -> {
@@ -161,6 +343,11 @@ public final class FishSmoke {
             window=workspace;
             await(() -> edt(() -> workspace.sessionPanes().stream().allMatch(SessionPane::connected)),"Three independent loopback sessions connect.");
             List<SessionPane> original=edt(workspace::sessionPanes);
+            edt(() -> {
+                clipboardChecks(workspace,original.getFirst(),host);
+                fluxChecks(workspace,original.getFirst());
+                return null;
+            });
             edt(() -> {
                 check(workspace.getTitle().startsWith("Fish") && workspace.isUndecorated(),"Fish retains custom window chrome.");
                 check(workspace.getIconImages().size()>=6,"Runtime fish icons include small and large resolutions.");

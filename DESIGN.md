@@ -70,7 +70,8 @@ vertical padding. Resizing does not resize the host's presentation space.
 The main window is undecorated: one 28px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
 menus/compact + Pane and Commands controls and three 36px window controls.
-The leftmost mark is a minimal angled gradient wireframe fish, shared with
+The leftmost mark is a minimal horizontal gradient outline fish, tail left and
+head right, with no self-intersecting outline or crossed tail/body strokes; shared with
 runtime/taskbar and multi-resolution Windows executable icons.
 A transparent 5px edge target provides
 eight-direction resizing without overlaying the terminal interior.
@@ -87,6 +88,15 @@ Overlapping row margins include neighboring ink so they cannot erase it.
 Caches refresh on host/profile/theme/selection/background changes or a
 fitted physical-font-size change, not every resize frame. No effect draws non-display
 glyphs or replaces reverse-video backgrounds/host attributes.
+
+Flux is an explicitly opt-in flowing text-gradient preset, not animated chrome.
+Neutral text carries the rainbow; chromatic host text stays within its hue
+family and reverse video keeps its original colors. Cached physical-size glyph
+vectors use native rasterization with shared-per-color gradient paints; there
+are no per-cell animation allocations or blur/upscale passes. One coalescing
+50ms clock serves visible connected Flux terminals and stops when none are
+eligible, including minimized windows. Host blink, secrecy, selection and
+cursor remain independent. None is still the default and immediate stop control.
 
 ## Shapes
 
@@ -115,6 +125,9 @@ shadowed by a second popup; Ctrl+Alt+Space exposes the dark window menu.
 Commands has an immediately visible entry point and Ctrl+Alt+K shortcut;
 search includes aliases, disabled actions remain disabled, and modal focus
 isolates host input. A single registry backs menus, palette and shortcuts.
+The compact terminal clipboard popup and Edit menu share those same guarded
+Copy/Paste actions, preserve the selection on right-click, report clipboard
+errors, and return focus to the terminal without taking host Ctrl+C/V or F-keys.
 
 ## Painting and resize
 

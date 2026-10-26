@@ -12,6 +12,7 @@ import javax.accessibility.*;
 import javax.swing.*;
 import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.keyboard.KeyMnemonic;
+import pane5250.model.Profile;
 import static org.tn5250j.TN5250jConstants.*;
 
 public final class TerminalView extends JComponent implements Scrollable {
@@ -36,6 +37,25 @@ public final class TerminalView extends JComponent implements Scrollable {
     private boolean fit = true;
     private final Timer blink;
     private boolean phase = true;
+    private boolean disposed;
+    private double fluxPhase,paintedFluxPhase=Double.NaN;
+    private Paint[] fluxPaints;
+    private Color[] fluxPalette;
+    private Color fluxBackground,fluxSelection;
+    private int fluxWidth;
+    private Frame animationWindow;
+    private final WindowStateListener animationState=e -> updateAnimation();
+    private static final float[] FLUX_STOPS={0,.2f,.4f,.6f,.8f,1};
+    private static final java.util.Set<TerminalView> ANIMATED=new java.util.HashSet<>();
+    private static final Timer ANIMATION=new Timer(50,event -> {
+        double time=fluxTime();
+        for (var iterator=ANIMATED.iterator();iterator.hasNext();) {
+            TerminalView view=iterator.next();
+            if (!view.canAnimate()) { iterator.remove(); continue; }
+            view.fluxPhase=time; view.repaint();
+        }
+        if (ANIMATED.isEmpty()) ((Timer)event.getSource()).stop();
+    });
 
     public TerminalView(SessionPane pane) {
         this.pane = pane;
@@ -62,6 +82,12 @@ public final class TerminalView extends JComponent implements Scrollable {
             @Override public void keyPressed(KeyEvent event) {
                 suppressTyped = false;
                 if (event.isControlDown() && event.isAltDown() && !event.isAltGraphDown()) return;
+                if (event.getKeyCode()==KeyEvent.VK_CONTEXT_MENU && pane.keys().lookup(event)==null) {
+                    suppressTyped=true; event.consume();
+                    pane.clipboardMenu().show(TerminalView.this,
+                            (int)originX,(int)Math.min(getHeight()-1,originY+cellHeight));
+                    return;
+                }
                 if (event.isShiftDown() && event.getKeyCode() >= KeyEvent.VK_LEFT
                         && event.getKeyCode() <= KeyEvent.VK_DOWN) {
                     selectByKey(event.getKeyCode());
@@ -87,6 +113,7 @@ public final class TerminalView extends JComponent implements Scrollable {
         });
         MouseAdapter mouse = new MouseAdapter() {
             @Override public void mousePressed(MouseEvent event) {
+                if (popup(event)) return;
                 if (!SwingUtilities.isLeftMouseButton(event)) return;
                 requestFocusInWindow();
                 anchor = end = position(event.getPoint());
@@ -99,12 +126,18 @@ public final class TerminalView extends JComponent implements Scrollable {
                 repaint();
             }
             @Override public void mouseReleased(MouseEvent event) {
+                if (popup(event)) return;
                 if (!SwingUtilities.isLeftMouseButton(event)) return;
                 if (!dragging && pane.screen() != null && pane.connected()) {
                     pane.screen().moveCursor(end);
                     anchor = end = -1;
                 }
                 repaint();
+            }
+            private boolean popup(MouseEvent event) {
+                if (!event.isPopupTrigger()) return false;
+                pane.clipboardMenu().show(TerminalView.this,event.getX(),event.getY());
+                event.consume(); return true;
             }
         };
         addMouseListener(mouse);
@@ -120,14 +153,45 @@ public final class TerminalView extends JComponent implements Scrollable {
                         (int)Math.ceil(cellWidth) + 5,(int)Math.ceil(cellHeight) + 5);
             }
         });
+        addHierarchyListener(event -> {
+            if ((event.getChangeFlags()&HierarchyEvent.SHOWING_CHANGED)!=0) updateAnimation();
+        });
     }
 
-    @Override public void addNotify() { super.addNotify(); blink.start(); }
-    @Override public void removeNotify() { blink.stop(); super.removeNotify(); }
-    public void dispose() { blink.stop(); }
+    @Override public void addNotify() {
+        super.addNotify(); blink.start();
+        if (SwingUtilities.getWindowAncestor(this) instanceof Frame frame) {
+            animationWindow=frame; frame.addWindowStateListener(animationState);
+        }
+        updateAnimation();
+    }
+    @Override public void removeNotify() {
+        stopAnimation(); blink.stop();
+        if (animationWindow!=null) animationWindow.removeWindowStateListener(animationState);
+        animationWindow=null;
+        super.removeNotify();
+    }
+    public void dispose() { disposed=true; blink.stop(); stopAnimation(); }
+    private boolean canAnimate() {
+        return !disposed && isShowing() && pane.connected() && pane.profile().effect().equals(Profile.FLUX)
+                && (animationWindow==null || (animationWindow.getExtendedState()&Frame.ICONIFIED)==0);
+    }
+    private static double fluxTime() {
+        return Math.floorMod(System.nanoTime(),8_000_000_000L)/8_000_000_000.0;
+    }
+    private void updateAnimation() {
+        if (canAnimate()) {
+            if (ANIMATED.add(this)) fluxPhase=fluxTime();
+            if (!ANIMATION.isRunning()) ANIMATION.start();
+        } else stopAnimation();
+    }
+    private void stopAnimation() {
+        ANIMATED.remove(this);
+        if (ANIMATED.isEmpty()) ANIMATION.stop();
+    }
     public void setFit(boolean value) { fit = value; revalidate(); repaint(); }
     public boolean isFit() { return fit; }
-    public void screenChanged() { rendered = null; litEffect=dimEffect=null; repaint(); }
+    public void screenChanged() { rendered = null; litEffect=dimEffect=null; updateAnimation(); repaint(); }
     public void themeChanged() { setBackground(pane.getBackground()); screenChanged(); }
     public void resetSelection() { anchor = end = -1; repaint(); }
 
@@ -160,16 +224,25 @@ public final class TerminalView extends JComponent implements Scrollable {
         return result.toString();
     }
 
-    public void copy() {
-        Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(visibleText()), null);
-    }
-    public void paste() {
+    public void copy() { clipboard(true,() -> Toolkit.getDefaultToolkit().getSystemClipboard()); }
+    public void paste() { clipboard(false,() -> Toolkit.getDefaultToolkit().getSystemClipboard()); }
+    private void clipboard(boolean copy,java.util.function.Supplier<Clipboard> source) {
         try {
-            Object data = Toolkit.getDefaultToolkit().getSystemClipboard().getData(DataFlavor.stringFlavor);
-            if (data instanceof String text) pane.paste(text);
-        } catch (UnsupportedFlavorException | IOException | IllegalStateException e) {
-            pane.problem("Clipboard unavailable: " + e.getMessage());
-        }
+            if (pane.screen()==null) { pane.problem("No host screen to "+(copy ? "copy." : "paste into.")); return; }
+            if (copy) source.get().setContents(new StringSelection(visibleText()),null);
+            else {
+                if (!pane.connected() || pane.screen().getOIA().isKeyBoardLocked()) {
+                    pane.problem("Paste unavailable: disconnected or host input inhibited."); return;
+                }
+                Object data=source.get().getData(DataFlavor.stringFlavor);
+                if (!(data instanceof String text)) { pane.problem("Clipboard does not contain text."); return; }
+                pane.paste(text);
+            }
+        } catch (UnsupportedFlavorException e) {
+            pane.problem("Clipboard does not contain text.");
+        } catch (IOException | IllegalStateException | SecurityException | HeadlessException e) {
+            pane.problem("Clipboard unavailable: "+e.getMessage());
+        } finally { pane.focusTerminal(); }
     }
     private void selectByKey(int key) {
         Screen5250 screen = pane.screen();
@@ -224,6 +297,7 @@ public final class TerminalView extends JComponent implements Scrollable {
             if (rendered == null || renderedScreen != screen) {
                 rendered = snapshot(screen);
                 renderedScreen = screen;
+                fluxPaints=null;
             }
             Graphics2D cells = (Graphics2D)g.create();
             try {
@@ -237,7 +311,10 @@ public final class TerminalView extends JComponent implements Scrollable {
                 Rectangle clip = cells.getClipBounds();
                 paintBackgrounds(cells,palette,cols,clip);
                 String effect = pane.profile().effect();
-                if (effect.equals("None")) paintInk(cells,palette,effect,cols,phase,clip);
+                if (effect.equals("None") || effect.equals(Profile.FLUX)) {
+                    if (effect.equals(Profile.FLUX)) prepareFlux(palette,cols);
+                    paintInk(cells,palette,effect,cols,phase,clip);
+                }
                 else {
                     int resolution=1;
                     if (effectResolution!=resolution || !getBackground().equals(effectBackground)
@@ -351,6 +428,7 @@ public final class TerminalView extends JComponent implements Scrollable {
                     Color shifted=Color.getHSBColor((hsb[0]+.26f)%1,Math.max(.35f,hsb[1]),hsb[2]);
                     cells.setPaint(new GradientPaint(0,0,foreground,(float)(cols*baseWidth),0,shifted));
                 }
+                if (effect.equals(Profile.FLUX) && run.background==0) cells.setPaint(fluxPaints[run.foreground]);
                 cells.drawGlyphVector(run.glyphs,x,y);
             }
             cells.setColor(foreground);
@@ -360,6 +438,53 @@ public final class TerminalView extends JComponent implements Scrollable {
         }
     }
 
+    private void prepareFlux(Color[] palette,int cols) {
+        int width=Math.max(1,(int)(cols*baseWidth));
+        if (fluxPaints!=null && paintedFluxPhase==fluxPhase && fluxPalette==palette && fluxWidth==width
+                && getBackground().equals(fluxBackground) && Ui.SELECTION.equals(fluxSelection)) return;
+        fluxPaints=new Paint[palette.length];
+        for (RenderRun run:rendered.runs) {
+            int color=run.foreground;
+            if (run.hidden || run.glyphs==null || run.background!=0 || fluxPaints[color]!=null) continue;
+            if (color==0) { fluxPaints[color]=palette[color]; continue; }
+            float[] hsb=Color.RGBtoHSB(palette[color].getRed(),palette[color].getGreen(),palette[color].getBlue(),null);
+            Color[] stops=new Color[FLUX_STOPS.length];
+            for (int step=0;step<stops.length;step++) {
+                double wave=Math.sin(2*Math.PI*(fluxPhase+FLUX_STOPS[step]));
+                float hue=hsb[1]<.22f ? (float)(FLUX_STOPS[step]+.12*wave) : hsb[0]+(float)(.065*wave);
+                hue=(float)(hue-Math.floor(hue));
+                Color ink=Color.getHSBColor(hue,hsb[1]<.22f ? .72f : hsb[1],hsb[2]*(float)(.9+.1*wave));
+                stops[step]=readableFlux(ink);
+            }
+            float startX=(float)(width*.65*(2*fluxPhase-1)),startY=(float)(width*.12*(2*fluxPhase-1));
+            fluxPaints[color]=new LinearGradientPaint(new Point2D.Float(startX,startY),
+                    new Point2D.Float(startX+width*.65f,startY+width*.12f),FLUX_STOPS,stops,
+                    MultipleGradientPaint.CycleMethod.REFLECT,MultipleGradientPaint.ColorSpaceType.LINEAR_RGB,
+                    new AffineTransform());
+        }
+        fluxPalette=palette; fluxWidth=width; paintedFluxPhase=fluxPhase;
+        fluxBackground=getBackground(); fluxSelection=Ui.SELECTION;
+    }
+    private Color readableFlux(Color ink) {
+        int target=Ui.theme().dark ? 255 : 0;
+        while (contrast(ink,getBackground())<4.6 || contrast(ink,Ui.SELECTION)<4.6) {
+            Color adjusted=new Color((ink.getRed()*4+target)/5,(ink.getGreen()*4+target)/5,(ink.getBlue()*4+target)/5);
+            if (adjusted.equals(ink)) return Ui.TEXT;
+            ink=adjusted;
+        }
+        return ink;
+    }
+    private static double contrast(Color first,Color second) {
+        double a=luminance(first),b=luminance(second);
+        return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+    }
+    private static double luminance(Color color) {
+        return .2126*linear(color.getRed())+.7152*linear(color.getGreen())+.0722*linear(color.getBlue());
+    }
+    private static double linear(int channel) {
+        double value=channel/255.0;
+        return value<=.04045 ? value/12.92 : Math.pow((value+.055)/1.055,2.4);
+    }
     private boolean intersects(RenderRun run,Rectangle clip) {
         return clip == null || clip.intersects(run.start * baseWidth - 2,run.row * baseHeight - 2,
                 (run.end - run.start) * baseWidth + 4,baseHeight + 4);

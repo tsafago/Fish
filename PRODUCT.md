@@ -27,7 +27,8 @@ Pane resizing must never change the host's presentation space.
 
 One to eight independent panes in bounded two-row/four-column layouts,
 swap-only rearrangement, persistent workstation presets and last-used selection,
-field-aware input, host keys, fixed-width rendering, clipboard, zoom and
+field-aware input, host keys, fixed-width rendering, OS clipboard through a
+compact context menu/Edit menu/command search, zoom and
 optional inexpensive visual presets. Remembered passwords belong in Windows
 Credential Manager. TLS, AI features and Kerberos are not required.
 
@@ -38,11 +39,14 @@ Full ACS compatibility remains an acceptance target, never an unverified claim.
 
 The attached reference is binding: near-black flat panes, very thin dividers,
 small pane headers, crisp monospace host text, green and white host attributes,
-minimal application chrome. An angled gradient wireframe fish is the app mark
+minimal application chrome. A horizontal, noncrossing gradient outline fish,
+tail left and head right, is the app mark
 and Windows icon. Offline content is only a centered preset selector and Connect.
 Pane X disconnects and removes its tile, except the final tile stays empty;
 window close exits
 without confirmation. No cards, promotional text or oversized toolbars.
+An opt-in Flux text preset provides flowing animated multicolor gradients
+without changing the quiet chrome, default rendering or host attribute semantics.
 
 ## Evidence on Hand
 

@@ -360,6 +360,9 @@ public final class Workspace extends JFrame {
         action(session,"Insert remembered password","ctrl alt shift P",() -> active.sendPassword());
         session.addSeparator();
         action(session,"Quit","ctrl alt Q",() -> close(false));
+        JMenu edit=menu(bar,"Edit",KeyEvent.VK_E);
+        action(edit,"Copy selection / screen","ctrl alt shift C",() -> active.view().copy());
+        action(edit,"Paste into fields","ctrl alt shift V",() -> active.view().paste());
         JMenu layoutMenu = menu(bar,"Panes",KeyEvent.VK_P);
         action(layoutMenu,"Add pane","ctrl alt H",() -> split(true));
         bind("ctrl alt V",() -> command("Add pane").actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"add")));
@@ -381,19 +384,20 @@ public final class Workspace extends JFrame {
                     () -> applyTheme(theme),() -> !closing,"appearance color scheme "+theme.name());
             commands.add(change);
         }
+        commands.add(new AppCommand("Flux animated text","Flowing multicolor text; opt-in, host attributes preserved",null,
+                () -> putProfile(active.profile().withDisplay(active.profile().theme(),Profile.FLUX)),
+                () -> active!=null && !closing,"theme gradient rainbow animated flowing effect"));
         view.addSeparator();
         action(view,"Fit host screen","ctrl alt 0",this::fit);
         action(view,"Zoom in","ctrl alt EQUALS",() -> zoom(.1));
         action(view,"Zoom out","ctrl alt MINUS",() -> zoom(-.1));
         view.addSeparator();
-        action(view,"Copy selection / screen","ctrl alt shift C",() -> active.view().copy());
-        action(view,"Paste into fields","ctrl alt shift V",() -> active.view().paste());
         JMenu host = menu(bar,"Host",KeyEvent.VK_H);
         action(host,"Send host key...","ctrl alt F",this::hostKeys);
         for (KeyMnemonic key : List.of(KeyMnemonic.ENTER,KeyMnemonic.FIELD_EXIT,KeyMnemonic.FIELD_PLUS,KeyMnemonic.FIELD_MINUS,
                 KeyMnemonic.RESET,KeyMnemonic.ATTN,KeyMnemonic.SYSREQ,KeyMnemonic.CLEAR,KeyMnemonic.HELP,KeyMnemonic.PAGE_UP,KeyMnemonic.PAGE_DOWN))
             action(host,key.name().replace('_',' '),null,() -> active.send(key));
-        JMenu help = menu(bar,"Help",KeyEvent.VK_E);
+        JMenu help = menu(bar,"Help",KeyEvent.VK_L);
         action(help,"Keyboard reference",null,() -> Ui.message(this,
                 Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H/V: Add pane (max 8)     Ctrl+Alt+D: Swap\n"
                 + "Ctrl+Alt+Left/Right: Focus pane     Ctrl+Alt+1..8: Focus pane number\n"
@@ -433,7 +437,9 @@ public final class Workspace extends JFrame {
             case "Close pane" -> "disconnect remove pane reset offline";
             case "Profiles..." -> "settings workstation host device credentials";
             case "Search commands..." -> "command palette find action search";
-            case "Appearance..." -> "settings theme palette color effects glow prism";
+            case "Appearance..." -> "settings theme palette color effects glow prism flux animated gradient";
+            case "Copy selection / screen" -> "clipboard copy export selected text";
+            case "Paste into fields" -> "clipboard paste insert text";
             case "RESET" -> "unlock recover input error hung stuck";
             case "Reconnect" -> "retry connect restart session";
             default -> "";
@@ -444,6 +450,7 @@ public final class Workspace extends JFrame {
             if (List.of("Profiles...","Quit","Search commands...","Appearance...","Keyboard reference",
                     "Compatibility and connection safety").contains(text)) return true;
             if (active==null) return false;
+            if (text.equals("Copy selection / screen")) return active.screen()!=null;
             if (List.of("Swap panes...","Next pane","Previous pane").contains(text)) return panes.size()>1;
             if (text.equals("Restore profile layout")) return !active.profile().savedLayout().isEmpty();
             if (menu.getText().equals("Host") || text.startsWith("Insert ") || text.startsWith("Paste")) {
@@ -469,6 +476,14 @@ public final class Workspace extends JFrame {
         JPopupMenu menu = new JPopupMenu();
         for (String name : List.of("Connect / disconnect","Reconnect","Add pane",
                 "Swap panes...","Close pane","Profiles...","Appearance...")) menu.add(new JMenuItem(command(name)));
+        return menu;
+    }
+    public JPopupMenu clipboardMenu(SessionPane pane) {
+        activate(pane);
+        pane.focusTerminal();
+        JPopupMenu menu=new JPopupMenu();
+        menu.add(new JMenuItem(command("Copy selection / screen")));
+        menu.add(new JMenuItem(command("Paste into fields")));
         return menu;
     }
     public void close(boolean force) {

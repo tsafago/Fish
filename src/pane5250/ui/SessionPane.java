@@ -105,6 +105,7 @@ public final class SessionPane extends JPanel {
     public boolean connected() { return network != null && network.isConnected(); }
     public boolean busy() { return connecting || connected(); }
     public void activate() { workspace.activate(this); }
+    public JPopupMenu clipboardMenu() { return workspace.clipboardMenu(this); }
     public void focusTerminal() {
         if (core==null) presets.requestFocusInWindow(); else view.requestFocusInWindow();
     }

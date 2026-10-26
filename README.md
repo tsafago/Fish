@@ -12,7 +12,7 @@ to a production system.
 
 ## Run the delivered application
 
-The current local package is **Fish 0.3.1**. Keep the entire application-image directory together:
+The current local package is **Fish 0.3.2**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe
@@ -77,6 +77,9 @@ and a JDK are already present.
 `Smoke` is the small noninteractive gate used for the Fish revision: bounded
 slots, swap-only moves, immediate disconnect/close, minimal offline controls,
 last-preset/legacy migration, physical-pixel text and real loopback sockets.
+It also covers clipboard transfer/field safety with an isolated synthetic
+clipboard (never your shared OS clipboard), deterministic animated Flux phases,
+host-hidden/reverse/blink preservation, and nonintersecting horizontal icon geometry.
 It writes `build\fish-terminal-150.png` and `build\fish-empty-one.png`
 without showing a window or taking focus. No full/foreground suite was run
 for this quick revision.
@@ -99,7 +102,7 @@ split assertions are superseded and it is not part of the Fish test command.
 ## Sessions and profiles
 
 The main workspace has one compact, dark 28px title/menu row, not a second
-native titlebar. The angled gradient wireframe fish replaces application-name
+native titlebar. The horizontal gradient outline fish (tail left, head right) replaces application-name
 text and supplies the Windows executable/taskbar icon. Drag it or the blank title area to move;
 double-click to maximize/restore. The three upper-right controls minimize,
 maximize/restore and close. Drag any window edge/corner to resize.
@@ -134,6 +137,16 @@ shortcuts and aliases. Search `add pane`, `add window`, `new session`, `split`,
 `reset`, `theme` or a host key. Up/Down selects, Enter runs and Escape returns
 to the intended terminal. Disabled actions stay disabled; palette typing
 never edits host fields. Menus and palette use the same action handlers.
+
+**Right-click the terminal** for Copy selection/screen and Paste, or use the
+**Edit** menu and search commands for `copy clipboard` / `paste clipboard`.
+Without a selection, Copy exports the visible host screen; drag or Shift+arrows
+selects a rectangle. The keyboard's Context Menu key opens the same popup when
+it is not assigned to a host action. Existing **Ctrl+Alt+Shift+C/V** shortcuts
+remain available; Ctrl+C/V and Shift+F10 are not stolen from host mappings.
+Copy omits non-display data. Paste respects host fields, validation, code pages
+and inhibition; newlines/tabs navigate without submitting Enter. Clipboard
+failures are reported in the pane status and actions return focus to the terminal.
 
 Profiles store host, port, optional device name, username, manual/automatic
 sign-on preferences, SBCS code page, host key overrides, palette, effect,
@@ -240,11 +253,22 @@ dialogs, fields, lists, tabs, selection, disabled/hover/pressed/focus states,
 dividers and text. Application themes are independent of workstation host
 palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid and High contrast. Host
 color/reverse/underline/blink/non-display distinctions remain intact.
-Optional Soft glow, column-gradient Prism and pronounced Neon effects are
-disabled by default. Default glyphs are created at the final physical font
+Optional Soft glow, column-gradient Prism, pronounced Neon and **Flux (animated)**
+effects are disabled by default. Choose **View > Appearance > Text effect >
+Flux (animated)**, or search Commands for **Flux animated text**, for smoothly
+flowing multicolor gradients. The effect is saved with the preset. Neutral host
+text carries the full color flow; chromatic text varies within its host hue
+family, reverse video retains its exact colors, and hidden data is never drawn.
+Selection, cursor and host blink remain distinct. Animation uses cached native
+glyphs and one shared coalescing 20fps clock; it stops for hidden, minimized,
+disconnected and disposed terminals. Choose None to stop the effect.
+
+Default glyphs are created at the final physical font
 size, with integer-pixel cells/origins and LCD antialiasing; text is not scaled
 from a nominal font or bilinearly enlarged bitmap. Effect ink is cached in tight,
-background-composited row tiles at that same native physical resolution.
+background-composited row tiles at that same native physical resolution for
+the static effects. Flux reuses the native glyphs with per-used-color gradient
+paints, never rerasterizing an enlarged text bitmap.
 Selection, reverse backgrounds and blink remain accurate; resizing does not
 recreate glyphs/effects while the fitted physical font size is unchanged. The application has no
 AI features, telemetry, embedded browser, dashboard or promotional UI.

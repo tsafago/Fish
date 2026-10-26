@@ -12,6 +12,7 @@ import javax.swing.Icon;
 
 /** One wireframe geometry for the title mark, runtime icons and Windows package. */
 public final class FishIcon implements Icon {
+    private static final Shape OUTLINE=outline();
     private final int width,height;
     public FishIcon(int width,int height) { this.width=width; this.height=height; }
     @Override public int getIconWidth() { return width; }
@@ -25,18 +26,21 @@ public final class FishIcon implements Icon {
     }
     private static void draw(Graphics2D g) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-        g.rotate(-Math.PI/12,32,32);
-        g.setPaint(new LinearGradientPaint(5,16,57,46,new float[]{0,.5f,1},
+        g.setPaint(new LinearGradientPaint(5,32,58,32,new float[]{0,.5f,1},
                 new Color[]{new Color(0x69CBBE),new Color(0x83A7E8),new Color(0xCF92B9)}));
-        g.setStroke(new BasicStroke(2.3f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
+        g.setStroke(new BasicStroke(2.6f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
+        g.draw(OUTLINE);
+        Path2D gill=new Path2D.Double();
+        gill.moveTo(40,24); gill.lineTo(37,32); gill.lineTo(40,40);
+        g.draw(gill);
+        g.fill(new Ellipse2D.Double(47,29,2.4,2.4));
+    }
+    private static Path2D outline() {
         Path2D fish=new Path2D.Double();
-        fish.moveTo(16,32); fish.lineTo(5,20); fish.lineTo(5,44); fish.closePath();
-        fish.moveTo(16,32); fish.lineTo(32,17); fish.lineTo(57,32);
-        fish.lineTo(32,47); fish.closePath();
-        fish.moveTo(32,17); fish.lineTo(30,32); fish.lineTo(32,47);
-        fish.moveTo(16,32); fish.lineTo(57,32);
-        g.draw(fish);
-        g.fill(new Ellipse2D.Double(44,26,2.6,2.6));
+        fish.moveTo(19,27); fish.lineTo(5,18); fish.lineTo(5,46);
+        fish.lineTo(19,37); fish.lineTo(35,45); fish.lineTo(58,32);
+        fish.lineTo(35,19); fish.closePath();
+        return fish;
     }
     public static BufferedImage image(int size) {
         BufferedImage image=new BufferedImage(size,size,BufferedImage.TYPE_INT_ARGB);

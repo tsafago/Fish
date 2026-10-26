@@ -5,7 +5,7 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.3.1 quick revision
+## Fish 0.3.2 quick revision
 
 Fish rebrands the same experimental engine; unrelated protocol expansion is
 paused. This revision uses a build and small noninteractive `Smoke` checks,
@@ -16,6 +16,14 @@ and immediate close/disconnect, minimal offline controls, last-preset and legacy
 storage migration, native-pixel glyph caching, independent loopback sockets and
 host-controlled 24x80/27x132 switching. Offscreen captures are
 `build\fish-terminal-150.png` and `build\fish-empty-one.png`.
+Additional focused fixtures exercise clipboard transfer using a private
+synthetic clipboard (no shared OS clipboard access), numeric/protected/code-page
+and host-inhibition safety, hidden-field-safe export, no paste transactions,
+context command wiring, horizontal nonintersecting fish geometry, persisted Flux
+selection, deterministic animated phase differences, native glyph-cache reuse,
+and preserved reverse video/non-display/blink. Captures are `build\fish-flux-a.png`,
+`build\fish-flux-b.png` and `build\fish-horizontal-icon.png`. These offscreen
+fixtures are not a fresh foreground animation/resize benchmark.
 
 The prior measurements and interaction descriptions below are historical
 Pane5250 0.1.1/0.2.0 evidence, not fresh Fish acceptance. Directional docking,

@@ -21,8 +21,9 @@ if ($Task -eq 'Installer') {
     $env:PATH = (Join-Path $PSScriptRoot ('.tools\' + $manifest.Installer.Directory)) + ';' + $env:PATH
     $installerOutput = Join-Path $PSScriptRoot ('build\installer-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
     New-Item -ItemType Directory -Path $installerOutput | Out-Null
+    # WiX 3 needs jpackage's short OS temporary path when source lives in a deep directory.
     & "$Jdk\bin\jpackage.exe" --type exe --name Fish --app-version $version --app-image dist\Fish `
-        --dest $installerOutput --temp (Join-Path $installerOutput 'work') --vendor Fish --win-per-user-install --install-dir Fish `
+        --dest $installerOutput --vendor Fish --win-per-user-install --install-dir Fish `
         --win-dir-chooser --win-menu --win-shortcut --win-menu-group Fish `
         --win-upgrade-uuid '55b0674d-e226-46cb-852f-6beddd35a74b'
     if ($LASTEXITCODE -ne 0) { throw 'User-wide installer generation failed.' }

@@ -6,7 +6,11 @@ import java.nio.file.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile) {
+    public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
+                        Map<String,String> shortcuts, boolean highlightActive) {
+        public State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile) {
+            this(profiles,layout,width,height,appTheme,lastProfile,Map.of(),true);
+        }
         public State(List<Profile> profiles, Layout layout, int width, int height) {
             this(profiles,layout,width,height,AppTheme.Charcoal);
         }
@@ -15,6 +19,7 @@ public final class StateStore implements AutoCloseable {
         }
         public State {
             Objects.requireNonNull(appTheme);
+            shortcuts=Map.copyOf(shortcuts);
             profiles = List.copyOf(profiles);
             if (profiles.isEmpty()) throw new IllegalArgumentException("A workspace needs at least one saved profile.");
             Set<UUID> ids = new HashSet<>();
@@ -60,7 +65,7 @@ public final class StateStore implements AutoCloseable {
         try (InputStream in = Files.newInputStream(file())) { properties.loadFromXML(in); }
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3").contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4").contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             List<Profile> profiles = new ArrayList<>();
             for (String idText : required(properties, "profiles").split(",")) {
                 UUID id = UUID.fromString(idText);
@@ -77,19 +82,23 @@ public final class StateStore implements AutoCloseable {
                         required(properties, key + "effect"), Double.parseDouble(required(properties, key + "zoom")),
                         keys, required(properties, key + "layout")));
             }
-            UUID last="3".equals(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
+            UUID last=Set.of("3","4").contains(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
             Layout layout=Layout.decode(required(properties,"layout"));
-            if (!"3".equals(version) && !layout.leaves().isEmpty()) last=layout.leaves().getFirst().profile();
+            if (Set.of("1","2").contains(version) && !layout.leaves().isEmpty()) last=layout.leaves().getFirst().profile();
             if (layout instanceof Layout.Empty) {
                 layout=new Layout.Leaf(UUID.randomUUID(),last);
                 loadNotice="Restored one offline pane from the previous empty workspace; all presets retained.";
             }
             Layout bounded=Layout.normalize(layout);
             if (!bounded.equals(layout)) loadNotice="Previous pane layout rearranged into Fish's bounded slots; all presets retained.";
+            Map<String,String> shortcuts=new LinkedHashMap<>();
+            for (String property:properties.stringPropertyNames())
+                if (property.startsWith("shortcut.")) shortcuts.put(property.substring(9),properties.getProperty(property));
             return new State(profiles, bounded,
-                    Math.max(640, Math.min(10000, Integer.parseInt(required(properties, "width")))),
-                    Math.max(400, Math.min(10000, Integer.parseInt(required(properties, "height")))),
-                    "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")),last);
+                    Math.max(330, Math.min(10000, Integer.parseInt(required(properties, "width")))),
+                    Math.max(260, Math.min(10000, Integer.parseInt(required(properties, "height")))),
+                    "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")),last,
+                    shortcuts,!"4".equals(version) || bool(properties,"highlightActive"));
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid workspace; original file preserved: " + e.getMessage(), e);
         }
@@ -108,7 +117,9 @@ public final class StateStore implements AutoCloseable {
 
     public void save(State state) throws IOException {
         Properties properties = new Properties();
-        properties.setProperty("version", "3");
+        properties.setProperty("version", "4");
+        properties.setProperty("highlightActive",Boolean.toString(state.highlightActive));
+        state.shortcuts.forEach((action,stroke) -> properties.setProperty("shortcut."+action,stroke));
         properties.setProperty("lastProfile",state.lastProfile.toString());
         properties.setProperty("appTheme",state.appTheme.name());
         properties.setProperty("profiles", String.join(",", state.profiles.stream().map(p -> p.id().toString()).toList()));

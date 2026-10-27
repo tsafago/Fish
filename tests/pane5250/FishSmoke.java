@@ -217,19 +217,29 @@ public final class FishSmoke {
         Field outline=FishIcon.class.getDeclaredField("OUTLINE"); outline.setAccessible(true);
         Shape shape=(Shape)outline.get(null);
         List<Point2D> points=new ArrayList<>();
+        List<Line2D> lines=new ArrayList<>();
+        Point2D start=null,previous=null;
+        int paths=0,closed=0;
         double[] xy=new double[6];
         for (PathIterator path=shape.getPathIterator(null);!path.isDone();path.next()) {
-            if (path.currentSegment(xy)!=PathIterator.SEG_CLOSE) points.add(new Point2D.Double(xy[0],xy[1]));
+            int kind=path.currentSegment(xy);
+            Point2D point=new Point2D.Double(xy[0],xy[1]);
+            if (kind==PathIterator.SEG_MOVETO) { start=previous=point; paths++; }
+            else if (kind==PathIterator.SEG_LINETO) { lines.add(new Line2D.Double(previous,point)); previous=point; }
+            else if (kind==PathIterator.SEG_CLOSE) { lines.add(new Line2D.Double(previous,start)); closed++; }
+            if (kind!=PathIterator.SEG_CLOSE) points.add(point);
         }
-        for (int a=0;a<points.size();a++) for (int b=a+2;b<points.size();b++) {
-            if (a==0 && b==points.size()-1) continue;
-            Line2D first=new Line2D.Double(points.get(a),points.get((a+1)%points.size()));
-            Line2D second=new Line2D.Double(points.get(b),points.get((b+1)%points.size()));
-            check(!first.intersectsLine(second),"Fish outline edges never self-intersect.");
+        int crossings=0;
+        for (int a=0;a<lines.size();a++) for (int b=a+1;b<lines.size();b++) {
+            Line2D first=lines.get(a),second=lines.get(b);
+            if (first.getP1().equals(second.getP1()) || first.getP1().equals(second.getP2())
+                    || first.getP2().equals(second.getP1()) || first.getP2().equals(second.getP2())) continue;
+            if (first.intersectsLine(second)) crossings++;
         }
-        check(shape.getBounds2D().getCenterY()==32 && points.contains(new Point2D.Double(58,32))
-                && points.contains(new Point2D.Double(5,18)) && points.contains(new Point2D.Double(5,46)),
-                "Fish is horizontal, with its tail at left and head at right.");
+        check(paths==2 && closed==1 && crossings==1,"Minimal triangle/rhombus mark has exactly one crossing and a trimmed open lower intersection.");
+        check(shape.getBounds2D().getCenterY()==32 && shape.getBounds2D().getWidth()==42 && points.contains(new Point2D.Double(52,32))
+                && points.contains(new Point2D.Double(10,18)) && points.contains(new Point2D.Double(10,46)),
+                "Compact fish is horizontal, with its triangular tail left and rhombus head right.");
         ImageIO.write(FishIcon.image(256),"png",Path.of("build","fish-horizontal-icon.png").toFile());
         check(Profile.create("Default").effect().equals("None"),"New profiles still default to no effects.");
     }
@@ -412,7 +422,8 @@ public final class FishSmoke {
                     Container offline=Arrays.stream(body.getComponents()).filter(Component::isVisible).map(c -> (Container)c).findFirst().orElseThrow();
                     List<Component> offlineControls=children(offline);
                     check(offlineControls.stream().filter(c -> c instanceof JComboBox<?>).count()==1
-                            && offlineControls.stream().filter(c -> c instanceof JButton b && "Connect".equals(b.getText())).count()==1
+                            && offlineControls.stream().filter(c -> c instanceof JButton b
+                                && "Connect to selected preset".equals(b.getAccessibleContext().getAccessibleName()) && b.getIcon()!=null).count()==1
                             && offlineControls.stream().noneMatch(c -> c instanceof JLabel),"Offline content has only the preset selector and Connect.");
                 }
                 check(Arrays.stream(workspace.getOwnedWindows()).noneMatch(Window::isVisible),"Disconnect never opens a confirmation.");

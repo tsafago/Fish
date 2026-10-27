@@ -13,6 +13,7 @@ import javax.swing.Icon;
 /** One wireframe geometry for the title mark, runtime icons and Windows package. */
 public final class FishIcon implements Icon {
     private static final Shape OUTLINE=outline();
+    private double pulse;
     private final int width,height;
     public FishIcon(int width,int height) { this.width=width; this.height=height; }
     @Override public int getIconWidth() { return width; }
@@ -21,31 +22,32 @@ public final class FishIcon implements Icon {
         Graphics2D g=(Graphics2D)graphics.create();
         try {
             g.translate(x,y); g.scale(width/64.0,height/64.0);
-            draw(g);
+            draw(g,pulse);
         } finally { g.dispose(); }
     }
-    private static void draw(Graphics2D g) {
+    public void pulse(double value) { pulse=value; }
+    private static void draw(Graphics2D g,double pulse) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setPaint(new LinearGradientPaint(5,32,58,32,new float[]{0,.5f,1},
-                new Color[]{new Color(0x69CBBE),new Color(0x83A7E8),new Color(0xCF92B9)}));
-        g.setStroke(new BasicStroke(2.6f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
+        Color[] colors={new Color(0x69CBBE),new Color(0x83A7E8),new Color(0xCF92B9)};
+        if (pulse>0) for (int i=0;i<colors.length;i++) {
+            float[] hsb=Color.RGBtoHSB(colors[i].getRed(),colors[i].getGreen(),colors[i].getBlue(),null);
+            colors[i]=Color.getHSBColor(hsb[0]+(float)(Math.sin(pulse*Math.PI)*.3),hsb[1],hsb[2]);
+        }
+        g.setPaint(new LinearGradientPaint(10,32,52,32,new float[]{0,.5f,1},colors));
+        g.setStroke(new BasicStroke(3.4f,BasicStroke.CAP_BUTT,BasicStroke.JOIN_ROUND));
         g.draw(OUTLINE);
-        Path2D gill=new Path2D.Double();
-        gill.moveTo(40,24); gill.lineTo(37,32); gill.lineTo(40,40);
-        g.draw(gill);
-        g.fill(new Ellipse2D.Double(47,29,2.4,2.4));
     }
     private static Path2D outline() {
         Path2D fish=new Path2D.Double();
-        fish.moveTo(19,27); fish.lineTo(5,18); fish.lineTo(5,46);
-        fish.lineTo(19,37); fish.lineTo(35,45); fish.lineTo(58,32);
-        fish.lineTo(35,19); fish.closePath();
+        fish.moveTo(10,18); fish.lineTo(10,46); fish.lineTo(38,32); fish.closePath();
+        fish.moveTo(21.3,37.3); fish.lineTo(16,32); fish.lineTo(34,14);
+        fish.lineTo(52,32); fish.lineTo(34,50); fish.lineTo(25.3,41.3);
         return fish;
     }
     public static BufferedImage image(int size) {
         BufferedImage image=new BufferedImage(size,size,BufferedImage.TYPE_INT_ARGB);
         Graphics2D g=image.createGraphics();
-        try { g.scale(size/64.0,size/64.0); draw(g); }
+        try { g.scale(size/64.0,size/64.0); draw(g,0); }
         finally { g.dispose(); }
         return image;
     }

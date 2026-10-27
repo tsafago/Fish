@@ -78,6 +78,7 @@ public final class ProfilesDialog extends JDialog {
         keymap.setFont(new Font(Font.MONOSPACED,Font.PLAIN,12));
         keymap.getAccessibleContext().setAccessibleName("Keyboard overrides: KEY = ACTION");
         keyboard.add(new JScrollPane(keymap),BorderLayout.CENTER);
+        keyboard.add(Ui.button("All actions / global shortcuts...",KeyEvent.VK_J,() -> workspace.showShortcuts()),BorderLayout.SOUTH);
         tabs.addTab("Keyboard",keyboard); tabs.setMnemonicAt(2,KeyEvent.VK_3);
         JPanel body = new JPanel(new BorderLayout(12,0));
         body.setBorder(Ui.padding(12));
@@ -157,6 +158,7 @@ public final class ProfilesDialog extends JDialog {
                     device.getText(),username.getText(),automatic.isSelected(),remember.isSelected(),
                     Objects.requireNonNull((String)codePage.getSelectedItem()),Objects.requireNonNull((String)theme.getSelectedItem()),
                     Objects.requireNonNull((String)effect.getSelectedItem()),selected.zoom(),Keymap.parse(keymap.getText()),selected.savedLayout());
+            workspace.validateProfile(updated);
             if (secret.length > 0 && !updated.rememberPassword())
                 throw new IllegalArgumentException("Enable Remember password to save this password, or clear the password field.");
         } catch (IllegalArgumentException e) {

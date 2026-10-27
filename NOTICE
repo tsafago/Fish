@@ -21,13 +21,18 @@ Keep that matching source and these notices with redistributed application image
 Do not distribute just the executable or JAR without the corresponding source
 and all applicable GPL obligations.
 
-The bundled runtime is generated from Eclipse Temurin OpenJDK 21.0.8+9 by default
+The bundled runtime is generated from Eclipse Temurin OpenJDK 21.0.12.1+1 by default
 (or the JDK explicitly selected for the build). Its module-specific licenses and
 notices are in runtime/legal. OpenJDK uses GPL version 2 with the Classpath
 Exception; see those notices. Temurin release/source information:
-https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.8%2B9
-https://github.com/openjdk/jdk21u/tree/jdk-21.0.8%2B9
+https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.12.1%2B1
+https://github.com/openjdk/jdk21u
 Use an appropriately maintained JDK 21 build for deployment and retain its notices.
+
+src/native/fish-window.c is Fish's own Windows frame integration source.
+Portable Zig and WiX are build tools retrieved from their official distributions
+using checksums in tools.psd1; they are not application runtime dependencies.
+Windows' user32 library and the bundled JDK's JAWT provide its runtime platform APIs.
 
 Protocol references: RFC 1205, RFC 4777, RFC 854/855/856, RFC 885,
 RFC 1091 and RFC 1572. These are referenced specifications, not bundled code.

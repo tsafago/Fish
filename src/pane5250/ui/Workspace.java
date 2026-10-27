@@ -35,6 +35,9 @@ public final class Workspace extends JFrame {
     private Component tree;
     private final boolean demonstration;
     private boolean closing;
+    private boolean highlightActive;
+    private final AppShortcuts shortcuts;
+    private final WindowChrome chrome;
     private Runnable afterClose = () -> {};
 
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
@@ -49,10 +52,11 @@ public final class Workspace extends JFrame {
         state.profiles().forEach(p -> profiles.put(p.id(),p));
         layout = Layout.normalize(state.layout());
         lastProfile=state.lastProfile();
+        highlightActive=state.highlightActive();
         saveTimer = new javax.swing.Timer(500,e -> saveAsync());
         saveTimer.setRepeats(false);
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
-        setMinimumSize(new Dimension(680,440));
+        setMinimumSize(new Dimension(330,260));
         Dimension screen = Toolkit.getDefaultToolkit().getScreenSize();
         setSize(Math.min(state.width(),screen.width),Math.min(state.height(),screen.height));
         setLocationRelativeTo(null);
@@ -65,14 +69,18 @@ public final class Workspace extends JFrame {
         JMenuBar menus=menus();
         JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,3,0)); tools.setOpaque(false);
         JButton addPane=new JButton(command("Add pane")); addPane.setText("+ Pane");
+        addPane.setText("Pane"); addPane.setIcon(Ui.symbol("plus"));
         addPane.setToolTipText("Add the next pane (maximum 8; Ctrl+Alt+H)");
         addPane.getAccessibleContext().setAccessibleName("Add pane");
         JButton find=new JButton(command("Search commands...")); find.setText("Commands");
+        find.setIcon(Ui.symbol("search"));
         find.setToolTipText("Search commands (Ctrl+Alt+K)");
         find.getAccessibleContext().setAccessibleName("Search commands");
         for (JButton b : List.of(addPane,find)) { b.setBorder(BorderFactory.createEmptyBorder(4,7,4,7)); tools.add(b); }
-        shell.add(new WindowChrome(this,menus,tools),BorderLayout.NORTH);
+        chrome=new WindowChrome(this,menus,tools);
+        shell.add(chrome,BorderLayout.NORTH);
         shell.add(content,BorderLayout.CENTER);
+        shortcuts=new AppShortcuts(this,commands,state.shortcuts());
         buildTree();
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { close(false); }
@@ -87,14 +95,46 @@ public final class Workspace extends JFrame {
     public Profile lastProfile() { return profiles.get(lastProfile); }
     public void selectProfile(SessionPane pane,Profile profile) {
         if (pane.busy()) throw new IllegalStateException("Disconnect before selecting a preset.");
-        lastProfile=profile.id(); pane.updateProfile(profile); changed();
+        lastProfile=profile.id(); pane.updateProfile(profile); refreshShortcutLabels(); changed();
     }
     public void rememberProfile(Profile profile) { lastProfile=profile.id(); changed(); }
     public boolean hasPane(UUID id) { return panes.containsKey(id); }
+    public boolean highlightActive() { return highlightActive; }
+    public void showShortcuts() { shortcuts.show(); }
+    @Override public void addNotify() {
+        super.addNotify();
+        if (chrome!=null) chrome.installNative();
+    }
+    public Set<KeyMnemonic> reassignedHostActions() { return shortcuts.reassignedHostActions(); }
+    public Map<String,String> shortcutOverrides() { return shortcuts.overrides(); }
+    public String shortcutLabel(String title) { return command(title).shortcut; }
+    public void applyShortcuts(Map<String,String> values) {
+        shortcuts.apply(values,profileList());
+        panes.values().forEach(p -> { p.refreshKeys(); p.updateHeader(); });
+        refreshShortcutLabels();
+        changed();
+    }
+    public void validateProfile(Profile profile) {
+        List<Profile> candidates=new ArrayList<>(profileList());
+        candidates.removeIf(p -> p.id().equals(profile.id())); candidates.add(profile);
+        shortcuts.validate(shortcuts.overrides(),candidates);
+    }
+    public void highlightActive(boolean enabled) {
+        highlightActive=enabled; panes.values().forEach(SessionPane::updateHeader); changed();
+    }
     public List<SessionPane> sessionPanes() { return layout.leaves().stream().map(l -> panes.get(l.pane())).toList(); }
     public List<AppCommand> commands() { return List.copyOf(commands); }
     private AppCommand command(String name) { return commands.stream().filter(c -> c.title.equals(name)).findFirst().orElseThrow(); }
     public void refreshCommands() { commands.forEach(AppCommand::refresh); }
+    private void refreshShortcutLabels() {
+        if (active==null || shortcuts==null) return;
+        Map<KeyStroke,KeyMnemonic> keys=active.keys().bindings();
+        for (AppCommand c:commands) if (c.hostKey!=null && !shortcuts.overrides().containsKey(c.title)) {
+            String stroke=keys.entrySet().stream().filter(e -> e.getValue()==c.hostKey).map(e -> e.getKey().toString())
+                    .min(Comparator.comparingInt(String::length).thenComparing(Comparator.naturalOrder())).orElse("");
+            c.setStroke(stroke);
+        }
+    }
     public void themeChanged() {
         content.setBackground(Ui.BACKGROUND);
         if (getContentPane()!=null) getContentPane().setBackground(Ui.BACKGROUND);
@@ -117,7 +157,9 @@ public final class Workspace extends JFrame {
         return index<top ? "Top row, column "+(index+1) : "Bottom row, column "+(index-top+1);
     }
     public void activate(SessionPane pane) {
+        if (active==pane) { refreshCommands(); return; }
         active = pane;
+        refreshShortcutLabels();
         panes.values().forEach(SessionPane::updateHeader);
         refreshCommands();
     }
@@ -138,6 +180,7 @@ public final class Workspace extends JFrame {
         content.add(tree,BorderLayout.CENTER);
         if (active == null || !live.contains(active.id())) active = live.isEmpty() ? null : panes.get(layout.leaves().getFirst().pane());
         panes.values().forEach(SessionPane::updateHeader);
+        refreshShortcutLabels();
         content.revalidate();
         content.repaint();
         refreshCommands();
@@ -180,7 +223,8 @@ public final class Workspace extends JFrame {
                 Math.max(.05,Math.min(.95,ratio)),capture(split.getLeftComponent()),capture(split.getRightComponent()));
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
-    private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile); }
+    private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
+            shortcuts.overrides(),highlightActive); }
     public void saveAsync() {
         if (closing) return;
         StateStore.State snapshot = state();
@@ -261,6 +305,7 @@ public final class Workspace extends JFrame {
                 || !a.username().equals(b.username()) || a.automaticSignOn() != b.automaticSignOn() || !a.codePage().equals(b.codePage());
     }
     public void putProfile(Profile value) {
+        validateProfile(value);
         Profile old = profiles.put(value.id(),value);
         for (SessionPane pane : panes.values()) {
             if (pane.profile().id().equals(value.id())) {
@@ -269,6 +314,7 @@ public final class Workspace extends JFrame {
             }
             pane.refreshPresets();
         }
+        refreshShortcutLabels();
         changed();
     }
     public void useProfile(Profile value) {
@@ -282,6 +328,7 @@ public final class Workspace extends JFrame {
             changed();
         }
         if (!active.busy()) active.connect();
+        refreshShortcutLabels();
         rememberProfile(value);
         active.focusTerminal();
     }
@@ -329,6 +376,9 @@ public final class Workspace extends JFrame {
         JComboBox<AppTheme> themes=new JComboBox<>(AppTheme.values()); themes.setSelectedItem(Ui.theme());
         JLabel application=new JLabel("Application theme"); application.setLabelFor(themes);
         form.add(application); form.add(themes);
+        JCheckBox highlight=new JCheckBox("Tint selected pane background",highlightActive);
+        highlight.addActionListener(e -> highlightActive(highlight.isSelected()));
+        form.add(new JLabel("Pane focus")); form.add(highlight);
         themes.addActionListener(e -> applyTheme((AppTheme)themes.getSelectedItem()));
         if (active!=null) {
             SessionPane pane=active;
@@ -363,9 +413,10 @@ public final class Workspace extends JFrame {
         JMenu edit=menu(bar,"Edit",KeyEvent.VK_E);
         action(edit,"Copy selection / screen","ctrl alt shift C",() -> active.view().copy());
         action(edit,"Paste into fields","ctrl alt shift V",() -> active.view().paste());
+        edit.addSeparator();
+        action(edit,"Shortcuts...",null,() -> shortcuts.show());
         JMenu layoutMenu = menu(bar,"Panes",KeyEvent.VK_P);
         action(layoutMenu,"Add pane","ctrl alt H",() -> split(true));
-        bind("ctrl alt V",() -> command("Add pane").actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"add")));
         action(layoutMenu,"Swap panes...","ctrl alt D",this::dockingDialog);
         action(layoutMenu,"Close pane","ctrl alt W",this::closePane);
         layoutMenu.addSeparator();
@@ -391,15 +442,18 @@ public final class Workspace extends JFrame {
         action(view,"Fit host screen","ctrl alt 0",this::fit);
         action(view,"Zoom in","ctrl alt EQUALS",() -> zoom(.1));
         action(view,"Zoom out","ctrl alt MINUS",() -> zoom(-.1));
-        view.addSeparator();
         JMenu host = menu(bar,"Host",KeyEvent.VK_H);
         action(host,"Send host key...","ctrl alt F",this::hostKeys);
         for (KeyMnemonic key : List.of(KeyMnemonic.ENTER,KeyMnemonic.FIELD_EXIT,KeyMnemonic.FIELD_PLUS,KeyMnemonic.FIELD_MINUS,
                 KeyMnemonic.RESET,KeyMnemonic.ATTN,KeyMnemonic.SYSREQ,KeyMnemonic.CLEAR,KeyMnemonic.HELP,KeyMnemonic.PAGE_UP,KeyMnemonic.PAGE_DOWN))
-            action(host,key.name().replace('_',' '),null,() -> active.send(key));
+            action(host,key.name().replace('_',' '),null,() -> active.send(key)).hostKey=key;
         JMenu help = menu(bar,"Help",KeyEvent.VK_L);
+        action(help,"Full manual / Getting Started",null,() -> {
+            try { new ManualDialog(this).setVisible(true); }
+            catch (java.io.IOException e) { Ui.error(this,"The manual could not be opened: "+e.getMessage()); }
+        });
         action(help,"Keyboard reference",null,() -> Ui.message(this,
-                Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H/V: Add pane (max 8)     Ctrl+Alt+D: Swap\n"
+                Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H: Add pane (max 8)     Ctrl+Alt+D: Swap\n"
                 + "Ctrl+Alt+Left/Right: Focus pane     Ctrl+Alt+1..8: Focus pane number\n"
                 + "Ctrl+Alt+[/]: Resize divider     Ctrl+Alt+0: Fit\nCtrl+Alt+Shift+C/V: Copy/paste\n"
                 + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
@@ -414,23 +468,36 @@ public final class Workspace extends JFrame {
                 + "GPL-2.0-or-later. No warranty.", "Compatibility"));
         for (int i=1;i<=24;i++) {
             KeyMnemonic key=KeyMnemonic.valueOf("PF"+i);
-            commands.add(new AppCommand("Host F"+i,"Send function key to the focused session",i<=12 ? "F"+i : "shift F"+(i-12),
+            AppCommand function=new AppCommand("Host F"+i,"Send function key to the focused session",i<=12 ? "F"+i : "shift F"+(i-12),
                     () -> active.send(key),() -> active!=null && active.connected() && !active.screen().getOIA().isKeyBoardLocked(),
-                    "PF"+i+" function key"));
+                    "PF"+i+" function key");
+            function.hostKey=key; commands.add(function);
         }
-        bind("ctrl alt M",() -> { bar.getMenu(0).doClick(); });
+        for (KeyMnemonic key:Keymap.hostActions()) {
+            if (commands.stream().anyMatch(c -> c.hostKey==key)) continue;
+            AppCommand hostAction=new AppCommand("Host "+key.name().replace('_',' '),"Host keyboard / "+key,null,
+                    () -> active.send(key),() -> active!=null && active.connected() && !active.screen().getOIA().isKeyBoardLocked(),
+                    "host keyboard "+key.name());
+            hostAction.hostKey=key; commands.add(hostAction);
+        }
+        commands.add(new AppCommand("Open menus","Application menus","ctrl alt M",() -> chrome.openMenus(),() -> !closing,"menu toolbar"));
+        commands.add(new AppCommand("Window menu","Window move, size and close","ctrl alt SPACE",() -> chrome.showSystemMenu(),
+                () -> !closing,"window move resize"));
+        commands.add(new AppCommand("Maximize / restore window","Window size",null,() -> chrome.toggleMaximize(),() -> !closing,"maximize restore"));
+        commands.add(new AppCommand("Minimize window","Window size",null,() -> setExtendedState(getExtendedState()|Frame.ICONIFIED),
+                () -> !closing,"minimize"));
         for (int i = 1; i <= 8; i++) {
             final int index = i - 1;
-            bind("ctrl alt " + i,() -> {
+            commands.add(new AppCommand("Focus pane "+i,"Focus pane by its layout position","ctrl alt "+i,() -> {
                 if (index < sessionPanes().size()) { activate(sessionPanes().get(index)); active.focusTerminal(); }
-            });
+            },() -> !closing && index<panes.size(),"select focus pane window tab "+i));
         }
         return bar;
     }
     private JMenu menu(JMenuBar bar, String name, int mnemonic) {
         JMenu menu = new JMenu(name); menu.setMnemonic(mnemonic); bar.add(menu); return menu;
     }
-    private void action(JMenu menu,String text,String stroke,Runnable command) {
+    private AppCommand action(JMenu menu,String text,String stroke,Runnable command) {
         String aliases=switch (text) {
             case "Add pane" -> "add window new session split side by side";
             case "Swap panes..." -> "move rearrange dock";
@@ -448,7 +515,7 @@ public final class Workspace extends JFrame {
             if (closing) return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
             if (List.of("Profiles...","Quit","Search commands...","Appearance...","Keyboard reference",
-                    "Compatibility and connection safety").contains(text)) return true;
+                    "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started").contains(text)) return true;
             if (active==null) return false;
             if (text.equals("Copy selection / screen")) return active.screen()!=null;
             if (List.of("Swap panes...","Next pane","Previous pane").contains(text)) return panes.size()>1;
@@ -460,16 +527,8 @@ public final class Workspace extends JFrame {
             return true;
         },aliases);
         commands.add(action);
-        if (stroke!=null) bind(stroke,() -> action.actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,text)));
         menu.add(new JMenuItem(action));
-    }
-    private void bind(String stroke,Runnable command) {
-        KeyStroke key = KeyStroke.getKeyStroke(stroke);
-        if (key == null) throw new IllegalArgumentException("Invalid application shortcut: " + stroke);
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(key,stroke);
-        getRootPane().getActionMap().put(stroke,new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { command.run(); }
-        });
+        return action;
     }
     public JPopupMenu paneMenu(SessionPane pane) {
         activate(pane);
@@ -491,6 +550,7 @@ public final class Workspace extends JFrame {
         saveTimer.stop();
         StateStore.State snapshot = state();
         closing = true;
+        shortcuts.dispose();
         panes.values().forEach(SessionPane::dispose);
         dispose();
         persistence.submit(() -> {

@@ -1,15 +1,39 @@
 param(
-    [ValidateSet('Build', 'Smoke', 'Check', 'Test', 'Package', 'Run', 'Demo')]
+    [ValidateSet('Build', 'Smoke', 'Check', 'Test', 'Package', 'Installer', 'Run', 'Demo')]
     [string]$Task = 'Build',
     [string]$Jdk = $env:JAVA_HOME
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-if (-not $Jdk -and (Test-Path '.tools\jdk-21.0.8+9\bin\javac.exe')) {
-    $Jdk = Join-Path $PSScriptRoot '.tools\jdk-21.0.8+9'
+$version = '0.4.0'
+if (-not $Jdk) {
+    $manifest = Import-PowerShellDataFile .\tools.psd1
+    $candidate = Join-Path $PSScriptRoot ('.tools\' + $manifest.Jdk.Directory)
+    if (Test-Path "$candidate\bin\javac.exe") { $Jdk = $candidate }
 }
 if (-not $Jdk -or -not (Test-Path "$Jdk\bin\javac.exe")) {
     throw 'JDK 21 required. Set JAVA_HOME or run .\scripts\bootstrap.ps1.'
+}
+if ($Task -eq 'Installer') {
+    if (-not (Test-Path dist\Fish\Fish.exe)) { throw 'Build the application first: .\build.ps1 Package' }
+    & "$PSScriptRoot\scripts\prepare-tools.ps1" -Kind Installer
+    $manifest = Import-PowerShellDataFile .\tools.psd1
+    $env:PATH = (Join-Path $PSScriptRoot ('.tools\' + $manifest.Installer.Directory)) + ';' + $env:PATH
+    $installerOutput = Join-Path $PSScriptRoot ('build\installer-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    New-Item -ItemType Directory -Path $installerOutput | Out-Null
+    & "$Jdk\bin\jpackage.exe" --type exe --name Fish --app-version $version --app-image dist\Fish `
+        --dest $installerOutput --temp (Join-Path $installerOutput 'work') --vendor Fish --win-per-user-install --install-dir Fish `
+        --win-dir-chooser --win-menu --win-shortcut --win-menu-group Fish `
+        --win-upgrade-uuid '55b0674d-e226-46cb-852f-6beddd35a74b'
+    if ($LASTEXITCODE -ne 0) { throw 'User-wide installer generation failed.' }
+    Copy-Item (Join-Path $installerOutput "Fish-$version.exe") "dist\Fish-$version-setup.exe" -Force
+    Compress-Archive -Path dist\Fish -DestinationPath "dist\Fish-$version-windows-x64.zip" -Force
+    $checksums = foreach ($file in @("dist\Fish-$version-setup.exe","dist\Fish-$version-windows-x64.zip",'dist\Fish-source.zip')) {
+        (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($file)
+    }
+    [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'dist\SHA256SUMS.txt'),$checksums,[Text.UTF8Encoding]::new($false))
+    Write-Host "Fish $version user-wide installer and portable ZIP ready."
+    return
 }
 if (-not (Test-Path 'vendor\tn5250j\src')) {
     & git submodule update --init --recursive
@@ -25,6 +49,7 @@ foreach ($directory in @('build\classes','build\generated','build\test-classes',
 }
 New-Item -ItemType Directory -Force build\classes,build\generated,dist | Out-Null
 & "$PSScriptRoot\scripts\prepare-core.ps1"
+& "$PSScriptRoot\scripts\build-native.ps1" -Jdk $Jdk
 $sources = @(
     Get-ChildItem src -Recurse -Filter *.java
     Get-ChildItem build\generated -Recurse -Filter *.java
@@ -33,12 +58,14 @@ $sourceList = Join-Path $PSScriptRoot 'build\sources.txt'
 [IO.File]::WriteAllLines($sourceList, $sources, [Text.UTF8Encoding]::new($false))
 & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -Xlint:unchecked -d build\classes "@$sourceList"
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
+Copy-Item MANUAL.md build\classes\MANUAL.md
 & "$Jdk\bin\jar.exe" --create --file dist\Fish.jar --main-class pane5250.Main -C build\classes .
 if ($LASTEXITCODE -ne 0) { throw 'JAR creation failed.' }
 Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
+Copy-Item build\fish-window.dll dist\fish-window.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
 if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\FishSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
+    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -cp build\classes -d build\test-classes '@build\tests.txt'
@@ -51,6 +78,8 @@ if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
     }
     & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.FishSmoke
     if ($LASTEXITCODE -ne 0) { throw 'Fish smoke checks failed.' }
+    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.StreamliningSmoke
+    if ($LASTEXITCODE -ne 0) { throw 'Streamlining smoke checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
@@ -61,10 +90,10 @@ if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
 if ($Task -eq 'Package') {
     if (Test-Path dist\Fish) { throw 'dist\Fish exists. Move it aside before packaging again.' }
     New-Item -ItemType Directory -Force build\package-input | Out-Null
-    Copy-Item dist\Fish.jar,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
+    Copy-Item dist\Fish.jar,dist\fish-window.dll,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,MANUAL.md,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
     & "$Jdk\bin\java.exe" -cp build\classes pane5250.ui.FishIcon build\Fish.ico
     if ($LASTEXITCODE -ne 0) { throw 'Fish icon generation failed.' }
-    & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version 0.3.2 --icon build\Fish.ico `
+    & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version $version --icon build\Fish.ico `
         --input build\package-input --main-jar Fish.jar --main-class pane5250.Main `
         --dest dist --vendor Fish --java-options '-Xmx192m' `
         --add-modules java.base,java.desktop,java.xml,java.logging,jdk.charsets
@@ -72,7 +101,7 @@ if ($Task -eq 'Package') {
     $source = Join-Path $PSScriptRoot 'dist\Fish\app\source'
     New-Item -ItemType Directory -Force $source | Out-Null
     Copy-Item src,scripts,tests $source -Recurse
-    Copy-Item build.ps1,README.md,COMPATIBILITY.md,LICENSE,NOTICE,PRODUCT.md,DESIGN.md $source
+    Copy-Item build.ps1,Setup-Fish.cmd,Setup-Fish.ps1,tools.psd1,README.md,MANUAL.md,COMPATIBILITY.md,LICENSE,NOTICE,PRODUCT.md,DESIGN.md $source
     $coreSource = Join-Path $source 'vendor\tn5250j'
     New-Item -ItemType Directory -Force $coreSource | Out-Null
     Copy-Item vendor\tn5250j\src $coreSource -Recurse

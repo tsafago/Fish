@@ -9,6 +9,14 @@ final class WindowChrome extends JPanel {
     private final JFrame window;
     private final JLabel caption = new JLabel(new FishIcon(30,26));
     private final WindowButton maximize;
+    private final JMenuBar menus;
+    private final JComponent tools;
+    private final JPanel left,actions,controls,dragArea;
+    private final JButton menuButton;
+    private NativeWindow nativeWindow;
+    private Boolean compact;
+    private final javax.swing.Timer pulse;
+    private long pulseStart;
     private Rectangle normalBounds;
     private Rectangle keyboardStart;
     private Component keyboardFocus;
@@ -18,31 +26,39 @@ final class WindowChrome extends JPanel {
     WindowChrome(JFrame window,JMenuBar menus,JComponent tools) {
         super(new BorderLayout(8,0));
         this.window = window;
+        this.menus=menus; this.tools=tools;
+        pulse=new javax.swing.Timer(50,e -> {
+            double phase=(System.nanoTime()-pulseStart)/1_400_000_000.0;
+            ((FishIcon)caption.getIcon()).pulse(Math.min(1,phase)); caption.repaint();
+            if (phase>=1) { ((javax.swing.Timer)e.getSource()).stop(); ((FishIcon)caption.getIcon()).pulse(0); caption.repaint(); }
+        });
         normalBounds = window.getBounds();
         setBackground(Ui.PANEL);
         setPreferredSize(new Dimension(300,28));
         setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE));
         menus.setBorder(BorderFactory.createEmptyBorder());
-        JPanel left = new JPanel(new BorderLayout(6,0));
+        left = new JPanel(new BorderLayout(0,0));
         left.setOpaque(false);
-        left.setBorder(BorderFactory.createEmptyBorder(0,8,0,0));
+        caption.setBorder(BorderFactory.createEmptyBorder(0,8,0,8));
         caption.setForeground(Ui.MUTED);
         caption.setFont(new Font("Segoe UI",Font.PLAIN,11));
         caption.setToolTipText(window.getTitle());
         caption.getAccessibleContext().setAccessibleName("Fish");
         left.add(caption,BorderLayout.WEST);
-        JPanel actions=new JPanel(new FlowLayout(FlowLayout.LEFT,5,0)); actions.setOpaque(false);
+        actions=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); actions.setOpaque(false);
+        menuButton=Ui.iconButton("Application menus","down",this::openCompactMenu);
+        menuButton.setVisible(false); actions.add(menuButton);
         actions.add(menus); actions.add(tools);
         left.add(actions,BorderLayout.CENTER);
         add(left,BorderLayout.WEST);
-        JPanel dragArea = new JPanel();
+        dragArea = new JPanel();
         dragArea.setOpaque(false);
         dragArea.setName("window-drag-area");
         dragArea.getAccessibleContext().setAccessibleName("Window title; drag to move, double-click to maximize or restore");
         installMove(dragArea);
         installMove(caption);
         add(dragArea,BorderLayout.CENTER);
-        JPanel controls = new JPanel(new GridLayout(1,3,0,0));
+        controls = new JPanel(new GridLayout(1,3,0,0));
         controls.setOpaque(false);
         controls.add(new WindowButton("Minimize window","minimize",() -> window.setExtendedState(window.getExtendedState() | Frame.ICONIFIED)));
         maximize = new WindowButton("Maximize window","maximize",this::toggleMaximize);
@@ -51,8 +67,6 @@ final class WindowChrome extends JPanel {
         add(controls,BorderLayout.EAST);
         window.setGlassPane(new ResizeEdges());
         window.getGlassPane().setVisible(true);
-        window.getRootPane().registerKeyboardAction(e -> systemMenu().show(this,0,getHeight()),
-                KeyStroke.getKeyStroke("ctrl alt SPACE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
         window.getRootPane().registerKeyboardAction(e -> requestClose(),
                 KeyStroke.getKeyStroke("alt F4"),JComponent.WHEN_IN_FOCUSED_WINDOW);
         window.addWindowStateListener(e -> {
@@ -65,11 +79,44 @@ final class WindowChrome extends JPanel {
             @Override public void componentResized(ComponentEvent e) { rememberNormal(); }
         });
         window.addWindowListener(new WindowAdapter() {
-            @Override public void windowClosed(WindowEvent e) { finishKeyboard(false); }
+            @Override public void windowClosed(WindowEvent e) { finishKeyboard(false); pulse.stop(); }
         });
         window.addWindowFocusListener(new WindowAdapter() {
             @Override public void windowLostFocus(WindowEvent e) { finishKeyboard(true); }
         });
+    }
+    void installNative() {
+        if (nativeWindow!=null) return;
+        nativeWindow=new NativeWindow(window);
+        window.getGlassPane().setVisible(false);
+        revalidate();
+    }
+    @Override public void doLayout() {
+        boolean narrow=getWidth()<700;
+        if (compact==null || compact!=narrow) {
+            compact=narrow; menus.setVisible(!narrow); menuButton.setVisible(narrow);
+            for (Component component:tools.getComponents()) if (component instanceof JButton b) {
+                if (b.getClientProperty("fullLabel")==null) b.putClientProperty("fullLabel",b.getText());
+                b.setText(narrow ? "" : (String)b.getClientProperty("fullLabel"));
+            }
+        }
+        super.doLayout(); left.doLayout(); actions.doLayout(); controls.doLayout();
+        if (nativeWindow!=null) nativeWindow.regions(SwingUtilities.convertRectangle(dragArea.getParent(),dragArea.getBounds(),window),
+                SwingUtilities.convertRectangle(maximize.getParent(),maximize.getBounds(),window));
+    }
+    void openMenus() { if (menus.isVisible()) menus.getMenu(0).doClick(); else openCompactMenu(); }
+    void showSystemMenu() { systemMenu().show(this,0,getHeight()); }
+    private void openCompactMenu() {
+        JPopupMenu popup=new JPopupMenu();
+        for (int i=0;i<menus.getMenuCount();i++) {
+            JMenu original=menus.getMenu(i), copy=new JMenu(original.getText());
+            for (Component item:original.getMenuComponents()) {
+                if (item instanceof JMenuItem command) copy.add(new JMenuItem(command.getAction()));
+                else if (item instanceof JSeparator) copy.addSeparator();
+            }
+            popup.add(copy);
+        }
+        popup.show(menuButton,0,menuButton.getHeight());
     }
     void themeChanged() { setBackground(Ui.PANEL); caption.setForeground(Ui.MUTED); setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE)); }
 
@@ -81,7 +128,8 @@ final class WindowChrome extends JPanel {
         finishKeyboard(false);
         window.dispatchEvent(new WindowEvent(window,WindowEvent.WINDOW_CLOSING));
     }
-    private void toggleMaximize() {
+    void toggleMaximize() {
+        if (nativeWindow!=null) { nativeWindow.toggleMaximize(); return; }
         if (isMaximized()) {
             Rectangle restored = new Rectangle(normalBounds);
             window.setExtendedState(Frame.NORMAL);
@@ -158,15 +206,19 @@ final class WindowChrome extends JPanel {
             Point pressed;
             Rectangle original;
             double anchor;
+            boolean dragged;
             @Override public void mousePressed(MouseEvent e) {
                 if (SwingUtilities.isRightMouseButton(e)) { systemMenu().show(area,e.getX(),e.getY()); return; }
                 if (!SwingUtilities.isLeftMouseButton(e)) return;
                 pressed = e.getLocationOnScreen();
+                dragged=false;
                 original = window.getBounds();
                 anchor = (pressed.x - original.x) / (double)original.width;
             }
             @Override public void mouseDragged(MouseEvent e) {
                 if (pressed == null) return;
+                dragged=true;
+                if (nativeWindow!=null) { pressed=null; nativeWindow.beginMove(); return; }
                 Point point = e.getLocationOnScreen();
                 if (isMaximized()) {
                     toggleMaximize();
@@ -177,6 +229,9 @@ final class WindowChrome extends JPanel {
             @Override public void mouseReleased(MouseEvent e) { pressed = null; }
             @Override public void mouseClicked(MouseEvent e) {
                 if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) toggleMaximize();
+                else if (area==caption && !dragged && SwingUtilities.isLeftMouseButton(e)) {
+                    pulseStart=System.nanoTime(); pulse.restart();
+                }
             }
         };
         area.addMouseListener(move); area.addMouseMotionListener(move);
@@ -253,6 +308,7 @@ final class WindowChrome extends JPanel {
         @Override protected void paintComponent(Graphics graphics) {
             Graphics2D g = (Graphics2D)graphics.create();
             try {
+                Ui.quality(g);
                 g.setColor(getModel().isRollover() || getModel().isPressed()
                         ? kind.equals("close") ? Ui.ERROR : Ui.HOVER : Ui.PANEL);
                 g.fillRect(0,0,getWidth(),getHeight());

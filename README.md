@@ -1,8 +1,8 @@
 # Fish
 
 A Windows-first, keyboard-driven desktop 5250 workspace. Java 21 / Swing,
-plain TN5250 TCP, a pinned TN5250J screen/field engine, and no third-party
-runtime JAR dependencies.
+plain TN5250 TCP, a pinned TN5250J screen/field engine, a small source-built
+Windows frame bridge, and no third-party runtime JAR dependencies.
 
 **Working experimental implementation, not an ACS-compatible release.**
 Real IBM i sign-on and ACS comparison have not been performed. Enhanced display
@@ -10,9 +10,50 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Run the delivered application
+## Final streamlining update
 
-The current local package is **Fish 0.3.2**. Keep the entire application-image directory together:
+**Fish 0.4.0** is the final streamlining preview before official release, not
+a claim that the real IBM i/ACS acceptance gate has been passed.
+The [full manual](MANUAL.md) begins with **Getting Started** and is also
+available offline from **Help > Full manual / Getting Started**, with a
+searchable full-text topic index.
+
+## Install: no developer tools needed
+
+1. Sign in to GitHub with access to the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish).
+2. Open [Releases](https://github.com/HornadyIBM/Fish/releases) and download `Fish-0.4.0-setup.exe`.
+3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
+
+For a portable copy, extract `Fish-0.4.0-windows-x64.zip` and open
+`Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
+required; ARM64 and non-Windows systems are not supported by this package.
+The executable/installer are unsigned, so SmartScreen or organizational policy
+may warn or block them. Checksums accompany the release; do not bypass IT policy.
+
+## Generate an executable and installer yourself
+
+Download and extract the complete `Fish-source.zip` from Releases, then
+**double-click `Setup-Fish.cmd`**. No Git, installed JDK, Visual Studio, WiX
+installation, administrator rights or system PATH edits are needed.
+The first build needs internet access and about 2 GB of free disk space.
+The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
+
+| Output | Use |
+|---|---|
+| `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
+| `dist\Fish-0.4.0-setup.exe` | Install for the current Windows user |
+| `dist\Fish-0.4.0-windows-x64.zip` | Copy/extract a complete portable application |
+| `dist\Fish-source.zip` | Matching complete application/core sources |
+| `dist\SHA256SUMS.txt` | Verify distributed downloads |
+
+`Setup-Fish.cmd -Install` additionally opens the generated installer.
+Existing application/source output is preserved as timestamped backups.
+Close Fish before rebuilding/upgrading its directory. The script does not
+silently replace failed downloads or bypass checksum mismatches.
+
+## Run the local package
+
+The current local package is **Fish 0.4.0**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe
@@ -35,26 +76,30 @@ screen is 24x80 or 27x132; resizing a pane only scales its rendering.
 **Plain TCP does not encrypt credentials or terminal data.** Use only on a
 trusted network. TLS and Kerberos are not implemented.
 
-## Build from source
+## Advanced build commands
 
 Windows x64, Windows PowerShell 5.1 or later, and a **JDK 21** are required.
 Git is required for a development clone; initialize its pinned submodule:
 
 ```powershell
 git submodule update --init --recursive
-# Use a maintained JDK 21 by setting JAVA_HOME, or obtain the pinned portable SDK:
+# Prefer Setup-Fish.cmd above, or prepare the pinned portable SDK:
 .\scripts\bootstrap.ps1
 .\build.ps1 Build
 .\build.ps1 Smoke     # quick Fish checks; hidden windows, no physical input
 .\build.ps1 Check     # fixtures only; no foreground input or credential access
 .\build.ps1 Test
 .\build.ps1 Package
+.\build.ps1 Installer # after Package; current-user installer, portable ZIP, checksums
 ```
 
-The bootstrap downloads Temurin 21.0.8+9 into `.tools`, verifies its SHA-256,
-and changes no system installation or PATH. It is a reproducibility pin, not
-a promise to track current JDK security updates. `JAVA_HOME` takes precedence;
+The bootstrap downloads Temurin 21.0.12.1+1 into `.tools`, verifies its SHA-256,
+and changes no system installation or PATH. Tool pins are in `tools.psd1`;
+maintainers must refresh them for later security updates. `JAVA_HOME` takes precedence;
 alternatively pass `-Jdk 'C:\path\to\jdk-21'` to `build.ps1`.
+Native compilation uses checksum-pinned portable Zig; installer generation
+uses portable WiX 3.14.1. Neither compiler nor WiX is installed system-wide.
+Only the resulting small Fish-owned DLL is needed at runtime.
 
 `Build` creates `dist\Fish.jar`. `Package` uses `jpackage` to create the
 standalone directory `dist\Fish` and complete corresponding source archive
@@ -64,8 +109,9 @@ packaging again; the script refuses to overwrite it.
 The matching source is also under `dist\Fish\app\source`. It contains the
 actual pinned upstream source and build adaptations, not just a retrieval
 URL. Extract the source ZIP to an empty directory, select a JDK 21, and run
-the same build commands; Git/network access is unnecessary when those sources
-and a JDK are already present.
+the same build commands. Git is unnecessary for that complete source archive;
+offline builds additionally need the pinned JDK and Zig cache already prepared
+(and WiX for installers).
 
 ```powershell
 .\build.ps1 Run       # normal desktop, keeps the launching console attached
@@ -79,10 +125,13 @@ slots, swap-only moves, immediate disconnect/close, minimal offline controls,
 last-preset/legacy migration, physical-pixel text and real loopback sockets.
 It also covers clipboard transfer/field safety with an isolated synthetic
 clipboard (never your shared OS clipboard), deterministic animated Flux phases,
-host-hidden/reverse/blink preservation, and nonintersecting horizontal icon geometry.
+host-hidden/reverse/blink preservation, and the minimal triangle/rhombus icon geometry.
+`StreamliningSmoke` adds global shortcut conflicts/dispatch, constant focus
+insets, outline-only persistence, the manual index and native Windows hit tests.
 It writes `build\fish-terminal-150.png` and `build\fish-empty-one.png`
-without showing a window or taking focus. No full/foreground suite was run
-for this quick revision.
+without showing a window or taking focus. A separately consented, bounded
+`StreamliningDesktop` pass verifies actual Ctrl+Tab recording, native side/quarter/top
+snapping and maximize/restore. It is not the full foreground stress suite.
 
 `Test` needs fresh consent and an unlocked, idle Windows desktop: it opens the app,
 uses the physical keyboard/mouse through `Robot`, and temporarily takes focus
@@ -102,7 +151,8 @@ split assertions are superseded and it is not part of the Fish test command.
 ## Sessions and profiles
 
 The main workspace has one compact, dark 28px title/menu row, not a second
-native titlebar. The horizontal gradient outline fish (tail left, head right) replaces application-name
+native titlebar. The compact gradient triangle/rhombus fish (tail left, head right, one crossing
+and a trimmed lower intersection, no eye/mouth) replaces application-name
 text and supplies the Windows executable/taskbar icon. Drag it or the blank title area to move;
 double-click to maximize/restore. The three upper-right controls minimize,
 maximize/restore and close. Drag any window edge/corner to resize.
@@ -113,7 +163,7 @@ for 1px, Enter to commit and Escape to cancel. Window close disconnects all
 sessions and closes immediately, without a confirmation. Saving and releasing
 the workspace lock finish in the background; save failures are reported to stderr.
 
-**+ Pane** adds the next slot, up to **eight panes in two rows/four columns**.
+The **+ Pane** icon/label control adds the next slot, up to **eight panes in two rows/four columns**.
 The sequence is one full pane; two side-by-side; left full-height/right two
 stacked; four quadrants; then top/bottom rows of 3/2, 3/3, 4/3 and 4/4.
 There are no arbitrary recursive split directions. Addition is disabled at eight.
@@ -126,11 +176,27 @@ The **X at the far right of each pane header** immediately disconnects and
 removes that pane, reflowing the remaining slots. Only the last pane is kept
 as an empty offline tile. Ctrl+Alt+W does the same; there is always at least
 one pane. Headers show preset names, never A1/A2 identifiers.
-Offline content contains only a centered preset selector and Connect button.
+Offline content contains only a centered preset selector and adjacent arrow Connect
+icon button. The collapsed selector does not paint its value as selected text.
 New panes preselect the last used preset; restored panes retain their saved
 preset selection. Nothing auto-connects in normal mode.
 The active pane has a single subtle tinted surface across its header, terminal
-and footer, with an outer focus outline and no header underline.
+and footer, with an outer physical-pixel focus outline and no header underline.
+Disable **Appearance > Tint selected pane background** for outline-only focus.
+Focus never changes the border's layout insets. OLED themes retain true-black surfaces.
+
+Native Windows frame styles and hit testing support Win+arrows, edge/corner
+snapping, top-edge maximize and the Windows 11 maximize-button snap target
+without a bright native titlebar. Narrow windows collapse menus and tool labels.
+Clicking the fish mark gives a short, harmless color shimmer; no session changes.
+
+**Edit > Shortcuts** lists every registered application and host action, with
+record/unbind/default controls and conflict validation. The same list is linked
+from **Profiles > Keyboard**. Assign **Ctrl+Tab** to Next pane and
+**Ctrl+Shift+Tab** to Previous pane to use familiar cycling. Overrides are
+global within this Fish workspace, not OS-wide. Modal UI stays isolated from
+host input. Menus/palette show effective bindings; conflicting host or reserved
+Windows keys are never silently stolen.
 
 **Commands** or **Ctrl+Alt+K** opens searchable commands with descriptions,
 shortcuts and aliases. Search `add pane`, `add window`, `new session`, `split`,
@@ -184,8 +250,9 @@ If `%APPDATA%\Pane5250\workspace.xml` already exists, Fish uses that same
 legacy directory and lock instead, preserving existing profiles and passwords.
 The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored **offline** next launch.
-Application appearance and the last used preset are saved with version-3 state.
-Version-1/2 profiles and credentials are retained. Old freeform layouts reflow
+Application appearance, global shortcuts, pane highlighting and the last used
+preset are saved with version-4 state.
+Version-1/2/3 profiles and credentials are retained. Old freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. A legacy layout over eight panes is rejected explicitly
 without overwriting its file: reduce it using the preserved Pane5250 package
@@ -198,14 +265,15 @@ removes it on normal exit.
 
 ## Keyboard
 
-Application shortcuts use **Ctrl+Alt**; host mappings cannot claim that namespace.
+Application shortcuts default to **Ctrl+Alt**; global overrides may use other
+safe keys such as Ctrl+Tab. Profile-specific host mappings cannot claim Ctrl+Alt.
 **Alt+Space** and **Alt+F4** are also reserved for standard window operations.
 
 | Action | Shortcut |
 |---|---|
 | Profiles / quick profile switch | Ctrl+Alt+P / Ctrl+Alt+O |
 | Connect or disconnect / reconnect | Ctrl+Alt+R / Ctrl+Alt+Shift+R |
-| Add the next bounded pane (both shortcuts) | Ctrl+Alt+H / Ctrl+Alt+V |
+| Add the next bounded pane | Ctrl+Alt+H |
 | Swap / close and disconnect pane (keep the last tile) | Ctrl+Alt+D / Ctrl+Alt+W |
 | Next or previous pane / focus numbered pane | Ctrl+Alt+Right or Left / Ctrl+Alt+1..8 |
 | Adjust nearest divider | Ctrl+Alt+[ or ] |
@@ -247,11 +315,13 @@ without submitting Enter. It is not offered as an unlock for host-busy or
 network failures. Enter retains its host meaning; Escape remains the default
 Reset key.
 
-**Appearance** offers four persistent application themes: Charcoal, Graphite,
-Midnight and Paper. They cover custom chrome, headers/footers, menus/popups,
+**Appearance** offers eight persistent application themes: Charcoal, Graphite,
+Midnight, Paper, OLED, OLED Amber, High Contrast and High Contrast Light.
+They cover custom chrome, headers/footers, menus/popups,
 dialogs, fields, lists, tabs, selection, disabled/hover/pressed/focus states,
 dividers and text. Application themes are independent of workstation host
-palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid and High contrast. Host
+palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid,
+Mint, Rose, OLED green and OLED amber. Host
 color/reverse/underline/blink/non-display distinctions remain intact.
 Optional Soft glow, column-gradient Prism, pronounced Neon and **Flux (animated)**
 effects are disabled by default. Choose **View > Appearance > Text effect >
@@ -277,7 +347,8 @@ AI features, telemetry, embedded browser, dashboard or promotional UI.
 
 `net` owns sockets/Telnet, the selective `core-adapter` owns the engine seam,
 `model` owns profiles/layout/persistence, `security` owns OS credential access,
-`ui` owns Swing rendering/workspace/input, and `demo` owns the synthetic host.
+`ui` owns Swing rendering/workspace/input, `src\native` owns the Windows
+frame bridge, and `demo` owns the synthetic host.
 Core mutations, input and rendering are serialized on Swing's event thread;
 socket reads/writes, credential calls and persistence run off it.
 

@@ -40,12 +40,13 @@ secondary; there are no promotional surfaces, dashboard cards or AI controls.
 
 ## Colors
 
-`AppTheme` supplies complete Charcoal, Graphite, Midnight and Paper token sets;
+`AppTheme` supplies complete Charcoal, Graphite, Midnight, Paper, OLED,
+OLED Amber, High Contrast and High Contrast Light token sets;
 `Ui` applies them to every owned UI route. `FlatControls` shares flat delegates
 for buttons, combos, tabs, scrollbars and split dividers. `HostPalette` defines
 sixteen host colors independently, including darker foregrounds for Paper.
 Never collapse host color, reverse, underline, blink or non-display distinctions
-into an application accent. Seven workstation palettes alter restrained
+into an application accent. Twelve workstation palettes alter restrained
 entries, not the terminal's attribute semantics.
 
 ## Typography
@@ -70,11 +71,17 @@ vertical padding. Resizing does not resize the host's presentation space.
 The main window is undecorated: one 28px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
 menus/compact + Pane and Commands controls and three 36px window controls.
-The leftmost mark is a minimal horizontal gradient outline fish, tail left and
-head right, with no self-intersecting outline or crossed tail/body strokes; shared with
-runtime/taskbar and multi-resolution Windows executable icons.
-A transparent 5px edge target provides
-eight-direction resizing without overlaying the terminal interior.
+The leftmost mark is a compact gradient triangle/rhombus fish, tail left and
+head right. The only visible crossing is above; a small cut separates the
+lower intersection. No eye, mouth or intermediate wonky polygon angles.
+A 3.4/64 stroke and the same geometry supply titlebar, runtime/taskbar and
+multi-resolution Windows executable icons. The mark has balanced own insets;
+a click gives a brief, local color shimmer without touching session state.
+The Fish-owned native bridge preserves standard overlapped resize/maximize
+styles while consuming nonclient painting. Hit testing returns caption, edge
+or maximize codes only for the corresponding targets, allowing OS snap/move
+loops off the EDT and Windows 11 maximize hit testing. Inactive windows must
+not acquire a second native caption. Narrow windows collapse menus/tool labels.
 
 ## Elevation & Depth
 
@@ -110,11 +117,15 @@ a right-click menu. The close X occupies the far-right header position, outside
 the drag target. X disconnects and removes the pane, reflowing bounded slots;
 only the final pane is retained as an empty offline tile. Window
 close disconnects all without confirmation. An offline tile contains only a
-centered preset selector and Connect button. Newly added panes select the last
+centered preset selector and adjacent arrow Connect icon with tooltip and
+accessible name. Collapsed combo values never use selection coloring just
+because the combo has focus; focus stays on its border. Newly added panes select the last
 used preset; restored slots preserve their own selection. No visible A1/A2 IDs.
 One subtly tinted active surface spans header, terminal and
-footer; a single outer focus border replaces the old terminal-only focus box
-and header underline. A terminal status line reports connection, inhibition,
+footer; a constant-inset, physical-pixel outer focus border replaces the old terminal-only focus box
+and header underline. The optional pane-background tint can be disabled; OLED
+remains true black. Activating a pane never replaces its border or reshow/validates
+an already-visible card. A terminal status line reports connection, inhibition,
 dimensions and cursor position, with Reset visible only for the core's actual
 recoverable input-error state. Enter is never remapped to recovery.
 Profile editing is a compact modal list and three-tab form; labels and mnemonics
@@ -124,7 +135,15 @@ Custom window controls retain visible keyboard focus. Native Alt+Space is not
 shadowed by a second popup; Ctrl+Alt+Space exposes the dark window menu.
 Commands has an immediately visible entry point and Ctrl+Alt+K shortcut;
 search includes aliases, disabled actions remain disabled, and modal focus
-isolates host input. A single registry backs menus, palette and shortcuts.
+isolates host input. A single registry backs menus, palette and shortcuts. Every app/host action is
+listed in the global shortcut editor, with recording, unbind/default controls,
+atomic conflict rejection and version-4 persistence. Window-scoped dispatch
+precedes Swing traversal/host input, so Ctrl+Tab works without taking keys in
+owned dialogs. Profile-specific host bindings are preserved unless the user
+explicitly reassigns that host action globally.
+Shared native-font antialiasing applies to control labels, menus and buttons;
+mnemonic underlines appear on Alt/menu activation rather than persistently.
+The offline full manual uses a full-text topic index; Getting Started is first.
 The compact terminal clipboard popup and Edit menu share those same guarded
 Copy/Paste actions, preserve the selection on right-click, report clipboard
 errors, and return focus to the terminal without taking host Ctrl+C/V or F-keys.

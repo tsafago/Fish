@@ -29,7 +29,10 @@ One to eight independent panes in bounded two-row/four-column layouts,
 swap-only rearrangement, persistent workstation presets and last-used selection,
 field-aware input, host keys, fixed-width rendering, OS clipboard through a
 compact context menu/Edit menu/command search, zoom and
-optional inexpensive visual presets. Remembered passwords belong in Windows
+optional inexpensive visual presets. Global application/host shortcut overrides,
+outline-only focus, OLED/high-contrast themes and native Windows snapping keep
+the tool usable in everyday desktop workflows. Help contains the complete,
+searchable/indexed offline manual with Getting Started first. Remembered passwords belong in Windows
 Credential Manager. TLS, AI features and Kerberos are not required.
 
 The user approved a GPL-licensed application using the mature TN5250J core.
@@ -39,8 +42,8 @@ Full ACS compatibility remains an acceptance target, never an unverified claim.
 
 The attached reference is binding: near-black flat panes, very thin dividers,
 small pane headers, crisp monospace host text, green and white host attributes,
-minimal application chrome. A horizontal, noncrossing gradient outline fish,
-tail left and head right, is the app mark
+minimal application chrome. A compact gradient triangle/rhombus fish,
+tail left and head right, one crossing and a trimmed lower intersection, is the app mark
 and Windows icon. Offline content is only a centered preset selector and Connect.
 Pane X disconnects and removes its tile, except the final tile stays empty;
 window close exits
@@ -65,3 +68,5 @@ real-session captures. Local synthetic fixtures must be clearly identified.
 
 Entirely keyboard navigable, predictable focus, visible focus indicators,
 configurable keyboard bindings, DPI-aware rendering and readable host colors.
+Windows x64 source setup is a user-runnable script that obtains portable pinned
+build tools and creates both the executable and a current-user installer.

@@ -5,7 +5,34 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.3.2 quick revision
+## Fish 0.4.0 final streamlining preview
+
+This update is a UI/windowing/packaging milestone before official release,
+not new protocol acceptance. The maintained packaged runtime pin is Temurin
+21.0.12.1+1. `Setup-Fish.cmd` generates a portable application and current-user
+installer from complete source using pinned user-local JDK/Zig/WiX tools.
+
+Focused source fixtures cover all registered shortcut actions, collision
+rejection, actual Ctrl+Tab dispatch before Swing traversal, profile/default
+host unbinding, outline-only focus, unchanged border identity/insets, version-4
+migration/persistence, small-window restore, 26 full-text manual topics and
+the native Windows resize/caption/maximize hit codes. They retain the existing
+loopback, input-safety, glyph, palette/Flux, close and layout fixtures.
+
+A fresh-consent bounded desktop pass exercised physical shortcut recording,
+actual Ctrl+Tab cycling, native Win+Left half-screen and Win+Up quarter-screen
+snapping, top-edge drag/maximize, restore, manual focus and active/inactive dark
+chrome. It passed 17 checks without shared clipboard or credential access.
+The first visual pass exposed default nonclient activation painting behind
+an owned dialog; consuming that paint fixed the resurrected system caption.
+This is not a full stress/performance rerun.
+
+Windows 11's maximize hit target returns HTMAXBUTTON, but the OS-owned snap
+flyout was not visible in this environment's captures; that flyout's display
+is not claimed as accepted. Side/quarter/top native snap behavior was observed.
+Real IBM i/ACS acceptance and the protocol gaps below remain unchanged.
+
+## Fish 0.3.2 earlier quick revision
 
 Fish rebrands the same experimental engine; unrelated protocol expansion is
 paused. This revision uses a build and small noninteractive `Smoke` checks,
@@ -19,7 +46,8 @@ host-controlled 24x80/27x132 switching. Offscreen captures are
 Additional focused fixtures exercise clipboard transfer using a private
 synthetic clipboard (no shared OS clipboard access), numeric/protected/code-page
 and host-inhibition safety, hidden-field-safe export, no paste transactions,
-context command wiring, horizontal nonintersecting fish geometry, persisted Flux
+context command wiring, horizontal nonintersecting fish geometry (subsequently
+replaced by the user-requested triangle/rhombus mark), persisted Flux
 selection, deterministic animated phase differences, native glyph-cache reuse,
 and preserved reverse video/non-display/blink. Captures are `build\fish-flux-a.png`,
 `build\fish-flux-b.png` and `build\fish-horizontal-icon.png`. These offscreen

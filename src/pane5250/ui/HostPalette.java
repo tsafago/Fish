@@ -25,6 +25,16 @@ public final class HostPalette {
             case "Ice" -> values[2]=dark ? 0xb7e8fa : 0x185d78;
             case "Orchid" -> values[2]=dark ? 0xd6b6ff : 0x66338d;
             case "High contrast" -> { values[2]=dark ? 0x9cff94 : 0x14501c; values[7]=dark ? 0xffffff : 0x000000; }
+            case "Mint" -> { values[2]=dark ? 0x82e6bd : 0x126146; values[10]=dark ? 0xb5ffdc : 0x004b32; }
+            case "Rose" -> { values[2]=dark ? 0xf3b5ce : 0x86334e; values[10]=dark ? 0xffd5e5 : 0x6d1b3c; }
+            case "OLED green" -> { values[2]=dark ? 0x48f88c : 0x00692f; values[10]=dark ? 0xafffca : 0x004a20; }
+            case "OLED amber" -> { values[2]=dark ? 0xffbd4a : 0x754600; values[10]=dark ? 0xffe0a1 : 0x5c3500; }
+            case "IBM vivid" -> {
+                if (dark) values=new int[]{0,0x6699ff,0x00ff66,0x00ffff,0xff7070,0xff80ff,0xffff00,0xffffff,
+                        0xb0b0b0,0xa9c3ff,0x99ff99,0xa0ffff,0xffb0b0,0xffbfff,0xffffb0,0xffffff};
+                else values=new int[]{0,0x0036ad,0x006326,0x005e68,0xb00022,0x8c167f,0x705600,0x151515,
+                        0x484848,0x00236e,0x004a19,0x00464e,0x800016,0x640c5b,0x513d00,0x000000};
+            }
             default -> {}
         }
         values[0]=Ui.BACKGROUND.getRGB();

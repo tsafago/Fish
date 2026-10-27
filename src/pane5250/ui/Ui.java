@@ -10,6 +10,7 @@ import pane5250.model.AppTheme;
 public final class Ui {
     public static Color BACKGROUND,PANEL,FIELD,HOVER,LINE,TEXT,MUTED,FOCUS,ERROR,SELECTION;
     private static AppTheme theme=AppTheme.Charcoal;
+    private static boolean altDown;
     private Ui() {}
     static { colors(theme); }
     private static Color color(int rgb) { return new ColorUIResource(rgb); }
@@ -22,8 +23,16 @@ public final class Ui {
     public static AppTheme theme() { return theme; }
     public static void install() throws Exception {
         UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+        KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
+            if (e.getKeyCode()==KeyEvent.VK_ALT) {
+                altDown=e.getID()==KeyEvent.KEY_PRESSED && !e.isControlDown();
+                for (Window w:Window.getWindows()) if (w.isShowing()) w.repaint();
+            }
+            return false;
+        });
         applyTheme(AppTheme.Charcoal);
     }
+    public static boolean mnemonicsVisible() { return altDown || MenuSelectionManager.defaultManager().getSelectedPath().length>0; }
     public static void applyTheme(AppTheme value) {
         colors(value);
         Font font=new FontUIResource("Segoe UI",Font.PLAIN,12);
@@ -32,12 +41,13 @@ public final class Ui {
         }
         for (String name : new String[]{"Panel","MenuBar","Menu","MenuItem","CheckBoxMenuItem","RadioButtonMenuItem",
                 "PopupMenu","TabbedPane","OptionPane","Label","Button","CheckBox","RadioButton","ComboBox","List",
-                "ScrollPane","Viewport","TextField","PasswordField","TextArea","Spinner","SplitPane","ToolTip"}) {
+                "ScrollPane","Viewport","TextField","PasswordField","TextArea","Spinner","SplitPane","ToolTip",
+                "Table","TableHeader","EditorPane","TextPane","Tree"}) {
             UIManager.put(name+".background",PANEL); UIManager.put(name+".foreground",TEXT);
             UIManager.put(name+".disabledForeground",MUTED);
             UIManager.put(name+".disabledText",MUTED);
         }
-        for (String name : new String[]{"TextField","PasswordField","TextArea","ComboBox","List"}) {
+        for (String name : new String[]{"TextField","PasswordField","TextArea","ComboBox","List","Table","EditorPane","TextPane","Tree"}) {
             UIManager.put(name+".background",FIELD);
             UIManager.put(name+".selectionBackground",SELECTION); UIManager.put(name+".selectionForeground",TEXT);
             UIManager.put(name+".inactiveForeground",MUTED); UIManager.put(name+".caretForeground",FOCUS);
@@ -48,12 +58,13 @@ public final class Ui {
             UIManager.put(name+".border",new BorderUIResource.EmptyBorderUIResource(6,10,6,10));
         }
         UIManager.put("ButtonUI",FlatControls.Button.class.getName());
+        UIManager.put("LabelUI",FlatControls.Label.class.getName());
         UIManager.put("MenuBarUI","javax.swing.plaf.basic.BasicMenuBarUI");
-        UIManager.put("MenuUI","javax.swing.plaf.basic.BasicMenuUI");
-        UIManager.put("MenuItemUI","javax.swing.plaf.basic.BasicMenuItemUI");
+        UIManager.put("MenuUI",FlatControls.Menu.class.getName());
+        UIManager.put("MenuItemUI",FlatControls.MenuItem.class.getName());
         UIManager.put("CheckBoxMenuItemUI","javax.swing.plaf.basic.BasicCheckBoxMenuItemUI");
         UIManager.put("RadioButtonMenuItemUI","javax.swing.plaf.basic.BasicRadioButtonMenuItemUI");
-        UIManager.put("CheckBoxUI","javax.swing.plaf.basic.BasicCheckBoxUI");
+        UIManager.put("CheckBoxUI",FlatControls.Check.class.getName());
         UIManager.put("MenuBar.gradient",null);
         UIManager.put("Menu.arrowIcon",new Symbol("right"));
         UIManager.put("MenuItem.checkIcon",null);
@@ -72,6 +83,9 @@ public final class Ui {
         UIManager.put("MenuBar.border",new BorderUIResource.EmptyBorderUIResource(0,0,0,0));
         UIManager.put("ScrollPane.border",new BorderUIResource.LineBorderUIResource(LINE));
         UIManager.put("List.focusCellHighlightBorder",new BorderUIResource.LineBorderUIResource(FOCUS));
+        UIManager.put("Table.gridColor",LINE);
+        UIManager.put("Table.focusCellHighlightBorder",new BorderUIResource.LineBorderUIResource(FOCUS));
+        UIManager.put("TableHeader.cellBorder",new BorderUIResource.MatteBorderUIResource(0,0,1,0,LINE));
         UIManager.put("OptionPane.messageForeground",TEXT);
         UIManager.put("Separator.foreground",LINE); UIManager.put("Separator.background",PANEL);
         UIManager.put("SplitPane.border",new BorderUIResource.EmptyBorderUIResource(0,0,0,0));
@@ -93,6 +107,7 @@ public final class Ui {
         if (component instanceof SessionPane p) p.themeChanged();
         if (component instanceof TerminalView v) v.themeChanged();
         if (component instanceof WindowChrome c) c.themeChanged();
+        if (component instanceof ManualDialog manual) manual.themeChanged();
         if (component instanceof Container parent)
             for (Component child : parent.getComponents()) refresh(child);
     }
@@ -113,16 +128,27 @@ public final class Ui {
         button.addActionListener(e -> action.run());
         return button;
     }
+    public static Icon symbol(String kind) { return new Symbol(kind); }
+    public static void quality(Graphics graphics) {
+        if (graphics instanceof Graphics2D g) {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+        }
+    }
     private record Symbol(String kind) implements Icon {
         @Override public int getIconWidth() { return 12; }
         @Override public int getIconHeight() { return 12; }
         @Override public void paintIcon(Component c,Graphics graphics,int x,int y) {
             Graphics2D g=(Graphics2D)graphics.create();
             try {
+                quality(g);
+                g.setStroke(new BasicStroke(1.35f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
                 g.translate(x,y); g.setColor(c.isEnabled() ? TEXT : MUTED);
                 if (kind.equals("close")) { g.drawLine(2,2,10,10); g.drawLine(10,2,2,10); }
                 else if (kind.equals("plus")) { g.drawLine(1,6,11,6); g.drawLine(6,1,6,11); }
                 else if (kind.equals("search")) { g.drawOval(1,1,7,7); g.drawLine(8,8,11,11); }
+                else if (kind.equals("connect")) { g.drawLine(1,6,10,6); g.drawLine(6,2,10,6); g.drawLine(10,6,6,10); }
                 else if (kind.equals("right")) { g.drawLine(4,2,8,6); g.drawLine(8,6,4,10); }
                 else { g.drawLine(2,4,6,8); g.drawLine(6,8,10,4); }
             } finally { g.dispose(); }
@@ -130,7 +156,7 @@ public final class Ui {
     }
     public static Border padding(int size) { return BorderFactory.createEmptyBorder(size,size,size,size); }
     public static Color paneBackground(boolean active) {
-        if (!active) return BACKGROUND;
+        if (!active || (BACKGROUND.getRGB()&0xffffff)==0) return BACKGROUND;
         return new Color((BACKGROUND.getRed()*24+FOCUS.getRed())/25,
                 (BACKGROUND.getGreen()*24+FOCUS.getGreen())/25,(BACKGROUND.getBlue()*24+FOCUS.getBlue())/25);
     }

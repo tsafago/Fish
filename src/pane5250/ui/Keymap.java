@@ -8,7 +8,12 @@ import org.tn5250j.keyboard.KeyMnemonic;
 public final class Keymap {
     private static final Map<KeyStroke, KeyMnemonic> DEFAULTS = defaults();
     private final Map<KeyStroke, KeyMnemonic> bindings;
+    private final Set<KeyMnemonic> globallyReassigned;
     public Keymap(Map<String, String> overrides) {
+        this(overrides,Set.of());
+    }
+    public Keymap(Map<String, String> overrides,Set<KeyMnemonic> globallyReassigned) {
+        this.globallyReassigned=Set.copyOf(globallyReassigned);
         bindings = new HashMap<>(DEFAULTS);
         overrides.forEach((stroke, value) -> {
             KeyStroke key = KeyStroke.getKeyStroke(stroke);
@@ -24,10 +29,13 @@ public final class Keymap {
             if (!hostActions().contains(mnemonic)) throw new IllegalArgumentException("Not a host action: " + value);
             bindings.put(key, mnemonic);
         });
+        bindings.values().removeIf(globallyReassigned::contains);
     }
+    public static Map<KeyStroke,KeyMnemonic> defaultBindings() { return DEFAULTS; }
+    public Map<KeyStroke,KeyMnemonic> bindings() { return Map.copyOf(bindings); }
     public KeyMnemonic lookup(KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.VK_ENTER && event.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD
-                && event.getModifiersEx() == 0) return KeyMnemonic.FIELD_EXIT;
+                && event.getModifiersEx() == 0) return globallyReassigned.contains(KeyMnemonic.FIELD_EXIT) ? null : KeyMnemonic.FIELD_EXIT;
         return bindings.get(KeyStroke.getKeyStrokeForEvent(event));
     }
     public static Map<String, String> parse(String text) {
@@ -54,7 +62,7 @@ public final class Keymap {
                 + "Pause: Attention     Shift+Escape: System Request\n"
                 + "Ctrl+Backspace: Clear     Ctrl+H: Help\n"
                 + "Page Up/Down: Roll     Tab/Shift+Tab: Next/previous field\n"
-                + "Application shortcuts always use Ctrl+Alt.\n\n"
+                + "Application defaults use Ctrl+Alt; change any action in Edit > Shortcuts.\n\n"
                 + "Overrides use Swing strokes and host action names, for example:\n"
                 + "ctrl ENTER = FIELD_EXIT\nshift F1 = PF13\nF12 = PF12";
     }

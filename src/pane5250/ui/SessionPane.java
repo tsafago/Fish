@@ -36,14 +36,29 @@ public final class SessionPane extends JPanel {
     private long generation;
     private Layout.Dock preview;
     private String notice = "Disconnected";
+    private String shownCard="";
 
     public SessionPane(Workspace workspace, UUID id, Profile profile) {
         super(new BorderLayout());
         this.workspace = workspace;
         this.id = id;
         this.profile = profile;
-        keys = new Keymap(profile.keymap());
-        setMinimumSize(new Dimension(120,100));
+        refreshKeys();
+        setMinimumSize(new Dimension(70,70));
+        setBorder(new javax.swing.border.AbstractBorder() {
+            @Override public Insets getBorderInsets(Component c) { return new Insets(1,1,1,1); }
+            @Override public void paintBorder(Component c,Graphics graphics,int x,int y,int width,int height) {
+                if (workspace.active()!=SessionPane.this) return;
+                Graphics2D g=(Graphics2D)graphics.create();
+                try {
+                    double scale=g.getTransform().getScaleX();
+                    g.setColor(Ui.FOCUS); g.setStroke(new BasicStroke((float)(1/scale)));
+                    double left=(Math.floor(x*scale)+.5)/scale,top=(Math.floor(y*scale)+.5)/scale;
+                    double right=(Math.floor((x+width)*scale)-.5)/scale,bottom=(Math.floor((y+height)*scale)-.5)/scale;
+                    g.draw(new java.awt.geom.Rectangle2D.Double(left,top,right-left,bottom-top));
+                } finally { g.dispose(); }
+            }
+        });
         setBackground(Ui.BACKGROUND);
         header.setBackground(Ui.BACKGROUND);
         header.setBorder(BorderFactory.createEmptyBorder());
@@ -57,7 +72,7 @@ public final class SessionPane extends JPanel {
         JPanel controls=new JPanel(new BorderLayout(3,0)); controls.setOpaque(false);
         controls.add(connection,BorderLayout.CENTER);
         close=Ui.iconButton("Close pane "+profile.name(),"close",() -> workspace.closePane(this));
-        close.setToolTipText("Close and disconnect; keep the last pane (Ctrl+Alt+W)");
+        close.setToolTipText("Close and disconnect; keep the last pane");
         controls.add(close,BorderLayout.EAST);
         header.add(controls, BorderLayout.EAST);
         add(header, BorderLayout.NORTH);
@@ -66,7 +81,10 @@ public final class SessionPane extends JPanel {
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getViewport().setBackground(Ui.BACKGROUND);
         body.add(scroll,"terminal");
-        JPanel choices=new JPanel(new GridLayout(0,1,0,10)); choices.setOpaque(false);
+        JPanel choices=new JPanel(new BorderLayout(8,0)); choices.setOpaque(false);
+        choices.setMinimumSize(new Dimension(60,30));
+        presets.setMinimumSize(new Dimension(25,30));
+        presets.setPreferredSize(new Dimension(225,30));
         presets.getAccessibleContext().setAccessibleName("Preset");
         presets.setToolTipText("Workstation preset");
         presets.addActionListener(e -> {
@@ -77,8 +95,9 @@ public final class SessionPane extends JPanel {
         presets.addFocusListener(new FocusAdapter() {
             @Override public void focusGained(FocusEvent e) { activate(); }
         });
-        connectButton=Ui.button("Connect",KeyEvent.VK_UNDEFINED,() -> { activate(); connect(); });
-        choices.add(presets); choices.add(connectButton); empty.add(choices);
+        connectButton=Ui.iconButton("Connect to selected preset","connect",() -> { activate(); connect(); });
+        connectButton.setPreferredSize(new Dimension(32,30)); connectButton.setContentAreaFilled(true);
+        choices.add(presets,BorderLayout.CENTER); choices.add(connectButton,BorderLayout.EAST); empty.add(choices);
         body.add(empty,"offline");
         add(body,BorderLayout.CENTER);
         refreshPresets();
@@ -101,6 +120,7 @@ public final class SessionPane extends JPanel {
     public Profile profile() { return profile; }
     public Screen5250 screen() { return core == null ? null : core.getScreen(); }
     public Keymap keys() { return keys; }
+    public void refreshKeys() { keys=new Keymap(profile.keymap(),workspace.reassignedHostActions()); }
     public TerminalView view() { return view; }
     public boolean connected() { return network != null && network.isConnected(); }
     public boolean busy() { return connecting || connected(); }
@@ -118,7 +138,7 @@ public final class SessionPane extends JPanel {
     }
     public void updateProfile(Profile value) {
         profile = value;
-        keys = new Keymap(value.keymap());
+        refreshKeys();
         refreshPresets();
         updateHeader();
         view.revalidate();
@@ -128,7 +148,7 @@ public final class SessionPane extends JPanel {
         boolean active=workspace.active()==this;
         title.setText(profile.name());
         title.setForeground(active ? Ui.TEXT : Ui.MUTED);
-        Color surface=Ui.paneBackground(active);
+        Color surface=Ui.paneBackground(active && workspace.highlightActive());
         setBackground(surface); header.setBackground(surface); footer.setBackground(surface);
         body.setBackground(surface); empty.setBackground(surface);
         connection.setForeground(active ? Ui.TEXT : Ui.MUTED);
@@ -136,12 +156,16 @@ public final class SessionPane extends JPanel {
         if (view.getParent() instanceof JViewport viewport) viewport.setBackground(surface);
         connection.setText(connecting ? "Connecting" : connected() ? "TCP " + profile.host() : "Offline");
         close.getAccessibleContext().setAccessibleName("Close pane "+profile.name());
-        close.setToolTipText("Close and disconnect; keep the last pane (Ctrl+Alt+W)");
+        String closeKey=workspace.shortcutLabel("Close pane");
+        close.setToolTipText("Close and disconnect; keep the last pane"+(closeKey.isEmpty() ? "" : " ("+closeKey+")"));
+        String resetKey=workspace.shortcutLabel("RESET");
+        reset.setToolTipText("Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
         header.setToolTipText("Drag onto another pane to swap. Ctrl+Alt+D swaps with the keyboard.");
         presets.setEnabled(!busy()); connectButton.setEnabled(!busy());
-        ((CardLayout)body.getLayout()).show(body,core!=null && busy() ? "terminal" : "offline");
+        String card=core!=null && busy() ? "terminal" : "offline";
+        if (!card.equals(shownCard)) { ((CardLayout)body.getLayout()).show(body,card); shownCard=card; }
         getAccessibleContext().setAccessibleName(title.getText());
-        setBorder(BorderFactory.createLineBorder(active ? Ui.FOCUS : Ui.BACKGROUND));
+        repaint();
         updateOia();
     }
     public void themeChanged() {
@@ -294,7 +318,7 @@ public final class SessionPane extends JPanel {
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
         if (screen().getOIA().isKeyBoardLocked() && key != KeyMnemonic.RESET
                 && key != KeyMnemonic.ATTN && key != KeyMnemonic.SYSREQ) {
-            problem(recoverableInputError() ? "Input error. Use Reset or Esc; no keys were queued."
+            problem(recoverableInputError() ? "Input error. Use Reset; no keys were queued."
                     : "Waiting for host. Attention / System Request available; no keys were queued.");
             return false;
         }

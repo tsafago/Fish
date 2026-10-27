@@ -25,6 +25,7 @@ public final class FlatControls {
             b.setOpaque(false); b.setRolloverEnabled(true);
         }
         @Override public void update(Graphics g,JComponent c) {
+            Ui.quality(g);
             AbstractButton button=(AbstractButton)c;
             if (button.isContentAreaFilled() || button.getModel().isRollover() || button.getModel().isPressed()) {
                 g.setColor(!button.isEnabled() ? Ui.PANEL : button.getModel().isPressed()
@@ -39,9 +40,36 @@ public final class FlatControls {
         }
         @Override protected void paintText(Graphics g,AbstractButton b,Rectangle text,String value) {
             g.setColor(b.isEnabled() ? b.getForeground() : Ui.MUTED);
-            BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,b.getDisplayedMnemonicIndex(),text.x,
+            BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,Ui.mnemonicsVisible() ? b.getDisplayedMnemonicIndex() : -1,text.x,
                     text.y+g.getFontMetrics().getAscent());
         }
+    }
+    public static final class Label extends BasicLabelUI {
+        public static ComponentUI createUI(JComponent c) { return new Label(); }
+        @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); }
+        @Override protected void paintEnabledText(JLabel label,Graphics g,String value,int x,int y) {
+            g.setColor(label.getForeground());
+            BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,Ui.mnemonicsVisible() ? label.getDisplayedMnemonicIndex() : -1,x,y);
+        }
+    }
+    public static final class Menu extends BasicMenuUI {
+        public static ComponentUI createUI(JComponent c) { return new Menu(); }
+        @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); }
+        @Override protected void paintText(Graphics g,JMenuItem item,Rectangle text,String value) { menuText(g,item,text,value); }
+    }
+    public static final class MenuItem extends BasicMenuItemUI {
+        public static ComponentUI createUI(JComponent c) { return new MenuItem(); }
+        @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); }
+        @Override protected void paintText(Graphics g,JMenuItem item,Rectangle text,String value) { menuText(g,item,text,value); }
+    }
+    private static void menuText(Graphics g,JMenuItem item,Rectangle text,String value) {
+        g.setColor(item.isEnabled() ? item.getForeground() : Ui.MUTED);
+        BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,Ui.mnemonicsVisible() ? item.getDisplayedMnemonicIndex() : -1,
+                text.x,text.y+g.getFontMetrics().getAscent());
+    }
+    public static final class Check extends BasicCheckBoxUI {
+        public static ComponentUI createUI(JComponent c) { return new Check(); }
+        @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); }
     }
     public static final class Combo extends BasicComboBoxUI {
         public static ComponentUI createUI(JComponent c) { return new Combo(); }
@@ -50,6 +78,14 @@ public final class FlatControls {
         }
         @Override public void paintCurrentValueBackground(Graphics g,Rectangle bounds,boolean focus) {
             g.setColor(Ui.FIELD); g.fillRect(bounds.x,bounds.y,bounds.width,bounds.height);
+        }
+        @Override public void paintCurrentValue(Graphics g,Rectangle bounds,boolean focus) {
+            Component value=comboBox.getRenderer().getListCellRendererComponent(listBox,comboBox.getSelectedItem(),-1,false,false);
+            value.setFont(comboBox.getFont());
+            value.setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.MUTED);
+            value.setBackground(Ui.FIELD);
+            Ui.quality(g);
+            currentValuePane.paintComponent(g,value,comboBox,bounds.x,bounds.y,bounds.width,bounds.height,true);
         }
         @Override protected ListCellRenderer<Object> createRenderer() {
             return new DefaultListCellRenderer.UIResource() {
@@ -110,6 +146,7 @@ public final class FlatControls {
         @Override public int getIconWidth() { return 17; }
         @Override public int getIconHeight() { return 17; }
         @Override public void paintIcon(Component c,Graphics g,int x,int y) {
+            Ui.quality(g);
             AbstractButton b=(AbstractButton)c;
             g.setColor(Ui.FIELD); g.fillRect(x+1,y+1,14,14);
             g.setColor(b.hasFocus() ? Ui.FOCUS : Ui.LINE); g.drawRect(x+1,y+1,14,14);

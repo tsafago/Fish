@@ -13,6 +13,7 @@
 typedef struct {
     WNDPROC previous;
     RECT drag, maximize;
+    int width, height;
 } FishWindow;
 
 static const WCHAR PROPERTY[] = L"Fish.NativeWindow";
@@ -20,6 +21,17 @@ static SRWLOCK state_lock = SRWLOCK_INIT;
 
 static void failure(JNIEnv *env, const char *message) {
     (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalStateException"), message);
+}
+
+static RECT scaled_region(RECT area, RECT client, int width, int height) {
+    RECT result = {0};
+    if (width > 0 && height > 0) {
+        result.left = MulDiv(area.left, client.right, width);
+        result.top = MulDiv(area.top, client.bottom, height);
+        result.right = MulDiv(area.right, client.right, width);
+        result.bottom = MulDiv(area.bottom, client.bottom, height);
+    }
+    return result;
 }
 
 static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -30,6 +42,18 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
     ReleaseSRWLockShared(&state_lock);
     if (!snapshot.previous) return DefWindowProcW(window, message, wparam, lparam);
     switch (message) {
+        case WM_SETICON:
+        case WM_SETTEXT: {
+            /* AWT refreshes icons on monitor changes. These default handlers draw
+               a classic caption directly, without sending WM_NCPAINT. */
+            LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
+            BOOL visible = (style & WS_VISIBLE) != 0;
+            if (visible) SetWindowLongPtrW(window, GWL_STYLE, style & ~WS_VISIBLE);
+            LRESULT result = CallWindowProcW(snapshot.previous, window, message, wparam, lparam);
+            if (visible && IsWindow(window))
+                SetWindowLongPtrW(window, GWL_STYLE, GetWindowLongPtrW(window, GWL_STYLE) | WS_VISIBLE);
+            return result;
+        }
         case WM_NCCALCSIZE:
             if (wparam) {
                 if (IsZoomed(window)) {
@@ -56,8 +80,10 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
                 if (left) return HTLEFT;
                 if (right) return HTRIGHT;
             }
-            if (PtInRect(&snapshot.maximize, point)) return HTMAXBUTTON;
-            if (PtInRect(&snapshot.drag, point)) return HTCAPTION;
+            RECT maximize = scaled_region(snapshot.maximize, client, snapshot.width, snapshot.height);
+            RECT drag = scaled_region(snapshot.drag, client, snapshot.width, snapshot.height);
+            if (PtInRect(&maximize, point)) return HTMAXBUTTON;
+            if (PtInRect(&drag, point)) return HTCAPTION;
             return HTCLIENT;
         }
         case WM_NCLBUTTONDOWN:
@@ -109,6 +135,7 @@ JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jcla
     if (info) surface->FreeDrawingSurfaceInfo(info);
     surface->Unlock(surface); awt.FreeDrawingSurface(surface);
     if (!window) { failure(env, "Fish has no Windows handle."); return 0; }
+    if (GetPropW(window, PROPERTY)) return (jlong)(intptr_t)window;
     FishWindow *state = (FishWindow *)calloc(1, sizeof(FishWindow));
     if (!state) { failure(env, "Cannot allocate Windows integration state."); return 0; }
     state->previous = (WNDPROC)GetWindowLongPtrW(window, GWLP_WNDPROC);
@@ -133,16 +160,16 @@ JNIEXPORT jboolean JNICALL Java_pane5250_ui_NativeWindow_regions0(JNIEnv *env, j
     (*env)->GetIntArrayRegion(env, rectangles, 0, 8, values);
     if ((*env)->ExceptionCheck(env)) return JNI_FALSE;
     HWND window = (HWND)(intptr_t)handle;
-    RECT client; GetClientRect(window, &client);
     AcquireSRWLockExclusive(&state_lock);
     FishWindow *state = (FishWindow *)GetPropW(window, PROPERTY);
     if (state) {
+        state->width = width; state->height = height;
         RECT *areas[2] = {&state->drag, &state->maximize};
         for (int i = 0; i < 2; i++) {
-            areas[i]->left = MulDiv(values[i*4], client.right, width);
-            areas[i]->top = MulDiv(values[i*4+1], client.bottom, height);
-            areas[i]->right = MulDiv(values[i*4]+values[i*4+2], client.right, width);
-            areas[i]->bottom = MulDiv(values[i*4+1]+values[i*4+3], client.bottom, height);
+            areas[i]->left = values[i*4];
+            areas[i]->top = values[i*4+1];
+            areas[i]->right = values[i*4]+values[i*4+2];
+            areas[i]->bottom = values[i*4+1]+values[i*4+3];
         }
     }
     ReleaseSRWLockExclusive(&state_lock);

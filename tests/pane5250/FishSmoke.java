@@ -212,6 +212,15 @@ public final class FishSmoke {
         setField(view,"fluxPhase",0.0); BufferedImage still=paint(view,1);
         setField(view,"fluxPhase",.7);
         check(differences(still,paint(view,1),0,still.getHeight())==0,"Default static rendering does not animate or change users' defaults.");
+        workspace.activate(pane);
+        workspace.togglePrism();
+        check(pane.profile().effect().equals("Prism") && field(view,"rendered")==null,
+                "Logo effect path invalidates the real terminal glyph/effect caches.");
+        BufferedImage prism=paint(view,1);
+        check(differences(still,prism,0,still.getHeight())>100,"Logo Prism toggle visibly changes terminal ink, not just icon styling.");
+        workspace.togglePrism();
+        check(pane.profile().effect().equals("None") && differences(still,paint(view,1),0,still.getHeight())==0,
+                "Second toggle restores the exact crisp no-effect rendering.");
     }
     private static void iconChecks() throws Exception {
         Field outline=FishIcon.class.getDeclaredField("OUTLINE"); outline.setAccessible(true);
@@ -236,11 +245,42 @@ public final class FishSmoke {
                     || first.getP2().equals(second.getP1()) || first.getP2().equals(second.getP2())) continue;
             if (first.intersectsLine(second)) crossings++;
         }
-        check(paths==2 && closed==1 && crossings==1,"Minimal triangle/rhombus mark has exactly one crossing and a trimmed open lower intersection.");
-        check(shape.getBounds2D().getCenterY()==32 && shape.getBounds2D().getWidth()==42 && points.contains(new Point2D.Double(52,32))
-                && points.contains(new Point2D.Double(10,18)) && points.contains(new Point2D.Double(10,46)),
-                "Compact fish is horizontal, with its triangular tail left and rhombus head right.");
+        check(paths==1 && closed==1 && crossings==0,"Composite fish has one closed exterior contour, without crossings or interior seams.");
+        check(shape.getBounds2D().equals(new Rectangle2D.Double(12,12,40,40))
+                && points.contains(new Point2D.Double(52,32)) && points.contains(new Point2D.Double(12,12))
+                && points.contains(new Point2D.Double(12,52)) && !points.contains(new Point2D.Double(32,32)),
+                "Horizontal fish retains its triangular tail left, square head right and no visible center-tip seam.");
+        Path2D square=new Path2D.Double();
+        square.moveTo(12,32); square.lineTo(32,12); square.lineTo(52,32); square.lineTo(32,52); square.closePath();
+        Path2D triangle=new Path2D.Double();
+        triangle.moveTo(12,12); triangle.lineTo(32,32); triangle.lineTo(12,52); triangle.closePath();
+        Area expected=new Area(square); expected.add(new Area(triangle)); expected.exclusiveOr(new Area(shape));
+        check(expected.isEmpty(),"Outline is exactly the geometric union of a 45-degree square and a right triangle with square-length legs and center tip.");
+        check(lines.stream().allMatch(line -> {
+            double dx=Math.abs(line.getX2()-line.getX1()),dy=Math.abs(line.getY2()-line.getY1());
+            return dx==0 || dy==0 || Math.abs(dx-dy)<.00001;
+        }),"All exterior slopes are horizontal, vertical or exactly 45 degrees; no stretched rhombus.");
         ImageIO.write(FishIcon.image(256),"png",Path.of("build","fish-horizontal-icon.png").toFile());
+        BufferedImage squareMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
+        BufferedImage wideMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
+        Graphics2D squareGraphics=squareMark.createGraphics(),wideGraphics=wideMark.createGraphics();
+        try {
+            new FishIcon(30,30).paintIcon(null,squareGraphics,15,0);
+            new FishIcon(60,30).paintIcon(null,wideGraphics,0,0);
+        } finally { squareGraphics.dispose(); wideGraphics.dispose(); }
+        check(differences(squareMark,wideMark,0,30)==0,"Non-square titlebar icon bounds center a uniform scale; the body remains an actual square.");
+        BufferedImage sizes=new BufferedImage(420,156,BufferedImage.TYPE_INT_RGB);
+        Graphics2D g=sizes.createGraphics();
+        try {
+            g.setColor(Ui.PANEL); g.fillRect(0,0,sizes.getWidth(),sizes.getHeight());
+            int x=8;
+            for (int size:new int[]{16,24,32,48,64,128}) {
+                g.drawImage(FishIcon.image(size),x,(136-size)/2,null);
+                g.setColor(Ui.TEXT); g.drawString(Integer.toString(size),x,150);
+                x+=size+16;
+            }
+        } finally { g.dispose(); }
+        ImageIO.write(sizes,"png",Path.of("build","fish-icon-sizes.png").toFile());
         check(Profile.create("Default").effect().equals("None"),"New profiles still default to no effects.");
     }
     private static String shape(Layout node) {

@@ -5,6 +5,44 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Fish 0.4.1 local monitor/chrome revision
+
+This local patch has not been uploaded. A focused regression reproduced the
+classic-caption corruption simply by refreshing the icons of a visible Fish
+window. OpenJDK `WWindowPeer.updateGC()` refreshes icons on monitor changes;
+`AwtFrame::DoUpdateIcon()` sends WM_SETICON. Its Windows default handler can
+paint a classic caption directly, bypassing WM_NCPAINT/WM_NCACTIVATE.
+Fish now inhibits only that synchronous default icon/title redraw while
+preserving the actual icon/title update, visibility, styles and AWT DPI handling.
+Peer recreation receives a fresh native attachment, and logical hit regions
+are scaled against the current physical client rectangle rather than frozen
+at the previous monitor's size.
+
+The titlebar is three logical pixels taller (31). The shared icon is the exact
+geometric union of a 45-degree square and a right-isosceles triangle whose legs
+equal the square's side length and whose right-angle tip is the square center.
+Only the exterior is stroked, without aspect-ratio distortion. The focusable
+logo toggles the active preset through the real persistent Prism/None path;
+double-clicks and drags do not toggle.
+
+Focused source/packaged checks cover geometry, cache invalidation, actual Prism
+pixel changes and exact None restoration, saved profile state, logo/native hit
+separation and peer recreation, alongside the retained loopback/field-safety
+fixtures. A fresh-consent bounded physical run used three monitors at 100%,
+150% and 150%, including icon/title refresh, cross-monitor movement,
+maximize/restore, minimize/restore, owned-dialog activation and physical logo
+single/double/drag/keyboard actions. These are local Windows observations, not
+proof for every GPU, monitor arrangement, docking/replug or DPI configuration.
+No IBM i, shared clipboard or credentials were accessed. Protocol expansion and
+real IBM i/ACS acceptance remain unchanged.
+
+Lifecycle source references:
+- OpenJDK: `src/java.desktop/windows/classes/sun/awt/windows/WWindowPeer.java`
+  (`updateGC`) and native `awt_Frame.cpp` (`DoUpdateIcon`).
+- Chromium: `ui/views/win/hwnd_message_handler.cc`, documentation of default
+  WM_SETICON/WM_SETTEXT direct nonclient painting. Referenced behavior only;
+  no Chromium runtime dependency is introduced.
+
 ## Fish 0.4.0 final streamlining preview
 
 This update is a UI/windowing/packaging milestone before official release,

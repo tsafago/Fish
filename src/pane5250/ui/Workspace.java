@@ -77,7 +77,7 @@ public final class Workspace extends JFrame {
         find.setToolTipText("Search commands (Ctrl+Alt+K)");
         find.getAccessibleContext().setAccessibleName("Search commands");
         for (JButton b : List.of(addPane,find)) { b.setBorder(BorderFactory.createEmptyBorder(4,7,4,7)); tools.add(b); }
-        chrome=new WindowChrome(this,menus,tools);
+        chrome=new WindowChrome(this,menus,tools,this::togglePrism);
         shell.add(chrome,BorderLayout.NORTH);
         shell.add(content,BorderLayout.CENTER);
         shortcuts=new AppShortcuts(this,commands,state.shortcuts());
@@ -104,6 +104,10 @@ public final class Workspace extends JFrame {
     @Override public void addNotify() {
         super.addNotify();
         if (chrome!=null) chrome.installNative();
+    }
+    @Override public void removeNotify() {
+        if (chrome!=null) chrome.nativeRemoved();
+        super.removeNotify();
     }
     public Set<KeyMnemonic> reassignedHostActions() { return shortcuts.reassignedHostActions(); }
     public Map<String,String> shortcutOverrides() { return shortcuts.overrides(); }
@@ -364,6 +368,11 @@ public final class Workspace extends JFrame {
     private void fit() {
         putProfile(active.profile().withZoom(1));
         active.view().setFit(true);
+    }
+    public void togglePrism() {
+        if (closing || active==null) return;
+        Profile profile=active.profile();
+        putProfile(profile.withDisplay(profile.theme(),profile.effect().equals("Prism") ? "None" : "Prism"));
     }
     private void hostKeys() {
         JComboBox<KeyMnemonic> keys = new JComboBox<>(Keymap.hostActions().toArray(KeyMnemonic[]::new));

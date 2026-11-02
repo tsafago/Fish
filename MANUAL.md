@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.4.0 - final streamlining preview before release.
+Fish 0.4.1 - local monitor/chrome revision before release.
 This manual describes the implemented application, not an assurance of full ACS compatibility.
 Open Help > Full manual / Getting Started for the searchable topic index.
 
@@ -25,9 +25,9 @@ If connection fails, check the hostname, port, VPN/network and IBM i Telnet serv
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-Download Fish-0.4.0-setup.exe from the private repository's release page, then run it. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+Run the matching local Fish-0.4.1-setup.exe. This revision has not been uploaded; the private repository's previous 0.4.0 download does not contain these corrections. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Alternatively, extract Fish-0.4.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.4.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -41,7 +41,7 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.4.0-setup.exe, dist\Fish-0.4.0-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Outputs are dist\Fish\Fish.exe, dist\Fish-0.4.1-setup.exe, dist\Fish-0.4.1-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 
@@ -210,6 +210,8 @@ Theme and focus changes are immediate and persisted. They do not reconnect sessi
 The profile or Appearance dialog selects Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid, Mint, Rose, OLED green or OLED amber. Each retains sixteen host color/attribute entries rather than collapsing everything into one decorative color.
 
 Text effects are None, Soft glow, Prism, Neon and Flux (animated). None is the default, using crisp final-resolution glyphs. Effects are opt-in and not a workaround for host compatibility.
+
+The top-left fish is a secret Prism toggle for the active preset: Prism becomes None; any other effect becomes Prism. A single mouse click waits for the system double-click interval; double-clicks and drags do not toggle it. Tab to the icon and press Space for immediate keyboard activation. Like Appearance, it saves the preset and refreshes other panes using that same preset. The logo no longer performs a temporary shimmer.
 
 Flux uses smooth flowing multicolor gradients on neutral text; chromatic host text stays within its hue family, and reverse video retains its exact colors. A shared bounded 20fps timer is suspended for hidden, offline, minimized or disposed views. Choose None to stop effects.
 

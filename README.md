@@ -10,21 +10,24 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Final streamlining update
+## Monitor/chrome revision (local)
 
-**Fish 0.4.0** is the final streamlining preview before official release, not
-a claim that the real IBM i/ACS acceptance gate has been passed.
+**Fish 0.4.1** refines the final streamlining preview with a cross-monitor
+native-caption correction, a 31-logical-pixel titlebar, and a square/right-triangle
+fish outline. Clicking the logo toggles the active preset's Prism effect/None.
+This revision is local only; it has not been uploaded to GitHub.
+It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
 available offline from **Help > Full manual / Getting Started**, with a
 searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-1. Sign in to GitHub with access to the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish).
-2. Open [Releases](https://github.com/HornadyIBM/Fish/releases) and download `Fish-0.4.0-setup.exe`.
+1. Use the locally generated `dist\Fish-0.4.1-setup.exe` for this revision.
+2. The previous uploaded 0.4.0 preview remains under [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish); it does not contain this correction.
 3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
 
-For a portable copy, extract `Fish-0.4.0-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.4.1-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -32,7 +35,7 @@ may warn or block them. Checksums accompany the release; do not bypass IT policy
 
 ## Generate an executable and installer yourself
 
-Download and extract the complete `Fish-source.zip` from Releases, then
+Extract the complete matching `Fish-source.zip` supplied with this local package, then
 **double-click `Setup-Fish.cmd`**. No Git, installed JDK, Visual Studio, WiX
 installation, administrator rights or system PATH edits are needed.
 The first build needs internet access and about 2 GB of free disk space.
@@ -41,8 +44,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.4.0-setup.exe` | Install for the current Windows user |
-| `dist\Fish-0.4.0-windows-x64.zip` | Copy/extract a complete portable application |
+| `dist\Fish-0.4.1-setup.exe` | Install for the current Windows user |
+| `dist\Fish-0.4.1-windows-x64.zip` | Copy/extract a complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -53,7 +56,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current local package is **Fish 0.4.0**. Keep the entire application-image directory together:
+The current local package is **Fish 0.4.1**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe
@@ -188,7 +191,13 @@ Focus never changes the border's layout insets. OLED themes retain true-black su
 Native Windows frame styles and hit testing support Win+arrows, edge/corner
 snapping, top-edge maximize and the Windows 11 maximize-button snap target
 without a bright native titlebar. Narrow windows collapse menus and tool labels.
-Clicking the fish mark gives a short, harmless color shimmer; no session changes.
+The fish mark is a keyboard-focusable secret button: a single click toggles
+the active preset's text effect from Prism to None, or from any other effect to
+Prism. Changes use the same persistent profile path as Appearance; panes using
+that same preset also refresh. Keyboard Space activates it immediately, with a
+visible focus indicator. Mouse clicks wait for Windows' double-click interval
+so double-clicks and drags do not accidentally change effects. The rest of the
+title area remains available for moving/maximizing the window.
 
 **Edit > Shortcuts** lists every registered application and host action, with
 record/unbind/default controls and conflict validation. The same list is linked

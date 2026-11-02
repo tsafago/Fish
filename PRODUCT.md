@@ -42,9 +42,12 @@ Full ACS compatibility remains an acceptance target, never an unverified claim.
 
 The attached reference is binding: near-black flat panes, very thin dividers,
 small pane headers, crisp monospace host text, green and white host attributes,
-minimal application chrome. A compact gradient triangle/rhombus fish,
-tail left and head right, one crossing and a trimmed lower intersection, is the app mark
-and Windows icon. Offline content is only a centered preset selector and Connect.
+minimal application chrome. A compact gradient outline joins a true 45-degree
+square body to a right-isosceles triangular tail pointing into the square's
+center, with tail left/head right and no internal overlap lines. The same
+uniformly scaled exterior is the app mark and Windows icon. The top-left mark
+is a secret, keyboard-accessible persistent Prism/None toggle for the active preset.
+Offline content is only a centered preset selector and Connect.
 Pane X disconnects and removes its tile, except the final tile stays empty;
 window close exits
 without confirmation. No cards, promotional text or oversized toolbars.

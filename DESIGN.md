@@ -71,17 +71,29 @@ vertical padding. Resizing does not resize the host's presentation space.
 The main window is undecorated: one 28px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
 menus/compact + Pane and Commands controls and three 36px window controls.
-The leftmost mark is a compact gradient triangle/rhombus fish, tail left and
-head right. The only visible crossing is above; a small cut separates the
-lower intersection. No eye, mouth or intermediate wonky polygon angles.
-A 3.4/64 stroke and the same geometry supply titlebar, runtime/taskbar and
-multi-resolution Windows executable icons. The mark has balanced own insets;
-a click gives a brief, local color shimmer without touching session state.
+The leftmost mark is the exact exterior of a 45-degree square plus a right
+isosceles triangle, tail left and head right. The triangle's right-angle tip
+is at the square center; each leg equals the square's side length. A geometric
+union removes all interior lines. No eye, mouth, crossings or stretched rhombus.
+A 3.4/64 stroke, uniform scale and the same geometry supply titlebar,
+runtime/taskbar and multi-resolution Windows executable icons.
+The borderless mark is a focusable button with balanced insets and keyboard
+focus indication. Single clicks toggle the active preset's persistent Prism/None
+effect; keyboard Space is immediate. The system double-click interval disambiguates
+mouse activation, so double-clicks/drags never toggle. No logo shimmer remains.
+The titlebar is 31 logical pixels tall, with all controls centered in its actual
+layout; native hit regions follow those bounds and scale to current client pixels.
 The Fish-owned native bridge preserves standard overlapped resize/maximize
 styles while consuming nonclient painting. Hit testing returns caption, edge
 or maximize codes only for the corresponding targets, allowing OS snap/move
 loops off the EDT and Windows 11 maximize hit testing. Inactive windows must
 not acquire a second native caption. Narrow windows collapse menus/tool labels.
+AWT refreshes native icons when changing monitors. WM_SETICON/WM_SETTEXT default
+handlers can draw a classic caption directly without WM_NCPAINT. Temporarily
+clearing WS_VISIBLE only around their synchronous forwarding suppresses that
+draw without dropping the actual icon/title update or altering move/snap styles.
+The bridge is reattached after peer recreation; normal DPI messages still reach
+AWT, and hit regions are mapped from logical layout against current client size.
 
 ## Elevation & Depth
 

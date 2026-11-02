@@ -6,8 +6,10 @@ import javax.swing.*;
 
 /** Native Swing window mechanics without a second, system-colored title/menu row. */
 final class WindowChrome extends JPanel {
+    static final int HEIGHT=31;
     private final JFrame window;
-    private final JLabel caption = new JLabel(new FishIcon(30,26));
+    private final LogoButton caption;
+    private final JLabel keyboardHint=new JLabel();
     private final WindowButton maximize;
     private final JMenuBar menus;
     private final JComponent tools;
@@ -15,35 +17,24 @@ final class WindowChrome extends JPanel {
     private final JButton menuButton;
     private NativeWindow nativeWindow;
     private Boolean compact;
-    private final javax.swing.Timer pulse;
-    private long pulseStart;
     private Rectangle normalBounds;
     private Rectangle keyboardStart;
     private Component keyboardFocus;
     private boolean keyboardSizing;
     private final KeyEventDispatcher windowKeys = this::keyboardEvent;
 
-    WindowChrome(JFrame window,JMenuBar menus,JComponent tools) {
+    WindowChrome(JFrame window,JMenuBar menus,JComponent tools,Runnable togglePrism) {
         super(new BorderLayout(8,0));
         this.window = window;
         this.menus=menus; this.tools=tools;
-        pulse=new javax.swing.Timer(50,e -> {
-            double phase=(System.nanoTime()-pulseStart)/1_400_000_000.0;
-            ((FishIcon)caption.getIcon()).pulse(Math.min(1,phase)); caption.repaint();
-            if (phase>=1) { ((javax.swing.Timer)e.getSource()).stop(); ((FishIcon)caption.getIcon()).pulse(0); caption.repaint(); }
-        });
+        caption=new LogoButton(togglePrism);
         normalBounds = window.getBounds();
         setBackground(Ui.PANEL);
-        setPreferredSize(new Dimension(300,28));
+        setPreferredSize(new Dimension(300,HEIGHT));
         setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE));
         menus.setBorder(BorderFactory.createEmptyBorder());
         left = new JPanel(new BorderLayout(0,0));
         left.setOpaque(false);
-        caption.setBorder(BorderFactory.createEmptyBorder(0,8,0,8));
-        caption.setForeground(Ui.MUTED);
-        caption.setFont(new Font("Segoe UI",Font.PLAIN,11));
-        caption.setToolTipText(window.getTitle());
-        caption.getAccessibleContext().setAccessibleName("Fish");
         left.add(caption,BorderLayout.WEST);
         actions=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); actions.setOpaque(false);
         menuButton=Ui.iconButton("Application menus","down",this::openCompactMenu);
@@ -51,12 +42,13 @@ final class WindowChrome extends JPanel {
         actions.add(menus); actions.add(tools);
         left.add(actions,BorderLayout.CENTER);
         add(left,BorderLayout.WEST);
-        dragArea = new JPanel();
+        dragArea = new JPanel(new BorderLayout());
         dragArea.setOpaque(false);
         dragArea.setName("window-drag-area");
         dragArea.getAccessibleContext().setAccessibleName("Window title; drag to move, double-click to maximize or restore");
+        keyboardHint.setForeground(Ui.MUTED);
+        dragArea.add(keyboardHint);
         installMove(dragArea);
-        installMove(caption);
         add(dragArea,BorderLayout.CENTER);
         controls = new JPanel(new GridLayout(1,3,0,0));
         controls.setOpaque(false);
@@ -79,7 +71,7 @@ final class WindowChrome extends JPanel {
             @Override public void componentResized(ComponentEvent e) { rememberNormal(); }
         });
         window.addWindowListener(new WindowAdapter() {
-            @Override public void windowClosed(WindowEvent e) { finishKeyboard(false); pulse.stop(); }
+            @Override public void windowClosed(WindowEvent e) { finishKeyboard(false); }
         });
         window.addWindowFocusListener(new WindowAdapter() {
             @Override public void windowLostFocus(WindowEvent e) { finishKeyboard(true); }
@@ -91,6 +83,7 @@ final class WindowChrome extends JPanel {
         window.getGlassPane().setVisible(false);
         revalidate();
     }
+    void nativeRemoved() { nativeWindow=null; caption.cancelClick(); }
     @Override public void doLayout() {
         boolean narrow=getWidth()<700;
         if (compact==null || compact!=narrow) {
@@ -118,7 +111,7 @@ final class WindowChrome extends JPanel {
         }
         popup.show(menuButton,0,menuButton.getHeight());
     }
-    void themeChanged() { setBackground(Ui.PANEL); caption.setForeground(Ui.MUTED); setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE)); }
+    void themeChanged() { setBackground(Ui.PANEL); keyboardHint.setForeground(Ui.MUTED); setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE)); }
 
     private boolean isMaximized() { return (window.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0; }
     private void rememberNormal() {
@@ -168,7 +161,7 @@ final class WindowChrome extends JPanel {
         keyboardStart = window.getBounds();
         keyboardSizing = sizing;
         keyboardFocus = focus;
-        caption.setText(sizing ? "Size: arrows / Enter / Esc" : "Move: arrows / Enter / Esc");
+        keyboardHint.setText(sizing ? "Size: arrows / Enter / Esc" : "Move: arrows / Enter / Esc");
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(windowKeys);
     }
     private boolean keyboardEvent(KeyEvent event) {
@@ -196,7 +189,7 @@ final class WindowChrome extends JPanel {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(windowKeys);
         Rectangle saved = keyboardStart;
         keyboardStart = null;
-        caption.setText("");
+        keyboardHint.setText("");
         if (cancel) window.setBounds(saved);
         if (keyboardFocus != null && window.isFocused()) keyboardFocus.requestFocusInWindow();
         keyboardFocus = null;
@@ -206,18 +199,15 @@ final class WindowChrome extends JPanel {
             Point pressed;
             Rectangle original;
             double anchor;
-            boolean dragged;
             @Override public void mousePressed(MouseEvent e) {
                 if (SwingUtilities.isRightMouseButton(e)) { systemMenu().show(area,e.getX(),e.getY()); return; }
                 if (!SwingUtilities.isLeftMouseButton(e)) return;
                 pressed = e.getLocationOnScreen();
-                dragged=false;
                 original = window.getBounds();
                 anchor = (pressed.x - original.x) / (double)original.width;
             }
             @Override public void mouseDragged(MouseEvent e) {
                 if (pressed == null) return;
-                dragged=true;
                 if (nativeWindow!=null) { pressed=null; nativeWindow.beginMove(); return; }
                 Point point = e.getLocationOnScreen();
                 if (isMaximized()) {
@@ -229,12 +219,57 @@ final class WindowChrome extends JPanel {
             @Override public void mouseReleased(MouseEvent e) { pressed = null; }
             @Override public void mouseClicked(MouseEvent e) {
                 if (SwingUtilities.isLeftMouseButton(e) && e.getClickCount() == 2) toggleMaximize();
-                else if (area==caption && !dragged && SwingUtilities.isLeftMouseButton(e)) {
-                    pulseStart=System.nanoTime(); pulse.restart();
-                }
             }
         };
         area.addMouseListener(move); area.addMouseMotionListener(move);
+    }
+
+    private final class LogoButton extends JButton {
+        private final javax.swing.Timer click;
+        private Point pressed;
+        private boolean dragged;
+        LogoButton(Runnable togglePrism) {
+            super(new FishIcon(30,30));
+            Object interval=Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
+            click=new javax.swing.Timer(interval instanceof Integer ms ? ms : 500,e -> togglePrism.run());
+            click.setRepeats(false);
+            setPreferredSize(new Dimension(48,HEIGHT-1));
+            setBorder(BorderFactory.createEmptyBorder());
+            setContentAreaFilled(false); setOpaque(false); setFocusPainted(false);
+            setToolTipText("Fish");
+            getAccessibleContext().setAccessibleName("Toggle Prism text effect in active pane");
+            addActionListener(e -> togglePrism.run());
+        }
+        void cancelClick() { click.stop(); pressed=null; }
+        @Override protected void processMouseEvent(MouseEvent event) {
+            if (event.getID()==MouseEvent.MOUSE_PRESSED) {
+                pressed=event.getPoint(); dragged=false;
+                if (event.getClickCount()>1) click.stop();
+            }
+            super.processMouseEvent(event);
+            if (event.getID()==MouseEvent.MOUSE_RELEASED) pressed=null;
+        }
+        @Override protected void processMouseMotionEvent(MouseEvent event) {
+            if (event.getID()==MouseEvent.MOUSE_DRAGGED && pressed!=null
+                    && pressed.distance(event.getPoint())>=java.awt.dnd.DragSource.getDragThreshold()) {
+                dragged=true; click.stop(); getModel().setArmed(false);
+            }
+            super.processMouseMotionEvent(event);
+        }
+        @Override protected void fireActionPerformed(ActionEvent event) {
+            if (EventQueue.getCurrentEvent() instanceof MouseEvent mouse) {
+                if (!dragged && mouse.getClickCount()==1) click.restart();
+                else click.stop();
+            } else super.fireActionPerformed(event);
+        }
+        @Override public void removeNotify() { cancelClick(); super.removeNotify(); }
+        @Override protected void paintComponent(Graphics graphics) {
+            Graphics2D g=(Graphics2D)graphics.create();
+            try {
+                getIcon().paintIcon(this,g,(getWidth()-getIcon().getIconWidth())/2,(getHeight()-getIcon().getIconHeight())/2);
+                if (hasFocus()) { g.setColor(Ui.FOCUS); g.drawRect(3,3,getWidth()-7,getHeight()-7); }
+            } finally { g.dispose(); }
+        }
     }
 
     private final class ResizeEdges extends JComponent {
@@ -297,7 +332,7 @@ final class WindowChrome extends JPanel {
             this.kind = kind;
             getAccessibleContext().setAccessibleName(accessibleName);
             setToolTipText(accessibleName);
-            setPreferredSize(new Dimension(36,27));
+            setPreferredSize(new Dimension(36,HEIGHT-1));
             setBorder(BorderFactory.createEmptyBorder());
             setContentAreaFilled(false);
             setRolloverEnabled(true);

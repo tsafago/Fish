@@ -43,12 +43,15 @@ Full ACS compatibility remains an acceptance target, never an unverified claim.
 The attached reference is binding: near-black flat panes, very thin dividers,
 small pane headers, crisp monospace host text, green and white host attributes,
 minimal application chrome. A compact gradient outline joins a true 45-degree
-square body to a right-isosceles triangular tail pointing into the square's
-center, with tail left/head right and no internal overlap lines. The same
+square body to a triangular tail on the left. The square's two left sides
+extend straight through its left corner to cross once, ending level with the
+square's top and bottom, without a line joining the tail tips. There is no eye or mouth. The same
 uniformly scaled exterior is the app mark and Windows icon. The top-left mark
-is a secret, keyboard-accessible persistent Prism/None toggle for the active preset.
+is a secret, keyboard-accessible persistent Flux (animated)/None toggle for the active preset.
 Offline content is only a centered preset selector and Connect.
 Pane X disconnects and removes its tile, except the final tile stays empty;
+its X hides only when that final tile is disconnected. A restrained rotating ring
+replaces the center controls during connection setup without obscuring footer diagnostics.
 window close exits
 without confirmation. No cards, promotional text or oversized toolbars.
 An opt-in Flux text preset provides flowing animated multicolor gradients

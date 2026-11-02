@@ -27,6 +27,8 @@ public final class SessionPane extends JPanel {
     private final JLabel title = new JLabel(), connection = new JLabel(), oia = new JLabel("Disconnected");
     private final TerminalView view;
     private final JPanel body=new JPanel(new CardLayout()),empty=new JPanel(new GridBagLayout());
+    private final JPanel loading=new JPanel(new GridBagLayout());
+    private final ConnectionSpinner spinner=new ConnectionSpinner();
     private final JComboBox<Profile> presets=new JComboBox<>();
     private final JButton connectButton;
     private boolean updatingPresets;
@@ -99,6 +101,8 @@ public final class SessionPane extends JPanel {
         connectButton.setPreferredSize(new Dimension(32,30)); connectButton.setContentAreaFilled(true);
         choices.add(presets,BorderLayout.CENTER); choices.add(connectButton,BorderLayout.EAST); empty.add(choices);
         body.add(empty,"offline");
+        loading.add(spinner);
+        body.add(loading,"connecting");
         add(body,BorderLayout.CENTER);
         refreshPresets();
         oia.setFont(new Font("Consolas",Font.PLAIN,11));
@@ -127,7 +131,9 @@ public final class SessionPane extends JPanel {
     public void activate() { workspace.activate(this); }
     public JPopupMenu clipboardMenu() { return workspace.clipboardMenu(this); }
     public void focusTerminal() {
-        if (core==null) presets.requestFocusInWindow(); else view.requestFocusInWindow();
+        if (connecting) close.requestFocusInWindow();
+        else if (core==null) presets.requestFocusInWindow();
+        else view.requestFocusInWindow();
     }
     public void refreshPresets() {
         updatingPresets=true;
@@ -150,20 +156,24 @@ public final class SessionPane extends JPanel {
         title.setForeground(active ? Ui.TEXT : Ui.MUTED);
         Color surface=Ui.paneBackground(active && workspace.highlightActive());
         setBackground(surface); header.setBackground(surface); footer.setBackground(surface);
-        body.setBackground(surface); empty.setBackground(surface);
+        body.setBackground(surface); empty.setBackground(surface); loading.setBackground(surface);
         connection.setForeground(active ? Ui.TEXT : Ui.MUTED);
         view.setBackground(surface);
         if (view.getParent() instanceof JViewport viewport) viewport.setBackground(surface);
         connection.setText(connecting ? "Connecting" : connected() ? "TCP " + profile.host() : "Offline");
         close.getAccessibleContext().setAccessibleName("Close pane "+profile.name());
+        boolean restoreFocus=close.isFocusOwner() && shownCard.equals("connecting");
+        close.setVisible(busy() || workspace.hasMultiplePanes());
         String closeKey=workspace.shortcutLabel("Close pane");
         close.setToolTipText("Close and disconnect; keep the last pane"+(closeKey.isEmpty() ? "" : " ("+closeKey+")"));
         String resetKey=workspace.shortcutLabel("RESET");
         reset.setToolTipText("Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
         header.setToolTipText("Drag onto another pane to swap. Ctrl+Alt+D swaps with the keyboard.");
         presets.setEnabled(!busy()); connectButton.setEnabled(!busy());
-        String card=core!=null && busy() ? "terminal" : "offline";
+        String card=connecting ? "connecting" : core!=null && connected() ? "terminal" : "offline";
         if (!card.equals(shownCard)) { ((CardLayout)body.getLayout()).show(body,card); shownCard=card; }
+        spinner.updateAnimation();
+        if (restoreFocus && !connecting) focusTerminal();
         getAccessibleContext().setAccessibleName(title.getText());
         repaint();
         updateOia();
@@ -287,7 +297,66 @@ public final class SessionPane extends JPanel {
         view.screenChanged();
     }
     public void reconnect() { disconnect(); connect(); }
-    public void dispose() { disposed = true; disconnect(); view.dispose(); }
+    public void dispose() { disposed = true; spinner.updateAnimation(); disconnect(); view.dispose(); }
+
+    private final class ConnectionSpinner extends JComponent {
+        private double angle;
+        private final javax.swing.Timer clock=new javax.swing.Timer(40,e -> {
+            angle=(System.nanoTime()%1_200_000_000L)*360.0/1_200_000_000L;
+            repaint();
+        });
+        private Frame frame;
+        private final WindowStateListener state=e -> updateAnimation();
+        ConnectionSpinner() {
+            setPreferredSize(new Dimension(36,36));
+            setOpaque(false);
+            getAccessibleContext().setAccessibleName("Connecting to workstation");
+            addHierarchyListener(e -> {
+                if ((e.getChangeFlags()&HierarchyEvent.SHOWING_CHANGED)!=0) updateAnimation();
+            });
+        }
+        void updateAnimation() {
+            if (connecting && !disposed && isShowing() && (frame==null || (frame.getExtendedState()&Frame.ICONIFIED)==0)) {
+                if (!clock.isRunning()) clock.start();
+            } else clock.stop();
+        }
+        @Override public void addNotify() {
+            super.addNotify();
+            if (SwingUtilities.getWindowAncestor(this) instanceof Frame parent) {
+                frame=parent; frame.addWindowStateListener(state);
+            }
+            updateAnimation();
+        }
+        @Override public void removeNotify() {
+            clock.stop();
+            if (frame!=null) frame.removeWindowStateListener(state);
+            frame=null;
+            super.removeNotify();
+        }
+        @Override protected void paintComponent(Graphics graphics) {
+            Graphics2D g=(Graphics2D)graphics.create();
+            try {
+                Ui.quality(g);
+                double size=Math.min(getWidth(),getHeight())-8,x=(getWidth()-size)/2,y=(getHeight()-size)/2;
+                g.setStroke(new BasicStroke(2.25f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
+                g.setColor(Ui.LINE); g.draw(new java.awt.geom.Ellipse2D.Double(x,y,size,size));
+                g.setColor(Ui.FOCUS); g.draw(new java.awt.geom.Arc2D.Double(x,y,size,size,-angle,100,java.awt.geom.Arc2D.OPEN));
+            } finally { g.dispose(); }
+        }
+        @Override public javax.accessibility.AccessibleContext getAccessibleContext() {
+            if (accessibleContext==null) accessibleContext=new AccessibleJComponent() {
+                @Override public javax.accessibility.AccessibleRole getAccessibleRole() {
+                    return javax.accessibility.AccessibleRole.PROGRESS_BAR;
+                }
+                @Override public javax.accessibility.AccessibleStateSet getAccessibleStateSet() {
+                    var states=super.getAccessibleStateSet();
+                    if (connecting) states.add(javax.accessibility.AccessibleState.BUSY);
+                    return states;
+                }
+            };
+            return accessibleContext;
+        }
+    }
 
     public void problem(String message) {
         if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(() -> problem(message)); return; }

@@ -107,17 +107,17 @@ public final class MonitorChrome {
             robot.mouseMove(logoPoint.x,logoPoint.y); robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
             robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
             robot.delay(700); robot.waitForIdle();
-            check(edt(() -> window.active().profile().effect().equals("Prism")),"Physical logo click applies Prism to the active profile.");
+            check(edt(() -> window.active().profile().effect().equals(Profile.FLUX)),"Physical logo click applies animated Flux to the active profile.");
             for (int i=0;i<2;i++) {
                 robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK); robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
             }
             robot.delay(700); robot.waitForIdle();
-            check(edt(() -> window.active().profile().effect().equals("Prism")),"Logo double-click does not toggle effects or move/maximize.");
+            check(edt(() -> window.active().profile().effect().equals(Profile.FLUX)),"Logo double-click does not toggle effects or move/maximize.");
             robot.mousePress(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
             robot.mouseMove(logoPoint.x+14,logoPoint.y);
             robot.mouseRelease(java.awt.event.InputEvent.BUTTON1_DOWN_MASK);
             robot.delay(700); robot.waitForIdle();
-            check(edt(() -> window.active().profile().effect().equals("Prism")),"A drag beginning on the logo does not toggle effects.");
+            check(edt(() -> window.active().profile().effect().equals(Profile.FLUX)),"A drag beginning on the logo does not toggle effects.");
             edt(() -> { logo.requestFocusInWindow(); return null; });
             robot.keyPress(java.awt.event.KeyEvent.VK_SPACE); robot.keyRelease(java.awt.event.KeyEvent.VK_SPACE); robot.waitForIdle();
             check(edt(() -> window.active().profile().effect().equals("None")),"Keyboard Space activates the focused logo and returns None.");

@@ -67,8 +67,8 @@ public final class Workspace extends JFrame {
         setContentPane(shell);
         getRootPane().setBorder(BorderFactory.createMatteBorder(1,1,1,1,Ui.LINE));
         JMenuBar menus=menus();
-        JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,3,0)); tools.setOpaque(false);
-        JButton addPane=new JButton(command("Add pane")); addPane.setText("+ Pane");
+        JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); tools.setOpaque(false);
+        JButton addPane=new JButton(command("Add pane"));
         addPane.setText("Pane"); addPane.setIcon(Ui.symbol("plus"));
         addPane.setToolTipText("Add the next pane (maximum 8; Ctrl+Alt+H)");
         addPane.getAccessibleContext().setAccessibleName("Add pane");
@@ -76,8 +76,13 @@ public final class Workspace extends JFrame {
         find.setIcon(Ui.symbol("search"));
         find.setToolTipText("Search commands (Ctrl+Alt+K)");
         find.getAccessibleContext().setAccessibleName("Search commands");
-        for (JButton b : List.of(addPane,find)) { b.setBorder(BorderFactory.createEmptyBorder(4,7,4,7)); tools.add(b); }
-        chrome=new WindowChrome(this,menus,tools,this::togglePrism);
+        for (JButton b : List.of(addPane,find)) {
+            b.setBorder(BorderFactory.createEmptyBorder(6,9,6,9));
+            b.setContentAreaFilled(false);
+            b.setIconTextGap(5);
+            tools.add(b);
+        }
+        chrome=new WindowChrome(this,menus,tools,this::toggleFlux);
         shell.add(chrome,BorderLayout.NORTH);
         shell.add(content,BorderLayout.CENTER);
         shortcuts=new AppShortcuts(this,commands,state.shortcuts());
@@ -99,6 +104,7 @@ public final class Workspace extends JFrame {
     }
     public void rememberProfile(Profile profile) { lastProfile=profile.id(); changed(); }
     public boolean hasPane(UUID id) { return panes.containsKey(id); }
+    public boolean hasMultiplePanes() { return layout instanceof Layout.Split; }
     public boolean highlightActive() { return highlightActive; }
     public void showShortcuts() { shortcuts.show(); }
     @Override public void addNotify() {
@@ -369,10 +375,10 @@ public final class Workspace extends JFrame {
         putProfile(active.profile().withZoom(1));
         active.view().setFit(true);
     }
-    public void togglePrism() {
+    public void toggleFlux() {
         if (closing || active==null) return;
         Profile profile=active.profile();
-        putProfile(profile.withDisplay(profile.theme(),profile.effect().equals("Prism") ? "None" : "Prism"));
+        putProfile(profile.withDisplay(profile.theme(),profile.effect().equals(Profile.FLUX) ? "None" : Profile.FLUX));
     }
     private void hostKeys() {
         JComboBox<KeyMnemonic> keys = new JComboBox<>(Keymap.hostActions().toArray(KeyMnemonic[]::new));

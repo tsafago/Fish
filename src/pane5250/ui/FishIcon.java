@@ -20,32 +20,28 @@ public final class FishIcon implements Icon {
     @Override public void paintIcon(Component component,Graphics graphics,int x,int y) {
         Graphics2D g=(Graphics2D)graphics.create();
         try {
-            double scale=Math.min(width,height)/64.0;
-            g.translate(x+(width-64*scale)/2,y+(height-64*scale)/2); g.scale(scale,scale);
+            double scale=Math.min(width/64.0,height/48.0);
+            g.translate(x+(width-64*scale)/2,y+(height-48*scale)/2); g.scale(scale,scale);
             draw(g);
         } finally { g.dispose(); }
     }
     private static void draw(Graphics2D g) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
         Color[] colors={new Color(0x69CBBE),new Color(0x83A7E8),new Color(0xCF92B9)};
-        g.setPaint(new LinearGradientPaint(12,32,52,32,new float[]{0,.5f,1},colors));
+        g.setPaint(new LinearGradientPaint(4,24,58,24,new float[]{0,.5f,1},colors));
         g.setStroke(new BasicStroke(3.4f,BasicStroke.CAP_BUTT,BasicStroke.JOIN_ROUND));
         g.draw(OUTLINE);
     }
-    private static Area outline() {
-        Path2D body=new Path2D.Double();
-        body.moveTo(12,32); body.lineTo(32,12); body.lineTo(52,32); body.lineTo(32,52); body.closePath();
-        Path2D tail=new Path2D.Double();
-        // The right-angle tip is the square's center; both legs equal a square side.
-        tail.moveTo(12,12); tail.lineTo(32,32); tail.lineTo(12,52); tail.closePath();
-        Area fish=new Area(body);
-        fish.add(new Area(tail));
+    private static Shape outline() {
+        Path2D fish=new Path2D.Double();
+        fish.moveTo(4,6); fish.lineTo(40,42); fish.lineTo(58,24);
+        fish.lineTo(40,6); fish.lineTo(4,42);
         return fish;
     }
     public static BufferedImage image(int size) {
         BufferedImage image=new BufferedImage(size,size,BufferedImage.TYPE_INT_ARGB);
         Graphics2D g=image.createGraphics();
-        try { g.scale(size/64.0,size/64.0); draw(g); }
+        try { new FishIcon(size,size).paintIcon(null,g,0,0); }
         finally { g.dispose(); }
         return image;
     }

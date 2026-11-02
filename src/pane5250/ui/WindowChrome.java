@@ -23,11 +23,11 @@ final class WindowChrome extends JPanel {
     private boolean keyboardSizing;
     private final KeyEventDispatcher windowKeys = this::keyboardEvent;
 
-    WindowChrome(JFrame window,JMenuBar menus,JComponent tools,Runnable togglePrism) {
+    WindowChrome(JFrame window,JMenuBar menus,JComponent tools,Runnable toggleFlux) {
         super(new BorderLayout(8,0));
         this.window = window;
         this.menus=menus; this.tools=tools;
-        caption=new LogoButton(togglePrism);
+        caption=new LogoButton(toggleFlux);
         normalBounds = window.getBounds();
         setBackground(Ui.PANEL);
         setPreferredSize(new Dimension(300,HEIGHT));
@@ -228,17 +228,17 @@ final class WindowChrome extends JPanel {
         private final javax.swing.Timer click;
         private Point pressed;
         private boolean dragged;
-        LogoButton(Runnable togglePrism) {
-            super(new FishIcon(30,30));
+        LogoButton(Runnable toggleFlux) {
+            super(new FishIcon(38,28));
             Object interval=Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
-            click=new javax.swing.Timer(interval instanceof Integer ms ? ms : 500,e -> togglePrism.run());
+            click=new javax.swing.Timer(interval instanceof Integer ms ? ms : 500,e -> toggleFlux.run());
             click.setRepeats(false);
             setPreferredSize(new Dimension(48,HEIGHT-1));
             setBorder(BorderFactory.createEmptyBorder());
             setContentAreaFilled(false); setOpaque(false); setFocusPainted(false);
             setToolTipText("Fish");
-            getAccessibleContext().setAccessibleName("Toggle Prism text effect in active pane");
-            addActionListener(e -> togglePrism.run());
+            getAccessibleContext().setAccessibleName("Toggle animated Flux text effect in active pane");
+            addActionListener(e -> toggleFlux.run());
         }
         void cancelClick() { click.stop(); pressed=null; }
         @Override protected void processMouseEvent(MouseEvent event) {

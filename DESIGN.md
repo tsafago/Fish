@@ -68,21 +68,26 @@ Header dragging and keyboard moves only swap sessions. A divider has a
 4px draggable target but paints a 1px line. Headers are 25px high with 8px
 horizontal insets. Display origins retain at least 12px horizontal and 10px
 vertical padding. Resizing does not resize the host's presentation space.
-The main window is undecorated: one 28px dark title/menu row replaces the native
+The main window is undecorated: one 31px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
 menus/compact + Pane and Commands controls and three 36px window controls.
-The leftmost mark is the exact exterior of a 45-degree square plus a right
-isosceles triangle, tail left and head right. The triangle's right-angle tip
-is at the square center; each leg equals the square's side length. A geometric
-union removes all interior lines. No eye, mouth, crossings or stretched rhombus.
+The leftmost mark is a true 45-degree square with its two left sides extended
+straight through the left corner to form one X and a triangular tail on the left.
+The tail tips end level with the square's top and bottom, without a line joining them.
+One open stroked path supplies the square and tail without overlapping strokes.
+The silhouette is 3:2 while the body retains equal side lengths and exactly 45-degree rotation.
+There is exactly one crossing, no eye, mouth or stretched rhombus.
 A 3.4/64 stroke, uniform scale and the same geometry supply titlebar,
 runtime/taskbar and multi-resolution Windows executable icons.
 The borderless mark is a focusable button with balanced insets and keyboard
-focus indication. Single clicks toggle the active preset's persistent Prism/None
+focus indication. Single clicks toggle the active preset's persistent Flux (animated)/None
 effect; keyboard Space is immediate. The system double-click interval disambiguates
 mouse activation, so double-clicks/drags never toggle. No logo shimmer remains.
 The titlebar is 31 logical pixels tall, with all controls centered in its actual
 layout; native hit regions follow those bounds and scale to current client pixels.
+Pane and Commands use transparent resting surfaces and the same type/rhythm
+as menus, with modest monochrome icons, hover/pressed feedback and keyboard focus.
+They must not appear as persistent filled chips against the titlebar.
 The Fish-owned native bridge preserves standard overlapped resize/maximize
 styles while consuming nonclient painting. Hit testing returns caption, edge
 or maximize codes only for the corresponding targets, allowing OS snap/move

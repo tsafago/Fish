@@ -115,10 +115,13 @@ public final class StreamliningSmoke {
                 check((int)hit.invoke(null,handle,(int)(dragBounds.getCenterX()*dpi),(int)(dragBounds.getCenterY()*dpi))==2,
                         "Blank title area returns HTCAPTION for native drag/snap handling.");
                 JButton logo=(JButton)field(chrome,"caption");
-                check(logo.isFocusable() && logo.getAccessibleContext().getAccessibleName().contains("Prism"),
+                check(logo.isFocusable() && logo.getAccessibleContext().getAccessibleName().contains("animated Flux"),
                         "Secret logo button is keyboard-accessible and names its effect action.");
-                check(logo.getIcon().getIconWidth()==logo.getIcon().getIconHeight(),
-                        "Titlebar logo has a square drawing area, without independent width/height compression.");
+                check(logo.getIcon().getIconWidth()==38 && logo.getIcon().getIconHeight()==28,
+                        "Titlebar logo gives the longer silhouette room without independent width/height compression.");
+                Container tools=(Container)field(chrome,"tools");
+                check(Arrays.stream(tools.getComponents()).allMatch(c -> c instanceof JButton b && !b.isContentAreaFilled()),
+                        "Pane/Commands toolbar actions rest on the chrome surface, without separate chip backgrounds.");
                 Rectangle logoBounds=SwingUtilities.convertRectangle(logo.getParent(),logo.getBounds(),workspace);
                 check((int)hit.invoke(null,handle,(int)(logoBounds.getCenterX()*dpi),(int)(logoBounds.getCenterY()*dpi))==1,
                         "Logo clicks belong to the client button, never native window dragging.");
@@ -127,16 +130,16 @@ public final class StreamliningSmoke {
                 workspace.activate(first);
                 workspace.putProfile(first.profile().withDisplay(first.profile().theme(),"None"));
                 logo.doClick(0);
-                check(first.profile().effect().equals("Prism"),"Keyboard/programmatic logo activation sets actual profile Prism.");
+                check(first.profile().effect().equals(Profile.FLUX),"Keyboard/programmatic logo activation sets actual animated Flux.");
                 logo.doClick(0);
                 check(first.profile().effect().equals("None"),"Second logo activation returns None.");
-                workspace.putProfile(first.profile().withDisplay(first.profile().theme(),Profile.FLUX));
+                workspace.putProfile(first.profile().withDisplay(first.profile().theme(),"Prism"));
                 logo.doClick(0);
-                check(first.profile().effect().equals("Prism"),"Any non-Prism effect, including Flux, toggles to Prism.");
+                check(first.profile().effect().equals(Profile.FLUX),"Any non-Flux effect, including Prism, toggles to animated Flux.");
                 workspace.activate(panes.get(1));
                 workspace.putProfile(panes.get(1).profile().withDisplay(panes.get(1).profile().theme(),"None"));
                 logo.doClick(0); logo.doClick(0);
-                check(panes.get(1).profile().effect().equals("None") && first.profile().effect().equals("Prism"),
+                check(panes.get(1).profile().effect().equals("None") && first.profile().effect().equals(Profile.FLUX),
                         "Toggle targets the active preset without changing another pane's preset.");
                 Method install=nativeWindow.getClass().getDeclaredMethod("install0",Window.class); install.setAccessible(true);
                 check((long)install.invoke(null,workspace)==handle,"Attaching twice to the same HWND is idempotent.");
@@ -179,7 +182,7 @@ public final class StreamliningSmoke {
             check(!saved.highlightActive() && saved.shortcuts().get("Next pane").equals("ctrl TAB"),
                     "Global shortcuts and outline-only preference survive restart in version-4 state.");
             check(saved.width()==400 && saved.height()==370,"Small snapped window sizes survive restart without obsolete minimum-size clamping.");
-            check(saved.profiles().getFirst().effect().equals("Prism"),"Logo changes persist through the existing profile/state save path.");
+            check(saved.profiles().getFirst().effect().equals(Profile.FLUX),"Logo changes persist through the existing profile/state save path.");
         }
         try (var paths=Files.walk(directory)) {
             for (Path path:paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);

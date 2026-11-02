@@ -213,12 +213,15 @@ public final class FishSmoke {
         setField(view,"fluxPhase",.7);
         check(differences(still,paint(view,1),0,still.getHeight())==0,"Default static rendering does not animate or change users' defaults.");
         workspace.activate(pane);
-        workspace.togglePrism();
-        check(pane.profile().effect().equals("Prism") && field(view,"rendered")==null,
+        workspace.toggleFlux();
+        check(pane.profile().effect().equals(Profile.FLUX) && field(view,"rendered")==null,
                 "Logo effect path invalidates the real terminal glyph/effect caches.");
-        BufferedImage prism=paint(view,1);
-        check(differences(still,prism,0,still.getHeight())>100,"Logo Prism toggle visibly changes terminal ink, not just icon styling.");
-        workspace.togglePrism();
+        setField(view,"fluxPhase",0.0);
+        BufferedImage animated=paint(view,1);
+        check(differences(still,animated,0,still.getHeight())>100,"Logo animated Flux toggle visibly changes terminal ink, not just icon styling.");
+        setField(view,"fluxPhase",.35);
+        check(differences(animated,paint(view,1),0,still.getHeight())>100,"Logo selects the genuinely animated effect, not static Prism.");
+        workspace.toggleFlux();
         check(pane.profile().effect().equals("None") && differences(still,paint(view,1),0,still.getHeight())==0,
                 "Second toggle restores the exact crisp no-effect rendering.");
     }
@@ -245,30 +248,34 @@ public final class FishSmoke {
                     || first.getP2().equals(second.getP1()) || first.getP2().equals(second.getP2())) continue;
             if (first.intersectsLine(second)) crossings++;
         }
-        check(paths==1 && closed==1 && crossings==0,"Composite fish has one closed exterior contour, without crossings or interior seams.");
-        check(shape.getBounds2D().equals(new Rectangle2D.Double(12,12,40,40))
-                && points.contains(new Point2D.Double(52,32)) && points.contains(new Point2D.Double(12,12))
-                && points.contains(new Point2D.Double(12,52)) && !points.contains(new Point2D.Double(32,32)),
-                "Horizontal fish retains its triangular tail left, square head right and no visible center-tip seam.");
+        check(paths==1 && closed==0 && lines.size()==4 && crossings==1,
+                "Fish has one open path and one crossing, with no line joining the tail tips.");
+        check(shape.getBounds2D().equals(new Rectangle2D.Double(4,6,54,36))
+                && points.contains(new Point2D.Double(58,24)) && points.contains(new Point2D.Double(4,6))
+                && points.contains(new Point2D.Double(4,42)) && !points.contains(new Point2D.Double(40,24)),
+                "Horizontal fish tail tips end at the top and bottom of the square, with no center-tip seam.");
+        check(lines.stream().anyMatch(l -> l.getP1().equals(new Point2D.Double(4,6))
+                        && l.getP2().equals(new Point2D.Double(40,42)))
+                && lines.stream().anyMatch(l -> l.getP1().equals(new Point2D.Double(40,6))
+                        && l.getP2().equals(new Point2D.Double(4,42))),
+                "The square's left sides extend as uninterrupted 45-degree lines crossing at its left corner.");
         Path2D square=new Path2D.Double();
-        square.moveTo(12,32); square.lineTo(32,12); square.lineTo(52,32); square.lineTo(32,52); square.closePath();
+        square.moveTo(22,24); square.lineTo(40,6); square.lineTo(58,24); square.lineTo(40,42); square.closePath();
         Path2D triangle=new Path2D.Double();
-        triangle.moveTo(12,12); triangle.lineTo(32,32); triangle.lineTo(12,52); triangle.closePath();
+        triangle.moveTo(4,6); triangle.lineTo(22,24); triangle.lineTo(4,42); triangle.closePath();
         Area expected=new Area(square); expected.add(new Area(triangle)); expected.exclusiveOr(new Area(shape));
-        check(expected.isEmpty(),"Outline is exactly the geometric union of a 45-degree square and a right triangle with square-length legs and center tip.");
-        check(lines.stream().allMatch(line -> {
-            double dx=Math.abs(line.getX2()-line.getX1()),dy=Math.abs(line.getY2()-line.getY1());
-            return dx==0 || dy==0 || Math.abs(dx-dy)<.00001;
-        }),"All exterior slopes are horizontal, vertical or exactly 45 degrees; no stretched rhombus.");
+        check(expected.isEmpty(),"Crossed outline encloses a true 45-degree square and the triangle formed by extending its left sides.");
+        check(shape.getBounds2D().getWidth()/shape.getBounds2D().getHeight()==1.5,
+                "Longer silhouette has a measurable 3:2 exterior aspect ratio without stretching the square body.");
         ImageIO.write(FishIcon.image(256),"png",Path.of("build","fish-horizontal-icon.png").toFile());
         BufferedImage squareMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
         BufferedImage wideMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
         Graphics2D squareGraphics=squareMark.createGraphics(),wideGraphics=wideMark.createGraphics();
         try {
-            new FishIcon(30,30).paintIcon(null,squareGraphics,15,0);
+            new FishIcon(40,30).paintIcon(null,squareGraphics,10,0);
             new FishIcon(60,30).paintIcon(null,wideGraphics,0,0);
         } finally { squareGraphics.dispose(); wideGraphics.dispose(); }
-        check(differences(squareMark,wideMark,0,30)==0,"Non-square titlebar icon bounds center a uniform scale; the body remains an actual square.");
+        check(differences(squareMark,wideMark,0,30)==0,"Titlebar icon bounds center a uniform scale; the body remains an actual square.");
         BufferedImage sizes=new BufferedImage(420,156,BufferedImage.TYPE_INT_RGB);
         Graphics2D g=sizes.createGraphics();
         try {
@@ -315,6 +322,7 @@ public final class FishSmoke {
         Workspace single=edt(() -> {
             Workspace w=new Workspace(store,state,Path.of("scripts","credential-store.ps1"),false);
             w.onClosed(closed::countDown);
+            w.setFocusableWindowState(false); w.addNotify(); w.validate();
             return w;
         });
         try {
@@ -323,8 +331,89 @@ public final class FishSmoke {
                 single.closePane();
                 check(single.sessionPanes().size()==1 && single.active()==only,"Disconnecting the sole tile cannot remove it.");
                 check(only.screen()==null && !only.busy(),"The sole tile remains empty and offline.");
+                check(!((JButton)field(only,"close")).isVisible(),"The disconnected sole tile hides its redundant X.");
+                single.split(true);
+                check(single.sessionPanes().stream().allMatch(p -> {
+                    try { return ((JButton)field(p,"close")).isVisible(); }
+                    catch (Exception e) { throw new AssertionError(e); }
+                }),"Both offline tiles show their X after adding a pane.");
+                single.closePane(single.active());
+                check(single.sessionPanes().size()==1 && !((JButton)field(single.active(),"close")).isVisible(),
+                        "Removing back to one offline tile hides its X again.");
+                ImageIO.write(paint(single.getRootPane(),1.5),"png",directory.resolveSibling("fish-single-selection.png").toFile());
                 return null;
             });
+            try (DemoHost host=new DemoHost()) {
+                edt(() -> {
+                    Profile p=single.active().profile();
+                    single.putProfile(new Profile(p.id(),p.name(),"127.0.0.1",host.port(),"","",false,false,
+                            p.codePage(),p.theme(),p.effect(),p.zoom(),p.keymap(),p.savedLayout()));
+                    single.active().connect();
+                    check(field(single.active(),"shownCard").equals("connecting"),"Real connection startup displays the loading card, not a blank terminal.");
+                    check(((JButton)field(single.active(),"close")).isVisible(),"The lone connecting pane retains X for cancellation.");
+                    return null;
+                });
+                await(() -> edt(() -> single.active().connected() && field(single.active(),"shownCard").equals("terminal")),
+                        "Sole loopback session finishes negotiation.");
+                edt(() -> {
+                    SessionPane only=single.active();
+                    check(field(only,"shownCard").equals("terminal") && ((JButton)field(only,"close")).isVisible(),
+                            "A connected sole pane shows the real terminal and its disconnect X.");
+                    check(!((javax.swing.Timer)field(field(only,"spinner"),"clock")).isRunning(),"Connection spinner stops after success.");
+                    only.disconnect();
+                    check(field(only,"shownCard").equals("offline") && !((JButton)field(only,"close")).isVisible(),
+                            "Disconnect restores selection mode and hides the sole X.");
+                    return null;
+                });
+            }
+            try (var server=new java.net.ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"))) {
+                server.setSoTimeout(5000);
+                edt(() -> {
+                    Profile p=single.active().profile();
+                    single.putProfile(new Profile(p.id(),p.name(),"127.0.0.1",server.getLocalPort(),"","",false,false,
+                            p.codePage(),p.theme(),p.effect(),p.zoom(),p.keymap(),p.savedLayout()));
+                    single.active().connect(); return null;
+                });
+                try (var peer=server.accept()) {
+                    edt(() -> {
+                        SessionPane only=single.active();
+                        JComponent spinner=(JComponent)field(only,"spinner");
+                        check(only.busy() && !only.connected() && field(only,"shownCard").equals("connecting"),
+                                "A held real handshake stays in connecting mode rather than inventing success.");
+                        check(!((JComboBox<?>)field(only,"presets")).isEnabled() && !((JButton)field(only,"connectButton")).isEnabled(),
+                                "Preset/Connect stay disabled until connection finishes.");
+                        check(spinner.getAccessibleContext().getAccessibleRole()==javax.accessibility.AccessibleRole.PROGRESS_BAR
+                                && spinner.getAccessibleContext().getAccessibleStateSet().contains(javax.accessibility.AccessibleState.BUSY),
+                                "Spinner exposes meaningful accessible progress/busy state.");
+                        setField(spinner,"angle",0.0); BufferedImage first=paint(spinner,1.5);
+                        setField(spinner,"angle",90.0);
+                        check(differences(first,paint(spinner,1.5),0,first.getHeight())>50,"Rotating indicator visibly differs at deterministic phases.");
+                        check(!((javax.swing.Timer)field(spinner,"clock")).isRunning(),"Hidden connecting panes consume no animation clock.");
+                        single.validate();
+                        ImageIO.write(paint(single.getRootPane(),1.5),"png",directory.resolveSibling("fish-connecting.png").toFile());
+                        return null;
+                    });
+                }
+                await(() -> edt(() -> !single.active().busy()),"A failed held handshake leaves connecting mode.");
+                edt(() -> {
+                    SessionPane only=single.active();
+                    check(field(only,"shownCard").equals("offline") && ((String)field(only,"notice")).startsWith("Disconnected -"),
+                            "Connection failure restores selection and reports the real diagnostic.");
+                    check(!((JButton)field(only,"close")).isVisible()
+                            && !((javax.swing.Timer)field(field(only,"spinner"),"clock")).isRunning(),
+                            "Failed sole connection hides X and leaves no running spinner.");
+                    only.connect(); return null;
+                });
+                try (var peer=server.accept()) {
+                    edt(() -> {
+                        SessionPane only=single.active();
+                        ((JButton)field(only,"close")).doClick(0);
+                        check(single.active()==only && !only.busy() && field(only,"shownCard").equals("offline"),
+                                "X cancels a real in-progress connection without removing the last tile.");
+                        return null;
+                    });
+                }
+            }
         } finally {
             edt(() -> { single.close(false); return null; });
             check(closed.await(5,TimeUnit.SECONDS),"A never-shown one-pane workspace closes without a modal.");

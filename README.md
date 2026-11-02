@@ -10,11 +10,14 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Monitor/chrome revision (local)
+## Logo and connection-state revision (local)
 
-**Fish 0.4.1** refines the final streamlining preview with a cross-monitor
-native-caption correction, a 31-logical-pixel titlebar, and a square/right-triangle
-fish outline. Clicking the logo toggles the active preset's Prism effect/None.
+**Fish 0.4.2** retains the cross-monitor native-caption correction and slightly
+taller titlebar. Its fish has a true square body whose left sides extend
+straight through its left corner to cross once and form the tail; clicking
+it toggles the active preset's **Flux (animated)** effect/None. Pane/Commands
+actions blend into the flat titlebar, connecting panes show a rotating ring,
+and the lone disconnected selection pane hides its redundant X.
 This revision is local only; it has not been uploaded to GitHub.
 It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
@@ -23,11 +26,11 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-1. Use the locally generated `dist\Fish-0.4.1-setup.exe` for this revision.
+1. Use the locally generated `dist\Fish-0.4.2-setup.exe` for this revision.
 2. The previous uploaded 0.4.0 preview remains under [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish); it does not contain this correction.
 3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
 
-For a portable copy, extract `Fish-0.4.1-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.4.2-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -44,8 +47,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.4.1-setup.exe` | Install for the current Windows user |
-| `dist\Fish-0.4.1-windows-x64.zip` | Copy/extract a complete portable application |
+| `dist\Fish-0.4.2-setup.exe` | Install for the current Windows user |
+| `dist\Fish-0.4.2-windows-x64.zip` | Copy/extract a complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -56,7 +59,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current local package is **Fish 0.4.1**. Keep the entire application-image directory together:
+The current local package is **Fish 0.4.2**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe
@@ -153,9 +156,10 @@ split assertions are superseded and it is not part of the Fish test command.
 
 ## Sessions and profiles
 
-The main workspace has one compact, dark 28px title/menu row, not a second
-native titlebar. The compact gradient triangle/rhombus fish (tail left, head right, one crossing
-and a trimmed lower intersection, no eye/mouth) replaces application-name
+The main workspace has one compact, dark 31px title/menu row, not a second
+native titlebar. The gradient fish has a true square body rotated 45 degrees,
+with its left sides extended to cross once and form a tail ending level with its top
+and bottom, with no line joining the tail tips. It has no eye or mouth and replaces application-name
 text and supplies the Windows executable/taskbar icon. Drag it or the blank title area to move;
 double-click to maximize/restore. The three upper-right controls minimize,
 maximize/restore and close. Drag any window edge/corner to resize.
@@ -192,12 +196,18 @@ Native Windows frame styles and hit testing support Win+arrows, edge/corner
 snapping, top-edge maximize and the Windows 11 maximize-button snap target
 without a bright native titlebar. Narrow windows collapse menus and tool labels.
 The fish mark is a keyboard-focusable secret button: a single click toggles
-the active preset's text effect from Prism to None, or from any other effect to
-Prism. Changes use the same persistent profile path as Appearance; panes using
+the active preset's text effect from Flux (animated) to None, or from any other
+effect to Flux (animated). Changes use the same persistent profile path as Appearance; panes using
 that same preset also refresh. Keyboard Space activates it immediately, with a
 visible focus indicator. Mouse clicks wait for Windows' double-click interval
 so double-clicks and drags do not accidentally change effects. The rest of the
 title area remains available for moving/maximizing the window.
+
+While connecting, the preset controls are replaced by a small rotating ring
+until the first valid host record arrives. The footer retains connection status
+and errors. X remains available to cancel a pending connection. When only one
+pane remains and it is disconnected, its X is hidden; other pane-close and
+disconnect behavior is unchanged.
 
 **Edit > Shortcuts** lists every registered application and host action, with
 record/unbind/default controls and conflict validation. The same list is linked

@@ -5,6 +5,29 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Fish 0.4.2 local logo/interaction revision
+
+The user's final geometry extends the true square's two left sides straight
+through its left corner, crossing once and ending level with its top and bottom,
+with no line joining the tail tips.
+The silhouette remains 3:2, drawn with uniform scaling in every icon.
+The logo toggles the actual persisted Flux (animated)/None preset effect, not
+static Prism. The previous mixed-DPI correction remains unchanged.
+Pane/Commands now rest directly on the titlebar surface rather than filled chips.
+
+A separate connecting card displays a small rotating ring until the transport's
+first valid host record. It retains explicit footer diagnostics and cancel via X.
+Only the sole disconnected tile hides X; multiple tiles and busy/connected solo
+tiles keep it. The ring clock stops on hidden/minimized/offline/disposed surfaces.
+
+Focused source and packaged-JVM fixtures cover straight extensions/crossing/proportions,
+deterministic Flux animation through the logo path, no-effect restoration,
+persistence, toolbar styling, and actual loopback connection success, held
+handshake, failure, cancellation and close-button/card transitions. The spinner's
+rendered phases and hidden lifecycle are checked without foreground desktop input.
+This pass does not repeat the prior physical mixed-DPI run or expand protocol acceptance.
+The local executable/installer/source archive are regenerated; nothing uploaded.
+
 ## Fish 0.4.1 local monitor/chrome revision
 
 This local patch has not been uploaded. A focused regression reproduced the

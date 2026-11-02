@@ -83,10 +83,15 @@ public final class SessionPane extends JPanel {
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.getViewport().setBackground(Ui.BACKGROUND);
         body.add(scroll,"terminal");
-        JPanel choices=new JPanel(new BorderLayout(8,0)); choices.setOpaque(false);
-        choices.setMinimumSize(new Dimension(60,30));
+        JPanel choices=new JPanel(new BorderLayout(8,0)) {
+            @Override public Dimension getPreferredSize() {
+                Dimension size=super.getPreferredSize(); size.width=Math.max(265,size.width); return size;
+            }
+            @Override public Dimension getMaximumSize() { return getPreferredSize(); }
+        };
+        choices.setOpaque(false);
+        choices.setMinimumSize(new Dimension(40,30));
         presets.setMinimumSize(new Dimension(25,30));
-        presets.setPreferredSize(new Dimension(225,30));
         presets.getAccessibleContext().setAccessibleName("Preset");
         presets.setToolTipText("Workstation preset");
         presets.addActionListener(e -> {
@@ -99,7 +104,10 @@ public final class SessionPane extends JPanel {
         });
         connectButton=Ui.iconButton("Connect to selected preset","connect",() -> { activate(); connect(); });
         connectButton.setPreferredSize(new Dimension(32,30)); connectButton.setContentAreaFilled(true);
-        choices.add(presets,BorderLayout.CENTER); choices.add(connectButton,BorderLayout.EAST); empty.add(choices);
+        choices.add(presets,BorderLayout.CENTER); choices.add(connectButton,BorderLayout.EAST);
+        empty.setLayout(new BoxLayout(empty,BoxLayout.X_AXIS));
+        empty.setBorder(BorderFactory.createEmptyBorder(0,8,0,8));
+        empty.add(Box.createHorizontalGlue()); empty.add(choices); empty.add(Box.createHorizontalGlue());
         body.add(empty,"offline");
         loading.add(spinner);
         body.add(loading,"connecting");

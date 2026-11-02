@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.4.2 - local logo/connection-state revision before release.
+Fish 0.4.3 - experimental UI sizing preview.
 This manual describes the implemented application, not an assurance of full ACS compatibility.
 Open Help > Full manual / Getting Started for the searchable topic index.
 
@@ -25,9 +25,9 @@ If connection fails, check the hostname, port, VPN/network and IBM i Telnet serv
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-Run the matching local Fish-0.4.2-setup.exe. This revision has not been uploaded; the private repository's previous 0.4.0 download does not contain these corrections. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+Download Fish-0.4.3-setup.exe from the private HornadyIBM/Fish repository's v0.4.3 preview release, using a GitHub account with access. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Alternatively, extract Fish-0.4.2-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.4.3-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -41,7 +41,7 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.4.2-setup.exe, dist\Fish-0.4.2-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Outputs are dist\Fish\Fish.exe, dist\Fish-0.4.3-setup.exe, dist\Fish-0.4.3-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 

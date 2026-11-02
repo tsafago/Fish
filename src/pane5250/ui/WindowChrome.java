@@ -85,7 +85,20 @@ final class WindowChrome extends JPanel {
     }
     void nativeRemoved() { nativeWindow=null; caption.cancelClick(); }
     @Override public void doLayout() {
-        boolean narrow=getWidth()<700;
+        int fullTools=tools.getPreferredSize().width;
+        for (Component component:tools.getComponents()) if (component instanceof JButton b) {
+            String text=b.getText()==null ? "" : b.getText();
+            if (b.getClientProperty("fullLabel")==null) b.putClientProperty("fullLabel",text);
+            String full=(String)b.getClientProperty("fullLabel");
+            FontMetrics metrics=b.getFontMetrics(b.getFont());
+            fullTools+=metrics.stringWidth(full)-metrics.stringWidth(text);
+            if (text.isEmpty() && !full.isEmpty() && b.getIcon()!=null) fullTools+=b.getIconTextGap();
+        }
+        Insets insets=getInsets();
+        int fullWidth=caption.getPreferredSize().width+menus.getPreferredSize().width+fullTools
+                +controls.getPreferredSize().width+2*((BorderLayout)getLayout()).getHgap()
+                +insets.left+insets.right+32;
+        boolean narrow=getWidth()<fullWidth;
         if (compact==null || compact!=narrow) {
             compact=narrow; menus.setVisible(!narrow); menuButton.setVisible(narrow);
             for (Component component:tools.getComponents()) if (component instanceof JButton b) {
@@ -229,7 +242,7 @@ final class WindowChrome extends JPanel {
         private Point pressed;
         private boolean dragged;
         LogoButton(Runnable toggleFlux) {
-            super(new FishIcon(38,28));
+            super(new FishIcon(32,24));
             Object interval=Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
             click=new javax.swing.Timer(interval instanceof Integer ms ? ms : 500,e -> toggleFlux.run());
             click.setRepeats(false);

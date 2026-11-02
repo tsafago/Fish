@@ -5,7 +5,27 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.4.2 local logo/interaction revision
+## Fish 0.4.3 UI sizing preview
+
+The titlebar drawing is modestly smaller (32x24 instead of 38x28), with unchanged
+geometry, gradient, 48x30 click target, accessibility and Flux/None behavior.
+Native/taskbar icon sizes and the 31-pixel titlebar are unchanged.
+
+Offline preset rows use actual available width below their preferred size and
+grow naturally for longer names. This removes the centered GridBag row's abrupt
+preferred-to-minimum collapse and the fixed 225-pixel selector cap. Titlebar
+compaction uses measured controls instead of a fixed 700-pixel threshold.
+Shared borders report the same insets through both Swing measurement APIs.
+Menus, command/profile lists and dialog renderers retain normal truncation when
+their actual allocated area cannot fit the text; ellipses are not suppressed.
+
+Focused source/packaged checks exercise narrow and wide layouts, longer profile
+names, measured toolbar allocation, genuine overflow and unchanged logo hit
+testing at 100%/150% rendering. No foreground desktop automation or new physical
+monitor run is part of this pass. Protocol/real IBM i/ACS acceptance remains open.
+The private v0.4.3 preview includes the previously local revisions below.
+
+## Fish 0.4.2 logo/interaction revision (included in 0.4.3)
 
 The user's final geometry extends the true square's two left sides straight
 through its left corner, crossing once and ending level with its top and bottom,
@@ -26,11 +46,11 @@ persistence, toolbar styling, and actual loopback connection success, held
 handshake, failure, cancellation and close-button/card transitions. The spinner's
 rendered phases and hidden lifecycle are checked without foreground desktop input.
 This pass does not repeat the prior physical mixed-DPI run or expand protocol acceptance.
-The local executable/installer/source archive are regenerated; nothing uploaded.
+First delivered locally; included in the 0.4.3 preview with matching source.
 
-## Fish 0.4.1 local monitor/chrome revision
+## Fish 0.4.1 monitor/chrome revision (included in 0.4.3)
 
-This local patch has not been uploaded. A focused regression reproduced the
+First delivered locally. A focused regression reproduced the
 classic-caption corruption simply by refreshing the icons of a visible Fish
 window. OpenJDK `WWindowPeer.updateGC()` refreshes icons on monitor changes;
 `AwtFrame::DoUpdateIcon()` sends WM_SETICON. Its Windows default handler can

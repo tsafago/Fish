@@ -44,6 +44,87 @@ public final class StreamliningSmoke {
         Method method=dispatcher.getClass().getDeclaredMethod("dispatchKeyEvent",KeyEvent.class); method.setAccessible(true);
         return (boolean)method.invoke(dispatcher,new KeyEvent(source,id,System.currentTimeMillis(),modifiers,code,KeyEvent.CHAR_UNDEFINED));
     }
+    private static String labelText(JLabel label) {
+        Insets insets=label.getInsets();
+        return SwingUtilities.layoutCompoundLabel(label,label.getFontMetrics(label.getFont()),label.getText(),label.getIcon(),
+                label.getVerticalAlignment(),label.getHorizontalAlignment(),label.getVerticalTextPosition(),label.getHorizontalTextPosition(),
+                new Rectangle(0,0,Math.max(0,label.getWidth()-insets.left-insets.right),
+                        Math.max(0,label.getHeight()-insets.top-insets.bottom)),new Rectangle(),new Rectangle(),label.getIconTextGap());
+    }
+    private static <T> String comboText(JComboBox<T> combo) {
+        combo.doLayout();
+        Component value=combo.getRenderer().getListCellRendererComponent(new JList<T>(),
+                combo.getItemAt(combo.getSelectedIndex()),-1,false,false);
+        JLabel label=(JLabel)value;
+        label.setFont(combo.getFont());
+        Insets insets=combo.getInsets();
+        int arrow=Arrays.stream(combo.getComponents()).filter(c -> c instanceof JButton).mapToInt(Component::getWidth).sum();
+        label.setSize(Math.max(0,combo.getWidth()-insets.left-insets.right-arrow),
+                Math.max(0,combo.getHeight()-insets.top-insets.bottom));
+        return labelText(label);
+    }
+    private static void layoutTree(Container parent) {
+        parent.doLayout();
+        for (Component child:parent.getComponents()) if (child instanceof Container container) layoutTree(container);
+    }
+    private static void sized(Workspace workspace,int width,int height) {
+        workspace.setSize(width,height); workspace.validate(); layoutTree(workspace.getRootPane());
+        for (Component child:children(workspace)) if (child instanceof JSplitPane split) split.setDividerLocation(.5);
+        layoutTree(workspace.getRootPane());
+    }
+    private static void allocationChecks(Workspace workspace,SessionPane pane,JComboBox<?> preset) throws Exception {
+        JButton sample=new JButton("Save & connect");
+        check(sample.getInsets().equals(sample.getInsets(new Insets(0,0,0,0))),
+                "Shared border reports identical insets to measuring, reused-inset and painting paths.");
+        Profile original=pane.profile();
+        try {
+            sized(workspace,480,600);
+            check(pane.getWidth()<265,"Narrow-preset regression uses a pane smaller than the original row's preferred width.");
+            int usable=pane.getWidth()-pane.getInsets().left-pane.getInsets().right-16-40;
+            check(preset.getWidth()>=Math.min(225,usable),
+                    "Narrow pane gives the preset actual available width instead of collapsing to a 60-pixel row.");
+            check(comboText(preset).equals(pane.profile().name()),
+                    "Short preset name remains complete below the row's preferred width.");
+            capture(workspace.getRootPane(),"fish-sizing-480-"+System.getProperty("sun.java2d.uiScale","default")+".png",1.5);
+            Profile longName=Profile.create("Warehouse - shipping and receiving workstation");
+            workspace.putProfile(longName); workspace.selectProfile(pane,longName);
+            sized(workspace,1280,700);
+            check(preset.getWidth()>225 && comboText(preset).equals(longName.name()),
+                    "Wide pane grows the selector to fit a long preset name, without an artificial 225-pixel limit.");
+            capture(workspace.getRootPane(),"fish-sizing-1280-"+System.getProperty("sun.java2d.uiScale","default")+".png",1);
+            sized(workspace,330,370);
+            Rectangle combo=SwingUtilities.convertRectangle(preset.getParent(),preset.getBounds(),pane);
+            JButton connect=(JButton)field(pane,"connectButton");
+            Rectangle button=SwingUtilities.convertRectangle(connect.getParent(),connect.getBounds(),pane);
+            check(combo.width>=0 && combo.getMaxX()<button.x && button.getMaxX()<=pane.getWidth(),
+                    "Genuinely narrow panes preserve the Connect target without overlapping the preset or pane edge.");
+            check(!comboText(preset).equals(longName.name()),
+                    "Actual insufficient width still uses meaningful ellipsis, not clipping or hidden overflow.");
+        } finally { workspace.selectProfile(pane,original); }
+        Object chrome=field(workspace,"chrome");
+        Container tools=(Container)field(chrome,"tools");
+        JMenuBar menus=(JMenuBar)field(chrome,"menus");
+        Map<Component,Font> fonts=new LinkedHashMap<>();
+        for (Component component:tools.getComponents()) fonts.put(component,component.getFont());
+        for (Component component:menus.getComponents()) fonts.put(component,component.getFont());
+        for (boolean larger:List.of(false,true)) {
+            fonts.forEach((component,font) -> component.setFont(larger ? font.deriveFont(16f) : font));
+            for (int width:new int[]{330,620,740,1280}) {
+                sized(workspace,width,700);
+                Component left=(Component)field(chrome,"left"),controls=(Component)field(chrome,"controls");
+                Component drag=(Component)field(chrome,"dragArea");
+                check(left.getX()+left.getWidth()<controls.getX() && drag.getWidth()>=32,
+                        "Measured titlebar controls retain a drag region without overlap at width "+width+", larger font="+larger);
+                for (Component component:tools.getComponents()) if (component instanceof JButton b && !b.getText().isEmpty())
+                    check(b.getWidth()>=b.getPreferredSize().width,"Labeled toolbar action receives its full measured width.");
+                if (menus.isVisible()) for (Component component:menus.getComponents())
+                    check(component.getWidth()>=component.getPreferredSize().width,"Visible menu receives its full measured width.");
+                check(width!=1280 || menus.isVisible(),"Wide titlebar does not enter compact mode unnecessarily.");
+            }
+        }
+        fonts.forEach(Component::setFont);
+        sized(workspace,1280,700);
+    }
     public static void main(String[] args) throws Exception {
         Ui.install();
         Path directory=Files.createTempDirectory(Path.of("build"),"streamlining-smoke-");
@@ -54,6 +135,7 @@ public final class StreamliningSmoke {
             w.onClosed(closed::countDown); w.setFocusableWindowState(false); w.addNotify(); w.validate();
             return w;
         });
+        System.out.println("Layout device scale: "+workspace.getGraphicsConfiguration().getDefaultTransform().getScaleX());
         try {
             edt(() -> {
                 List<SessionPane> panes=workspace.sessionPanes();
@@ -117,8 +199,9 @@ public final class StreamliningSmoke {
                 JButton logo=(JButton)field(chrome,"caption");
                 check(logo.isFocusable() && logo.getAccessibleContext().getAccessibleName().contains("animated Flux"),
                         "Secret logo button is keyboard-accessible and names its effect action.");
-                check(logo.getIcon().getIconWidth()==38 && logo.getIcon().getIconHeight()==28,
-                        "Titlebar logo gives the longer silhouette room without independent width/height compression.");
+                check(logo.getIcon().getIconWidth()==32 && logo.getIcon().getIconHeight()==24
+                        && logo.getWidth()==48 && logo.getHeight()==30,
+                        "Only the titlebar drawing shrinks, with uniform aspect and unchanged 48x30 keyboard/click target.");
                 Container tools=(Container)field(chrome,"tools");
                 check(Arrays.stream(tools.getComponents()).allMatch(c -> c instanceof JButton b && !b.isContentAreaFilled()),
                         "Pane/Commands toolbar actions rest on the chrome surface, without separate chip backgrounds.");
@@ -157,6 +240,7 @@ public final class StreamliningSmoke {
                 check(topics.size()>=25 && topics.getFirst().title().equals("Getting Started"),"Full bundled manual starts with absolute sign-on basics.");
                 check(topics.stream().anyMatch(t -> t.matches("Ctrl Tab")) && topics.stream().anyMatch(t -> t.matches("installer administrator")),
                         "Full-text topic index finds shortcut and user-wide installation instructions.");
+                allocationChecks(workspace,first,preset);
                 ManualDialog manual=new ManualDialog(workspace); manual.addNotify(); manual.validate();
                 capture(manual.getRootPane(),"fish-manual.png",1);
                 manual.dispose();

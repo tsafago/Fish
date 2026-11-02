@@ -78,7 +78,9 @@ One open stroked path supplies the square and tail without overlapping strokes.
 The silhouette is 3:2 while the body retains equal side lengths and exactly 45-degree rotation.
 There is exactly one crossing, no eye, mouth or stretched rhombus.
 A 3.4/64 stroke, uniform scale and the same geometry supply titlebar,
-runtime/taskbar and multi-resolution Windows executable icons.
+runtime/taskbar and multi-resolution Windows executable icons. The titlebar alone
+uses a 32x24 drawing viewport inside its unchanged 48x30 focus/click target.
+Its compact mode follows measured menu/action widths while reserving a drag area.
 The borderless mark is a focusable button with balanced insets and keyboard
 focus indication. Single clicks toggle the active preset's persistent Flux (animated)/None
 effect; keyboard Space is immediate. The system double-click interval disambiguates

@@ -13,6 +13,9 @@ public final class FlatControls {
         private final int vertical,horizontal;
         public Edge(int vertical,int horizontal) { this.vertical=vertical; this.horizontal=horizontal; }
         @Override public Insets getBorderInsets(Component c) { return new Insets(vertical,horizontal,vertical,horizontal); }
+        @Override public Insets getBorderInsets(Component c,Insets insets) {
+            insets.set(vertical,horizontal,vertical,horizontal); return insets;
+        }
         @Override public void paintBorder(Component c,Graphics g,int x,int y,int width,int height) {
             g.setColor(c.hasFocus() ? Ui.FOCUS : Ui.LINE);
             g.drawRect(x,y,width-1,height-1);

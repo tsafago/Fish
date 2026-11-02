@@ -10,15 +10,20 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Logo and connection-state revision (local)
+## UI sizing preview
 
-**Fish 0.4.2** retains the cross-monitor native-caption correction and slightly
+**Fish 0.4.3** reduces only the titlebar mark, preserving its click target and
+approved geometry. Preset selectors grow for longer names and use available
+width in smaller panes instead of collapsing prematurely. Titlebar compact
+mode follows measured control widths, and shared control insets are consistent.
+
+This preview includes the previously local 0.4.1/0.4.2 revisions: the cross-monitor native-caption correction and slightly
 taller titlebar. Its fish has a true square body whose left sides extend
 straight through its left corner to cross once and form the tail; clicking
 it toggles the active preset's **Flux (animated)** effect/None. Pane/Commands
 actions blend into the flat titlebar, connecting panes show a rotating ring,
 and the lone disconnected selection pane hides its redundant X.
-This revision is local only; it has not been uploaded to GitHub.
+Downloads are available from the private repository's **v0.4.3 preview release**.
 It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
 available offline from **Help > Full manual / Getting Started**, with a
@@ -26,11 +31,11 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-1. Use the locally generated `dist\Fish-0.4.2-setup.exe` for this revision.
-2. The previous uploaded 0.4.0 preview remains under [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish); it does not contain this correction.
+1. Open [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish) using an account with access.
+2. Download `Fish-0.4.3-setup.exe` and its matching `SHA256SUMS.txt`.
 3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
 
-For a portable copy, extract `Fish-0.4.2-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.4.3-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -38,7 +43,7 @@ may warn or block them. Checksums accompany the release; do not bypass IT policy
 
 ## Generate an executable and installer yourself
 
-Extract the complete matching `Fish-source.zip` supplied with this local package, then
+Extract the complete matching `Fish-source.zip` supplied with the release, then
 **double-click `Setup-Fish.cmd`**. No Git, installed JDK, Visual Studio, WiX
 installation, administrator rights or system PATH edits are needed.
 The first build needs internet access and about 2 GB of free disk space.
@@ -47,8 +52,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.4.2-setup.exe` | Install for the current Windows user |
-| `dist\Fish-0.4.2-windows-x64.zip` | Copy/extract a complete portable application |
+| `dist\Fish-0.4.3-setup.exe` | Install for the current Windows user |
+| `dist\Fish-0.4.3-windows-x64.zip` | Copy/extract a complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -59,7 +64,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current local package is **Fish 0.4.2**. Keep the entire application-image directory together:
+The current package is **Fish 0.4.3**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe

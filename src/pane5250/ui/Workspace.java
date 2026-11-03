@@ -181,6 +181,7 @@ public final class Workspace extends JFrame {
         updateWindowOutline();
     }
     private void updateWindowOutline() {
+        Ui.background(getRootPane(),ColorRole.BACKGROUND);
         getRootPane().setBorder(appearance!=null && appearance.windowOutline() ? Hairline.perimeter() : BorderFactory.createEmptyBorder());
     }
     public void applyTheme(AppTheme theme) {

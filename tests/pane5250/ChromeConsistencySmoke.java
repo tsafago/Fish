@@ -88,6 +88,13 @@ public final class ChromeConsistencySmoke {
         for (int y=0;y<image.getHeight();y++) if (image.getRGB(image.getWidth()/2,y)==Ui.LINE.getRGB()) rows++;
         check(rows==1,"Menu separator paints one device row, not Metal's light/dark pair: "+scale);
     }
+    private static void dialogInterior(BufferedImage image,String name) {
+        int surface=Ui.color(ColorRole.DIALOG).getRGB(),w=image.getWidth(),h=image.getHeight();
+        boolean clean=true;
+        for (int x=2;x<w-2;x++) clean&=image.getRGB(x,1)==surface && image.getRGB(x,h-2)==surface;
+        for (int y=2;y<h-2;y++) clean&=image.getRGB(1,y)==surface && image.getRGB(w-2,y)==surface;
+        check(clean,"All four inner perimeter strips use the dialog surface, never the default LAF background: "+name);
+    }
     private static void migration(Path root) throws Exception {
         try (StateStore store=new StateStore(root)) {
             StateStore.State fresh=store.load();
@@ -159,10 +166,12 @@ public final class ChromeConsistencySmoke {
         check(w.commands().stream().map(c -> c.title).distinct().count()==w.commands().size(),"Menu regrouping preserves one shared handler/shortcut identity per action.");
         check(w.commands().stream().anyMatch(c -> c.title.equals("Window and focus...")),"Deeper settings remain shortcut-configurable.");
         JDialog basic=dialog(w,"Appearance",appearance);
-        perimeter(paint(basic.getRootPane(),scale,"fish-051-appearance-"+scale+".png"),"owned dialog "+scale);
+        BufferedImage basicImage=paint(basic.getRootPane(),scale,"fish-051-appearance-"+scale+".png");
+        perimeter(basicImage,"owned dialog "+scale); dialogInterior(basicImage,"Appearance "+scale);
         JPanel focus=AppearanceDialogs.windowFocusPanel(w);
         JDialog advanced=dialog(w,"Window and focus",focus);
-        paint(advanced.getRootPane(),scale,"fish-051-focus-"+scale+".png");
+        BufferedImage focusImage=paint(advanced.getRootPane(),scale,"fish-051-focus-"+scale+".png");
+        perimeter(focusImage,"Window and focus "+scale); dialogInterior(focusImage,"Window and focus "+scale);
         basic.dispose(); advanced.dispose();
         JFileChooser chooser=new JFileChooser(Path.of("build").toFile());
         JDialog files=dialog(w,"Synthetic local font chooser",chooser);

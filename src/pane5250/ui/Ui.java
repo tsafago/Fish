@@ -52,7 +52,7 @@ public final class Ui {
         for (Object key : java.util.Collections.list(UIManager.getDefaults().keys())) {
             if (key.toString().endsWith(".font")) UIManager.put(key,font);
         }
-        for (String name : new String[]{"Panel","MenuBar","Menu","MenuItem","CheckBoxMenuItem","RadioButtonMenuItem",
+        for (String name : new String[]{"Panel","RootPane","MenuBar","Menu","MenuItem","CheckBoxMenuItem","RadioButtonMenuItem",
                 "PopupMenu","TabbedPane","OptionPane","Label","Button","ToggleButton","CheckBox","RadioButton","ComboBox","List",
                 "ScrollPane","Viewport","TextField","PasswordField","TextArea","Spinner","SplitPane","ToolTip",
                 "Table","TableHeader","EditorPane","TextPane","Tree"}) {
@@ -75,6 +75,7 @@ public final class Ui {
         }
         UIManager.put("PopupMenu.background",color(ColorRole.MENU));
         UIManager.put("Panel.background",color(ColorRole.DIALOG));
+        UIManager.put("RootPane.background",color(ColorRole.DIALOG));
         UIManager.put("MenuBar.background",color(ColorRole.CHROME));
         UIManager.put("ToolTip.background",color(ColorRole.TOOLTIP)); UIManager.put("ToolTip.foreground",color(ColorRole.TOOLTIP_TEXT));
         UIManager.put("ToolTip.backgroundInactive",color(ColorRole.TOOLTIP));
@@ -228,6 +229,7 @@ public final class Ui {
         label.addMouseListener(move); label.addMouseMotionListener(move);
         shell.add(title,BorderLayout.NORTH); shell.add(content,BorderLayout.CENTER);
         dialog.setContentPane(shell);
+        background(dialog.getRootPane(),ColorRole.DIALOG);
         dialog.getRootPane().setBorder(Hairline.perimeter());
         dialog.addHierarchyListener(e -> {
             if ((e.getChangeFlags()&HierarchyEvent.DISPLAYABILITY_CHANGED)!=0 && dialog.isDisplayable()) NativeWindow.flatten(dialog);
@@ -324,7 +326,10 @@ public final class Ui {
             Window window=SwingUtilities.getWindowAncestor(contents);
             Window parent=owner instanceof Window w ? w : owner==null ? null : SwingUtilities.getWindowAncestor(owner);
             if (window!=null && window!=parent) {
-                if (window instanceof RootPaneContainer root) root.getRootPane().setBorder(BorderFactory.createEmptyBorder());
+                if (window instanceof RootPaneContainer root) {
+                    root.getRootPane().setBorder(BorderFactory.createEmptyBorder());
+                    background(root.getRootPane(),contents instanceof JToolTip ? ColorRole.TOOLTIP : ColorRole.MENU);
+                }
                 if (!window.isDisplayable()) window.addNotify();
                 NativeWindow.flatten(window);
             }

@@ -18,6 +18,8 @@ one-pixel fills. This includes the titlebar separator, optional full square
 perimeter, flat controls, combo/menu/tooltip/dialog borders and separators.
 Legacy custom LINE/OUTLINE roles link to the existing Divider with a notice;
 the designer now has 60 live roles. Popup roots do not add a second border.
+Root panes also use the matching dialog/menu/workspace surface, so fractional
+layout gaps cannot expose Metal's pale default as a second inner border.
 The native bridge disables DWM non-client decoration/corners and AWT popup
 shadows without removing resize/snap styles or the monitor caption fix.
 

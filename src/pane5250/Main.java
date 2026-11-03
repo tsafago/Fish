@@ -52,7 +52,8 @@ public final class Main {
                     }
                 });
                 window.setVisible(true);
-                if (!store.loadNotice().isEmpty()) window.active().problem(store.loadNotice());
+                if (!store.loadNotice().isEmpty())
+                    System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
                 if (demo) SwingUtilities.invokeLater(window::connectAll);
                 } catch (RuntimeException e) {
                     if (host != null) host.close();

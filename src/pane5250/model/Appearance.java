@@ -25,7 +25,7 @@ public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,Fon
             throw new IllegalArgumentException("Selected custom theme is missing.");
     }
     public static Appearance defaults() {
-        return new Appearance(true,false,PaneInfo.defaults(),FontChoice.defaults(),"",List.of(),Set.of("ctrl alt K"));
+        return new Appearance(true,true,PaneInfo.defaults(),FontChoice.defaults(),"",List.of(),Set.of("ctrl alt K"));
     }
     public Appearance withTheme(String selected,List<ColorTheme> values) { return new Appearance(outline,windowOutline,info,font,selected,values,retiredShortcuts); }
     public Appearance withLayout(boolean border,PaneInfo values) { return new Appearance(border,windowOutline,values,font,selectedTheme,themes,retiredShortcuts); }

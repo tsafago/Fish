@@ -70,7 +70,7 @@ public final class StateStore implements AutoCloseable {
         try (InputStream in = Files.newInputStream(file())) { properties.loadFromXML(in); }
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6").contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5","6","7").contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             List<Profile> profiles = new ArrayList<>();
             for (String idText : required(properties, "profiles").split(",")) {
                 UUID id = UUID.fromString(idText);
@@ -91,7 +91,7 @@ public final class StateStore implements AutoCloseable {
                         effect, Double.parseDouble(required(properties, key + "zoom")),
                         keys, required(properties, key + "layout")));
             }
-            UUID last=Set.of("3","4","5","6").contains(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
+            UUID last=Set.of("3","4","5","6","7").contains(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
             Layout layout=Layout.decode(required(properties,"layout"));
             if (Set.of("1","2").contains(version) && !layout.leaves().isEmpty()) last=layout.leaves().getFirst().profile();
             if (layout instanceof Layout.Empty) {
@@ -103,8 +103,10 @@ public final class StateStore implements AutoCloseable {
             Map<String,String> shortcuts=new LinkedHashMap<>();
             for (String property:properties.stringPropertyNames())
                 if (property.startsWith("shortcut.")) shortcuts.put(property.substring(9),properties.getProperty(property));
-            Appearance appearance=Set.of("5","6").contains(version) ? readAppearance(properties,"6".equals(version)) : Appearance.defaults();
-            if ("5".equals(version)) notice("Window outline is now off by default. Structural borders use the saved divider color; other appearance choices retained.");
+            Appearance appearance=Set.of("5","6","7").contains(version) ? readAppearance(properties,version) : Appearance.defaults();
+            if ("5".equals(version)) notice("Structural borders use the saved divider color; other appearance choices retained.");
+            if (Set.of("5","6").contains(version))
+                notice("Window outline enabled once on upgrade. Earlier state did not distinguish an explicit off choice from the old default; Window and focus can turn it off permanently.");
             if (shortcuts.containsKey("Search commands...")) {
                 Set<String> retired=new HashSet<>(appearance.retiredShortcuts());
                 String old=shortcuts.remove("Search commands...");
@@ -117,13 +119,13 @@ public final class StateStore implements AutoCloseable {
                     Math.max(330, Math.min(10000, Integer.parseInt(required(properties, "width")))),
                     Math.max(260, Math.min(10000, Integer.parseInt(required(properties, "height")))),
                     "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")),last,
-                    shortcuts,!Set.of("4","5","6").contains(version) || bool(properties,"highlightActive"),appearance);
+                    shortcuts,!Set.of("4","5","6","7").contains(version) || bool(properties,"highlightActive"),appearance);
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid workspace; original file preserved: " + e.getMessage(), e);
         }
     }
     private void notice(String text) { loadNotice+=(loadNotice.isEmpty() ? "" : "\n")+text; }
-    private static Appearance readAppearance(Properties p,boolean current) {
+    private static Appearance readAppearance(Properties p,String version) {
             List<ColorTheme> themes=new ArrayList<>();
             int count=Integer.parseInt(required(p,"appearance.themes"));
             if (count<0 || count>32) throw new IllegalArgumentException("Custom theme count must be 0-32.");
@@ -138,7 +140,8 @@ public final class StateStore implements AutoCloseable {
                     bool(p,"info.status"),bool(p,"info.dimensions"),bool(p,"info.cursor"),bool(p,"info.insert"));
             Set<String> retired=new HashSet<>();
             for (String value:required(p,"appearance.retired").split("\n")) if (!value.isBlank()) retired.add(value);
-            return new Appearance(bool(p,"appearance.outline"),current && bool(p,"appearance.windowOutline"),info,
+            boolean windowOutline=!"5".equals(version) && bool(p,"appearance.windowOutline");
+            return new Appearance(bool(p,"appearance.outline"),!"7".equals(version) || windowOutline,info,
                     new Appearance.FontChoice(required(p,"font.family"),required(p,"font.file")),
                     required(p,"appearance.selected"),themes,retired);
     }
@@ -156,7 +159,7 @@ public final class StateStore implements AutoCloseable {
 
     public void save(State state) throws IOException {
         Properties properties = new Properties();
-        properties.setProperty("version", "6");
+        properties.setProperty("version", "7");
         properties.setProperty("highlightActive",Boolean.toString(state.highlightActive));
         state.shortcuts.forEach((action,stroke) -> properties.setProperty("shortcut."+action,stroke));
         properties.setProperty("lastProfile",state.lastProfile.toString());

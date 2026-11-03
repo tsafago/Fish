@@ -22,6 +22,7 @@ public final class SessionPane extends JPanel {
     private Profile profile;
     private Keymap keys;
     private final JPanel header = new JPanel(new BorderLayout(8,0));
+    private final JPanel headerControls = new JPanel(new BorderLayout(3,0));
     private final JPanel footer = new JPanel(new BorderLayout(6,0));
     private final JButton reset,close;
     private final JLabel title = new JLabel(), connection = new JLabel(), oia = new JLabel("Disconnected");
@@ -31,14 +32,20 @@ public final class SessionPane extends JPanel {
     private final JLayeredPane stage=new JLayeredPane() {
         @Override public void doLayout() {
             body.setBounds(0,0,getWidth(),getHeight());
+            if (close.getParent()==this) {
+                Dimension size=close.getPreferredSize();
+                close.setBounds(Math.max(0,getWidth()-size.width),0,Math.min(size.width,getWidth()),size.height);
+            }
             if (reset.getParent()==this) {
                 Dimension size=reset.getPreferredSize();
                 boolean bottom=screen()==null || screen().getCurrentRow()<screen().getRows()/2;
-                reset.setBounds(Math.max(4,getWidth()-size.width-10),bottom ? Math.max(4,getHeight()-size.height-10) : 10,
+                int top=close.getParent()==this && close.isVisible() ? close.getHeight()+4 : 10;
+                reset.setBounds(Math.max(4,getWidth()-size.width-10),bottom ? Math.max(4,getHeight()-size.height-10) : top,
                         Math.min(size.width,Math.max(0,getWidth()-8)),size.height);
             }
             Dimension size=noticeOverlay.getPreferredSize();
-            noticeOverlay.setBounds(8,8,Math.max(0,Math.min(size.width,getWidth()-16)),size.height);
+            int reserved=close.getParent()==this && close.isVisible() ? close.getWidth() : 0;
+            noticeOverlay.setBounds(8,8,Math.max(0,Math.min(size.width,getWidth()-16-reserved)),size.height);
         }
     };
     private final JLabel noticeOverlay=new JLabel();
@@ -89,12 +96,12 @@ public final class SessionPane extends JPanel {
         connection.setBorder(BorderFactory.createEmptyBorder(0,0,0,8));
         connection.setFont(new Font("Segoe UI",Font.PLAIN,11));
         header.add(title, BorderLayout.CENTER);
-        JPanel controls=new JPanel(new BorderLayout(3,0)); controls.setOpaque(false);
-        controls.add(connection,BorderLayout.CENTER);
+        headerControls.setOpaque(false);
+        headerControls.add(connection,BorderLayout.CENTER);
         close=Ui.iconButton("Close pane "+profile.name(),"close",() -> workspace.closePane(this));
         close.setToolTipText("Close and disconnect; keep the last pane");
-        controls.add(close,BorderLayout.EAST);
-        header.add(controls, BorderLayout.EAST);
+        headerControls.add(close,BorderLayout.EAST);
+        header.add(headerControls, BorderLayout.EAST);
         add(header, BorderLayout.NORTH);
         view = new TerminalView(this);
         JScrollPane scroll = new JScrollPane(view);
@@ -200,6 +207,12 @@ public final class SessionPane extends JPanel {
         if (info.device() && !profile.device().isEmpty()) parts.add(profile.device());
         connection.setText(String.join("  ",parts));
         header.setVisible(info.header() && (!title.getText().isBlank() || !connection.getText().isBlank()));
+        Container closeParent=header.isVisible() ? headerControls : stage;
+        if (close.getParent()!=closeParent) {
+            close.getParent().remove(close);
+            if (header.isVisible()) headerControls.add(close,BorderLayout.EAST);
+            else stage.add(close,JLayeredPane.PALETTE_LAYER);
+        }
         title.setVisible(info.profile()); connection.setVisible(!connection.getText().isEmpty());
         noticeOverlay.setBackground(Ui.color(ColorRole.FOOTER)); noticeOverlay.setForeground(Ui.color(ColorRole.STATUS_ERROR));
         close.getAccessibleContext().setAccessibleName("Close pane "+profile.name());

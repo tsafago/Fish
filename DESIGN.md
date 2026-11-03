@@ -142,19 +142,25 @@ cursor remain independent. None is still the default and immediate stop control.
 Rectangular panes and shared flat Swing controls. Hairline borders and the visible
 focus underline provide structure without rounded containers or ornamental chrome.
 Structural edges are exactly one physical device pixel, including at 150% DPI.
-`Hairline` aligns rectangular clips and fills device coordinates; no bevel,
+`Hairline` uses Swing's fractional-device endpoint rule and never enlarges dirty clips; no bevel,
 compound perimeter, native shadow or rounded/cut corner is added.
 Root panes share the corresponding dialog/menu/workspace surface color so
 fractional-DPI inset gaps cannot reveal an unthemed inner strip.
-The optional whole-window perimeter is off by default, independent of active
+The optional whole-window perimeter is on by default, independent of active
 pane outline/tint, and configured only under Appearance > More settings >
 Window and focus. Native move/resize/snap does not depend on a visible outline.
+A rectangular native window region removes classic caption corner clipping
+without losing resize/snap styles. Known remaining defect: maximize/restore
+still offsets/clips the native inset-dependent drawing surface, hiding the
+outer perimeter. This path failed real 100%/150% monitor checks; it is not signed off.
 
 ## Components
 
 Pane headers identify the profile and connection, support dragging and expose
 a right-click menu. The close X occupies the far-right header position, outside
-the drag target. X disconnects and removes the pane, reflowing bounded slots;
+the drag target, or a zero-space upper-right overlay when information is hidden.
+It is independent of the selected header items and does not overlap Reset.
+X disconnects and removes the pane, reflowing bounded slots;
 only the final pane is retained as an empty offline tile. Window
 close disconnects all without confirmation. An offline tile contains only a
 centered preset selector and adjacent arrow Connect icon with tooltip and
@@ -185,7 +191,7 @@ menus and shortcuts; disabled actions remain disabled and modal focus isolates
 host input. Former Commands chords are retired no-ops until explicitly reassigned.
 Every app/host action is
 listed in the global shortcut editor, with recording, unbind/default controls,
-atomic conflict rejection and version-6 persistence. Window-scoped dispatch
+atomic conflict rejection and version-7 persistence. Window-scoped dispatch
 precedes Swing traversal/host input, so Ctrl+Tab works without taking keys in
 owned dialogs. Profile-specific host bindings are preserved unless the user
 explicitly reassigns that host action globally.

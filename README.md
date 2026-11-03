@@ -10,13 +10,24 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Chrome-consistency preview
+## DPI-regression preview
 
-**Fish 0.5.1** is an unsigned experimental preview.
-All owned structural edges use one subtle shared divider color and one physical
-pixel at 100%/150% DPI. The whole-window outline is off by default, including
-on upgrade. Enable it under **View > Appearance > More settings > Window and
+**Fish 0.5.2** is an unsigned experimental preview with a known maximize/restore outline defect.
+Owned structural edges share one subtle divider color and a one-physical-pixel
+painter. Fractional-DPI painting now follows Swing's actual buffer-copy endpoints
+without expanding repaint clips, preventing missing edges and orphan menu lines.
+The whole-window outline is on by default. Change it under **View > Appearance > More settings > Window and
 focus**; active-pane outline and tint remain separate options there.
+Version-5/6 workspaces get a documented one-time outline-on migration: those
+versions did not record whether off was intentional. Version-7 choices,
+including off, persist unchanged. Normal migrations are informational console
+messages, not red startup errors; genuinely invalid state still fails explicitly.
+Pane close remains available as a zero-space overlay when its header is hidden
+or has no selected information. Native maximize hover feeds the same button
+state as the other caption controls.
+**Remaining defect:** the outer perimeter can disappear after maximizing and
+restoring. Real-monitor checks still fail for that path on both 1080p and 4K.
+This batch is not a complete border fix; native/ACS acceptance is not claimed.
 Flat square dialog/combo/popup perimeters replace compound bevels and shadows.
 Quick menus retain frequent actions; fonts, pane information, window details
 and the theme designer are behind **Appearance > More settings**.
@@ -35,7 +46,7 @@ to None. The titlebar-only fish is smaller, mouse clicks no longer leave a
 focus box, and keyboard focus uses a subtle underline. Its approved geometry,
 Flux/None toggle, click target, 31px chrome and native monitor handling remain.
 UI text uses Windows' desktop font hints without bitmap scaling.
-Downloads are available from the private repository's **v0.5.1 preview release**.
+Downloads are available from the private repository's **v0.5.2 preview release**; older releases remain intact.
 It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
 available offline from **Help > Full manual / Getting Started**, with a
@@ -44,18 +55,18 @@ searchable full-text topic index.
 ## Install: no developer tools needed
 
 1. Open [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish) using an account with access.
-2. Download `Fish-0.5.1-setup.exe` and its matching `SHA256SUMS.txt`.
+2. Download `Fish-0.5.2-setup.exe` and its matching `SHA256SUMS.txt`.
 3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
 
-For a portable copy, extract `Fish-0.5.1-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.5.2-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
-may warn or block them. Checksums accompany the release; do not bypass IT policy.
+may warn or block them. Checksums accompany the package; do not bypass IT policy.
 
 ## Generate an executable and installer yourself
 
-Extract the complete matching `Fish-source.zip` supplied with the release, then
+Extract the complete matching `Fish-source.zip`, then
 **double-click `Setup-Fish.cmd`**. No Git, installed JDK, Visual Studio, WiX
 installation, administrator rights or system PATH edits are needed.
 The first build needs internet access and about 2 GB of free disk space.
@@ -64,8 +75,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.5.1-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.5.1-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.5.2-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.5.2-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -76,7 +87,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current package is **Fish 0.5.1**.
+The current local package is **Fish 0.5.2**.
 Keep the entire application-image directory together:
 
 ```powershell
@@ -159,7 +170,7 @@ cells, zero-space information rows, local Reset overlay/host-busy exclusion,
 outline off, Neon migration and removed Commands bindings. Its font fixture is
 private and deleted; it never touches the shared clipboard or credentials.
 `ChromeConsistencySmoke` checks exact one-device-pixel borders at 100%/150%,
-complete odd-sized perimeters, shared-color migration, default-off/explicit-on
+complete odd-sized perimeters, shared-color migration, default-on/explicit-off
 window-outline persistence, popup roots, compact menu order, native client/work
 area calculations and peer recreation. Synthetic offscreen images are written
 under `build\fish-051-*.png`; no real host screen or physical desktop is captured.
@@ -167,6 +178,15 @@ Its `--focus-only` mode exercises the actual Window and focus dialog's
 Cancel/Apply buttons, all eight combinations of the three persistent settings,
 and Cancel/Escape/Close dismissal without saving. Evidence uses the real shared
 dialog builder rather than substituting a Done button.
+Its `--geometry-only` mode adds 100%/125%/150%/175%/200% strict-clip and
+nonzero-origin cases using Swing's actual backing-buffer endpoint rule.
+`pane5250.ui.DpiDesktop` requires fresh foreground/shared-desktop consent:
+it exercises production menus, combos, submenus and dialogs, partial repaints,
+caption hover and native-client-coordinate pixel captures across actual monitors.
+Those popup/hover/restored-window checks passed at 100%/150%; its six
+maximize/restore perimeter assertions still fail. `--window-only` isolates
+that remaining defect. Do not treat the offscreen smoke pass as physical
+maximize/restore acceptance.
 A separately consented, bounded
 `StreamliningDesktop` pass verifies actual Ctrl+Tab recording, native side/quarter/top
 snapping and maximize/restore. It is not the full foreground stress suite.
@@ -302,7 +322,7 @@ legacy directory and lock instead, preserving existing profiles and passwords.
 The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored **offline** next launch.
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-6 state.
+preset are saved with version-7 state.
 Version-1/2/3 profiles and credentials are retained. Old freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. A legacy layout over eight panes is rejected explicitly
@@ -400,8 +420,10 @@ They are not bundled, uploaded or copied into releases.
 
 **Appearance > More settings > Pane information** independently controls each header/footer item and
 both rows, with no space for empty rows. Outline and tint live in **Window and focus**.
-With a hidden header, use the terminal context menu, Panes menu or Alt+drag to
-swap. Workspace appearance settings apply across profiles; effects remain
+With a hidden/empty header, its independent close X overlays the upper-right
+corner without reserving a band; Reset remains a separate non-overlapping overlay.
+Use the terminal context menu, Panes menu or Alt+drag to swap.
+Workspace appearance settings apply across profiles; effects remain
 profile-specific.
 
 Optional Soft glow, column-gradient Prism and **Flux (animated)**

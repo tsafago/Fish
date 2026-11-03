@@ -3,16 +3,23 @@ package pane5250.ui;
 import java.awt.*;
 import java.nio.file.*;
 import javax.swing.JFrame;
+import javax.swing.SwingUtilities;
+import java.util.function.Consumer;
 
 /** Small Windows-only bridge; the OS, not the EDT, owns interactive move/resize. */
 final class NativeWindow {
     private static boolean loaded;
     private final JFrame window;
     private final long handle;
-    NativeWindow(JFrame window) {
+    private final Consumer<Boolean> hover;
+    NativeWindow(JFrame window,Consumer<Boolean> hover) {
         this.window=window;
+        this.hover=hover;
         load();
-        handle=install0(window);
+        handle=install0(window,this);
+    }
+    private void maximizeHover(boolean value) {
+        SwingUtilities.invokeLater(() -> { if (window.isDisplayable()) hover.accept(value); });
     }
     private static void load() {
         if (!loaded) {
@@ -40,7 +47,7 @@ final class NativeWindow {
     }
     void beginMove() { move0(handle); }
     void toggleMaximize() { maximize0(handle); }
-    private static native long install0(Window window);
+    private static native long install0(Window window,NativeWindow bridge);
     private static native boolean regions0(long handle,int width,int height,int[] rectangles);
     private static native void move0(long handle);
     private static native void maximize0(long handle);
@@ -49,4 +56,5 @@ final class NativeWindow {
     private static native void flat0(Window window);
     private static native int[] geometry0(long handle);
     private static native int[] frameBounds0(long handle,boolean maximized);
+    private static native int[] clientBounds0(Window window);
 }

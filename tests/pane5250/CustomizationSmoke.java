@@ -162,6 +162,10 @@ public final class CustomizationSmoke {
         check(!((JPanel)field(pane,"header")).isVisible() && !((JPanel)field(pane,"footer")).isVisible(),
                 "Header and footer can be fully hidden.");
         JLayeredPane stage=(JLayeredPane)field(pane,"stage"); Rectangle before=stage.getBounds();
+        JButton close=(JButton)field(pane,"close");
+        check(close.isVisible() && close.getParent()==stage && close.isFocusable()
+                        && close.getX()+close.getWidth()==stage.getWidth() && close.getY()==0,
+                "Connected pane close is an upper-right keyboard-reachable overlay independent of hidden information.");
         check(pane.getInsets().equals(new Insets(0,0,0,0)) && before.equals(new Rectangle(0,0,pane.getWidth(),pane.getHeight())),
                 "Outline off and hidden info consume exactly zero border/row spacing.");
         Session5250 core=(Session5250)field(pane,"core"); core.accept(inputScreen());
@@ -170,6 +174,7 @@ public final class CustomizationSmoke {
         check(reset.isVisible() && reset.getParent()==stage && reset.isFocusable() && stage.getBounds().equals(before),
                 "Recoverable Reset is a keyboard-reachable overlay with no reflow or reserved band.");
         check(reset.getY()>stage.getHeight()/2,"Reset stays below the editing cursor when the cursor is in upper rows.");
+        check(!reset.getBounds().intersects(close.getBounds()),"Independent Reset and close overlays never overlap.");
         int transactions=host.requestCount();
         paint(w.getRootPane(),"fish-050-hidden-reset.png");
         reset.doClick(0);
@@ -191,6 +196,7 @@ public final class CustomizationSmoke {
         layout(w.getRootPane());
         check(!((JPanel)field(pane,"header")).isVisible() && !((JPanel)field(pane,"footer")).isVisible(),
                 "Enabled rows with every content item disabled also consume no space.");
+        check(close.isVisible() && close.getParent()==stage,"Deselecting every header information item cannot hide pane close.");
         check(!pane.screen().getOIA().isInsertMode(),"Optional insert fixture starts empty.");
         w.appearanceSettings(w.appearanceSettings().withLayout(false,new Appearance.PaneInfo(true,true,false,false,false,false,false,false,false,true)));
         layout(w.getRootPane());
@@ -200,6 +206,7 @@ public final class CustomizationSmoke {
         layout(w.getRootPane());
         check(((JPanel)field(pane,"header")).isVisible() && ((JPanel)field(pane,"footer")).isVisible()
                 && pane.getInsets().top==0,"Info visibility and active outline remain independent.");
+        check(close.isVisible() && close.getParent()==field(pane,"headerControls"),"Close returns to the real header without duplicate controls.");
     }
     public static void main(String[] args) throws Exception {
         Path root=Files.createTempDirectory(Path.of("build"),"customization-smoke-");
@@ -236,6 +243,18 @@ public final class CustomizationSmoke {
                         paint(w.getRootPane(),"fish-050-"+theme.name()+".png");
                     }
                     w.appearanceSettings(before);
+                    var remaining=w.sessionPanes().getFirst();
+                    int transactions=host.requestCount();
+                    for (SessionPane pane:List.copyOf(w.sessionPanes())) if (pane!=remaining)
+                        ((JButton)field(pane,"close")).doClick(0);
+                    check(w.sessionPanes().size()==1 && w.sessionPanes().getFirst()==remaining && remaining.connected(),
+                            "Each close button removes only its own session, leaving the other socket alive.");
+                    JButton close=(JButton)field(remaining,"close");
+                    check(close.isVisible(),"Last connected pane retains its disconnect control.");
+                    close.doClick(0);
+                    check(w.sessionPanes().size()==1 && !remaining.busy() && !close.isVisible()
+                                    && host.requestCount()==transactions,
+                            "Last pane disconnects without host submission, remains offline, and hides its now-inapplicable close.");
                     check(!w.isVisible(),"All checks remain off the shared desktop.");
                     return null;
                 });

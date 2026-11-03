@@ -5,34 +5,50 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.5.1 chrome-consistency preview
+## Fish 0.5.2 DPI-regression preview
 
-The whole-window outline is off by default, including for version-5 workspaces.
-Its explicit version-6 choice is independent of active-pane outline and tint.
-These occasional settings live in Appearance > More settings > Window and focus,
-not quick View. Quick menus retain shared action/shortcut identities; deeper
-settings group related choices and use Apply/Cancel.
-Window and focus evidence uses the actual runtime dialog and its Cancel/Apply
-actions. The targeted check verifies all eight combinations persist and that
-Cancel, Escape and Close discard pending changes to all three settings.
+**Known unresolved defect:** the outer perimeter still disappears after
+maximize/restore on the actual 1080p/4K monitors. AWT's classic frame insets and
+native drawing-surface clipping remain inconsistent on this path. This batch
+is not a complete border fix. Ineffective bounds/layout workarounds were removed
+rather than shipped as verified corrections.
 
-All owned structural edges use one shared Divider role and device-coordinate
-one-pixel fills. This includes the titlebar separator, optional full square
-perimeter, flat controls, combo/menu/tooltip/dialog borders and separators.
-Legacy custom LINE/OUTLINE roles link to the existing Divider with a notice;
-the designer now has 60 live roles. Popup roots do not add a second border.
-Root panes also use the matching dialog/menu/workspace surface, so fractional
-layout gaps cannot expose Metal's pale default as a second inner border.
-The native bridge disables DWM non-client decoration/corners and AWT popup
-shadows without removing resize/snap styles or the monitor caption fix.
+The shared border painter now uses OpenJDK Swing's fractional buffer-copy
+endpoint rule (`Region.clipRound`, including half-pixel ties). It no longer
+rounds outward or enlarges inherited dirty clips. Actual quick menus, appearance
+submenus, combo dropdowns and owned settings dialogs were exercised through
+their production constructors and mouse paths, including partial terminal
+repaints and dismissal. Their borders and content restoration passed at
+100% on a 1920x1080 display and 150% on two 3840x2160 displays. The initially
+restored whole-window perimeter and square corners also passed. After
+maximize/restore, the six whole-window perimeter assertions still failed.
+Screenshot crops were corrected against native client coordinates and
+fractional component origins; no fabricated dialog wrappers were used.
 
-Focused synthetic/offscreen checks at 100%/150% cover even/odd complete
-perimeters and exact thickness, migration/persistence, quick/deep menu shape,
-native full-client/restored/maximized work-area calculations and peer recreation.
-These are not a physical mixed-monitor or Windows compositor screenshot test.
-No new physical desktop/clipboard automation, IBM i/ACS acceptance or protocol
-implementation is part of this revision. Distribution remains an unsigned,
-experimental preview rather than a production/ACS compatibility claim.
+Caption minimize/maximize/restore/close hover transitions passed in both
+window states, including native HTMAXBUTTON handling, without changing the
+WM_SETICON/WM_SETTEXT caption fix. The rectangular native frame region removes
+classic cut corners. Socket identities and host dimensions stayed unchanged.
+No shared clipboard, credentials, real-host screenshots or IBM i connection
+were used in these freshly consented, bounded desktop checks.
+
+The window outline is now ON by default. Schema 5/6 did not distinguish an
+explicit off choice from the previous default: both migrate to on once, with
+an informational console notice rather than a red startup error. Schema 7
+retains subsequent explicit off choices. Pane outline/tint remain independent
+under Appearance > More settings > Window and focus, with actual Apply/Cancel
+and all eight persisted combinations checked. Malformed state still fails.
+
+Close X is independent of header information and moves into a zero-space
+upper-right overlay when needed; Reset stays independent and non-overlapping.
+Focused loopback checks cover correct-session removal, last connected pane
+disconnect, the retained offline tile, and no extra host submissions.
+Offscreen strict-clip/geometry checks additionally cover 125%, 175% and 200%;
+those scales were not tested on physical monitors. Theme Designer's shared
+Divider role and flat control/popup surfaces remain unchanged.
+
+This unsigned experimental preview includes no protocol expansion. Full
+IBM i/ACS compatibility and production readiness remain unverified.
 
 ## Fish 0.5.0 customization preview (included)
 

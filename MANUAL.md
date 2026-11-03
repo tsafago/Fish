@@ -1,6 +1,8 @@
 # Fish manual
 
-Fish 0.5.1 - unsigned experimental chrome-consistency preview.
+Fish 0.5.2 - unsigned experimental DPI-regression preview.
+
+Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 This manual describes the implemented application, not an assurance of full ACS compatibility.
 Open Help > Full manual / Getting Started for the searchable topic index.
 
@@ -25,9 +27,9 @@ If connection fails, check the hostname, port, VPN/network and IBM i Telnet serv
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-Download Fish-0.5.1-setup.exe from the private HornadyIBM/Fish repository's v0.5.1 preview release, using a GitHub account with access. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+Download Fish-0.5.2-setup.exe and matching SHA256SUMS.txt from the private HornadyIBM/Fish repository's v0.5.2 preview release. Older releases remain separate. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Alternatively, extract Fish-0.5.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.5.2-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -41,7 +43,7 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.5.1-setup.exe, dist\Fish-0.5.1-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Outputs are dist\Fish\Fish.exe, dist\Fish-0.5.2-setup.exe, dist\Fish-0.5.2-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 
@@ -53,7 +55,7 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces are migrated on load; do not run two versions against the same directory simultaneously. Version-6 state retains profiles, custom themes, font references, shortcuts, active-pane outline/tint and pane-information choices. The new whole-window outline starts off on upgrade unless already explicitly chosen in version 6. Structural colors are linked to the saved Divider role with an explicit load notice. Older builds do not understand version-6 state; use a backup or a separate data directory for a downgrade.
+Older Fish/Pane5250 workspaces are migrated on load; do not run two versions against the same directory simultaneously. Version-7 state retains profiles, custom themes, font references, shortcuts, active-pane outline/tint and pane-information choices. Whole-window outline is now on by default. Version-5/6 state did not distinguish an explicit off choice from the previous default: both migrate to on once. Turn it off again under Window and focus if desired; version-7 off choices persist unchanged. Expected migrations are informational console messages, never red startup errors. Malformed files and genuine font, credential, connection and filesystem failures remain explicit. Older builds do not understand version-7 state; use a backup or a separate data directory for a downgrade.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -89,8 +91,9 @@ Drag any window edge or corner to resize. Double-click the blank title area to m
 
 Alt+Space opens the Windows system menu. The default Ctrl+Alt+Space opens Fish's themed window menu. Its keyboard Move and Size commands use arrow keys, Shift+arrows for single-unit adjustments, Enter to finish and Escape to cancel.
 
-The whole-window outline is off by default and is not required for resizing.
-View > Appearance > More settings > Window and focus can enable a complete square one-physical-pixel perimeter.
+The whole-window outline is on by default and is not required for resizing.
+View > Appearance > More settings > Window and focus can disable the complete square one-physical-pixel perimeter.
+The restored-window perimeter is verified before maximizing, but it can disappear after maximize/restore; this is a known unresolved native geometry/surface-inset defect.
 All owned structural borders, menu separators and the titlebar/content divider use Theme Designer's Structure > Divider color.
 Dialogs and popups have the same flat edge, without native shadows or rounded corners. Windows-owned system menus and installers remain OS-controlled.
 
@@ -208,7 +211,7 @@ View > Appearance changes the complete application theme: Charcoal, Graphite, Mi
 
 Application themes are independent of host palettes. OLED themes use true-black terminal and chrome surfaces. High-contrast choices favor explicit boundaries and strong foreground contrast; Windows' own accessibility settings may also affect system-owned menus and installers.
 
-Appearance > More settings > Window and focus controls whole-pane tint, active-pane outline and the separate default-off whole-window outline. Choose Apply to save, or Cancel to leave them unchanged. All enabled outlines use the shared one-physical-pixel Divider color; focusing a pane never changes its layout insets.
+Appearance > More settings > Window and focus controls whole-pane tint, active-pane outline and the separate default-on whole-window outline. Choose Apply to save, or Cancel to leave them unchanged. All enabled outlines use the shared one-physical-pixel Divider color; focusing a pane never changes its layout insets. Pane close is independent of every header information choice: with no header content it becomes an upper-right overlay, without reserving space or overlapping Reset.
 
 Theme choices apply immediately; deeper settings use Apply/Cancel. Neither reconnects sessions or alters host dimensions.
 

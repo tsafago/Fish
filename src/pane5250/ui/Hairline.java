@@ -47,12 +47,10 @@ public class Hairline extends AbstractBorder implements UIResource {
         Graphics2D g=(Graphics2D)graphics.create();
         try {
             Rectangle2D bounds=g.getTransform().createTransformedShape(new Rectangle2D.Double(x,y,width,height)).getBounds2D();
-            int x1=(int)Math.floor(bounds.getMinX()+.00001),y1=(int)Math.floor(bounds.getMinY()+.00001);
-            int x2=(int)Math.ceil(bounds.getMaxX()-.00001),y2=(int)Math.ceil(bounds.getMaxY()-.00001);
+            // Match Swing's fractional-DPI buffer copy (Region.clipRound), including half-pixel ties.
+            int x1=pixel(bounds.getMinX()),y1=pixel(bounds.getMinY());
+            int x2=pixel(bounds.getMaxX()),y2=pixel(bounds.getMaxY());
             g.setTransform(new AffineTransform());
-            Shape clip=g.getClip();
-            // A half-pixel logical clip must not discard the final physical edge at 150% DPI.
-            if (clip instanceof Rectangle2D) g.setClip(clip.getBounds());
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_OFF);
             g.setColor(Ui.color(ColorRole.DIVIDER));
             if (top) g.fillRect(x1,y1,Math.max(1,x2-x1),1);
@@ -62,4 +60,5 @@ public class Hairline extends AbstractBorder implements UIResource {
             if (right && x2>x1) g.fillRect(x2-1,start,1,Math.max(0,end-start));
         } finally { g.dispose(); }
     }
+    private static int pixel(double coordinate) { return (int)Math.ceil(coordinate-.5); }
 }

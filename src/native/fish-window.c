@@ -15,10 +15,37 @@ typedef struct {
     WNDPROC previous;
     RECT drag, maximize;
     int width, height;
+    JavaVM *vm;
+    jobject bridge;
+    jmethodID hover;
+    BOOL hovered;
+    int region_width, region_height;
 } FishWindow;
 
 static const WCHAR PROPERTY[] = L"Fish.NativeWindow";
 static SRWLOCK state_lock = SRWLOCK_INIT;
+
+static void maximize_hover(HWND window, BOOL value) {
+    FishWindow snapshot = {0};
+    AcquireSRWLockExclusive(&state_lock);
+    FishWindow *state = (FishWindow *)GetPropW(window, PROPERTY);
+    if (state && state->hovered != value) {
+        state->hovered = value;
+        snapshot = *state;
+    }
+    ReleaseSRWLockExclusive(&state_lock);
+    if (!snapshot.bridge) return;
+    JNIEnv *env = NULL;
+    if ((*snapshot.vm)->GetEnv(snapshot.vm, (void **)&env, JNI_VERSION_1_4) != JNI_OK) {
+        OutputDebugStringW(L"Fish: native hover arrived without the AWT Java thread.\n");
+        return;
+    }
+    (*env)->CallVoidMethod(env, snapshot.bridge, snapshot.hover, value ? JNI_TRUE : JNI_FALSE);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+    }
+}
 
 static HRESULT flat_frame(HWND window) {
     /* AWT's overlapped styles are needed for snap/resize, not DWM decoration. */
@@ -62,6 +89,26 @@ static void client_area(HWND window, RECT *area, BOOL maximized) {
     }
 }
 
+static void square_frame(HWND window) {
+    RECT bounds;
+    if (!GetWindowRect(window, &bounds)) return;
+    int width = bounds.right - bounds.left, height = bounds.bottom - bounds.top;
+    BOOL changed = FALSE;
+    AcquireSRWLockExclusive(&state_lock);
+    FishWindow *state = (FishWindow *)GetPropW(window, PROPERTY);
+    if (state && (state->region_width != width || state->region_height != height)) {
+        state->region_width = width; state->region_height = height; changed = TRUE;
+    }
+    ReleaseSRWLockExclusive(&state_lock);
+    if (!changed) return;
+    /* With DWM non-client rendering disabled, WS_CAPTION can still cut classic corners. */
+    HRGN region = CreateRectRgn(0, 0, width, height);
+    if (!region || !SetWindowRgn(window, region, TRUE)) {
+        if (region) DeleteObject(region);
+        OutputDebugStringW(L"Fish: cannot restore the rectangular native frame region.\n");
+    }
+}
+
 static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     FishWindow snapshot = {0};
     AcquireSRWLockShared(&state_lock);
@@ -70,6 +117,9 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
     ReleaseSRWLockShared(&state_lock);
     if (!snapshot.previous) return DefWindowProcW(window, message, wparam, lparam);
     switch (message) {
+        case WM_WINDOWPOSCHANGED:
+            square_frame(window);
+            break;
         case WM_STYLECHANGING:
             if ((int)wparam == GWL_EXSTYLE)
                 ((STYLESTRUCT *)lparam)->styleNew &= ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
@@ -118,6 +168,17 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
             if (wparam == HTCAPTION || (wparam >= HTLEFT && wparam <= HTBOTTOMRIGHT))
                 return DefWindowProcW(window, message, wparam, lparam);
             break;
+        case WM_NCMOUSEMOVE: {
+            maximize_hover(window, wparam == HTMAXBUTTON);
+            TRACKMOUSEEVENT track = {sizeof(TRACKMOUSEEVENT), TME_LEAVE | TME_NONCLIENT, window, 0};
+            if (!TrackMouseEvent(&track)) OutputDebugStringW(L"Fish: cannot track non-client mouse leave.\n");
+            return DefWindowProcW(window, message, wparam, lparam);
+        }
+        case WM_MOUSEMOVE:
+        case WM_NCMOUSELEAVE:
+        case WM_KILLFOCUS:
+            maximize_hover(window, FALSE);
+            break;
         case WM_NCLBUTTONUP:
             if (wparam == HTMAXBUTTON) {
                 PostMessageW(window, WM_SYSCOMMAND, IsZoomed(window) ? SC_RESTORE : SC_MAXIMIZE, 0);
@@ -138,10 +199,18 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
             if (FAILED(flat_frame(window))) OutputDebugStringW(L"Fish: failed to restore flat DWM chrome after composition change.\n");
             break;
         /* DefWindowProc would repaint a classic caption behind an owned dialog. */
-        case WM_NCACTIVATE: return TRUE;
+        case WM_NCACTIVATE:
+            if (!wparam) maximize_hover(window, FALSE);
+            return TRUE;
         case WM_NCDESTROY:
             AcquireSRWLockExclusive(&state_lock);
             state = (FishWindow *)RemovePropW(window, PROPERTY);
+            if (state) {
+                JNIEnv *env = NULL;
+                if ((*state->vm)->GetEnv(state->vm, (void **)&env, JNI_VERSION_1_4) == JNI_OK)
+                    (*env)->DeleteGlobalRef(env, state->bridge);
+                else OutputDebugStringW(L"Fish: native frame closed without the AWT Java thread.\n");
+            }
             free(state);
             ReleaseSRWLockExclusive(&state_lock);
             break;
@@ -167,20 +236,27 @@ static HWND handle_for(JNIEnv *env, jobject component) {
     return window;
 }
 
-JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jclass type, jobject component) {
+JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jclass type, jobject component, jobject bridge) {
     (void)type;
     HWND window = handle_for(env, component);
     if (!window) return 0;
     if (GetPropW(window, PROPERTY)) return (jlong)(intptr_t)window;
     FishWindow *state = (FishWindow *)calloc(1, sizeof(FishWindow));
     if (!state) { failure(env, "Cannot allocate Windows integration state."); return 0; }
+    (*env)->GetJavaVM(env, &state->vm);
+    state->hover = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, bridge), "maximizeHover", "(Z)V");
+    if (!state->hover) { free(state); return 0; }
+    state->bridge = (*env)->NewGlobalRef(env, bridge);
+    if (!state->bridge) { free(state); return 0; }
     state->previous = (WNDPROC)GetWindowLongPtrW(window, GWLP_WNDPROC);
     if (!SetPropW(window, PROPERTY, state)) {
+        (*env)->DeleteGlobalRef(env, state->bridge);
         free(state); failure(env, "Cannot attach Windows integration state."); return 0;
     }
     SetLastError(0);
     if (!SetWindowLongPtrW(window, GWLP_WNDPROC, (LONG_PTR)fish_proc) && GetLastError()) {
-        RemovePropW(window, PROPERTY); free(state); failure(env, "Cannot install the Windows frame handler."); return 0;
+        RemovePropW(window, PROPERTY); (*env)->DeleteGlobalRef(env, state->bridge);
+        free(state); failure(env, "Cannot install the Windows frame handler."); return 0;
     }
     LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
     SetWindowLongPtrW(window, GWL_STYLE, (style & ~WS_POPUP) | WS_OVERLAPPEDWINDOW);
@@ -271,5 +347,18 @@ JNIEXPORT jintArray JNICALL Java_pane5250_ui_NativeWindow_frameBounds0(JNIEnv *e
         monitor.rcWork.left,monitor.rcWork.top,monitor.rcWork.right,monitor.rcWork.bottom};
     jintArray result = (*env)->NewIntArray(env,12);
     if (result) (*env)->SetIntArrayRegion(env,result,0,12,values);
+    return result;
+}
+JNIEXPORT jintArray JNICALL Java_pane5250_ui_NativeWindow_clientBounds0(JNIEnv *env, jclass type, jobject component) {
+    (void)type;
+    HWND window = handle_for(env, component);
+    if (!window) return NULL;
+    RECT client; POINT origin = {0, 0};
+    if (!GetClientRect(window, &client) || !ClientToScreen(window, &origin)) {
+        failure(env, "Cannot read native client bounds."); return NULL;
+    }
+    jint values[] = {origin.x,origin.y,client.right,client.bottom};
+    jintArray result = (*env)->NewIntArray(env, 4);
+    if (result) (*env)->SetIntArrayRegion(env, result, 0, 4, values);
     return result;
 }

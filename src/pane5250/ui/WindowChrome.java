@@ -75,16 +75,24 @@ final class WindowChrome extends JPanel {
             @Override public void windowClosed(WindowEvent e) { finishKeyboard(false); }
         });
         window.addWindowFocusListener(new WindowAdapter() {
-            @Override public void windowLostFocus(WindowEvent e) { finishKeyboard(true); }
+            @Override public void windowLostFocus(WindowEvent e) { finishKeyboard(true); clearControlHover(); }
         });
     }
     void installNative() {
         if (nativeWindow!=null) return;
-        nativeWindow=new NativeWindow(window);
+        nativeWindow=new NativeWindow(window,this::nativeMaximizeHover);
         window.getGlassPane().setVisible(false);
         revalidate();
     }
     void nativeRemoved() { nativeWindow=null; caption.cancelClick(); }
+    private void clearControlHover() {
+        for (Component control:controls.getComponents())
+            if (control instanceof JButton button) button.getModel().setRollover(false);
+    }
+    private void nativeMaximizeHover(boolean value) {
+        if (value) clearControlHover();
+        maximize.getModel().setRollover(value);
+    }
     @Override public void doLayout() {
         int fullTools=tools.getPreferredSize().width;
         for (Component component:tools.getComponents()) if (component instanceof JButton b) {
@@ -399,8 +407,9 @@ final class WindowChrome extends JPanel {
             Graphics2D g = (Graphics2D)graphics.create();
             try {
                 Ui.quality(g);
-                g.setColor(getModel().isRollover() || getModel().isPressed()
-                        ? kind.equals("close") ? Ui.ERROR : Ui.HOVER : Ui.color(ColorRole.CHROME));
+                Color background=getModel().isRollover() || getModel().isPressed()
+                        ? kind.equals("close") ? Ui.ERROR : Ui.HOVER : Ui.color(ColorRole.CHROME);
+                g.setColor(background);
                 g.fillRect(0,0,getWidth(),getHeight());
                 g.setColor(kind.equals("close") && (getModel().isRollover() || getModel().isPressed()) ? Ui.BACKGROUND
                         : Ui.color(window.isActive() ? ColorRole.CHROME_TEXT : ColorRole.CHROME_INACTIVE));
@@ -408,8 +417,9 @@ final class WindowChrome extends JPanel {
                 if (kind.equals("minimize")) g.drawLine(x,y + 7,x + 9,y + 7);
                 else if (kind.equals("close")) { g.drawLine(x,y,x + 9,y + 9); g.drawLine(x + 9,y,x,y + 9); }
                 else if (isMaximized()) {
-                    g.drawRect(x + 2,y,7,7); g.setColor(Ui.color(ColorRole.CHROME)); g.fillRect(x,y + 2,8,8);
-                    g.setColor(Ui.color(ColorRole.CHROME_TEXT)); g.drawRect(x,y + 2,7,7);
+                    Color ink=g.getColor();
+                    g.drawRect(x + 2,y,7,7); g.setColor(background); g.fillRect(x,y + 2,8,8);
+                    g.setColor(ink); g.drawRect(x,y + 2,7,7);
                 } else g.drawRect(x,y,9,9);
                 if (hasFocus()) Hairline.horizontal(g,getWidth()/2.0-6,getHeight()-4,12);
             } finally { g.dispose(); }

@@ -33,7 +33,7 @@ public final class ChromeConsistencySmoke {
     }
     private static BufferedImage paint(JComponent c,double scale,String file) throws Exception {
         layout(c);
-        BufferedImage image=new BufferedImage((int)Math.ceil(c.getWidth()*scale),(int)Math.ceil(c.getHeight()*scale),BufferedImage.TYPE_INT_RGB);
+        BufferedImage image=new BufferedImage((int)Math.ceil(c.getWidth()*scale-.5),(int)Math.ceil(c.getHeight()*scale-.5),BufferedImage.TYPE_INT_RGB);
         Graphics2D g=image.createGraphics();
         try { g.scale(scale,scale); c.paint(g); } finally { g.dispose(); }
         if (file!=null) ImageIO.write(image,"png",Path.of("build",file).toFile());
@@ -88,6 +88,28 @@ public final class ChromeConsistencySmoke {
         for (int y=0;y<image.getHeight();y++) if (image.getRGB(image.getWidth()/2,y)==Ui.LINE.getRGB()) rows++;
         check(rows==1,"Menu separator paints one device row, not Metal's light/dark pair: "+scale);
     }
+    private static void dirtyClips(double scale) {
+        for (int origin:List.of(0,3,7)) {
+            BufferedImage image=new BufferedImage(240,160,BufferedImage.TYPE_INT_RGB);
+            Graphics2D g=image.createGraphics();
+            try {
+                g.setColor(Color.MAGENTA); g.fillRect(0,0,240,160);
+                g.scale(scale,scale); g.translate(origin,origin+2);
+                g.clipRect(2,1,69,43);
+                var transform=g.getTransform(); Shape clip=g.getClip();
+                Hairline.rectangle(g,0,0,73,45);
+                check(g.getTransform().equals(transform) && g.getClip().getBounds2D().equals(clip.getBounds2D()),
+                        "Structural painting preserves the caller's transform and dirty clip: "+scale+"/"+origin);
+                int left=(int)Math.ceil((origin+2)*scale-.5),right=(int)Math.ceil((origin+71)*scale-.5);
+                int top=(int)Math.ceil((origin+3)*scale-.5),bottom=(int)Math.ceil((origin+46)*scale-.5);
+                boolean contained=true;
+                for (int y=0;y<160;y++) for (int x=0;x<240;x++)
+                    if (image.getRGB(x,y)!=Color.MAGENTA.getRGB())
+                        contained&=x>=left && x<right && y>=top && y<bottom;
+                check(contained,"No border pixels escape the actual fractional dirty region: "+scale+"/"+origin);
+            } finally { g.dispose(); }
+        }
+    }
     private static void dialogInterior(BufferedImage image,String name) {
         int surface=Ui.color(ColorRole.DIALOG).getRGB(),w=image.getWidth(),h=image.getHeight();
         boolean clean=true;
@@ -98,6 +120,8 @@ public final class ChromeConsistencySmoke {
     private static void migration(Path root) throws Exception {
         try (StateStore store=new StateStore(root)) {
             StateStore.State fresh=store.load();
+            check(fresh.appearance().windowOutline() && store.loadNotice().isEmpty(),
+                    "Fresh default is outline ON, with no error or migration notice.");
             EnumMap<ColorRole,Integer> roles=new EnumMap<>(ColorTheme.builtin(AppTheme.Charcoal).colors());
             roles.put(ColorRole.DIVIDER,0x354549);
             ColorTheme theme=new ColorTheme("Legacy fixture",roles);
@@ -110,17 +134,33 @@ public final class ChromeConsistencySmoke {
             p.setProperty("appearance.theme.0.LINE","#EEDDCC"); p.setProperty("appearance.theme.0.OUTLINE","#FF0011");
             try (var out=Files.newOutputStream(store.file())) { p.storeToXML(out,"Synthetic legacy appearance"); }
             StateStore.State loaded=store.load();
-            check(!loaded.appearance().windowOutline() && !loaded.appearance().outline() && !loaded.highlightActive(),
-                    "Existing version-5 workspaces get window outline OFF without changing chosen active outline/tint.");
+            check(loaded.appearance().windowOutline() && !loaded.appearance().outline() && !loaded.highlightActive(),
+                    "Legacy workspaces get window outline ON without changing chosen active outline/tint.");
             check(loaded.appearance().custom().orElseThrow().rgb(ColorRole.DIVIDER)==0x354549
                     && loaded.appearance().custom().orElseThrow().colors().size()==ColorRole.values().length,
                     "Legacy LINE/OUTLINE colors migrate to the existing shared divider; no dead designer controls.");
-            check(store.loadNotice().contains("divider") && store.loadNotice().contains("off by default"),"Linked-role/default-outline migration is reported explicitly.");
-            Appearance chosen=loaded.appearance().withWindowOutline(true);
+            check(store.loadNotice().contains("divider") && store.loadNotice().contains("enabled once"),"Linked-role/default-outline migration is reported explicitly.");
+            Appearance chosen=loaded.appearance().withWindowOutline(false);
             StateStore.State state=new StateStore.State(loaded.profiles(),loaded.layout(),loaded.width(),loaded.height(),loaded.appTheme(),
                     loaded.lastProfile(),loaded.shortcuts(),loaded.highlightActive(),chosen);
             store.save(state);
-            check(store.load().equals(state) && store.loadNotice().isEmpty(),"Explicit window-outline choice survives version-6 restart without another migration.");
+            check(store.load().equals(state) && store.loadNotice().isEmpty(),"Explicit off choice survives version-7 restart without another migration.");
+            for (boolean legacy:List.of(false,true)) {
+                try (var in=Files.newInputStream(store.file())) { p.loadFromXML(in); }
+                p.setProperty("version","6"); p.setProperty("appearance.windowOutline",Boolean.toString(legacy));
+                try (var out=Files.newOutputStream(store.file())) { p.storeToXML(out,"Ambiguous version-6 setting"); }
+                StateStore.State migrated=store.load();
+                check(migrated.appearance().windowOutline() && migrated.profiles().equals(state.profiles())
+                        && migrated.appearance().info().equals(state.appearance().info()),
+                        "Documented one-time version-6 rule retains profile/info state: old outline="+legacy);
+                store.save(state);
+            }
+            try (var in=Files.newInputStream(store.file())) { p.loadFromXML(in); }
+            p.setProperty("appearance.windowOutline","malformed");
+            try (var out=Files.newOutputStream(store.file())) { p.storeToXML(out,"Invalid setting"); }
+            boolean rejected=false;
+            try { store.load(); } catch (java.io.IOException e) { rejected=e.getMessage().contains("Invalid boolean"); }
+            check(rejected,"Genuinely malformed appearance still fails explicitly; no invented clean state.");
         }
     }
     private static JDialog dialog(Workspace w,String title,JComponent body) {
@@ -201,8 +241,9 @@ public final class ChromeConsistencySmoke {
         }
     }
     private static void workspaceChecks(Workspace w,double scale) throws Exception {
-        check(!w.appearanceSettings().windowOutline() && w.getRootPane().getInsets().equals(new Insets(0,0,0,0)),
-                "Fresh workspace has no outer outline or border inset.");
+        w.appearanceSettings(w.appearanceSettings().withWindowOutline(true));
+        check(w.appearanceSettings().windowOutline() && w.getRootPane().getInsets().equals(new Insets(1,1,1,1)),
+                "Default workspace has the enabled rectangular outline.");
         WindowChrome chrome=(WindowChrome)field(w,"chrome");
         JMenuBar menus=(JMenuBar)field(chrome,"menus");
         JMenu view=Arrays.stream(menus.getComponents()).map(c -> (JMenu)c).filter(c -> c.getText().equals("View")).findFirst().orElseThrow();
@@ -269,10 +310,10 @@ public final class ChromeConsistencySmoke {
         check(((RootPaneContainer)popup).getRootPane().getInsets().equals(new Insets(0,0,0,0)),
                 "Heavy popup root contributes no second border.");
         pending.hide();
-        Appearance hidden=w.appearanceSettings().withLayout(false,new Appearance.PaneInfo(false,false,false,false,false,false,false,false,false,false));
+        Appearance hidden=w.appearanceSettings().withWindowOutline(false).withLayout(false,new Appearance.PaneInfo(false,false,false,false,false,false,false,false,false,false));
         w.appearanceSettings(hidden); w.highlightActive(false); w.validate(); layout(w);
         BufferedImage off=paint(w.getRootPane(),scale,"fish-051-outline-off-"+scale+".png");
-        int x=off.getWidth()/3,titleBottom=(int)Math.ceil(31*scale)-1;
+        int x=off.getWidth()/3,titleBottom=(int)Math.ceil(31*scale-.5)-1;
         check(off.getRGB(x,titleBottom)==Ui.LINE.getRGB() && off.getRGB(x,titleBottom-1)!=Ui.LINE.getRGB()
                 && off.getRGB(x,titleBottom+1)!=Ui.LINE.getRGB(),"Title/content separator is exactly one physical row, not a double-painted junction: scale="
                 +scale+" chrome="+chrome.getBounds()+" pixels="+Integer.toHexString(off.getRGB(x,titleBottom-1))+"/"
@@ -295,6 +336,14 @@ public final class ChromeConsistencySmoke {
     public static void main(String[] args) throws Exception {
         Ui.install();
         boolean focusOnly=List.of(args).equals(List.of("--focus-only"));
+        if (List.of(args).equals(List.of("--geometry-only"))) {
+            edt(() -> {
+                for (double scale:List.of(1.0,1.25,1.5,1.75,2.0)) { pixelChecks(scale); dirtyClips(scale); }
+                return null;
+            });
+            System.out.println("PASS Geometry regression: "+checks+" checks at 100/125/150/175/200%; strict clips, no desktop input.");
+            return;
+        }
         Path root=Files.createTempDirectory(Path.of("build"),"chrome-smoke-");
         if (!focusOnly) migration(root.resolve("migration"));
         CountDownLatch closed=new CountDownLatch(1);

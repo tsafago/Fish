@@ -332,7 +332,7 @@ public final class Ui {
             Popup popup=super.getPopup(owner,contents,x,y);
             Window window=SwingUtilities.getWindowAncestor(contents);
             Window parent=owner instanceof Window w ? w : owner==null ? null : SwingUtilities.getWindowAncestor(owner);
-            if (window!=null && window!=parent) {
+            if (window!=null && window!=parent && window.getType()==Window.Type.POPUP) {
                 if (window instanceof RootPaneContainer root) {
                     root.getRootPane().setBorder(BorderFactory.createEmptyBorder());
                     background(root.getRootPane(),contents instanceof JToolTip ? ColorRole.TOOLTIP : ColorRole.MENU);

@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.5.1'
+$version = '0.5.2'
 if (-not $Jdk) {
     $manifest = Import-PowerShellDataFile .\tools.psd1
     $candidate = Join-Path $PSScriptRoot ('.tools\' + $manifest.Jdk.Directory)

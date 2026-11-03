@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.4.3 - experimental UI sizing preview.
+Fish 0.5.0 - experimental customization preview.
 This manual describes the implemented application, not an assurance of full ACS compatibility.
 Open Help > Full manual / Getting Started for the searchable topic index.
 
@@ -25,9 +25,9 @@ If connection fails, check the hostname, port, VPN/network and IBM i Telnet serv
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-Download Fish-0.4.3-setup.exe from the private HornadyIBM/Fish repository's v0.4.3 preview release, using a GitHub account with access. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+Download Fish-0.5.0-setup.exe from the private HornadyIBM/Fish repository's v0.5.0 preview release, using a GitHub account with access. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Alternatively, extract Fish-0.4.3-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.5.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -41,7 +41,7 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.4.3-setup.exe, dist\Fish-0.4.3-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Outputs are dist\Fish\Fish.exe, dist\Fish-0.5.0-setup.exe, dist\Fish-0.5.0-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 
@@ -53,7 +53,9 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces are migrated on load; do not run two versions against the same directory simultaneously. Version-4 state stores global shortcuts and the pane-highlight preference. Older builds do not understand version-4 state; use a backup or a separate data directory for a downgrade.
+Older Fish/Pane5250 workspaces are migrated on load; do not run two versions against the same directory simultaneously. Version-5 state adds custom themes, font references, independent outline and pane-information settings while retaining profiles, shortcuts and tint preferences. Older builds do not understand version-5 state; use a backup or a separate data directory for a downgrade.
+
+The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
 ## Workspace and panes
 
@@ -63,13 +65,15 @@ The compact + Pane control adds the next tile. Layouts are deterministic: one fu
 
 Drag a pane header onto another pane to swap the sessions. The full target is previewed; dropping never subdivides a tile. Panes > Swap panes provides the keyboard equivalent. Drag a hairline divider, or use Decrease divider / Increase divider.
 
+If headers are hidden, Alt+drag on a terminal swaps panes without moving the host cursor. The terminal context menu and Panes menu retain pane actions.
+
 Pane X disconnects and removes its tile immediately; other panes reflow and stay connected. The last pane disconnects but remains as an empty tile. Closing the window is immediate and does not ask about unsent host edits.
 
 The empty pane contains a preset selector and the arrow Connect button directly to its right. New tiles preselect the last-used preset, but never auto-connect. Existing offline tiles remember their own preset.
 
 ## Focus and switching panes
 
-The selected pane has a physical-pixel outline. Its header, terminal and footer share one surface. Appearance > Tint selected pane background can be disabled for outline-only focus. OLED themes retain a true-black terminal background.
+The selected pane has an optional physical-pixel outline. View > Active pane outline or View > Pane information toggles it independently of Appearance > Tint selected pane background. Disabling the outline removes its border/insets, not just its color. Activating a different pane does not change spacing. Its header, terminal and footer share one surface; keyboard focus and the terminal cursor remain available with both outline and tint off. OLED themes retain a true-black terminal background.
 
 Panes > Next pane and Previous pane cycle focus. The defaults are Ctrl+Alt+Right and Ctrl+Alt+Left. To use Ctrl+Tab, open Edit > Shortcuts, find Next pane, select it, choose Record shortcut and press Ctrl+Tab. For reverse cycling, assign Ctrl+Shift+Tab to Previous pane.
 
@@ -91,7 +95,7 @@ Window changes scale the terminal rendering; only the host may switch between 24
 
 Session > Profiles manages saved workstations. New creates an offline preset; Duplicate copies settings but clears the requested device name and remembered-password flag to avoid collisions.
 
-A profile stores name, host, port, optional device name, username, authentication preferences, SBCS code page, host palette, text effect, zoom, host-key overrides and a saved layout. Application theme, global shortcuts, pane highlighting and last-used preset belong to the workspace.
+A profile stores name, host, port, optional device name, username, authentication preferences, SBCS code page, host palette, text effect, zoom, host-key overrides and a saved layout. Application/custom themes, terminal font, global shortcuts, outline, tint, pane-information preferences and last-used preset belong to the workspace.
 
 Save stores edits without connecting. Save & connect selects the profile and connects. Cancel discards unsaved edits after the profile editor's unsaved-edit prompt. That prompt is separate from pane/window closing, which has no confirmation.
 
@@ -137,7 +141,7 @@ Host colors, reverse video, underline, blink, separators and non-display attribu
 
 ## Input inhibition and Reset
 
-The footer reports connection, input state, cursor and host dimensions. A contextual Reset button appears for the core's recoverable local input error, such as rejected field input. Escape sends Reset by default.
+The optional footer reports connection, input state, cursor and host dimensions. A contextual Reset button appears for the core's recoverable local input error, such as rejected field input. When the footer is absent, Reset overlays a corner opposite the editing cursor without adding spacing or taking focus. It is keyboard reachable and disappears after recovery. Escape sends Reset by default.
 
 Reset does not silently submit Enter and must not unlock an unrelated host-busy condition. If the host has inhibited input while processing, wait for the host. A disconnected network cannot be repaired by Reset; reconnect after diagnosing the connection.
 
@@ -151,7 +155,7 @@ Escape sends Reset; Pause sends Attention; Shift+Escape sends System Request; Ct
 
 Page Up/Down send roll keys. Ctrl+Page Up/Down send horizontal roll actions. Tab/Shift+Tab move fields. Arrows move the cursor. Home, End, Insert, Delete, Backspace and Ctrl+End retain the core's corresponding editing actions.
 
-Host > Send host key offers the complete supported action list. Commands includes all host actions as well as application commands. Disabled actions remain disabled; sending an unavailable action never creates a fake host response.
+Host > Send host key offers the complete supported action list. Edit > Shortcuts lists those host actions and the application actions. Disabled actions remain disabled; sending an unavailable action never creates a fake host response.
 
 ## Global shortcut overrides
 
@@ -163,9 +167,9 @@ Overrides apply throughout this Fish workspace, across all profiles and panes. T
 
 Conflicts are rejected with an actionable explanation. Windows-key combinations, Alt+Space and Alt+F4 remain owned by Windows. Unmodified typing letters/numbers are not application shortcuts. A global host-action override replaces that action's original profile/default host bindings; it does not leave a second hidden binding active.
 
-If a new app binding conflicts with a host action, first unbind/reassign that host action in the same list, or change the profile-specific override that caused the collision. Fish never silently steals a mapped host key. Modal dialogs, the manual and command search keep their own text/navigation keys.
+If a new app binding conflicts with a host action, first unbind/reassign that host action in the same list, or change the profile-specific override that caused the collision. Fish never silently steals a mapped host key. Modal dialogs and the manual keep their own text/navigation keys.
 
-For manual entry, Swing stroke syntax is accepted, such as ctrl TAB, ctrl shift TAB or ctrl alt K. The displayed menu accelerators and command-palette labels update to the effective bindings.
+For manual entry, Swing stroke syntax is accepted, such as ctrl TAB, ctrl shift TAB or ctrl alt K. The displayed menu accelerators update to the effective bindings.
 
 ## Profile-specific host keyboard mappings
 
@@ -179,39 +183,65 @@ Profile-specific keys still apply unless their host action has been explicitly r
 
 Drag across the terminal to select a rectangular region. Shift+arrows extends keyboard selection. Right-click preserves the selection and opens Copy selection / screen and Paste into fields.
 
-Edit and Commands offer the same actions. Defaults are Ctrl+Alt+Shift+C and Ctrl+Alt+Shift+V. The Context Menu key opens the popup when it is not mapped to a host action. Ctrl+C/V and Shift+F10 are not newly claimed by clipboard support.
+Edit offers the same actions. Defaults are Ctrl+Alt+Shift+C and Ctrl+Alt+Shift+V. The Context Menu key opens the popup when it is not mapped to a host action. Ctrl+C/V and Shift+F10 are not newly claimed by clipboard support.
 
 Copy exports the selection, or the host screen when nothing is selected. Non-display data is omitted. Copy from an offline tile is unavailable.
 
 Paste inserts through field-aware editing, not through an unsafe raw core paste path. It respects protected/numeric fields, code-page representability, input inhibition and a 32,768-character limit. Unsupported/control/unrepresentable text is rejected before editing a prefix. A field rejection stops remaining paste.
 
-Tabs and newlines navigate without submitting Enter. Pasting never signs on or submits a transaction automatically. Review the pasted field data before pressing Enter yourself. Clipboard failures are reported in the pane footer; other applications can temporarily lock the Windows clipboard.
+Tabs and newlines navigate without submitting Enter. Pasting never signs on or submits a transaction automatically. Review the pasted field data before pressing Enter yourself. Clipboard failures are reported in the pane footer, or as a temporary notice if status information is hidden; other applications can temporarily lock the Windows clipboard.
 
-## Command palette and menus
+## Menus and action access
 
-Commands, or Ctrl+Alt+K by default, opens a searchable action list. Names, descriptions and aliases are searched: add pane, add window, new session and split find Add pane.
+The Commands window is removed. Session, Edit, Panes, View, Host and Help, the compact narrow-window menu, terminal context menu and configurable shortcuts reuse the same action handlers. Actions return focus to the intended pane and disabled actions remain disabled.
 
-Up/Down chooses an action, Enter runs it and Escape closes the palette. Shortcuts appear beside actions. Disabled actions stay disabled and empty results are explicit. Palette typing is isolated from host input.
-
-Actions return focus to the intended pane. The top-level menus, compact narrow-window menu, clipboard popup, shortcuts and palette reuse the same action handlers.
+Right-click a terminal for clipboard, Reset, connection and pane actions. View provides appearance, theme designer, fonts, pane information and animated-text controls. Host > Send host key retains every supported host action. No old Commands shortcut is silently redirected to a host key.
 
 ## Application themes, OLED and focus
 
-View > Appearance changes the complete application theme: Charcoal, Graphite, Midnight, Paper, OLED, OLED Amber, High Contrast and High Contrast Light. Menus, dialogs, commands, fields, disabled/hover/pressed states and window controls share the chosen tokens.
+View > Appearance changes the complete application theme: Charcoal, Graphite, Midnight, Paper, OLED, OLED Amber, High Contrast, High Contrast Light, Lagoon, Afterglow and Eye Saver. Lagoon is cool teal; Afterglow is a warm violet creative preset. Eye Saver is a muted warm low-glare palette, not a medical promise. Menus, dialogs, fields, disabled/hover/pressed states and window controls share the chosen tokens.
 
 Application themes are independent of host palettes. OLED themes use true-black terminal and chrome surfaces. High-contrast choices favor explicit boundaries and strong foreground contrast; Windows' own accessibility settings may also affect system-owned menus and installers.
 
-Tint selected pane background controls whole-pane background highlighting. Turn it off for an outline-only active pane. The outline retains constant layout insets and is snapped to a physical pixel; focusing a pane should not resize its content.
+Tint selected pane background controls whole-pane background highlighting. Turn it off for an outline-only active pane, or disable Active pane outline separately. The enabled outline is snapped to a physical pixel; focusing a pane never changes its layout insets.
 
 Theme and focus changes are immediate and persisted. They do not reconnect sessions or alter host dimensions.
+
+## Theme designer and saved custom themes
+
+Open View > Theme designer. Load a built-in preset or a saved custom theme, then enter a name and precise #RRGGBB values in the color table. Its semantic roles cover every owned UI color: surfaces, text, disabled/hover/pressed/focus/selection states, chrome and inactive controls, menus/tooltips, header/footer/statuses, outline/tint/dividers, cursor/terminal selection, all sixteen host slots, six effect-gradient stops, glow and the logo gradient.
+
+Preview applies the draft to the real application without saving. Cancel, Escape or closing the designer restores the applied theme. Save creates/updates a reusable custom theme; Save & apply also selects it. Saving edits to the currently active named theme updates that active theme. Load it again to edit; choose a different name to save a copy. Names are case-insensitively unique, replacements require confirmation when values differ, and up to 32 custom themes are supported.
+
+Malformed colors and incomplete themes are rejected with an explicit message. Contrast warnings are advisory: valid RGB values are never silently changed or blocked. Keep text, selection, cursor and host colors distinct yourself when designing a low-contrast or experimental palette.
+
+Selecting a built-in application theme preserves the saved custom-theme library. Built-in application themes continue to use each profile's host palette. An active custom theme owns all sixteen host colors and supersedes that built-in profile palette; optional active tint uses its separate color instead of host slot 0 for the active pane's background. Disable tint to use host slot 0 exactly. Profile effects, zoom and host attributes are unchanged. Custom gradient stops blend with each host foreground; reverse video and non-display behavior are preserved. Windows-owned system menus and installer surfaces remain controlled by Windows.
+
+## Terminal fonts and local custom fonts
+
+Open View > Fonts. The family list discovers actually installed fonts with equal printable-ASCII advances, prioritizing Cascadia Mono/Code, Consolas, Lucida Console, Courier New and available DejaVu/Liberation Mono faces. Automatic picks an available fixed-width face. Proportional fonts are not advertised as reliable terminal choices.
+
+Choose a family, or browse to a local monospaced TTF/OTF file. A custom file takes precedence; clear the path to use the family again. Check / preview font shows the actual regular face. Apply validates glyph coverage and that printable glyphs fit a cell for all current profiles' SBCS code pages. Unsupported font formats, proportional faces, missing files and missing/wide required glyphs are reported rather than silently accepted. Some OpenType formats may not be supported by Java's local font parser.
+
+The font setting is workspace-wide and persists across restart. Font files remain on your machine, at the selected path; Fish does not upload, bundle or install them. Moving/deleting a saved font causes a visible startup warning and an announced temporary Java Monospaced fallback. The saved choice is preserved so you can restore the file or choose another font.
+
+Glyphs remain positioned at exact fixed physical-pixel cell origins. Font changes refresh glyph/effect caches without reconnecting or changing the host's dimensions; fit and manual zoom still apply. UI/titlebar fonts remain the native regular UI font.
+
+## Pane information and zero-space rows
+
+View > Pane information controls header/footer visibility and each existing item: profile name, connection state, host, requested device, status/input message, host dimensions, cursor row:column and insert indicator. Outline and tint are separate controls in the same form. These preferences belong to the workspace, not a profile.
+
+A disabled row, or a row with no actual text, reserves zero vertical space. Close/connect/add/swap actions remain available through menus, shortcuts and the terminal context menu. Alt+drag swaps from the terminal when no header is shown.
+
+With no footer, a recoverable local input error shows a Reset corner overlay, not an empty band. It does not take input focus or submit Enter, and is never offered to unlock host-busy/disconnected states. Other errors remain visible in a temporary in-pane notice if status text is hidden.
 
 ## Host color palettes and text effects
 
 The profile or Appearance dialog selects Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid, Mint, Rose, OLED green or OLED amber. Each retains sixteen host color/attribute entries rather than collapsing everything into one decorative color.
 
-Text effects are None, Soft glow, Prism, Neon and Flux (animated). None is the default, using crisp final-resolution glyphs. Effects are opt-in and not a workaround for host compatibility.
+Text effects are None, Soft glow, Prism and Flux (animated). None is the default, using crisp final-resolution glyphs. Effects are opt-in and not a workaround for host compatibility. Neon was removed; saved Neon values migrate to None with a load notice.
 
-The top-left fish is a secret animated-text toggle for the active preset: Flux (animated) becomes None; any other effect becomes Flux (animated). A single mouse click waits for the system double-click interval; double-clicks and drags do not toggle it. Tab to the icon and press Space for immediate keyboard activation. Like Appearance, it saves the preset and refreshes other panes using that same preset. The logo no longer performs a temporary shimmer.
+The top-left fish is a secret animated-text toggle for the active preset: Flux (animated) becomes None; any other effect becomes Flux (animated). A single mouse click waits for the system double-click interval; double-clicks and drags do not toggle it. Tab to the icon and press Space for immediate keyboard activation. Keyboard focus has a subtle underline; mouse clicks leave no focus box. Like Appearance, it saves the preset and refreshes other panes using that same preset. The logo no longer performs a temporary shimmer.
 
 During connection setup a rotating ring replaces the middle preset controls or terminal view. It is progress, not a claim that sign-on has succeeded; connection status and failures remain in the footer. The pane X can cancel this pending connection. X is hidden only when the sole remaining pane is disconnected and showing the preset selector; keyboard/menu disconnect commands remain available.
 
@@ -229,7 +259,7 @@ At very small pane sizes, the screen must be small to fit. Increase the window, 
 
 ## Layout persistence and multiple instances
 
-Closing Fish saves window size, pane arrangement, profile selections, last-used preset, application theme, shortcuts and highlight preference. Next launch is offline; saved layouts do not imply an auto-connect.
+Closing Fish saves window size, pane arrangement, profile selections, last-used preset, application/custom themes, font reference, shortcuts, outline/tint and pane-information preferences. Next launch is offline; saved layouts do not imply an auto-connect.
 
 Panes > Save layout to profile and Restore profile layout preserve a profile-specific arrangement. Restoring/replacing a layout can close sessions removed from it. Old arbitrary layouts are normalized into bounded slots with a notice. Layouts over eight panes are rejected rather than silently truncated.
 

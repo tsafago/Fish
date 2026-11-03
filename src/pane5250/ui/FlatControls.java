@@ -5,6 +5,7 @@ import javax.swing.*;
 import javax.swing.plaf.*;
 import javax.swing.plaf.basic.*;
 import javax.swing.border.AbstractBorder;
+import pane5250.model.ColorRole;
 
 /** Small shared Swing delegates: flat surfaces, one border treatment, explicit focus. */
 public final class FlatControls {
@@ -32,7 +33,7 @@ public final class FlatControls {
             AbstractButton button=(AbstractButton)c;
             if (button.isContentAreaFilled() || button.getModel().isRollover() || button.getModel().isPressed()) {
                 g.setColor(!button.isEnabled() ? Ui.PANEL : button.getModel().isPressed()
-                        ? Ui.SELECTION : button.getModel().isRollover() ? Ui.HOVER : Ui.FIELD);
+                        ? Ui.color(ColorRole.PRESSED) : button.getModel().isRollover() ? Ui.HOVER : Ui.FIELD);
                 g.fillRect(0,0,c.getWidth(),c.getHeight());
             }
             super.paint(g,c);
@@ -42,7 +43,7 @@ public final class FlatControls {
             g.setColor(Ui.FOCUS); g.drawRect(2,2,b.getWidth()-5,b.getHeight()-5);
         }
         @Override protected void paintText(Graphics g,AbstractButton b,Rectangle text,String value) {
-            g.setColor(b.isEnabled() ? b.getForeground() : Ui.MUTED);
+            g.setColor(b.isEnabled() ? b.getForeground() : Ui.color(ColorRole.DISABLED));
             BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,Ui.mnemonicsVisible() ? b.getDisplayedMnemonicIndex() : -1,text.x,
                     text.y+g.getFontMetrics().getAscent());
         }
@@ -66,7 +67,10 @@ public final class FlatControls {
         @Override protected void paintText(Graphics g,JMenuItem item,Rectangle text,String value) { menuText(g,item,text,value); }
     }
     private static void menuText(Graphics g,JMenuItem item,Rectangle text,String value) {
-        g.setColor(item.isEnabled() ? item.getForeground() : Ui.MUTED);
+        boolean selected=item.getModel().isArmed() || item instanceof JMenu && item.getModel().isSelected();
+        g.setColor(!item.isEnabled() ? Ui.color(ColorRole.DISABLED)
+                : Ui.color(selected ? ColorRole.MENU_SELECTED_TEXT : item instanceof JMenu menu && menu.isTopLevelMenu()
+                ? ColorRole.CHROME_TEXT : ColorRole.MENU_TEXT));
         BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,Ui.mnemonicsVisible() ? item.getDisplayedMnemonicIndex() : -1,
                 text.x,text.y+g.getFontMetrics().getAscent());
     }
@@ -85,7 +89,7 @@ public final class FlatControls {
         @Override public void paintCurrentValue(Graphics g,Rectangle bounds,boolean focus) {
             Component value=comboBox.getRenderer().getListCellRendererComponent(listBox,comboBox.getSelectedItem(),-1,false,false);
             value.setFont(comboBox.getFont());
-            value.setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.MUTED);
+            value.setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.color(ColorRole.DISABLED));
             value.setBackground(Ui.FIELD);
             Ui.quality(g);
             currentValuePane.paintComponent(g,value,comboBox,bounds.x,bounds.y,bounds.width,bounds.height,true);
@@ -95,7 +99,7 @@ public final class FlatControls {
                 @Override public Component getListCellRendererComponent(JList<?> list,Object value,int index,boolean selected,boolean focus) {
                     super.getListCellRendererComponent(list,value,index,selected,focus);
                     setBorder(BorderFactory.createEmptyBorder(4,8,4,8));
-                    if (index < 0) { setBackground(Ui.FIELD); setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.MUTED); }
+                    if (index < 0) { setBackground(Ui.FIELD); setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.color(ColorRole.DISABLED)); }
                     return this;
                 }
             };
@@ -118,8 +122,8 @@ public final class FlatControls {
         @Override public BasicSplitPaneDivider createDefaultDivider() {
             BasicSplitPaneDivider divider=new BasicSplitPaneDivider(this) {
                 @Override public void paint(Graphics g) {
-                    g.setColor(Ui.BACKGROUND); g.fillRect(0,0,getWidth(),getHeight());
-                    g.setColor(Ui.LINE);
+                    g.setColor(Ui.color(ColorRole.DIVIDER_BACKGROUND)); g.fillRect(0,0,getWidth(),getHeight());
+                    g.setColor(Ui.color(ColorRole.DIVIDER));
                     if (getOrientation()==JSplitPane.HORIZONTAL_SPLIT)
                         g.drawLine(getWidth()/2,0,getWidth()/2,getHeight());
                     else g.drawLine(0,getHeight()/2,getWidth(),getHeight()/2);
@@ -154,7 +158,7 @@ public final class FlatControls {
             g.setColor(Ui.FIELD); g.fillRect(x+1,y+1,14,14);
             g.setColor(b.hasFocus() ? Ui.FOCUS : Ui.LINE); g.drawRect(x+1,y+1,14,14);
             if (b.isSelected()) {
-                g.setColor(b.isEnabled() ? Ui.FOCUS : Ui.MUTED);
+                g.setColor(b.isEnabled() ? Ui.FOCUS : Ui.color(ColorRole.DISABLED));
                 g.drawLine(x+4,y+8,x+7,y+11); g.drawLine(x+7,y+11,x+12,y+5);
             }
         }

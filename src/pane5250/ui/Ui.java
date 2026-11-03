@@ -5,22 +5,28 @@ import java.awt.event.*;
 import javax.swing.*;
 import javax.swing.border.*;
 import javax.swing.plaf.*;
-import pane5250.model.AppTheme;
+import pane5250.model.*;
 
 public final class Ui {
     public static Color BACKGROUND,PANEL,FIELD,HOVER,LINE,TEXT,MUTED,FOCUS,ERROR,SELECTION;
     private static AppTheme theme=AppTheme.Charcoal;
+    private static ColorTheme colors=ColorTheme.builtin(theme);
+    private static boolean custom;
     private static boolean altDown;
     private Ui() {}
     static { colors(theme); }
     private static Color color(int rgb) { return new ColorUIResource(rgb); }
     private static void colors(AppTheme value) {
         theme=value;
-        BACKGROUND=color(value.background); PANEL=color(value.panel); FIELD=color(value.field); HOVER=color(value.hover);
-        LINE=color(value.line); TEXT=color(value.text); MUTED=color(value.muted); FOCUS=color(value.focus);
-        ERROR=color(value.error); SELECTION=color(value.selection);
+        BACKGROUND=color(ColorRole.BACKGROUND); PANEL=color(ColorRole.PANEL); FIELD=color(ColorRole.FIELD); HOVER=color(ColorRole.HOVER);
+        LINE=color(ColorRole.LINE); TEXT=color(ColorRole.TEXT); MUTED=color(ColorRole.MUTED); FOCUS=color(ColorRole.FOCUS);
+        ERROR=color(ColorRole.ERROR); SELECTION=color(ColorRole.SELECTION);
     }
     public static AppTheme theme() { return theme; }
+    public static Color color(ColorRole role) { return color(colors.rgb(role)); }
+    public static ColorTheme colorTheme() { return colors; }
+    public static boolean customTheme() { return custom; }
+    public static boolean dark() { return (BACKGROUND.getRed()*.2126+BACKGROUND.getGreen()*.7152+BACKGROUND.getBlue()*.0722)<128; }
     public static void install() throws Exception {
         UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
@@ -34,7 +40,12 @@ public final class Ui {
     }
     public static boolean mnemonicsVisible() { return altDown || MenuSelectionManager.defaultManager().getSelectedPath().length>0; }
     public static void applyTheme(AppTheme value) {
+        applyTheme(value,null);
+    }
+    public static void applyTheme(AppTheme value,ColorTheme override) {
+        colors=override==null ? ColorTheme.builtin(value) : override; custom=override!=null;
         colors(value);
+        HostPalette.clear();
         Font font=new FontUIResource("Segoe UI",Font.PLAIN,12);
         for (Object key : java.util.Collections.list(UIManager.getDefaults().keys())) {
             if (key.toString().endsWith(".font")) UIManager.put(key,font);
@@ -44,19 +55,29 @@ public final class Ui {
                 "ScrollPane","Viewport","TextField","PasswordField","TextArea","Spinner","SplitPane","ToolTip",
                 "Table","TableHeader","EditorPane","TextPane","Tree"}) {
             UIManager.put(name+".background",PANEL); UIManager.put(name+".foreground",TEXT);
-            UIManager.put(name+".disabledForeground",MUTED);
-            UIManager.put(name+".disabledText",MUTED);
+            UIManager.put(name+".disabledForeground",color(ColorRole.DISABLED));
+            UIManager.put(name+".disabledText",color(ColorRole.DISABLED));
         }
         for (String name : new String[]{"TextField","PasswordField","TextArea","ComboBox","List","Table","EditorPane","TextPane","Tree"}) {
             UIManager.put(name+".background",FIELD);
-            UIManager.put(name+".selectionBackground",SELECTION); UIManager.put(name+".selectionForeground",TEXT);
+            UIManager.put(name+".selectionBackground",SELECTION); UIManager.put(name+".selectionForeground",color(ColorRole.SELECTION_TEXT));
             UIManager.put(name+".inactiveForeground",MUTED); UIManager.put(name+".caretForeground",FOCUS);
         }
         for (String name : new String[]{"Menu","MenuItem","CheckBoxMenuItem","RadioButtonMenuItem"}) {
-            UIManager.put(name+".selectionBackground",HOVER); UIManager.put(name+".selectionForeground",TEXT);
-            UIManager.put(name+".acceleratorForeground",MUTED); UIManager.put(name+".acceleratorSelectionForeground",TEXT);
+            UIManager.put(name+".background",color(ColorRole.MENU)); UIManager.put(name+".foreground",color(ColorRole.MENU_TEXT));
+            UIManager.put(name+".selectionBackground",color(ColorRole.MENU_HOVER));
+            UIManager.put(name+".selectionForeground",color(ColorRole.MENU_SELECTED_TEXT));
+            UIManager.put(name+".acceleratorForeground",MUTED);
+            UIManager.put(name+".acceleratorSelectionForeground",color(ColorRole.MENU_SELECTED_TEXT));
             UIManager.put(name+".border",new BorderUIResource.EmptyBorderUIResource(6,10,6,10));
         }
+        UIManager.put("PopupMenu.background",color(ColorRole.MENU));
+        UIManager.put("Panel.background",color(ColorRole.DIALOG));
+        UIManager.put("MenuBar.background",color(ColorRole.CHROME));
+        UIManager.put("ToolTip.background",color(ColorRole.TOOLTIP)); UIManager.put("ToolTip.foreground",color(ColorRole.TOOLTIP_TEXT));
+        UIManager.put("ToolTip.backgroundInactive",color(ColorRole.TOOLTIP));
+        UIManager.put("ToolTip.foregroundInactive",color(ColorRole.DISABLED));
+        UIManager.put("OptionPane.background",color(ColorRole.DIALOG));
         UIManager.put("ButtonUI",FlatControls.Button.class.getName());
         UIManager.put("LabelUI",FlatControls.Label.class.getName());
         UIManager.put("MenuBarUI","javax.swing.plaf.basic.BasicMenuBarUI");
@@ -94,6 +115,7 @@ public final class Ui {
         for (Window window : Window.getWindows()) {
             SwingUtilities.updateComponentTreeUI(window);
             refresh(window);
+            window.validate();
             window.repaint();
         }
     }
@@ -102,6 +124,8 @@ public final class Ui {
         if (component instanceof JComponent c) {
             if ("muted".equals(c.getClientProperty("theme.role"))) c.setForeground(MUTED);
             if ("error".equals(c.getClientProperty("theme.role"))) c.setForeground(ERROR);
+            if (c.getClientProperty("theme.foreground") instanceof ColorRole role) c.setForeground(color(role));
+            if (c.getClientProperty("theme.background") instanceof ColorRole role) c.setBackground(color(role));
         }
         if (component instanceof Workspace w) w.themeChanged();
         if (component instanceof SessionPane p) p.themeChanged();
@@ -114,6 +138,12 @@ public final class Ui {
     public static void role(JComponent component,String role) {
         component.putClientProperty("theme.role",role);
         component.setForeground(role.equals("error") ? ERROR : MUTED);
+    }
+    public static void foreground(JComponent component,ColorRole role) {
+        component.putClientProperty("theme.foreground",role); component.setForeground(color(role));
+    }
+    public static void background(JComponent component,ColorRole role) {
+        component.putClientProperty("theme.background",role); component.setBackground(color(role));
     }
     public static JButton button(String text,int mnemonic,Runnable action) {
         JButton button=new JButton(text); button.setMnemonic(mnemonic);
@@ -132,7 +162,11 @@ public final class Ui {
     public static void quality(Graphics graphics) {
         if (graphics instanceof Graphics2D g) {
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            Object hints=Toolkit.getDefaultToolkit().getDesktopProperty("awt.font.desktophints");
+            if (hints instanceof java.util.Map<?,?> map) {
+                for (var entry:map.entrySet()) if (entry.getKey() instanceof RenderingHints.Key key)
+                    g.setRenderingHint(key,entry.getValue());
+            } else g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
             g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
         }
     }
@@ -144,7 +178,7 @@ public final class Ui {
             try {
                 quality(g);
                 g.setStroke(new BasicStroke(1.35f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
-                g.translate(x,y); g.setColor(c.isEnabled() ? TEXT : MUTED);
+                g.translate(x,y); g.setColor(c.isEnabled() ? c.getForeground() : color(ColorRole.DISABLED));
                 if (kind.equals("close")) { g.drawLine(2,2,10,10); g.drawLine(10,2,2,10); }
                 else if (kind.equals("plus")) { g.drawLine(1,6,11,6); g.drawLine(6,1,6,11); }
                 else if (kind.equals("search")) { g.drawOval(1,1,7,7); g.drawLine(8,8,11,11); }
@@ -156,9 +190,7 @@ public final class Ui {
     }
     public static Border padding(int size) { return BorderFactory.createEmptyBorder(size,size,size,size); }
     public static Color paneBackground(boolean active) {
-        if (!active || (BACKGROUND.getRGB()&0xffffff)==0) return BACKGROUND;
-        return new Color((BACKGROUND.getRed()*24+FOCUS.getRed())/25,
-                (BACKGROUND.getGreen()*24+FOCUS.getGreen())/25,(BACKGROUND.getBlue()*24+FOCUS.getBlue())/25);
+        return color(active ? ColorRole.ACTIVE_TINT : ColorRole.BACKGROUND);
     }
 
     public static void decorate(JDialog dialog,Runnable dismiss) {

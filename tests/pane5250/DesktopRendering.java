@@ -178,7 +178,7 @@ public final class DesktopRendering {
         BufferedImage capture = robot.createScreenCapture(edt(window::getBounds));
         String scale = System.getProperty("sun.java2d.uiScale","native").replace('.','-');
         ImageIO.write(capture,"png",Path.of("build","desktop-render-" + (BASELINE ? "baseline-" : "")
-                +System.getProperty("pane5250.effect","None").toLowerCase(Locale.ROOT)+"-"+scale+".png").toFile());
+                +System.getProperty("pane5250.effect","None").toLowerCase(Locale.ROOT).replace(' ','-')+"-"+scale+".png").toFile());
         System.out.println(BASELINE ? "Baseline diagnostics recorded." : "PASS " + checks + " desktop rendering, resize and custom-window checks.");
     }
 

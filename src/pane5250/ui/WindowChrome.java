@@ -3,6 +3,7 @@ package pane5250.ui;
 import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
+import pane5250.model.ColorRole;
 
 /** Native Swing window mechanics without a second, system-colored title/menu row. */
 final class WindowChrome extends JPanel {
@@ -29,7 +30,7 @@ final class WindowChrome extends JPanel {
         this.menus=menus; this.tools=tools;
         caption=new LogoButton(toggleFlux);
         normalBounds = window.getBounds();
-        setBackground(Ui.PANEL);
+        setBackground(Ui.color(ColorRole.CHROME));
         setPreferredSize(new Dimension(300,HEIGHT));
         setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE));
         menus.setBorder(BorderFactory.createEmptyBorder());
@@ -46,7 +47,7 @@ final class WindowChrome extends JPanel {
         dragArea.setOpaque(false);
         dragArea.setName("window-drag-area");
         dragArea.getAccessibleContext().setAccessibleName("Window title; drag to move, double-click to maximize or restore");
-        keyboardHint.setForeground(Ui.MUTED);
+        Ui.foreground(keyboardHint,ColorRole.CHROME_INACTIVE);
         dragArea.add(keyboardHint);
         installMove(dragArea);
         add(dragArea,BorderLayout.CENTER);
@@ -115,16 +116,27 @@ final class WindowChrome extends JPanel {
     private void openCompactMenu() {
         JPopupMenu popup=new JPopupMenu();
         for (int i=0;i<menus.getMenuCount();i++) {
-            JMenu original=menus.getMenu(i), copy=new JMenu(original.getText());
-            for (Component item:original.getMenuComponents()) {
-                if (item instanceof JMenuItem command) copy.add(new JMenuItem(command.getAction()));
-                else if (item instanceof JSeparator) copy.addSeparator();
-            }
-            popup.add(copy);
+            popup.add(copyMenu(menus.getMenu(i)));
         }
         popup.show(menuButton,0,menuButton.getHeight());
     }
-    void themeChanged() { setBackground(Ui.PANEL); keyboardHint.setForeground(Ui.MUTED); setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE)); }
+    private static JMenu copyMenu(JMenu original) {
+        for (var listener:original.getMenuListeners()) listener.menuSelected(new javax.swing.event.MenuEvent(original));
+        JMenu copy=new JMenu(original.getText());
+        for (Component item:original.getMenuComponents()) {
+            if (item instanceof JMenu menu) copy.add(copyMenu(menu));
+            else if (item instanceof JMenuItem command) copy.add(copyItem(command));
+            else if (item instanceof JSeparator) copy.addSeparator();
+        }
+        return copy;
+    }
+    private static JMenuItem copyItem(JMenuItem original) {
+        if (original.getAction()!=null) return new JMenuItem(original.getAction());
+        JMenuItem copy=original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getText(),original.isSelected())
+                : new JMenuItem(original.getText());
+        copy.addActionListener(e -> original.doClick(0)); return copy;
+    }
+    void themeChanged() { setBackground(Ui.color(ColorRole.CHROME)); keyboardHint.setForeground(Ui.color(ColorRole.CHROME_INACTIVE)); setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE)); }
 
     private boolean isMaximized() { return (window.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0; }
     private void rememberNormal() {
@@ -241,8 +253,9 @@ final class WindowChrome extends JPanel {
         private final javax.swing.Timer click;
         private Point pressed;
         private boolean dragged;
+        private boolean keyboardFocus;
         LogoButton(Runnable toggleFlux) {
-            super(new FishIcon(32,24));
+            super(new FishIcon(27,20));
             Object interval=Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
             click=new javax.swing.Timer(interval instanceof Integer ms ? ms : 500,e -> toggleFlux.run());
             click.setRepeats(false);
@@ -252,10 +265,22 @@ final class WindowChrome extends JPanel {
             setToolTipText("Fish");
             getAccessibleContext().setAccessibleName("Toggle animated Flux text effect in active pane");
             addActionListener(e -> toggleFlux.run());
+            addFocusListener(new FocusAdapter() {
+                @Override public void focusGained(FocusEvent e) {
+                    keyboardFocus=e.getCause()==FocusEvent.Cause.TRAVERSAL_FORWARD || e.getCause()==FocusEvent.Cause.TRAVERSAL_BACKWARD
+                            || e.getCause()==FocusEvent.Cause.TRAVERSAL_UP || e.getCause()==FocusEvent.Cause.TRAVERSAL_DOWN;
+                    repaint();
+                }
+                @Override public void focusLost(FocusEvent e) { keyboardFocus=false; repaint(); }
+            });
+            addKeyListener(new KeyAdapter() {
+                @Override public void keyPressed(KeyEvent e) { keyboardFocus=true; repaint(); }
+            });
         }
         void cancelClick() { click.stop(); pressed=null; }
         @Override protected void processMouseEvent(MouseEvent event) {
             if (event.getID()==MouseEvent.MOUSE_PRESSED) {
+                keyboardFocus=false;
                 pressed=event.getPoint(); dragged=false;
                 if (event.getClickCount()>1) click.stop();
             }
@@ -280,7 +305,9 @@ final class WindowChrome extends JPanel {
             Graphics2D g=(Graphics2D)graphics.create();
             try {
                 getIcon().paintIcon(this,g,(getWidth()-getIcon().getIconWidth())/2,(getHeight()-getIcon().getIconHeight())/2);
-                if (hasFocus()) { g.setColor(Ui.FOCUS); g.drawRect(3,3,getWidth()-7,getHeight()-7); }
+                if (hasFocus() && keyboardFocus) {
+                    g.setColor(Ui.FOCUS); g.fillRect(getWidth()/2-7,getHeight()-4,14,1);
+                }
             } finally { g.dispose(); }
         }
     }
@@ -358,15 +385,16 @@ final class WindowChrome extends JPanel {
             try {
                 Ui.quality(g);
                 g.setColor(getModel().isRollover() || getModel().isPressed()
-                        ? kind.equals("close") ? Ui.ERROR : Ui.HOVER : Ui.PANEL);
+                        ? kind.equals("close") ? Ui.ERROR : Ui.HOVER : Ui.color(ColorRole.CHROME));
                 g.fillRect(0,0,getWidth(),getHeight());
-                g.setColor(kind.equals("close") && (getModel().isRollover() || getModel().isPressed()) ? Ui.BACKGROUND : Ui.TEXT);
+                g.setColor(kind.equals("close") && (getModel().isRollover() || getModel().isPressed()) ? Ui.BACKGROUND
+                        : Ui.color(window.isActive() ? ColorRole.CHROME_TEXT : ColorRole.CHROME_INACTIVE));
                 int x = (getWidth() - 10) / 2, y = (getHeight() - 10) / 2;
                 if (kind.equals("minimize")) g.drawLine(x,y + 7,x + 9,y + 7);
                 else if (kind.equals("close")) { g.drawLine(x,y,x + 9,y + 9); g.drawLine(x + 9,y,x,y + 9); }
                 else if (isMaximized()) {
-                    g.drawRect(x + 2,y,7,7); g.setColor(Ui.PANEL); g.fillRect(x,y + 2,8,8);
-                    g.setColor(Ui.TEXT); g.drawRect(x,y + 2,7,7);
+                    g.drawRect(x + 2,y,7,7); g.setColor(Ui.color(ColorRole.CHROME)); g.fillRect(x,y + 2,8,8);
+                    g.setColor(Ui.color(ColorRole.CHROME_TEXT)); g.drawRect(x,y + 2,7,7);
                 } else g.drawRect(x,y,9,9);
                 if (hasFocus()) { g.setColor(Ui.FOCUS); g.drawRect(3,3,getWidth() - 7,getHeight() - 7); }
             } finally { g.dispose(); }

@@ -41,17 +41,28 @@ secondary; there are no promotional surfaces, dashboard cards or AI controls.
 ## Colors
 
 `AppTheme` supplies complete Charcoal, Graphite, Midnight, Paper, OLED,
-OLED Amber, High Contrast and High Contrast Light token sets;
-`Ui` applies them to every owned UI route. `FlatControls` shares flat delegates
+OLED Amber, High Contrast, High Contrast Light, Lagoon, Afterglow and Eye Saver token sets;
+`ColorRole` inventories every semantic UI, host, effect and logo RGB role.
+`ColorTheme` supplies complete named maps; `Ui` applies them to every owned UI route.
+The Theme Designer previews transactionally and saves reusable workspace themes.
+Custom values are exact, with advisory contrast warnings rather than forced corrections.
+`FlatControls` shares flat delegates
 for buttons, combos, tabs, scrollbars and split dividers. `HostPalette` defines
 sixteen host colors independently, including darker foregrounds for Paper.
 Never collapse host color, reverse, underline, blink or non-display distinctions
 into an application accent. Twelve workstation palettes alter restrained
 entries, not the terminal's attribute semantics.
+An active custom theme owns all sixteen host slots; a built-in app theme leaves
+the profile palette in charge. Selection/cursor, six gradient stops, glow,
+active tint, outline and header/footer/status colors have separate roles.
 
 ## Typography
 
-Native controls use Segoe UI, terminal glyphs use an installed monospace face.
+Native controls use regular Segoe UI with Windows desktop font-rendering hints.
+Terminal fonts are discovered fixed-width families or a validated local TTF/OTF.
+Choices are workspace-wide; glyph coverage and cell widths are checked for the
+current code pages. A missing file produces an explicit temporary fallback,
+not loss of the saved choice. Fonts are not uploaded or bundled with releases.
 Each glyph is positioned on a host cell; proportional text layout must never
 replace the fixed grid. Fit derives font size from the actual pane and host
 dimensions. Glyphs are generated at an integer physical font size with snapped
@@ -70,7 +81,7 @@ horizontal insets. Display origins retain at least 12px horizontal and 10px
 vertical padding. Resizing does not resize the host's presentation space.
 The main window is undecorated: one 31px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
-menus/compact + Pane and Commands controls and three 36px window controls.
+menus/compact + Pane control and three 36px window controls.
 The leftmost mark is a true 45-degree square with its two left sides extended
 straight through the left corner to form one X and a triangular tail on the left.
 The tail tips end level with the square's top and bottom, without a line joining them.
@@ -79,15 +90,15 @@ The silhouette is 3:2 while the body retains equal side lengths and exactly 45-d
 There is exactly one crossing, no eye, mouth or stretched rhombus.
 A 3.4/64 stroke, uniform scale and the same geometry supply titlebar,
 runtime/taskbar and multi-resolution Windows executable icons. The titlebar alone
-uses a 32x24 drawing viewport inside its unchanged 48x30 focus/click target.
+uses a 27x20 drawing viewport inside its unchanged 48x30 focus/click target.
 Its compact mode follows measured menu/action widths while reserving a drag area.
 The borderless mark is a focusable button with balanced insets and keyboard
-focus indication. Single clicks toggle the active preset's persistent Flux (animated)/None
+focus indication as a subtle underline, never a mouse-click box. Single clicks toggle the active preset's persistent Flux (animated)/None
 effect; keyboard Space is immediate. The system double-click interval disambiguates
 mouse activation, so double-clicks/drags never toggle. No logo shimmer remains.
 The titlebar is 31 logical pixels tall, with all controls centered in its actual
 layout; native hit regions follow those bounds and scale to current client pixels.
-Pane and Commands use transparent resting surfaces and the same type/rhythm
+Pane controls use transparent resting surfaces and the same type/rhythm
 as menus, with modest monochrome icons, hover/pressed feedback and keyboard focus.
 They must not appear as persistent filled chips against the titlebar.
 The Fish-owned native bridge preserves standard overlapped resize/maximize
@@ -105,8 +116,8 @@ AWT, and hit regions are mapped from logical layout against current client size.
 ## Elevation & Depth
 
 Flat surfaces, subtle tonal separation, no decorative shadows. A translucent
-drop preview is temporary interaction feedback. Soft glow and Neon add obvious
-opt-in ink halos; Prism applies a column-wise hue gradient. Effects are
+drop preview is temporary interaction feedback. Soft glow adds opt-in ink halos;
+Prism applies a column-wise hue gradient. Effects are
 rasterized into tight opaque native-resolution row tiles with separate
 lit/blink-dim caches. Backgrounds and selection are
 composited before caching to avoid expensive transparent-image resampling.
@@ -142,21 +153,29 @@ because the combo has focus; focus stays on its border. Newly added panes select
 used preset; restored slots preserve their own selection. No visible A1/A2 IDs.
 One subtly tinted active surface spans header, terminal and
 footer; a constant-inset, physical-pixel outer focus border replaces the old terminal-only focus box
-and header underline. The optional pane-background tint can be disabled; OLED
+and header underline. The optional pane-background tint and active outline can be disabled independently;
+outline off means zero border insets/paint, not a transparent spacer. OLED
 remains true black. Activating a pane never replaces its border or reshow/validates
 an already-visible card. A terminal status line reports connection, inhibition,
 dimensions and cursor position, with Reset visible only for the core's actual
-recoverable input-error state. Enter is never remapped to recovery.
+recoverable input-error state. Header/footer visibility and all existing text
+items are workspace preferences. Empty/disabled rows reserve no space.
+Without a footer, Reset is a keyboard-reachable, non-focus-stealing corner
+overlay opposite the editing cursor. Hidden status errors use temporary notices.
+Host-busy/disconnected states never receive a false unlock. Alt+drag/context
+menus and keyboard actions remain available when headers are hidden.
+Enter is never remapped to recovery.
 Profile editing is a compact modal list and three-tab form; labels and mnemonics
 accompany controls. Owned forms, confirmations, errors and System Request
 prompts share custom draggable chrome, Escape dismissal and icon-free content.
 Custom window controls retain visible keyboard focus. Native Alt+Space is not
 shadowed by a second popup; Ctrl+Alt+Space exposes the dark window menu.
-Commands has an immediately visible entry point and Ctrl+Alt+K shortcut;
-search includes aliases, disabled actions remain disabled, and modal focus
-isolates host input. A single registry backs menus, palette and shortcuts. Every app/host action is
+The Commands window is removed. A single registry backs menus, terminal context
+menus and shortcuts; disabled actions remain disabled and modal focus isolates
+host input. Former Commands chords are retired no-ops until explicitly reassigned.
+Every app/host action is
 listed in the global shortcut editor, with recording, unbind/default controls,
-atomic conflict rejection and version-4 persistence. Window-scoped dispatch
+atomic conflict rejection and version-5 persistence. Window-scoped dispatch
 precedes Swing traversal/host input, so Ctrl+Tab works without taking keys in
 owned dialogs. Profile-specific host bindings are preserved unless the user
 explicitly reassigns that host action globally.

@@ -10,20 +10,21 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## UI sizing preview
+## Customization preview
 
-**Fish 0.4.3** reduces only the titlebar mark, preserving its click target and
-approved geometry. Preset selectors grow for longer names and use available
-width in smaller panes instead of collapsing prematurely. Titlebar compact
-mode follows measured control widths, and shared control insets are consistent.
+**Fish 0.5.0** adds a complete named-theme designer, Lagoon/Afterglow/Eye Saver
+application presets, discovered monospaced fonts and local TTF/OTF support.
+Header/footer content, active outline and active tint are independently
+configurable; empty information rows reserve no space. With no footer,
+recoverable input errors offer an in-pane Reset overlay without reflow.
 
-This preview includes the previously local 0.4.1/0.4.2 revisions: the cross-monitor native-caption correction and slightly
-taller titlebar. Its fish has a true square body whose left sides extend
-straight through its left corner to cross once and form the tail; clicking
-it toggles the active preset's **Flux (animated)** effect/None. Pane/Commands
-actions blend into the flat titlebar, connecting panes show a rotating ring,
-and the lone disconnected selection pane hides its redundant X.
-Downloads are available from the private repository's **v0.4.3 preview release**.
+The Commands window is removed; its actions remain in themed menus,
+terminal context menus and configurable shortcuts. Neon migrates explicitly
+to None. The titlebar-only fish is smaller, mouse clicks no longer leave a
+focus box, and keyboard focus uses a subtle underline. Its approved geometry,
+Flux/None toggle, click target, 31px chrome and native monitor handling remain.
+UI text uses Windows' desktop font hints without bitmap scaling.
+Downloads are available from the private repository's **v0.5.0 preview release**.
 It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
 available offline from **Help > Full manual / Getting Started**, with a
@@ -32,10 +33,10 @@ searchable full-text topic index.
 ## Install: no developer tools needed
 
 1. Open [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish) using an account with access.
-2. Download `Fish-0.4.3-setup.exe` and its matching `SHA256SUMS.txt`.
+2. Download `Fish-0.5.0-setup.exe` and its matching `SHA256SUMS.txt`.
 3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
 
-For a portable copy, extract `Fish-0.4.3-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.5.0-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -52,8 +53,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.4.3-setup.exe` | Install for the current Windows user |
-| `dist\Fish-0.4.3-windows-x64.zip` | Copy/extract a complete portable application |
+| `dist\Fish-0.5.0-setup.exe` | Install for the current Windows user |
+| `dist\Fish-0.5.0-windows-x64.zip` | Copy/extract a complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -64,7 +65,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current package is **Fish 0.4.3**. Keep the entire application-image directory together:
+The current package is **Fish 0.5.0**. Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe
@@ -140,7 +141,12 @@ host-hidden/reverse/blink preservation, and the minimal triangle/rhombus icon ge
 `StreamliningSmoke` adds global shortcut conflicts/dispatch, constant focus
 insets, outline-only persistence, the manual index and native Windows hit tests.
 It writes `build\fish-terminal-150.png` and `build\fish-empty-one.png`
-without showing a window or taking focus. A separately consented, bounded
+without showing a window or taking focus. `CustomizationSmoke` covers complete
+custom-theme save/preview/cancel/reload and role coverage, font validation/fixed
+cells, zero-space information rows, local Reset overlay/host-busy exclusion,
+outline off, Neon migration and removed Commands bindings. Its font fixture is
+private and deleted; it never touches the shared clipboard or credentials.
+A separately consented, bounded
 `StreamliningDesktop` pass verifies actual Ctrl+Tab recording, native side/quarter/top
 snapping and maximize/restore. It is not the full foreground stress suite.
 
@@ -151,11 +157,11 @@ It also creates, reads and removes a uniquely named **synthetic** Windows
 credential. It never connects to an IBM i. The rendered artifact is
 `build\workspace-test.png`. The additional real-desktop rendering/window suite
 captures `build\desktop-render-none-native.png` and
-`build\desktop-render-neon-native.png` and prints continuous-resize paint
+`build\desktop-render-soft-glow-native.png` and prints continuous-resize paint
 and event-thread latency measurements. It verifies background clearing against
 poisoned pixels, actual divider/header drags, all eight window resize directions,
 window controls, keyboard move/size, focus, and unchanged session connections
-and host dimensions, with effects off and Neon enabled. `UiRevisions.java`
+and host dimensions, with effects off and Soft glow enabled. `UiRevisions.java`
 is the historical 0.2.0 interaction script; its removal/confirmation/directional
 split assertions are superseded and it is not part of the Fish test command.
 
@@ -219,17 +225,16 @@ record/unbind/default controls and conflict validation. The same list is linked
 from **Profiles > Keyboard**. Assign **Ctrl+Tab** to Next pane and
 **Ctrl+Shift+Tab** to Previous pane to use familiar cycling. Overrides are
 global within this Fish workspace, not OS-wide. Modal UI stays isolated from
-host input. Menus/palette show effective bindings; conflicting host or reserved
+host input. Menus show effective bindings; conflicting host or reserved
 Windows keys are never silently stolen.
 
-**Commands** or **Ctrl+Alt+K** opens searchable commands with descriptions,
-shortcuts and aliases. Search `add pane`, `add window`, `new session`, `split`,
-`reset`, `theme` or a host key. Up/Down selects, Enter runs and Escape returns
-to the intended terminal. Disabled actions stay disabled; palette typing
-never edits host fields. Menus and palette use the same action handlers.
+The Commands window has been removed. Session, Edit, Panes, View, Host and Help
+retain the useful actions, backed by the same configurable shortcut registry.
+The old Ctrl+Alt+K chord and any saved Commands override are consumed as no-ops
+until explicitly assigned to another action, rather than leaking to host input.
 
 **Right-click the terminal** for Copy selection/screen and Paste, or use the
-**Edit** menu and search commands for `copy clipboard` / `paste clipboard`.
+**Edit** menu.
 Without a selection, Copy exports the visible host screen; drag or Shift+arrows
 selects a rectangle. The keyboard's Context Menu key opens the same popup when
 it is not assigned to a host action. Existing **Ctrl+Alt+Shift+C/V** shortcuts
@@ -275,7 +280,7 @@ legacy directory and lock instead, preserving existing profiles and passwords.
 The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored **offline** next launch.
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-4 state.
+preset are saved with version-5 state.
 Version-1/2/3 profiles and credentials are retained. Old freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. A legacy layout over eight panes is rejected explicitly
@@ -307,7 +312,7 @@ safe keys such as Ctrl+Tab. Profile-specific host mappings cannot claim Ctrl+Alt
 | Rectangular selection | Shift+arrows, or mouse drag |
 | Insert profile username / remembered password | Ctrl+Alt+U / Ctrl+Alt+Shift+P |
 | Host key chooser / application menu | Ctrl+Alt+F / Ctrl+Alt+M |
-| Search commands / appearance | Ctrl+Alt+K / Ctrl+Alt+T |
+| Appearance | Ctrl+Alt+T |
 | Dark window menu / standard Windows window menu | Ctrl+Alt+Space / Alt+Space |
 | Immediately close window and disconnect all | Alt+F4 |
 | Quit | Ctrl+Alt+Q |
@@ -334,28 +339,56 @@ Newlines and tabs navigate rather than sending Enter. Non-display text is
 masked in copy/export. Fit and zoom never alter host screen dimensions.
 
 For a recoverable terminal input error, a contextual **Reset** button appears
-in that pane's footer. It clears the core's actual local pre-help/error state
+in that pane's footer, or as a corner overlay when the footer is hidden.
+It clears the core's actual local pre-help/error state
 without submitting Enter. It is not offered as an unlock for host-busy or
 network failures. Enter retains its host meaning; Escape remains the default
 Reset key.
 
-**Appearance** offers eight persistent application themes: Charcoal, Graphite,
-Midnight, Paper, OLED, OLED Amber, High Contrast and High Contrast Light.
+**Appearance** offers eleven persistent application themes: Charcoal, Graphite,
+Midnight, Paper, OLED, OLED Amber, High Contrast, High Contrast Light, Lagoon,
+Afterglow and Eye Saver. Eye Saver is a warm low-glare palette, not a medical claim.
 They cover custom chrome, headers/footers, menus/popups,
 dialogs, fields, lists, tabs, selection, disabled/hover/pressed/focus states,
 dividers and text. Application themes are independent of workstation host
 palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid,
 Mint, Rose, OLED green and OLED amber. Host
 color/reverse/underline/blink/non-display distinctions remain intact.
-Optional Soft glow, column-gradient Prism, pronounced Neon and **Flux (animated)**
+**View > Theme designer** edits every semantic RGB role: surfaces, controls and
+states, chrome, menus/tooltips, header/footer/statuses, outline/tint/dividers,
+cursor/terminal selection, all sixteen host slots, six gradient stops, glow
+and logo colors. Preview is temporary; Cancel restores the applied theme.
+Save keeps a reusable named theme; Save & apply activates it. Editing an already
+active named theme updates that theme on Save. Duplicate names require explicit
+replacement confirmation; up to 32 custom themes are stored in the workspace.
+Valid colors are not silently contrast-corrected. When a custom theme is active,
+its host slots supersede the profile's built-in palette; other profile settings
+and host attributes are unchanged.
+
+**View > Fonts** discovers available regular monospaced families and accepts a
+local TTF/OTF file. Apply checks printable fixed-cell widths and the current
+profiles' code-page glyphs. Missing/unsupported files are reported explicitly;
+startup uses an announced temporary Monospaced fallback without erasing the
+saved choice. Font files stay local and must remain available at the saved path.
+They are not bundled, uploaded or copied into releases.
+
+**View > Pane information** independently controls each header/footer item and
+both rows, with no space for empty rows. Outline and tint are separate toggles.
+With a hidden header, use the terminal context menu, Panes menu or Alt+drag to
+swap. Workspace appearance settings apply across profiles; effects remain
+profile-specific.
+
+Optional Soft glow, column-gradient Prism and **Flux (animated)**
 effects are disabled by default. Choose **View > Appearance > Text effect >
-Flux (animated)**, or search Commands for **Flux animated text**, for smoothly
+Flux (animated)**, or **View > Flux animated text**, for smoothly
 flowing multicolor gradients. The effect is saved with the preset. Neutral host
 text carries the full color flow; chromatic text varies within its host hue
 family, reverse video retains its exact colors, and hidden data is never drawn.
 Selection, cursor and host blink remain distinct. Animation uses cached native
 glyphs and one shared coalescing 20fps clock; it stops for hidden, minimized,
 disconnected and disposed terminals. Choose None to stop the effect.
+Persisted Neon effects migrate to None with an explicit load notice; the rest
+of each profile is retained.
 
 Default glyphs are created at the final physical font
 size, with integer-pixel cells/origins and LCD antialiasing; text is not scaled

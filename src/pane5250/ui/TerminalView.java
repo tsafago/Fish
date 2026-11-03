@@ -12,12 +12,12 @@ import javax.accessibility.*;
 import javax.swing.*;
 import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.keyboard.KeyMnemonic;
-import pane5250.model.Profile;
+import pane5250.model.*;
 import static org.tn5250j.TN5250jConstants.*;
 
 public final class TerminalView extends JComponent implements Scrollable {
     private final SessionPane pane;
-    private final Font face;
+    private Font face;
     private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null,
             RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
     private Font inkFace;
@@ -27,7 +27,7 @@ public final class TerminalView extends JComponent implements Scrollable {
     private int effectResolution;
     private Color effectBackground;
     private int effectAnchor,effectEnd;
-    private final double nominalWidth,nominalHeight;
+    private double nominalWidth,nominalHeight;
     private double baseWidth,baseHeight,ascent;
     private RenderFrame rendered;
     private Screen5250 renderedScreen;
@@ -59,13 +59,7 @@ public final class TerminalView extends JComponent implements Scrollable {
 
     public TerminalView(SessionPane pane) {
         this.pane = pane;
-        String[] fonts = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames();
-        String family = java.util.Arrays.asList(fonts).contains("Cascadia Mono") ? "Cascadia Mono"
-                : java.util.Arrays.asList(fonts).contains("Consolas") ? "Consolas" : Font.MONOSPACED;
-        face = new Font(family, Font.PLAIN, 16);
-        nominalWidth=face.getStringBounds("M",TEXT_CONTEXT).getWidth();
-        nominalHeight=face.getLineMetrics("M",TEXT_CONTEXT).getHeight();
-        configureInk(metrics(16));
+        fontChanged();
         setBackground(Ui.BACKGROUND);
         setForeground(Ui.TEXT);
         setOpaque(true);
@@ -112,15 +106,19 @@ public final class TerminalView extends JComponent implements Scrollable {
             }
         });
         MouseAdapter mouse = new MouseAdapter() {
+            private boolean paneDrag;
             @Override public void mousePressed(MouseEvent event) {
                 if (popup(event)) return;
                 if (!SwingUtilities.isLeftMouseButton(event)) return;
                 requestFocusInWindow();
+                paneDrag=event.isAltDown();
+                if (paneDrag) return;
                 anchor = end = position(event.getPoint());
                 dragging = false;
                 repaint();
             }
             @Override public void mouseDragged(MouseEvent event) {
+                if (paneDrag) return;
                 end = position(event.getPoint());
                 dragging = true;
                 repaint();
@@ -128,6 +126,7 @@ public final class TerminalView extends JComponent implements Scrollable {
             @Override public void mouseReleased(MouseEvent event) {
                 if (popup(event)) return;
                 if (!SwingUtilities.isLeftMouseButton(event)) return;
+                if (paneDrag) { paneDrag=false; return; }
                 if (!dragging && pane.screen() != null && pane.connected()) {
                     pane.screen().moveCursor(end);
                     anchor = end = -1;
@@ -191,8 +190,17 @@ public final class TerminalView extends JComponent implements Scrollable {
     }
     public void setFit(boolean value) { fit = value; revalidate(); repaint(); }
     public boolean isFit() { return fit; }
-    public void screenChanged() { rendered = null; litEffect=dimEffect=null; updateAnimation(); repaint(); }
-    public void themeChanged() { setBackground(pane.getBackground()); screenChanged(); }
+    public void screenChanged() { rendered = null; litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); repaint(); }
+    public void themeChanged() {
+        setBackground(Ui.customTheme() ? Ui.color(ColorRole.HOST_0) : pane.getBackground()); screenChanged();
+    }
+    public void fontChanged() {
+        face=pane.workspaceFont();
+        nominalWidth=face.getStringBounds("M",TEXT_CONTEXT).getWidth();
+        nominalHeight=face.getLineMetrics("M",TEXT_CONTEXT).getHeight();
+        fontMetrics.clear(); fontPixels=0; configureInk(metrics(16)); revalidate();
+        if (blink!=null) screenChanged();
+    }
     public void resetSelection() { anchor = end = -1; repaint(); }
 
     public String visibleText() {
@@ -335,7 +343,7 @@ public final class TerminalView extends JComponent implements Scrollable {
             } finally { cells.dispose(); }
             if (hasFocus() && pane.connected() && screen.isCursorActive() && phase) {
                 int pos = Math.min(screen.getCurrentPos() - 1, rows * cols - 1);
-                g.setColor(Ui.FOCUS);
+                g.setColor(Ui.color(ColorRole.CURSOR));
                 g.draw(new Rectangle2D.Double(originX + pos % cols * cellWidth,
                         originY + pos / cols * cellHeight, Math.max(1, cellWidth - 1), Math.max(1, cellHeight - 1)));
             }
@@ -367,7 +375,7 @@ public final class TerminalView extends JComponent implements Scrollable {
         }
         if (anchor>=0 && end>=0) {
             int left=Math.min(anchor%cols,end%cols),top=Math.min(anchor/cols,end/cols);
-            cells.setColor(Ui.SELECTION);
+            cells.setColor(Ui.color(ColorRole.TERMINAL_SELECTION));
             cells.fill(new Rectangle2D.Double(left*baseWidth,top*baseHeight,
                     (Math.abs(anchor%cols-end%cols)+1)*baseWidth,(Math.abs(anchor/cols-end/cols)+1)*baseHeight));
         }
@@ -416,17 +424,20 @@ public final class TerminalView extends JComponent implements Scrollable {
             Color foreground=palette[run.foreground];
             if (run.glyphs!=null) {
                 float x=(float)(run.inkStart*baseWidth), y=(float)(run.row*baseHeight+ascent);
-                if ((effect.equals("Soft glow") || effect.equals("Neon")) && run.background==0) {
-                    float radius=effect.equals("Neon") ? 1.8f : 1.0f;
-                    cells.setColor(new Color(foreground.getRed(),foreground.getGreen(),foreground.getBlue(),effect.equals("Neon") ? 110 : 80));
+                if (effect.equals("Soft glow") && run.background==0) {
+                    float radius=1;
+                    Color glow=Ui.customTheme() ? Ui.color(ColorRole.GLOW) : foreground;
+                    cells.setColor(new Color(glow.getRed(),glow.getGreen(),glow.getBlue(),80));
                     cells.drawGlyphVector(run.glyphs,x-radius,y); cells.drawGlyphVector(run.glyphs,x+radius,y);
                     cells.drawGlyphVector(run.glyphs,x,y-radius); cells.drawGlyphVector(run.glyphs,x,y+radius);
                 }
                 cells.setColor(foreground);
                 if (effect.equals("Prism") && run.background==0) {
                     float[] hsb=Color.RGBtoHSB(foreground.getRed(),foreground.getGreen(),foreground.getBlue(),null);
-                    Color shifted=Color.getHSBColor((hsb[0]+.26f)%1,Math.max(.35f,hsb[1]),hsb[2]);
-                    cells.setPaint(new GradientPaint(0,0,foreground,(float)(cols*baseWidth),0,shifted));
+                    Color shifted=Ui.customTheme() ? effectColor(foreground,.5)
+                            : Color.getHSBColor((hsb[0]+.26f)%1,Math.max(.35f,hsb[1]),hsb[2]);
+                    cells.setPaint(new GradientPaint(0,0,Ui.customTheme() ? effectColor(foreground,0) : foreground,
+                            (float)(cols*baseWidth),0,shifted));
                 }
                 if (effect.equals(Profile.FLUX) && run.background==0) cells.setPaint(fluxPaints[run.foreground]);
                 cells.drawGlyphVector(run.glyphs,x,y);
@@ -441,7 +452,7 @@ public final class TerminalView extends JComponent implements Scrollable {
     private void prepareFlux(Color[] palette,int cols) {
         int width=Math.max(1,(int)(cols*baseWidth));
         if (fluxPaints!=null && paintedFluxPhase==fluxPhase && fluxPalette==palette && fluxWidth==width
-                && getBackground().equals(fluxBackground) && Ui.SELECTION.equals(fluxSelection)) return;
+                && getBackground().equals(fluxBackground) && Ui.color(ColorRole.TERMINAL_SELECTION).equals(fluxSelection)) return;
         fluxPaints=new Paint[palette.length];
         for (RenderRun run:rendered.runs) {
             int color=run.foreground;
@@ -454,7 +465,7 @@ public final class TerminalView extends JComponent implements Scrollable {
                 float hue=hsb[1]<.22f ? (float)(FLUX_STOPS[step]+.12*wave) : hsb[0]+(float)(.065*wave);
                 hue=(float)(hue-Math.floor(hue));
                 Color ink=Color.getHSBColor(hue,hsb[1]<.22f ? .72f : hsb[1],hsb[2]*(float)(.9+.1*wave));
-                stops[step]=readableFlux(ink);
+                stops[step]=Ui.customTheme() ? effectColor(palette[color],fluxPhase+FLUX_STOPS[step]) : readableFlux(ink);
             }
             float startX=(float)(width*.65*(2*fluxPhase-1)),startY=(float)(width*.12*(2*fluxPhase-1));
             fluxPaints[color]=new LinearGradientPaint(new Point2D.Float(startX,startY),
@@ -463,11 +474,19 @@ public final class TerminalView extends JComponent implements Scrollable {
                     new AffineTransform());
         }
         fluxPalette=palette; fluxWidth=width; paintedFluxPhase=fluxPhase;
-        fluxBackground=getBackground(); fluxSelection=Ui.SELECTION;
+        fluxBackground=getBackground(); fluxSelection=Ui.color(ColorRole.TERMINAL_SELECTION);
+    }
+    private Color effectColor(Color host,double position) {
+        double wrapped=(position-Math.floor(position))*6;
+        int index=(int)wrapped;
+        Color first=Ui.color(ColorRole.valueOf("GRADIENT_"+(index+1)));
+        Color next=Ui.color(ColorRole.valueOf("GRADIENT_"+((index+1)%6+1)));
+        int gradient=ColorTheme.mix(first.getRGB(),next.getRGB(),wrapped-index);
+        return new Color(ColorTheme.mix(host.getRGB(),gradient,.5));
     }
     private Color readableFlux(Color ink) {
-        int target=Ui.theme().dark ? 255 : 0;
-        while (contrast(ink,getBackground())<4.6 || contrast(ink,Ui.SELECTION)<4.6) {
+        int target=Ui.dark() ? 255 : 0;
+        while (contrast(ink,getBackground())<4.6 || contrast(ink,Ui.color(ColorRole.TERMINAL_SELECTION))<4.6) {
             Color adjusted=new Color((ink.getRed()*4+target)/5,(ink.getGreen()*4+target)/5,(ink.getBlue()*4+target)/5);
             if (adjusted.equals(ink)) return Ui.TEXT;
             ink=adjusted;

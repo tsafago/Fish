@@ -2,15 +2,24 @@ package pane5250.ui;
 
 import java.awt.Color;
 import java.util.*;
-import pane5250.model.AppTheme;
+import pane5250.model.ColorRole;
 
 public final class HostPalette {
     private static final Map<String,Color[]> CACHE=new HashMap<>();
     private HostPalette() {}
     public static Color[] colors(String name) {
+        if (Ui.customTheme()) {
+            String key="custom/"+Ui.colorTheme().hashCode();
+            return CACHE.computeIfAbsent(key,ignored -> {
+                Color[] colors=new Color[16];
+                for (int i=0;i<16;i++) colors[i]=Ui.color(ColorRole.valueOf("HOST_"+i));
+                return colors;
+            });
+        }
         String key=Ui.theme().name()+"/"+name;
         return CACHE.computeIfAbsent(key,ignored -> build(name));
     }
+    public static void clear() { CACHE.clear(); }
     private static Color[] build(String name) {
         int[] values=Ui.theme().dark
                 ? new int[]{0,0x8daefa,0x9bdb98,0x84d9df,0xf69b9b,0xd8a0db,0xe3d78c,0xe4e5df,

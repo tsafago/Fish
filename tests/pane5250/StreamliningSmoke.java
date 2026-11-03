@@ -199,12 +199,12 @@ public final class StreamliningSmoke {
                 JButton logo=(JButton)field(chrome,"caption");
                 check(logo.isFocusable() && logo.getAccessibleContext().getAccessibleName().contains("animated Flux"),
                         "Secret logo button is keyboard-accessible and names its effect action.");
-                check(logo.getIcon().getIconWidth()==32 && logo.getIcon().getIconHeight()==24
+                check(logo.getIcon().getIconWidth()==27 && logo.getIcon().getIconHeight()==20
                         && logo.getWidth()==48 && logo.getHeight()==30,
                         "Only the titlebar drawing shrinks, with uniform aspect and unchanged 48x30 keyboard/click target.");
                 Container tools=(Container)field(chrome,"tools");
                 check(Arrays.stream(tools.getComponents()).allMatch(c -> c instanceof JButton b && !b.isContentAreaFilled()),
-                        "Pane/Commands toolbar actions rest on the chrome surface, without separate chip backgrounds.");
+                        "Pane toolbar action rests on the chrome surface, without separate chip backgrounds.");
                 Rectangle logoBounds=SwingUtilities.convertRectangle(logo.getParent(),logo.getBounds(),workspace);
                 check((int)hit.invoke(null,handle,(int)(logoBounds.getCenterX()*dpi),(int)(logoBounds.getCenterY()*dpi))==1,
                         "Logo clicks belong to the client button, never native window dragging.");

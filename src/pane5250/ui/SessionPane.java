@@ -28,6 +28,21 @@ public final class SessionPane extends JPanel {
     private final TerminalView view;
     private final JPanel body=new JPanel(new CardLayout()),empty=new JPanel(new GridBagLayout());
     private final JPanel loading=new JPanel(new GridBagLayout());
+    private final JLayeredPane stage=new JLayeredPane() {
+        @Override public void doLayout() {
+            body.setBounds(0,0,getWidth(),getHeight());
+            if (reset.getParent()==this) {
+                Dimension size=reset.getPreferredSize();
+                boolean bottom=screen()==null || screen().getCurrentRow()<screen().getRows()/2;
+                reset.setBounds(Math.max(4,getWidth()-size.width-10),bottom ? Math.max(4,getHeight()-size.height-10) : 10,
+                        Math.min(size.width,Math.max(0,getWidth()-8)),size.height);
+            }
+            Dimension size=noticeOverlay.getPreferredSize();
+            noticeOverlay.setBounds(8,8,Math.max(0,Math.min(size.width,getWidth()-16)),size.height);
+        }
+    };
+    private final JLabel noticeOverlay=new JLabel();
+    private final javax.swing.Timer noticeClock=new javax.swing.Timer(6500,e -> noticeOverlay.setVisible(false));
     private final ConnectionSpinner spinner=new ConnectionSpinner();
     private final JComboBox<Profile> presets=new JComboBox<>();
     private final JButton connectButton;
@@ -48,13 +63,18 @@ public final class SessionPane extends JPanel {
         refreshKeys();
         setMinimumSize(new Dimension(70,70));
         setBorder(new javax.swing.border.AbstractBorder() {
-            @Override public Insets getBorderInsets(Component c) { return new Insets(1,1,1,1); }
+            @Override public Insets getBorderInsets(Component c) {
+                int size=workspace.appearanceSettings().outline() ? 1 : 0; return new Insets(size,size,size,size);
+            }
+            @Override public Insets getBorderInsets(Component c,Insets insets) {
+                int size=workspace.appearanceSettings().outline() ? 1 : 0; insets.set(size,size,size,size); return insets;
+            }
             @Override public void paintBorder(Component c,Graphics graphics,int x,int y,int width,int height) {
-                if (workspace.active()!=SessionPane.this) return;
+                if (!workspace.appearanceSettings().outline() || workspace.active()!=SessionPane.this) return;
                 Graphics2D g=(Graphics2D)graphics.create();
                 try {
                     double scale=g.getTransform().getScaleX();
-                    g.setColor(Ui.FOCUS); g.setStroke(new BasicStroke((float)(1/scale)));
+                    g.setColor(Ui.color(ColorRole.OUTLINE)); g.setStroke(new BasicStroke((float)(1/scale)));
                     double left=(Math.floor(x*scale)+.5)/scale,top=(Math.floor(y*scale)+.5)/scale;
                     double right=(Math.floor((x+width)*scale)-.5)/scale,bottom=(Math.floor((y+height)*scale)-.5)/scale;
                     g.draw(new java.awt.geom.Rectangle2D.Double(left,top,right-left,bottom-top));
@@ -111,7 +131,6 @@ public final class SessionPane extends JPanel {
         body.add(empty,"offline");
         loading.add(spinner);
         body.add(loading,"connecting");
-        add(body,BorderLayout.CENTER);
         refreshPresets();
         oia.setFont(new Font("Consolas",Font.PLAIN,11));
         oia.setForeground(Ui.MUTED);
@@ -123,6 +142,10 @@ public final class SessionPane extends JPanel {
         reset.setBorder(BorderFactory.createEmptyBorder(2,8,2,8));
         reset.setVisible(false); footer.add(reset,BorderLayout.EAST);
         add(footer, BorderLayout.SOUTH);
+        stage.add(body,JLayeredPane.DEFAULT_LAYER);
+        noticeOverlay.setOpaque(true); noticeOverlay.setBorder(Ui.padding(6)); noticeOverlay.setVisible(false);
+        stage.add(noticeOverlay,JLayeredPane.PALETTE_LAYER); add(stage,BorderLayout.CENTER);
+        noticeClock.setRepeats(false);
         view.setFit(profile.zoom() == 1);
         installDrag();
         themeChanged();
@@ -134,12 +157,13 @@ public final class SessionPane extends JPanel {
     public Keymap keys() { return keys; }
     public void refreshKeys() { keys=new Keymap(profile.keymap(),workspace.reassignedHostActions()); }
     public TerminalView view() { return view; }
+    public Font workspaceFont() { return workspace.terminalFont(); }
     public boolean connected() { return network != null && network.isConnected(); }
     public boolean busy() { return connecting || connected(); }
     public void activate() { workspace.activate(this); }
     public JPopupMenu clipboardMenu() { return workspace.clipboardMenu(this); }
     public void focusTerminal() {
-        if (connecting) close.requestFocusInWindow();
+        if (connecting && close.isShowing()) close.requestFocusInWindow();
         else if (core==null) presets.requestFocusInWindow();
         else view.requestFocusInWindow();
     }
@@ -160,15 +184,26 @@ public final class SessionPane extends JPanel {
     }
     public void updateHeader() {
         boolean active=workspace.active()==this;
-        title.setText(profile.name());
-        title.setForeground(active ? Ui.TEXT : Ui.MUTED);
+        Appearance.PaneInfo info=workspace.appearanceSettings().info();
+        title.setText(info.profile() ? profile.name() : "");
+        title.setForeground(Ui.color(active ? ColorRole.HEADER_TEXT : ColorRole.HEADER_MUTED));
         Color surface=Ui.paneBackground(active && workspace.highlightActive());
-        setBackground(surface); header.setBackground(surface); footer.setBackground(surface);
+        setBackground(surface);
+        header.setBackground(!Ui.customTheme() && active && workspace.highlightActive() ? surface : Ui.color(ColorRole.HEADER));
+        footer.setBackground(!Ui.customTheme() && active && workspace.highlightActive() ? surface : Ui.color(ColorRole.FOOTER));
         body.setBackground(surface); empty.setBackground(surface); loading.setBackground(surface);
-        connection.setForeground(active ? Ui.TEXT : Ui.MUTED);
-        view.setBackground(surface);
-        if (view.getParent() instanceof JViewport viewport) viewport.setBackground(surface);
-        connection.setText(connecting ? "Connecting" : connected() ? "TCP " + profile.host() : "Offline");
+        connection.setForeground(Ui.color(active ? ColorRole.HEADER_TEXT : ColorRole.HEADER_MUTED));
+        Color terminalSurface=Ui.customTheme() && !(active && workspace.highlightActive()) ? Ui.color(ColorRole.HOST_0) : surface;
+        view.setBackground(terminalSurface);
+        if (view.getParent() instanceof JViewport viewport) viewport.setBackground(terminalSurface);
+        java.util.List<String> parts=new ArrayList<>();
+        if (info.connection()) parts.add(connecting ? "Connecting" : connected() ? "TCP" : "Offline");
+        if (info.host()) parts.add(profile.host());
+        if (info.device() && !profile.device().isEmpty()) parts.add(profile.device());
+        connection.setText(String.join("  ",parts));
+        header.setVisible(info.header() && (!title.getText().isBlank() || !connection.getText().isBlank()));
+        title.setVisible(info.profile()); connection.setVisible(!connection.getText().isEmpty());
+        noticeOverlay.setBackground(Ui.color(ColorRole.FOOTER)); noticeOverlay.setForeground(Ui.color(ColorRole.STATUS_ERROR));
         close.getAccessibleContext().setAccessibleName("Close pane "+profile.name());
         boolean restoreFocus=close.isFocusOwner() && shownCard.equals("connecting");
         close.setVisible(busy() || workspace.hasMultiplePanes());
@@ -182,7 +217,8 @@ public final class SessionPane extends JPanel {
         if (!card.equals(shownCard)) { ((CardLayout)body.getLayout()).show(body,card); shownCard=card; }
         spinner.updateAnimation();
         if (restoreFocus && !connecting) focusTerminal();
-        getAccessibleContext().setAccessibleName(title.getText());
+        getAccessibleContext().setAccessibleName(profile.name());
+        revalidate();
         repaint();
         updateOia();
     }
@@ -305,7 +341,7 @@ public final class SessionPane extends JPanel {
         view.screenChanged();
     }
     public void reconnect() { disconnect(); connect(); }
-    public void dispose() { disposed = true; spinner.updateAnimation(); disconnect(); view.dispose(); }
+    public void dispose() { disposed = true; noticeClock.stop(); spinner.updateAnimation(); disconnect(); view.dispose(); }
 
     private final class ConnectionSpinner extends JComponent {
         private double angle;
@@ -369,25 +405,43 @@ public final class SessionPane extends JPanel {
     public void problem(String message) {
         if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(() -> problem(message)); return; }
         notice = message;
-        oia.setText(message);
+        updateOia();
         oia.setToolTipText(message);
-        oia.setForeground(Ui.ERROR);
+        oia.setForeground(Ui.color(ColorRole.STATUS_ERROR));
+        if (!footer.isVisible() || !workspace.appearanceSettings().info().status()) {
+            noticeOverlay.setText(message); noticeOverlay.setToolTipText(message);
+            noticeOverlay.setVisible(true); stage.doLayout(); noticeClock.restart();
+        }
     }
     private void updateOia() {
         if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(this::updateOia); return; }
         Screen5250 screen = screen();
-        String dimensions = screen == null ? "" : "  " + screen.getRows() + "x" + screen.getColumns()
-                + "  " + screen.getCurrentRow() + ":" + screen.getCurrentCol();
+        Appearance.PaneInfo info=workspace.appearanceSettings().info();
+        String dimensions = screen == null ? "" : (info.dimensions() ? "  " + screen.getRows() + "x" + screen.getColumns() : "")
+                + (info.cursor() ? "  " + screen.getCurrentRow() + ":" + screen.getCurrentCol() : "");
         String state = screen == null || !connected() ? notice : screen.getOIA().isKeyBoardLocked()
                 ? recoverableInputError() ? "Input error - Reset to continue" : "Waiting for host - input inhibited"
-                : notice + (screen.getOIA().isInsertMode() ? "  INS" : "");
+                : notice;
         if (screen != null && screen.getOIA().getInhibitedText() != null && screen.getOIA().isKeyBoardLocked())
             state += "  " + screen.getOIA().getInhibitedText();
-        oia.setText(state + dimensions);
+        String text=(info.status() ? state : "")+dimensions
+                +(screen!=null && info.insert() && screen.getOIA().isInsertMode() ? "  INS" : "");
+        oia.setText(text.strip());
+        boolean wasVisible=footer.isVisible();
+        footer.setVisible(info.footer() && !text.isBlank());
+        if (wasVisible!=footer.isVisible()) revalidate();
         oia.setToolTipText(state + dimensions);
-        oia.setForeground(recoverableInputError() || notice.startsWith("Disconnected -") ? Ui.ERROR
-                : workspace.active()==this ? Ui.TEXT : Ui.MUTED);
+        oia.setForeground(Ui.color(recoverableInputError() || notice.startsWith("Disconnected -") ? ColorRole.STATUS_ERROR
+                : screen!=null && screen.getOIA().isKeyBoardLocked() ? ColorRole.STATUS_WAIT : ColorRole.FOOTER_TEXT));
+        boolean inline=footer.isVisible();
+        Container target=inline ? footer : stage;
+        if (reset.getParent()!=target) {
+            reset.getParent().remove(reset);
+            if (inline) footer.add(reset,BorderLayout.EAST); else stage.add(reset,JLayeredPane.MODAL_LAYER);
+            footer.revalidate();
+        }
         reset.setVisible(recoverableInputError());
+        stage.doLayout();
         workspace.refreshCommands();
     }
 
@@ -542,6 +596,11 @@ public final class SessionPane extends JPanel {
         };
         header.addMouseListener(drag);
         header.addMouseMotionListener(drag);
+        view.addMouseMotionListener(new MouseMotionAdapter() {
+            @Override public void mouseDragged(MouseEvent e) {
+                if (e.isAltDown()) view.getTransferHandler().exportAsDrag(view,e,TransferHandler.MOVE);
+            }
+        });
         title.addMouseListener(new MouseAdapter() {
             @Override public void mousePressed(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(title,e,header)); }
             @Override public void mouseReleased(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(title,e,header)); }

@@ -36,6 +36,9 @@ public final class Workspace extends JFrame {
     private final boolean demonstration;
     private boolean closing;
     private boolean highlightActive;
+    private Appearance appearance;
+    private Font terminalFont;
+    private String fontNotice="";
     private final AppShortcuts shortcuts;
     private final WindowChrome chrome;
     private Runnable afterClose = () -> {};
@@ -45,11 +48,13 @@ public final class Workspace extends JFrame {
         setUndecorated(true);
         setIconImages(FishIcon.images());
         getAccessibleContext().setAccessibleName("Fish");
-        if (Ui.theme()!=state.appTheme()) Ui.applyTheme(state.appTheme());
+        appearance=state.appearance();
+        Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         this.store = store;
         this.demonstration = demonstration;
         credentials = new CredentialStore(credentialHelper);
         state.profiles().forEach(p -> profiles.put(p.id(),p));
+        resolveFont();
         layout = Layout.normalize(state.layout());
         lastProfile=state.lastProfile();
         highlightActive=state.highlightActive();
@@ -63,7 +68,7 @@ public final class Workspace extends JFrame {
         setBackground(Ui.BACKGROUND);
         content.setBackground(Ui.BACKGROUND);
         JPanel shell = new JPanel(new BorderLayout());
-        shell.setBackground(Ui.BACKGROUND);
+        Ui.background(shell,ColorRole.BACKGROUND);
         setContentPane(shell);
         getRootPane().setBorder(BorderFactory.createMatteBorder(1,1,1,1,Ui.LINE));
         JMenuBar menus=menus();
@@ -72,14 +77,11 @@ public final class Workspace extends JFrame {
         addPane.setText("Pane"); addPane.setIcon(Ui.symbol("plus"));
         addPane.setToolTipText("Add the next pane (maximum 8; Ctrl+Alt+H)");
         addPane.getAccessibleContext().setAccessibleName("Add pane");
-        JButton find=new JButton(command("Search commands...")); find.setText("Commands");
-        find.setIcon(Ui.symbol("search"));
-        find.setToolTipText("Search commands (Ctrl+Alt+K)");
-        find.getAccessibleContext().setAccessibleName("Search commands");
-        for (JButton b : List.of(addPane,find)) {
+        for (JButton b : List.of(addPane)) {
             b.setBorder(BorderFactory.createEmptyBorder(6,9,6,9));
             b.setContentAreaFilled(false);
             b.setIconTextGap(5);
+            Ui.foreground(b,ColorRole.CHROME_TEXT);
             tools.add(b);
         }
         chrome=new WindowChrome(this,menus,tools,this::toggleFlux);
@@ -87,6 +89,9 @@ public final class Workspace extends JFrame {
         shell.add(content,BorderLayout.CENTER);
         shortcuts=new AppShortcuts(this,commands,state.shortcuts());
         buildTree();
+        if (!fontNotice.isEmpty()) SwingUtilities.invokeLater(() -> {
+            if (!closing) { active.problem(fontNotice); Ui.error(this,fontNotice); }
+        });
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { close(false); }
         });
@@ -106,6 +111,27 @@ public final class Workspace extends JFrame {
     public boolean hasPane(UUID id) { return panes.containsKey(id); }
     public boolean hasMultiplePanes() { return layout instanceof Layout.Split; }
     public boolean highlightActive() { return highlightActive; }
+    public Appearance appearanceSettings() { return appearance; }
+    public Font terminalFont() { return terminalFont; }
+    public void appearanceSettings(Appearance value) {
+        appearance=value;
+        resolveFont();
+        Ui.applyTheme(Ui.theme(),appearance.custom().orElse(null));
+        panes.values().forEach(p -> { p.view().fontChanged(); p.updateHeader(); });
+        changed();
+        if (!fontNotice.isEmpty()) active.problem(fontNotice);
+    }
+    private void resolveFont() {
+        try {
+            terminalFont=TerminalFonts.resolve(appearance.font());
+            TerminalFonts.validate(terminalFont,profileList());
+            fontNotice="";
+        } catch (java.io.IOException | IllegalArgumentException e) {
+            fontNotice="Terminal font unavailable: "+e.getMessage()+"\nUsing Java Monospaced temporarily; saved choice retained. View > Fonts can repair it.";
+            System.err.println(fontNotice);
+            terminalFont=new Font(Font.MONOSPACED,Font.PLAIN,16);
+        }
+    }
     public void showShortcuts() { shortcuts.show(); }
     @Override public void addNotify() {
         super.addNotify();
@@ -128,6 +154,8 @@ public final class Workspace extends JFrame {
         List<Profile> candidates=new ArrayList<>(profileList());
         candidates.removeIf(p -> p.id().equals(profile.id())); candidates.add(profile);
         shortcuts.validate(shortcuts.overrides(),candidates);
+        try { TerminalFonts.validate(terminalFont,candidates); }
+        catch (java.io.IOException e) { throw new IllegalArgumentException(e.getMessage(),e); }
     }
     public void highlightActive(boolean enabled) {
         highlightActive=enabled; panes.values().forEach(SessionPane::updateHeader); changed();
@@ -146,16 +174,14 @@ public final class Workspace extends JFrame {
         }
     }
     public void themeChanged() {
+        setIconImages(FishIcon.images());
         content.setBackground(Ui.BACKGROUND);
         if (getContentPane()!=null) getContentPane().setBackground(Ui.BACKGROUND);
         getRootPane().setBorder(BorderFactory.createLineBorder(Ui.LINE));
     }
-    public void applyTheme(AppTheme theme) { Ui.applyTheme(theme); changed(); }
-    public void commandPalette() {
-        SessionPane target=active;
-        CommandPalette palette=new CommandPalette(this); palette.setVisible(true);
-        if (target!=null && panes.containsKey(target.id())) { activate(target); target.focusTerminal(); }
-        if (palette.chosen()!=null) palette.chosen().actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"palette"));
+    public void applyTheme(AppTheme theme) {
+        appearance=appearance.withTheme("",appearance.themes());
+        Ui.applyTheme(theme); changed();
     }
     public String paneName(UUID id) {
         List<SessionPane> order=sessionPanes();
@@ -234,7 +260,7 @@ public final class Workspace extends JFrame {
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
     private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
-            shortcuts.overrides(),highlightActive); }
+            shortcuts.overrides(),highlightActive,appearance); }
     public void saveAsync() {
         if (closing) return;
         StateStore.State snapshot = state();
@@ -394,6 +420,9 @@ public final class Workspace extends JFrame {
         JCheckBox highlight=new JCheckBox("Tint selected pane background",highlightActive);
         highlight.addActionListener(e -> highlightActive(highlight.isSelected()));
         form.add(new JLabel("Pane focus")); form.add(highlight);
+        JCheckBox outline=new JCheckBox("Outline active pane",appearance.outline());
+        outline.addActionListener(e -> appearanceSettings(appearance.withLayout(outline.isSelected(),appearance.info())));
+        form.add(new JLabel("Pane outline")); form.add(outline);
         themes.addActionListener(e -> applyTheme((AppTheme)themes.getSelectedItem()));
         if (active!=null) {
             SessionPane pane=active;
@@ -407,7 +436,11 @@ public final class Workspace extends JFrame {
             palettes.addActionListener(display); effects.addActionListener(display);
         }
         JPanel body=new JPanel(new BorderLayout(0,12));
-        body.add(form,BorderLayout.CENTER); body.add(new JLabel("Changes apply immediately and are saved."),BorderLayout.SOUTH);
+        JPanel extra=new JPanel(new FlowLayout(FlowLayout.LEFT,8,0));
+        extra.add(Ui.button("Theme designer",KeyEvent.VK_D,() -> new ThemeDesigner(this).setVisible(true)));
+        extra.add(Ui.button("Fonts",KeyEvent.VK_F,() -> AppearanceDialogs.fonts(this)));
+        extra.add(Ui.button("Pane information",KeyEvent.VK_I,() -> AppearanceDialogs.paneInfo(this)));
+        body.add(form,BorderLayout.CENTER); body.add(extra,BorderLayout.SOUTH);
         Ui.present(this,"Appearance",body,"Done");
     }
 
@@ -443,16 +476,29 @@ public final class Workspace extends JFrame {
         action(layoutMenu,"Save layout to profile","ctrl alt S",this::saveProfileLayout);
         action(layoutMenu,"Restore profile layout","ctrl alt L",this::restoreProfileLayout);
         JMenu view = menu(bar,"View",KeyEvent.VK_V);
-        action(view,"Search commands...","ctrl alt K",this::commandPalette);
         action(view,"Appearance...","ctrl alt T",this::appearance);
+        action(view,"Theme designer...",null,() -> new ThemeDesigner(this).setVisible(true));
+        action(view,"Fonts...",null,() -> AppearanceDialogs.fonts(this));
+        action(view,"Pane information...",null,() -> AppearanceDialogs.paneInfo(this));
+        JCheckBoxMenuItem outline=new JCheckBoxMenuItem("Active pane outline",appearance.outline());
+        outline.addActionListener(e -> appearanceSettings(appearance.withLayout(outline.isSelected(),appearance.info())));
+        view.add(outline);
+        view.addMenuListener(new javax.swing.event.MenuListener() {
+            @Override public void menuSelected(javax.swing.event.MenuEvent e) { outline.setSelected(appearance.outline()); }
+            @Override public void menuDeselected(javax.swing.event.MenuEvent e) {}
+            @Override public void menuCanceled(javax.swing.event.MenuEvent e) {}
+        });
+        JMenu themeMenu=new JMenu("Application themes"); view.add(themeMenu);
         for (AppTheme theme : AppTheme.values()) {
             AppCommand change=new AppCommand("Theme: "+theme,"Application theme; does not reconnect sessions",null,
                     () -> applyTheme(theme),() -> !closing,"appearance color scheme "+theme.name());
             commands.add(change);
+            themeMenu.add(new JMenuItem(change));
         }
-        commands.add(new AppCommand("Flux animated text","Flowing multicolor text; opt-in, host attributes preserved",null,
+        AppCommand flux=new AppCommand("Flux animated text","Flowing multicolor text; opt-in, host attributes preserved",null,
                 () -> putProfile(active.profile().withDisplay(active.profile().theme(),Profile.FLUX)),
-                () -> active!=null && !closing,"theme gradient rainbow animated flowing effect"));
+                () -> active!=null && !closing,"theme gradient rainbow animated flowing effect");
+        commands.add(flux); view.add(new JMenuItem(flux));
         view.addSeparator();
         action(view,"Fit host screen","ctrl alt 0",this::fit);
         action(view,"Zoom in","ctrl alt EQUALS",() -> zoom(.1));
@@ -474,7 +520,7 @@ public final class Workspace extends JFrame {
                 + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
                 + "Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
                 + "Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels\n"
-                + "Ctrl+Alt+K: Search commands     Ctrl+Alt+T: Appearance",
+                + "Ctrl+Alt+T: Appearance     View: Theme designer, Fonts, Pane information",
                 "Keyboard reference"));
         action(help,"Compatibility and connection safety",null,() -> Ui.message(this,
                 "TN5250J-based 5250 engine; only IBM-3477-FC.\nPlain TCP is not encrypted. Use only on a trusted network.\n"
@@ -510,7 +556,8 @@ public final class Workspace extends JFrame {
         return bar;
     }
     private JMenu menu(JMenuBar bar, String name, int mnemonic) {
-        JMenu menu = new JMenu(name); menu.setMnemonic(mnemonic); bar.add(menu); return menu;
+        JMenu menu = new JMenu(name); menu.setMnemonic(mnemonic);
+        Ui.background(menu,ColorRole.CHROME); bar.add(menu); return menu;
     }
     private AppCommand action(JMenu menu,String text,String stroke,Runnable command) {
         String aliases=switch (text) {
@@ -518,7 +565,6 @@ public final class Workspace extends JFrame {
             case "Swap panes..." -> "move rearrange dock";
             case "Close pane" -> "disconnect remove pane reset offline";
             case "Profiles..." -> "settings workstation host device credentials";
-            case "Search commands..." -> "command palette find action search";
             case "Appearance..." -> "settings theme palette color effects glow prism flux animated gradient";
             case "Copy selection / screen" -> "clipboard copy export selected text";
             case "Paste into fields" -> "clipboard paste insert text";
@@ -529,7 +575,7 @@ public final class Workspace extends JFrame {
         AppCommand action=new AppCommand(text,menu.getText()+" / "+text,stroke,command,() -> {
             if (closing) return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
-            if (List.of("Profiles...","Quit","Search commands...","Appearance...","Keyboard reference",
+            if (List.of("Profiles...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Keyboard reference",
                     "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started").contains(text)) return true;
             if (active==null) return false;
             if (text.equals("Copy selection / screen")) return active.screen()!=null;
@@ -558,6 +604,10 @@ public final class Workspace extends JFrame {
         JPopupMenu menu=new JPopupMenu();
         menu.add(new JMenuItem(command("Copy selection / screen")));
         menu.add(new JMenuItem(command("Paste into fields")));
+        menu.addSeparator();
+        menu.add(new JMenuItem(command("RESET")));
+        for (String action:List.of("Connect / disconnect","Add pane","Swap panes...","Close pane","Pane information..."))
+            menu.add(new JMenuItem(command(action)));
         return menu;
     }
     public void close(boolean force) {

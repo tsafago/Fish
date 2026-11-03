@@ -106,7 +106,7 @@ public final class FishSmoke {
         check(pane.screen().getScreenAsChars()[81]=='4' && pane.screen().getScreenAsChars()[82]!='X'
                 && pane.screen().getOIA().isKeyBoardLocked(),"Numeric rejection stops clipboard input without bypassing inhibition.");
         JPopupMenu inhibited=workspace.clipboardMenu(pane);
-        check(inhibited.getComponentCount()==2 && !((JMenuItem)inhibited.getComponent(1)).isEnabled(),"Compact context menu disables Paste when input is inhibited.");
+        check(inhibited.getComponentCount()>=2 && !((JMenuItem)inhibited.getComponent(1)).isEnabled(),"Context menu disables Paste when input is inhibited.");
         core.accept(inputScreen(0x40));
         pane.screen().moveCursor(2);
         clipboard.setContents(new StringSelection("Z"),null);
@@ -168,7 +168,7 @@ public final class FishSmoke {
         TerminalView view=pane.view();
         workspace.commands().stream().filter(c -> c.title.equals("Flux animated text")).findFirst().orElseThrow()
                 .actionPerformed(new ActionEvent(workspace,ActionEvent.ACTION_PERFORMED,"fixture"));
-        check(pane.profile().effect().equals(Profile.FLUX),"Flux is immediately available through command search and the persistent effect list.");
+        check(pane.profile().effect().equals(Profile.FLUX),"Flux is immediately available through the View menu action and persistent effect list.");
         setField(view,"fluxPhase",0.0);
         BufferedImage first=paint(view,1.5);
         Object glyphs=field(view,"rendered");

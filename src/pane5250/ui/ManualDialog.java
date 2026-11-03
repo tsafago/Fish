@@ -97,7 +97,7 @@ public final class ManualDialog extends JDialog {
         StringBuilder html=new StringBuilder("<html><head><style>body {font-family:Segoe UI; font-size:12pt; margin:18px;"
                 +"background:#"+hex(Ui.FIELD)+";color:#"+hex(Ui.TEXT)+";} h1 {font-size:21pt;} h2 {font-size:16pt;margin-top:24px;}"
                 +"p {margin-top:9px;margin-bottom:12px;} a {color:#"+hex(Ui.FOCUS)+";}</style></head><body>"
-                +"<h1>Fish manual</h1><p>0.4.3 experimental preview. Offline reference.</p>");
+                +"<h1>Fish manual</h1><p>0.5.0 experimental preview. Offline reference.</p>");
         for (Topic topic:topics) {
             html.append("<h2><a name=\"").append(topic.anchor()).append("\"></a>").append(escape(topic.title())).append("</h2>");
             for (String paragraph:topic.text().split("\\R\\s*\\R")) html.append("<p>").append(escape(paragraph).replace("\n","<br>")).append("</p>");

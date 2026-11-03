@@ -7,7 +7,11 @@ import java.util.*;
 
 public final class StateStore implements AutoCloseable {
     public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
-                        Map<String,String> shortcuts, boolean highlightActive) {
+                        Map<String,String> shortcuts, boolean highlightActive,Appearance appearance) {
+        public State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,Appearance.defaults());
+        }
         public State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile) {
             this(profiles,layout,width,height,appTheme,lastProfile,Map.of(),true);
         }
@@ -19,6 +23,7 @@ public final class StateStore implements AutoCloseable {
         }
         public State {
             Objects.requireNonNull(appTheme);
+            Objects.requireNonNull(appearance);
             shortcuts=Map.copyOf(shortcuts);
             profiles = List.copyOf(profiles);
             if (profiles.isEmpty()) throw new IllegalArgumentException("A workspace needs at least one saved profile.");
@@ -65,7 +70,7 @@ public final class StateStore implements AutoCloseable {
         try (InputStream in = Files.newInputStream(file())) { properties.loadFromXML(in); }
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4").contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5").contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             List<Profile> profiles = new ArrayList<>();
             for (String idText : required(properties, "profiles").split(",")) {
                 UUID id = UUID.fromString(idText);
@@ -75,33 +80,66 @@ public final class StateStore implements AutoCloseable {
                     if (property.startsWith(key + "key."))
                         keys.put(property.substring((key + "key.").length()), properties.getProperty(property));
                 }
+                String effect=required(properties,key+"effect");
+                if (effect.equals("Neon")) {
+                    effect="None"; notice("Removed Neon effect changed to None for "+required(properties,key+"name")+"; other profile settings retained.");
+                }
                 profiles.add(new Profile(id, required(properties, key + "name"), required(properties, key + "host"),
                         Integer.parseInt(required(properties, key + "port")), required(properties, key + "device"),
                         required(properties, key + "username"), bool(properties, key + "auto"), bool(properties, key + "remember"),
                         required(properties, key + "codePage"), required(properties, key + "theme"),
-                        required(properties, key + "effect"), Double.parseDouble(required(properties, key + "zoom")),
+                        effect, Double.parseDouble(required(properties, key + "zoom")),
                         keys, required(properties, key + "layout")));
             }
-            UUID last=Set.of("3","4").contains(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
+            UUID last=Set.of("3","4","5").contains(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
             Layout layout=Layout.decode(required(properties,"layout"));
             if (Set.of("1","2").contains(version) && !layout.leaves().isEmpty()) last=layout.leaves().getFirst().profile();
             if (layout instanceof Layout.Empty) {
                 layout=new Layout.Leaf(UUID.randomUUID(),last);
-                loadNotice="Restored one offline pane from the previous empty workspace; all presets retained.";
+                notice("Restored one offline pane from the previous empty workspace; all presets retained.");
             }
             Layout bounded=Layout.normalize(layout);
-            if (!bounded.equals(layout)) loadNotice="Previous pane layout rearranged into Fish's bounded slots; all presets retained.";
+            if (!bounded.equals(layout)) notice("Previous pane layout rearranged into Fish's bounded slots; all presets retained.");
             Map<String,String> shortcuts=new LinkedHashMap<>();
             for (String property:properties.stringPropertyNames())
                 if (property.startsWith("shortcut.")) shortcuts.put(property.substring(9),properties.getProperty(property));
+            Appearance appearance="5".equals(version) ? readAppearance(properties) : Appearance.defaults();
+            if (shortcuts.containsKey("Search commands...")) {
+                Set<String> retired=new HashSet<>(appearance.retiredShortcuts());
+                String old=shortcuts.remove("Search commands...");
+                if (!old.isBlank()) retired.add(old);
+                appearance=new Appearance(appearance.outline(),appearance.info(),appearance.font(),appearance.selectedTheme(),
+                        appearance.themes(),retired);
+                notice("Commands window removed; its former shortcut is reserved until explicitly reassigned. All actions remain in menus/shortcuts.");
+            }
             return new State(profiles, bounded,
                     Math.max(330, Math.min(10000, Integer.parseInt(required(properties, "width")))),
                     Math.max(260, Math.min(10000, Integer.parseInt(required(properties, "height")))),
                     "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")),last,
-                    shortcuts,!"4".equals(version) || bool(properties,"highlightActive"));
+                    shortcuts,!Set.of("4","5").contains(version) || bool(properties,"highlightActive"),appearance);
         } catch (IllegalArgumentException e) {
             throw new IOException("Invalid workspace; original file preserved: " + e.getMessage(), e);
         }
+    }
+    private void notice(String text) { loadNotice+=(loadNotice.isEmpty() ? "" : "\n")+text; }
+    private static Appearance readAppearance(Properties p) {
+            List<ColorTheme> themes=new ArrayList<>();
+            int count=Integer.parseInt(required(p,"appearance.themes"));
+            if (count<0 || count>32) throw new IllegalArgumentException("Custom theme count must be 0-32.");
+            for (int i=0;i<count;i++) {
+                String prefix="appearance.theme."+i+".";
+                EnumMap<ColorRole,Integer> colors=new EnumMap<>(ColorRole.class);
+                for (ColorRole role:ColorRole.values()) colors.put(role,ColorTheme.parse(required(p,prefix+role.name())));
+                themes.add(new ColorTheme(required(p,prefix+"name"),colors));
+            }
+            Appearance.PaneInfo info=new Appearance.PaneInfo(bool(p,"info.header"),bool(p,"info.footer"),
+                    bool(p,"info.profile"),bool(p,"info.connection"),bool(p,"info.host"),bool(p,"info.device"),
+                    bool(p,"info.status"),bool(p,"info.dimensions"),bool(p,"info.cursor"),bool(p,"info.insert"));
+            Set<String> retired=new HashSet<>();
+            for (String value:required(p,"appearance.retired").split("\n")) if (!value.isBlank()) retired.add(value);
+            return new Appearance(bool(p,"appearance.outline"),info,
+                    new Appearance.FontChoice(required(p,"font.family"),required(p,"font.file")),
+                    required(p,"appearance.selected"),themes,retired);
     }
 
     private static String required(Properties properties, String key) {
@@ -117,7 +155,7 @@ public final class StateStore implements AutoCloseable {
 
     public void save(State state) throws IOException {
         Properties properties = new Properties();
-        properties.setProperty("version", "4");
+        properties.setProperty("version", "5");
         properties.setProperty("highlightActive",Boolean.toString(state.highlightActive));
         state.shortcuts.forEach((action,stroke) -> properties.setProperty("shortcut."+action,stroke));
         properties.setProperty("lastProfile",state.lastProfile.toString());
@@ -126,6 +164,22 @@ public final class StateStore implements AutoCloseable {
         properties.setProperty("layout", state.layout.encode());
         properties.setProperty("width", Integer.toString(state.width));
         properties.setProperty("height", Integer.toString(state.height));
+        Appearance a=state.appearance;
+        properties.setProperty("appearance.outline",Boolean.toString(a.outline()));
+        properties.setProperty("font.family",a.font().family()); properties.setProperty("font.file",a.font().file());
+        properties.setProperty("appearance.selected",a.selectedTheme());
+        properties.setProperty("appearance.retired",String.join("\n",a.retiredShortcuts()));
+        properties.setProperty("appearance.themes",Integer.toString(a.themes().size()));
+        for (int i=0;i<a.themes().size();i++) {
+            ColorTheme theme=a.themes().get(i); String prefix="appearance.theme."+i+".";
+            properties.setProperty(prefix+"name",theme.name());
+            theme.colors().forEach((role,rgb) -> properties.setProperty(prefix+role.name(),String.format("#%06X",rgb)));
+        }
+        Appearance.PaneInfo info=a.info();
+        boolean[] flags={info.header(),info.footer(),info.profile(),info.connection(),info.host(),info.device(),
+                info.status(),info.dimensions(),info.cursor(),info.insert()};
+        String[] names={"header","footer","profile","connection","host","device","status","dimensions","cursor","insert"};
+        for (int i=0;i<names.length;i++) properties.setProperty("info."+names[i],Boolean.toString(flags[i]));
         for (Profile p : state.profiles) {
             String key = "profile." + p.id() + ".";
             properties.setProperty(key + "name", p.name());

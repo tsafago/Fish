@@ -5,7 +5,42 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.4.3 UI sizing preview
+## Fish 0.5.0 customization preview
+
+Commands is removed, with useful actions retained in menus, terminal context
+menus and shortcuts. Old Commands chords are explicitly retired until reassigned.
+Neon migrates to None with a load notice, preserving the rest of the profile.
+The titlebar-only drawing is now 27x20 inside the same 48x30 target; packaged
+icon geometry, 31px chrome and the native monitor/DPI bridge are unchanged.
+Mouse clicks leave no focus box; keyboard focus has a subtle underline.
+UI text uses Windows desktop hints at the final rendering resolution.
+
+Lagoon, Afterglow and muted warm Eye Saver are complete application presets.
+The Theme Designer edits all 62 semantic UI/host/effect/logo RGB roles and saves
+named complete themes. Live Preview/Cancel is reversible; custom host slots
+supersede a profile's built-in palette while active. Valid custom values remain
+exact, so readable contrast is the designer's responsibility.
+
+Terminal fonts are discovered installed fixed-width faces or local TTF/OTF
+files, checked against printable widths and current SBCS code-page glyphs.
+Unsupported/missing fonts are explicit errors; a missing saved font uses an
+announced temporary fallback without erasing the choice. OpenType support is
+limited to formats accepted by Java's local font parser.
+
+Outline and tint are independent persistent settings. Header/footer and each
+existing information item can be hidden, with zero space for empty rows.
+Recoverable local input errors get Reset in the footer or a non-reflowing corner
+overlay; host-busy/disconnected states never get a false unlock.
+
+Focused source/private-runtime checks cover theme save/load and all-role
+coverage, custom font/fixed cells, hidden rows, overlay Reset without submission,
+outline off, Neon/shortcut migrations and retained geometry/native hit tests.
+Representative offscreen images are inspected as one bounded batch.
+No shared-desktop/clipboard automation or new physical mixed-DPI monitor test
+is part of this pass. Earlier monitor evidence below is historical; real
+IBM i/ACS acceptance and protocol gaps remain unchanged.
+
+## Fish 0.4.3 UI sizing preview (included)
 
 The titlebar drawing is modestly smaller (32x24 instead of 38x28), with unchanged
 geometry, gradient, 48x30 click target, accessibility and Flux/None behavior.

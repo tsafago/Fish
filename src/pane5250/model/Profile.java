@@ -13,7 +13,7 @@ public record Profile(UUID id, String name, String host, int port, String device
     public static final List<String> THEMES = List.of("Phosphor", "Cool", "Warm", "Amber", "Ice", "Orchid", "High contrast",
             "IBM vivid", "Mint", "Rose", "OLED green", "OLED amber");
     public static final String FLUX="Flux (animated)";
-    public static final List<String> EFFECTS = List.of("None", "Soft glow", "Prism", "Neon",FLUX);
+    public static final List<String> EFFECTS = List.of("None", "Soft glow", "Prism",FLUX);
 
     public Profile {
         Objects.requireNonNull(id);

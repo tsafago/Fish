@@ -28,9 +28,10 @@ Pane resizing must never change the host's presentation space.
 One to eight independent panes in bounded two-row/four-column layouts,
 swap-only rearrangement, persistent workstation presets and last-used selection,
 field-aware input, host keys, fixed-width rendering, OS clipboard through a
-compact context menu/Edit menu/command search, zoom and
-optional inexpensive visual presets. Global application/host shortcut overrides,
-outline-only focus, OLED/high-contrast themes and native Windows snapping keep
+compact context menu/Edit menu, zoom and optional inexpensive visual presets.
+Global application/host shortcut overrides, independent outline/tint, zero-space
+optional pane information, named all-role custom themes, creative/Eye Saver
+presets, validated installed/local monospaced fonts and native Windows snapping keep
 the tool usable in everyday desktop workflows. Help contains the complete,
 searchable/indexed offline manual with Getting Started first. Remembered passwords belong in Windows
 Credential Manager. TLS, AI features and Kerberos are not required.

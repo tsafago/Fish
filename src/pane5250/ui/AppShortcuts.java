@@ -17,9 +17,15 @@ final class AppShortcuts implements KeyEventDispatcher {
     private Map<String,String> overrides=Map.of();
     private Map<KeyStroke,AppCommand> bindings=Map.of();
     private final Set<Integer> claimed=new HashSet<>();
+    private final Set<KeyStroke> retired=new HashSet<>();
 
     AppShortcuts(Workspace workspace,List<AppCommand> commands,Map<String,String> saved) {
         this.workspace=workspace; this.commands=commands;
+        for (String stroke:workspace.appearanceSettings().retiredShortcuts()) {
+            KeyStroke key=KeyStroke.getKeyStroke(stroke);
+            if (key==null) throw new IllegalArgumentException("Invalid retired shortcut: "+stroke);
+            retired.add(key);
+        }
         apply(saved,workspace.profileList());
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(this);
         workspace.addWindowFocusListener(new WindowAdapter() {
@@ -107,9 +113,9 @@ final class AppShortcuts implements KeyEventDispatcher {
             if (claimed.isEmpty()) return false;
         } else if (event.getID()==KeyEvent.KEY_PRESSED) {
             AppCommand command=bindings.get(KeyStroke.getKeyStrokeForEvent(event));
-            if (command==null) return false;
+            if (command==null && !retired.contains(KeyStroke.getKeyStrokeForEvent(event))) return false;
             claimed.add(event.getKeyCode());
-            command.actionPerformed(new ActionEvent(workspace,ActionEvent.ACTION_PERFORMED,"shortcut"));
+            if (command!=null) command.actionPerformed(new ActionEvent(workspace,ActionEvent.ACTION_PERFORMED,"shortcut"));
         } else return false;
         event.consume(); return true;
     }

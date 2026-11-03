@@ -27,7 +27,8 @@ public final class FishIcon implements Icon {
     }
     private static void draw(Graphics2D g) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
-        Color[] colors={new Color(0x69CBBE),new Color(0x83A7E8),new Color(0xCF92B9)};
+        Color[] colors={Ui.color(pane5250.model.ColorRole.LOGO_1),Ui.color(pane5250.model.ColorRole.LOGO_2),
+                Ui.color(pane5250.model.ColorRole.LOGO_3)};
         g.setPaint(new LinearGradientPaint(4,24,58,24,new float[]{0,.5f,1},colors));
         g.setStroke(new BasicStroke(3.4f,BasicStroke.CAP_BUTT,BasicStroke.JOIN_ROUND));
         g.draw(OUTLINE);

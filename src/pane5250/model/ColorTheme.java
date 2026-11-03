@@ -25,7 +25,7 @@ public record ColorTheme(String name,Map<ColorRole,Integer> colors) {
         c.put(ColorRole.BACKGROUND,theme.background); c.put(ColorRole.PANEL,theme.panel);
         c.put(ColorRole.FIELD,theme.field); c.put(ColorRole.DIALOG,theme.panel);
         c.put(ColorRole.TEXT,theme.text); c.put(ColorRole.MUTED,theme.muted); c.put(ColorRole.DISABLED,theme.muted);
-        c.put(ColorRole.LINE,theme.line); c.put(ColorRole.HOVER,theme.hover); c.put(ColorRole.PRESSED,theme.selection);
+        c.put(ColorRole.HOVER,theme.hover); c.put(ColorRole.PRESSED,theme.selection);
         c.put(ColorRole.FOCUS,theme.focus); c.put(ColorRole.ERROR,theme.error);
         c.put(ColorRole.SELECTION,theme.selection); c.put(ColorRole.SELECTION_TEXT,theme.text);
         c.put(ColorRole.CHROME,theme.panel); c.put(ColorRole.CHROME_TEXT,theme.text); c.put(ColorRole.CHROME_INACTIVE,theme.muted);
@@ -35,7 +35,6 @@ public record ColorTheme(String name,Map<ColorRole,Integer> colors) {
         c.put(ColorRole.HEADER,theme.background); c.put(ColorRole.HEADER_TEXT,theme.text); c.put(ColorRole.HEADER_MUTED,theme.muted);
         c.put(ColorRole.FOOTER,theme.background); c.put(ColorRole.FOOTER_TEXT,theme.text);
         c.put(ColorRole.STATUS_ERROR,theme.error); c.put(ColorRole.STATUS_WAIT,theme.muted);
-        c.put(ColorRole.OUTLINE,theme.focus);
         c.put(ColorRole.ACTIVE_TINT,mix(theme.background,theme.focus,1/25.0));
         if (theme.background==0) c.put(ColorRole.ACTIVE_TINT,0);
         c.put(ColorRole.DIVIDER,theme.line); c.put(ColorRole.DIVIDER_BACKGROUND,theme.background);

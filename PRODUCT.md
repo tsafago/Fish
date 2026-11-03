@@ -29,7 +29,8 @@ One to eight independent panes in bounded two-row/four-column layouts,
 swap-only rearrangement, persistent workstation presets and last-used selection,
 field-aware input, host keys, fixed-width rendering, OS clipboard through a
 compact context menu/Edit menu, zoom and optional inexpensive visual presets.
-Global application/host shortcut overrides, independent outline/tint, zero-space
+Global application/host shortcut overrides, independent pane outline/tint,
+default-off optional whole-window outline, shared one-device-pixel structural edges, zero-space
 optional pane information, named all-role custom themes, creative/Eye Saver
 presets, validated installed/local monospaced fonts and native Windows snapping keep
 the tool usable in everyday desktop workflows. Help contains the complete,

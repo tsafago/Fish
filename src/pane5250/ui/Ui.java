@@ -19,7 +19,7 @@ public final class Ui {
     private static void colors(AppTheme value) {
         theme=value;
         BACKGROUND=color(ColorRole.BACKGROUND); PANEL=color(ColorRole.PANEL); FIELD=color(ColorRole.FIELD); HOVER=color(ColorRole.HOVER);
-        LINE=color(ColorRole.LINE); TEXT=color(ColorRole.TEXT); MUTED=color(ColorRole.MUTED); FOCUS=color(ColorRole.FOCUS);
+        LINE=color(ColorRole.DIVIDER); TEXT=color(ColorRole.TEXT); MUTED=color(ColorRole.MUTED); FOCUS=color(ColorRole.FOCUS);
         ERROR=color(ColorRole.ERROR); SELECTION=color(ColorRole.SELECTION);
     }
     public static AppTheme theme() { return theme; }
@@ -29,6 +29,8 @@ public final class Ui {
     public static boolean dark() { return (BACKGROUND.getRed()*.2126+BACKGROUND.getGreen()*.7152+BACKGROUND.getBlue()*.0722)<128; }
     public static void install() throws Exception {
         UIManager.setLookAndFeel(UIManager.getCrossPlatformLookAndFeelClassName());
+        PopupFactory.setSharedInstance(new FlatPopups());
+        UIManager.put("PopupMenu.dropShadowEnabled",false);
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(e -> {
             if (e.getKeyCode()==KeyEvent.VK_ALT) {
                 altDown=e.getID()==KeyEvent.KEY_PRESSED && !e.isControlDown();
@@ -51,7 +53,7 @@ public final class Ui {
             if (key.toString().endsWith(".font")) UIManager.put(key,font);
         }
         for (String name : new String[]{"Panel","MenuBar","Menu","MenuItem","CheckBoxMenuItem","RadioButtonMenuItem",
-                "PopupMenu","TabbedPane","OptionPane","Label","Button","CheckBox","RadioButton","ComboBox","List",
+                "PopupMenu","TabbedPane","OptionPane","Label","Button","ToggleButton","CheckBox","RadioButton","ComboBox","List",
                 "ScrollPane","Viewport","TextField","PasswordField","TextArea","Spinner","SplitPane","ToolTip",
                 "Table","TableHeader","EditorPane","TextPane","Tree"}) {
             UIManager.put(name+".background",PANEL); UIManager.put(name+".foreground",TEXT);
@@ -79,6 +81,7 @@ public final class Ui {
         UIManager.put("ToolTip.foregroundInactive",color(ColorRole.DISABLED));
         UIManager.put("OptionPane.background",color(ColorRole.DIALOG));
         UIManager.put("ButtonUI",FlatControls.Button.class.getName());
+        UIManager.put("ToggleButtonUI",FlatControls.Button.class.getName());
         UIManager.put("LabelUI",FlatControls.Label.class.getName());
         UIManager.put("MenuBarUI","javax.swing.plaf.basic.BasicMenuBarUI");
         UIManager.put("MenuUI",FlatControls.Menu.class.getName());
@@ -95,22 +98,26 @@ public final class Ui {
         UIManager.put("ScrollBarUI",FlatControls.Scroll.class.getName());
         UIManager.put("TabbedPaneUI",FlatControls.Tabs.class.getName());
         UIManager.put("SplitPaneUI",FlatControls.Split.class.getName());
-        for (String name : new String[]{"Button","TextField","PasswordField","TextArea","ComboBox","Spinner"})
+        UIManager.put("SeparatorUI",FlatControls.Separator.class.getName());
+        UIManager.put("PopupMenuSeparatorUI",FlatControls.Separator.class.getName());
+        UIManager.put("TableUI",FlatControls.Table.class.getName());
+        for (String name : new String[]{"Button","ToggleButton","TextField","PasswordField","TextArea","ComboBox","Spinner"})
             UIManager.put(name+".border",new FlatControls.Edge(5,8));
         UIManager.put("CheckBox.icon",new FlatControls.CheckIcon());
         UIManager.put("RadioButton.icon",new FlatControls.CheckIcon());
         UIManager.put("CheckBox.focus",FOCUS); UIManager.put("RadioButton.focus",FOCUS);
-        UIManager.put("PopupMenu.border",new BorderUIResource.LineBorderUIResource(LINE));
+        UIManager.put("PopupMenu.border",Hairline.perimeter());
         UIManager.put("MenuBar.border",new BorderUIResource.EmptyBorderUIResource(0,0,0,0));
-        UIManager.put("ScrollPane.border",new BorderUIResource.LineBorderUIResource(LINE));
-        UIManager.put("List.focusCellHighlightBorder",new BorderUIResource.LineBorderUIResource(FOCUS));
+        UIManager.put("ScrollPane.border",Hairline.perimeter());
+        UIManager.put("List.focusCellHighlightBorder",Hairline.perimeter());
         UIManager.put("Table.gridColor",LINE);
-        UIManager.put("Table.focusCellHighlightBorder",new BorderUIResource.LineBorderUIResource(FOCUS));
-        UIManager.put("TableHeader.cellBorder",new BorderUIResource.MatteBorderUIResource(0,0,1,0,LINE));
+        UIManager.put("Table.focusCellHighlightBorder",Hairline.perimeter());
+        UIManager.put("TableHeader.cellBorder",Hairline.bottom());
         UIManager.put("OptionPane.messageForeground",TEXT);
         UIManager.put("Separator.foreground",LINE); UIManager.put("Separator.background",PANEL);
         UIManager.put("SplitPane.border",new BorderUIResource.EmptyBorderUIResource(0,0,0,0));
-        UIManager.put("ToolTip.border",new BorderUIResource.LineBorderUIResource(LINE));
+        UIManager.put("ToolTip.border",Hairline.perimeter());
+        UIManager.put("Spinner.arrowButtonBorder",BorderFactory.createEmptyBorder());
         UIManager.put("ScrollBar.width",12);
         for (Window window : Window.getWindows()) {
             SwingUtilities.updateComponentTreeUI(window);
@@ -120,7 +127,8 @@ public final class Ui {
         }
     }
     private static void refresh(Component component) {
-        if (component instanceof JRootPane root) root.setBorder(BorderFactory.createLineBorder(LINE));
+        if (component instanceof JRootPane root && !(SwingUtilities.getWindowAncestor(root) instanceof Workspace))
+            root.setBorder(SwingUtilities.getWindowAncestor(root) instanceof JDialog ? Hairline.perimeter() : BorderFactory.createEmptyBorder());
         if (component instanceof JComponent c) {
             if ("muted".equals(c.getClientProperty("theme.role"))) c.setForeground(MUTED);
             if ("error".equals(c.getClientProperty("theme.role"))) c.setForeground(ERROR);
@@ -144,6 +152,9 @@ public final class Ui {
     }
     public static void background(JComponent component,ColorRole role) {
         component.putClientProperty("theme.background",role); component.setBackground(color(role));
+    }
+    static void labeled(JPanel form,String text,JComponent input) {
+        JLabel label=new JLabel(text); label.setLabelFor(input); form.add(label); form.add(input);
     }
     public static JButton button(String text,int mnemonic,Runnable action) {
         JButton button=new JButton(text); button.setMnemonic(mnemonic);
@@ -217,7 +228,10 @@ public final class Ui {
         label.addMouseListener(move); label.addMouseMotionListener(move);
         shell.add(title,BorderLayout.NORTH); shell.add(content,BorderLayout.CENTER);
         dialog.setContentPane(shell);
-        dialog.getRootPane().setBorder(BorderFactory.createLineBorder(LINE));
+        dialog.getRootPane().setBorder(Hairline.perimeter());
+        dialog.addHierarchyListener(e -> {
+            if ((e.getChangeFlags()&HierarchyEvent.DISPLAYABILITY_CHANGED)!=0 && dialog.isDisplayable()) NativeWindow.flatten(dialog);
+        });
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         dialog.addWindowListener(new WindowAdapter() { @Override public void windowClosing(WindowEvent e) { dismiss.run(); } });
         dialog.getRootPane().registerKeyboardAction(e -> dismiss.run(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
@@ -227,6 +241,18 @@ public final class Ui {
     }
     public static void present(Component owner,String title,JComponent body,String accept) {
         prompt(owner,title,body,accept,false);
+    }
+    static boolean openFile(Window owner,String title,JFileChooser chooser) {
+        JDialog dialog=new JDialog(owner,title,Dialog.ModalityType.APPLICATION_MODAL);
+        boolean[] accepted={false};
+        chooser.addActionListener(e -> {
+            accepted[0]=JFileChooser.APPROVE_SELECTION.equals(e.getActionCommand());
+            dialog.dispose();
+        });
+        dialog.setContentPane(chooser);
+        decorate(dialog,dialog::dispose);
+        dialog.pack(); dialog.setLocationRelativeTo(owner); dialog.setVisible(true);
+        return accepted[0];
     }
     private static boolean prompt(Component owner,String title,JComponent body,String accept,boolean cancel) {
         Window parent=owner instanceof Window w ? w : owner==null
@@ -292,4 +318,17 @@ public final class Ui {
         return form(owner,title,form,"Send") ? field.getText() : null;
     }
     public static void error(Component owner,String message) { message(owner,message,"Fish"); }
+    private static final class FlatPopups extends PopupFactory {
+        @Override public Popup getPopup(Component owner,Component contents,int x,int y) {
+            Popup popup=super.getPopup(owner,contents,x,y);
+            Window window=SwingUtilities.getWindowAncestor(contents);
+            Window parent=owner instanceof Window w ? w : owner==null ? null : SwingUtilities.getWindowAncestor(owner);
+            if (window!=null && window!=parent) {
+                if (window instanceof RootPaneContainer root) root.getRootPane().setBorder(BorderFactory.createEmptyBorder());
+                if (!window.isDisplayable()) window.addNotify();
+                NativeWindow.flatten(window);
+            }
+            return popup;
+        }
+    }
 }

@@ -32,7 +32,7 @@ final class WindowChrome extends JPanel {
         normalBounds = window.getBounds();
         setBackground(Ui.color(ColorRole.CHROME));
         setPreferredSize(new Dimension(300,HEIGHT));
-        setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE));
+        setBorder(Hairline.bottom());
         menus.setBorder(BorderFactory.createEmptyBorder());
         left = new JPanel(new BorderLayout(0,0));
         left.setOpaque(false);
@@ -120,23 +120,38 @@ final class WindowChrome extends JPanel {
         }
         popup.show(menuButton,0,menuButton.getHeight());
     }
-    private static JMenu copyMenu(JMenu original) {
+    static JMenu copyMenu(JMenu original) {
+        return copyMenu(original,null);
+    }
+    static JMenu copyMenu(JMenu original,Runnable after) {
         for (var listener:original.getMenuListeners()) listener.menuSelected(new javax.swing.event.MenuEvent(original));
         JMenu copy=new JMenu(original.getText());
         for (Component item:original.getMenuComponents()) {
-            if (item instanceof JMenu menu) copy.add(copyMenu(menu));
-            else if (item instanceof JMenuItem command) copy.add(copyItem(command));
+            if (item instanceof JMenu menu) copy.add(copyMenu(menu,after));
+            else if (item instanceof JMenuItem command) copy.add(copyItem(command,after));
             else if (item instanceof JSeparator) copy.addSeparator();
         }
         return copy;
     }
     private static JMenuItem copyItem(JMenuItem original) {
+        return copyItem(original,null);
+    }
+    static JMenuItem copyItem(JMenuItem original,Runnable after) {
+        if (after!=null) {
+            JMenuItem copy=new JMenuItem(original.getText());
+            copy.setEnabled(original.isEnabled()); copy.setAccelerator(original.getAccelerator());
+            copy.addActionListener(e -> { original.doClick(0); after.run(); }); return copy;
+        }
         if (original.getAction()!=null) return new JMenuItem(original.getAction());
         JMenuItem copy=original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getText(),original.isSelected())
                 : new JMenuItem(original.getText());
         copy.addActionListener(e -> original.doClick(0)); return copy;
     }
-    void themeChanged() { setBackground(Ui.color(ColorRole.CHROME)); keyboardHint.setForeground(Ui.color(ColorRole.CHROME_INACTIVE)); setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE)); }
+    void themeChanged() {
+        setBackground(Ui.color(ColorRole.CHROME));
+        setBorder(Hairline.bottom());
+        keyboardHint.setForeground(Ui.color(ColorRole.CHROME_INACTIVE));
+    }
 
     private boolean isMaximized() { return (window.getExtendedState() & Frame.MAXIMIZED_BOTH) != 0; }
     private void rememberNormal() {
@@ -396,7 +411,7 @@ final class WindowChrome extends JPanel {
                     g.drawRect(x + 2,y,7,7); g.setColor(Ui.color(ColorRole.CHROME)); g.fillRect(x,y + 2,8,8);
                     g.setColor(Ui.color(ColorRole.CHROME_TEXT)); g.drawRect(x,y + 2,7,7);
                 } else g.drawRect(x,y,9,9);
-                if (hasFocus()) { g.setColor(Ui.FOCUS); g.drawRect(3,3,getWidth() - 7,getHeight() - 7); }
+                if (hasFocus()) Hairline.horizontal(g,getWidth()/2.0-6,getHeight()-4,12);
             } finally { g.dispose(); }
         }
     }

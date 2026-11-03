@@ -4,6 +4,7 @@
 #endif
 #include <windows.h>
 #include <windowsx.h>
+#include <dwmapi.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include "jni.h"
@@ -18,6 +19,25 @@ typedef struct {
 
 static const WCHAR PROPERTY[] = L"Fish.NativeWindow";
 static SRWLOCK state_lock = SRWLOCK_INIT;
+
+static HRESULT flat_frame(HWND window) {
+    /* AWT's overlapped styles are needed for snap/resize, not DWM decoration. */
+    enum DWMNCRENDERINGPOLICY rendering = DWMNCRP_DISABLED;
+    DWORD corners = 1, border = 0xfffffffe; /* DONOTROUND and COLOR_NONE (Windows 11). */
+    HRESULT result = DwmSetWindowAttribute(window, DWMWA_NCRENDERING_POLICY, &rendering, sizeof(rendering));
+    if (FAILED(result) && result != (HRESULT)0x80263001L) return result; /* Composition disabled. */
+    if (SUCCEEDED(result)) {
+        result = DwmSetWindowAttribute(window, 33, &corners, sizeof(corners));
+        if (FAILED(result) && result != E_INVALIDARG) return result; /* Windows 10 has no corner preference. */
+        result = DwmSetWindowAttribute(window, 34, &border, sizeof(border));
+        if (FAILED(result) && result != E_INVALIDARG) return result;
+    }
+    LONG_PTR extended = GetWindowLongPtrW(window, GWL_EXSTYLE);
+    SetWindowLongPtrW(window, GWL_EXSTYLE, extended & ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
+    LONG_PTR style = GetClassLongPtrW(window, GCL_STYLE);
+    if (style & CS_DROPSHADOW) SetClassLongPtrW(window, GCL_STYLE, style & ~CS_DROPSHADOW);
+    return S_OK;
+}
 
 static void failure(JNIEnv *env, const char *message) {
     (*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalStateException"), message);
@@ -34,6 +54,14 @@ static RECT scaled_region(RECT area, RECT client, int width, int height) {
     return result;
 }
 
+static void client_area(HWND window, RECT *area, BOOL maximized) {
+    if (maximized) {
+        MONITORINFO monitor = {0};
+        monitor.cbSize = sizeof(MONITORINFO);
+        if (GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor)) *area = monitor.rcWork;
+    }
+}
+
 static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     FishWindow snapshot = {0};
     AcquireSRWLockShared(&state_lock);
@@ -42,6 +70,10 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
     ReleaseSRWLockShared(&state_lock);
     if (!snapshot.previous) return DefWindowProcW(window, message, wparam, lparam);
     switch (message) {
+        case WM_STYLECHANGING:
+            if ((int)wparam == GWL_EXSTYLE)
+                ((STYLESTRUCT *)lparam)->styleNew &= ~(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
+            break;
         case WM_SETICON:
         case WM_SETTEXT: {
             /* AWT refreshes icons on monitor changes. These default handlers draw
@@ -56,12 +88,7 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
         }
         case WM_NCCALCSIZE:
             if (wparam) {
-                if (IsZoomed(window)) {
-                    MONITORINFO monitor = {0};
-                    monitor.cbSize = sizeof(MONITORINFO);
-                    if (GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor))
-                        ((NCCALCSIZE_PARAMS *)lparam)->rgrc[0] = monitor.rcWork;
-                }
+                client_area(window,&((NCCALCSIZE_PARAMS *)lparam)->rgrc[0],IsZoomed(window));
                 return 0;
             }
             return 0;
@@ -107,6 +134,9 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
             }
             break;
         case WM_NCPAINT: return 0;
+        case WM_DWMCOMPOSITIONCHANGED:
+            if (FAILED(flat_frame(window))) OutputDebugStringW(L"Fish: failed to restore flat DWM chrome after composition change.\n");
+            break;
         /* DefWindowProc would repaint a classic caption behind an owned dialog. */
         case WM_NCACTIVATE: return TRUE;
         case WM_NCDESTROY:
@@ -119,8 +149,7 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
     return CallWindowProcW(snapshot.previous, window, message, wparam, lparam);
 }
 
-JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jclass type, jobject component) {
-    (void)type;
+static HWND handle_for(JNIEnv *env, jobject component) {
     JAWT awt = {0};
     awt.version = JAWT_VERSION_1_4;
     if (!JAWT_GetAWT(env, &awt)) { failure(env, "Windows drawing surface is unavailable."); return 0; }
@@ -135,6 +164,13 @@ JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jcla
     if (info) surface->FreeDrawingSurfaceInfo(info);
     surface->Unlock(surface); awt.FreeDrawingSurface(surface);
     if (!window) { failure(env, "Fish has no Windows handle."); return 0; }
+    return window;
+}
+
+JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jclass type, jobject component) {
+    (void)type;
+    HWND window = handle_for(env, component);
+    if (!window) return 0;
     if (GetPropW(window, PROPERTY)) return (jlong)(intptr_t)window;
     FishWindow *state = (FishWindow *)calloc(1, sizeof(FishWindow));
     if (!state) { failure(env, "Cannot allocate Windows integration state."); return 0; }
@@ -148,6 +184,9 @@ JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jcla
     }
     LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
     SetWindowLongPtrW(window, GWL_STYLE, (style & ~WS_POPUP) | WS_OVERLAPPEDWINDOW);
+    if (FAILED(flat_frame(window))) {
+        failure(env, "Windows could not disable native frame decoration."); return 0;
+    }
     SetWindowPos(window, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     return (jlong)(intptr_t)window;
 }
@@ -196,4 +235,41 @@ JNIEXPORT jint JNICALL Java_pane5250_ui_NativeWindow_hitTest0(JNIEnv *env, jclas
 JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_style0(JNIEnv *env, jclass type, jlong handle) {
     (void)env; (void)type;
     return (jlong)GetWindowLongPtrW((HWND)(intptr_t)handle, GWL_STYLE);
+}
+JNIEXPORT void JNICALL Java_pane5250_ui_NativeWindow_flat0(JNIEnv *env, jclass type, jobject component) {
+    (void)type;
+    HWND window = handle_for(env, component);
+    if (window && FAILED(flat_frame(window))) failure(env, "Windows could not disable popup/dialog frame decoration.");
+}
+JNIEXPORT jintArray JNICALL Java_pane5250_ui_NativeWindow_geometry0(JNIEnv *env, jclass type, jlong handle) {
+    (void)type;
+    HWND window = (HWND)(intptr_t)handle;
+    RECT outer, client;
+    if (!GetWindowRect(window, &outer) || !GetClientRect(window, &client)) {
+        failure(env, "Cannot read native window bounds."); return NULL;
+    }
+    DWORD corners = 0;
+    BOOL rendering = FALSE;
+    DwmGetWindowAttribute(window, 33, &corners, sizeof(corners));
+    DwmGetWindowAttribute(window, DWMWA_NCRENDERING_ENABLED, &rendering, sizeof(rendering));
+    jint values[] = {outer.right-outer.left,outer.bottom-outer.top,client.right,client.bottom,
+        (jint)corners,(jint)GetWindowLongPtrW(window,GWL_EXSTYLE),(jint)rendering};
+    jintArray result = (*env)->NewIntArray(env, 7);
+    if (result) (*env)->SetIntArrayRegion(env, result, 0, 7, values);
+    return result;
+}
+JNIEXPORT jintArray JNICALL Java_pane5250_ui_NativeWindow_frameBounds0(JNIEnv *env, jclass type, jlong handle, jboolean maximized) {
+    (void)type;
+    HWND window = (HWND)(intptr_t)handle;
+    RECT outer;
+    MONITORINFO monitor = {0}; monitor.cbSize = sizeof(MONITORINFO);
+    if (!GetWindowRect(window,&outer) || !GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&monitor)) {
+        failure(env,"Cannot read native frame/work-area bounds."); return NULL;
+    }
+    RECT client = outer; client_area(window,&client,maximized);
+    jint values[] = {outer.left,outer.top,outer.right,outer.bottom,client.left,client.top,client.right,client.bottom,
+        monitor.rcWork.left,monitor.rcWork.top,monitor.rcWork.right,monitor.rcWork.bottom};
+    jintArray result = (*env)->NewIntArray(env,12);
+    if (result) (*env)->SetIntArrayRegion(env,result,0,12,values);
+    return result;
 }

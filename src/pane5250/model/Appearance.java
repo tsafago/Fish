@@ -3,7 +3,7 @@ package pane5250.model;
 import java.util.*;
 
 /** Workspace-wide appearance; profiles retain their host palette and effect. */
-public record Appearance(boolean outline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
+public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
                          Set<String> retiredShortcuts) {
     public record PaneInfo(boolean header,boolean footer,boolean profile,boolean connection,
                            boolean host,boolean device,boolean status,boolean dimensions,boolean cursor,boolean insert) {
@@ -25,10 +25,11 @@ public record Appearance(boolean outline,PaneInfo info,FontChoice font,String se
             throw new IllegalArgumentException("Selected custom theme is missing.");
     }
     public static Appearance defaults() {
-        return new Appearance(true,PaneInfo.defaults(),FontChoice.defaults(),"",List.of(),Set.of("ctrl alt K"));
+        return new Appearance(true,false,PaneInfo.defaults(),FontChoice.defaults(),"",List.of(),Set.of("ctrl alt K"));
     }
-    public Appearance withTheme(String selected,List<ColorTheme> values) { return new Appearance(outline,info,font,selected,values,retiredShortcuts); }
-    public Appearance withLayout(boolean border,PaneInfo values) { return new Appearance(border,values,font,selectedTheme,themes,retiredShortcuts); }
-    public Appearance withFont(FontChoice value) { return new Appearance(outline,info,value,selectedTheme,themes,retiredShortcuts); }
+    public Appearance withTheme(String selected,List<ColorTheme> values) { return new Appearance(outline,windowOutline,info,font,selected,values,retiredShortcuts); }
+    public Appearance withLayout(boolean border,PaneInfo values) { return new Appearance(border,windowOutline,values,font,selectedTheme,themes,retiredShortcuts); }
+    public Appearance withWindowOutline(boolean value) { return new Appearance(outline,value,info,font,selectedTheme,themes,retiredShortcuts); }
+    public Appearance withFont(FontChoice value) { return new Appearance(outline,windowOutline,info,value,selectedTheme,themes,retiredShortcuts); }
     public Optional<ColorTheme> custom() { return themes.stream().filter(t -> t.name().equals(selectedTheme)).findFirst(); }
 }

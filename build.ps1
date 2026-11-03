@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.5.0'
+$version = '0.5.1'
 if (-not $Jdk) {
     $manifest = Import-PowerShellDataFile .\tools.psd1
     $candidate = Join-Path $PSScriptRoot ('.tools\' + $manifest.Jdk.Directory)
@@ -66,7 +66,7 @@ Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item build\fish-window.dll dist\fish-window.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
 if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
+    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -cp build\classes -d build\test-classes '@build\tests.txt'
@@ -83,6 +83,8 @@ if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
     if ($LASTEXITCODE -ne 0) { throw 'Streamlining smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.CustomizationSmoke
     if ($LASTEXITCODE -ne 0) { throw 'Customization smoke checks failed.' }
+    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.ui.ChromeConsistencySmoke
+    if ($LASTEXITCODE -ne 0) { throw 'Chrome consistency smoke checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }

@@ -41,6 +41,7 @@ public final class Workspace extends JFrame {
     private String fontNotice="";
     private final AppShortcuts shortcuts;
     private final WindowChrome chrome;
+    private JMenu appearanceDetails;
     private Runnable afterClose = () -> {};
 
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
@@ -70,7 +71,7 @@ public final class Workspace extends JFrame {
         JPanel shell = new JPanel(new BorderLayout());
         Ui.background(shell,ColorRole.BACKGROUND);
         setContentPane(shell);
-        getRootPane().setBorder(BorderFactory.createMatteBorder(1,1,1,1,Ui.LINE));
+        updateWindowOutline();
         JMenuBar menus=menus();
         JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); tools.setOpaque(false);
         JButton addPane=new JButton(command("Add pane"));
@@ -127,7 +128,7 @@ public final class Workspace extends JFrame {
             TerminalFonts.validate(terminalFont,profileList());
             fontNotice="";
         } catch (java.io.IOException | IllegalArgumentException e) {
-            fontNotice="Terminal font unavailable: "+e.getMessage()+"\nUsing Java Monospaced temporarily; saved choice retained. View > Fonts can repair it.";
+            fontNotice="Terminal font unavailable: "+e.getMessage()+"\nUsing Java Monospaced temporarily; saved choice retained. Appearance > More settings > Fonts can repair it.";
             System.err.println(fontNotice);
             terminalFont=new Font(Font.MONOSPACED,Font.PLAIN,16);
         }
@@ -177,7 +178,10 @@ public final class Workspace extends JFrame {
         setIconImages(FishIcon.images());
         content.setBackground(Ui.BACKGROUND);
         if (getContentPane()!=null) getContentPane().setBackground(Ui.BACKGROUND);
-        getRootPane().setBorder(BorderFactory.createLineBorder(Ui.LINE));
+        updateWindowOutline();
+    }
+    private void updateWindowOutline() {
+        getRootPane().setBorder(appearance!=null && appearance.windowOutline() ? Hairline.perimeter() : BorderFactory.createEmptyBorder());
     }
     public void applyTheme(AppTheme theme) {
         appearance=appearance.withTheme("",appearance.themes());
@@ -413,40 +417,70 @@ public final class Workspace extends JFrame {
         active.focusTerminal();
     }
     public void appearance() {
+        Ui.present(this,"Appearance",appearancePanel(),"Done");
+    }
+    JPanel appearancePanel() {
         JPanel form=new JPanel(new GridLayout(0,2,12,12));
-        JComboBox<AppTheme> themes=new JComboBox<>(AppTheme.values()); themes.setSelectedItem(Ui.theme());
-        JLabel application=new JLabel("Application theme"); application.setLabelFor(themes);
-        form.add(application); form.add(themes);
-        JCheckBox highlight=new JCheckBox("Tint selected pane background",highlightActive);
-        highlight.addActionListener(e -> highlightActive(highlight.isSelected()));
-        form.add(new JLabel("Pane focus")); form.add(highlight);
-        JCheckBox outline=new JCheckBox("Outline active pane",appearance.outline());
-        outline.addActionListener(e -> appearanceSettings(appearance.withLayout(outline.isSelected(),appearance.info())));
-        form.add(new JLabel("Pane outline")); form.add(outline);
-        themes.addActionListener(e -> applyTheme((AppTheme)themes.getSelectedItem()));
+        JComboBox<Object> themes=new JComboBox<>(AppTheme.values());
+        boolean[] syncing={false};
+        JComboBox<String> palettes=new JComboBox<>(Profile.THEMES.toArray(String[]::new));
+        JComboBox<String> effects=new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
+        appearance.themes().forEach(themes::addItem);
+        themes.setSelectedItem(appearance.custom().<Object>map(t -> t).orElse(Ui.theme()));
+        Ui.labeled(form,"Application theme",themes);
+        themes.addActionListener(e -> {
+            if (syncing[0]) return;
+            if (themes.getSelectedItem() instanceof AppTheme theme) applyTheme(theme);
+            else if (themes.getSelectedItem() instanceof ColorTheme theme)
+                appearanceSettings(appearance.withTheme(theme.name(),appearance.themes()));
+            palettes.setEnabled(!Ui.customTheme());
+        });
         if (active!=null) {
             SessionPane pane=active;
-            JComboBox<String> palettes=new JComboBox<>(Profile.THEMES.toArray(String[]::new));
-            JComboBox<String> effects=new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
             palettes.setSelectedItem(pane.profile().theme()); effects.setSelectedItem(pane.profile().effect());
-            JLabel palette=new JLabel("Host palette"), effect=new JLabel("Text effect (opt-in)");
-            palette.setLabelFor(palettes); effect.setLabelFor(effects);
-            form.add(palette); form.add(palettes); form.add(effect); form.add(effects);
-            ActionListener display=e -> putProfile(pane.profile().withDisplay((String)palettes.getSelectedItem(),(String)effects.getSelectedItem()));
+            Ui.labeled(form,"Host palette",palettes); Ui.labeled(form,"Text effect (opt-in)",effects);
+            palettes.setEnabled(!Ui.customTheme());
+            palettes.setToolTipText("Custom application themes own host colors; built-in themes use this profile palette.");
+            ActionListener display=e -> {
+                if (!syncing[0]) putProfile(pane.profile().withDisplay((String)palettes.getSelectedItem(),(String)effects.getSelectedItem()));
+            };
             palettes.addActionListener(display); effects.addActionListener(display);
         }
         JPanel body=new JPanel(new BorderLayout(0,12));
-        JPanel extra=new JPanel(new FlowLayout(FlowLayout.LEFT,8,0));
-        extra.add(Ui.button("Theme designer",KeyEvent.VK_D,() -> new ThemeDesigner(this).setVisible(true)));
-        extra.add(Ui.button("Fonts",KeyEvent.VK_F,() -> AppearanceDialogs.fonts(this)));
-        extra.add(Ui.button("Pane information",KeyEvent.VK_I,() -> AppearanceDialogs.paneInfo(this)));
+        JPanel extra=new JPanel(new BorderLayout(0,8));
+        JLabel immediate=new JLabel("Changes apply immediately and are saved.");
+        Ui.role(immediate,"muted"); extra.add(immediate,BorderLayout.NORTH);
+        JButton details=new JButton("More settings...");
+        details.setMnemonic(KeyEvent.VK_M);
+        Runnable sync=() -> {
+            syncing[0]=true;
+            themes.removeAllItems(); for (AppTheme theme:AppTheme.values()) themes.addItem(theme);
+            appearance.themes().forEach(themes::addItem);
+            themes.setSelectedItem(appearance.custom().<Object>map(t -> t).orElse(Ui.theme()));
+            if (active!=null) {
+                palettes.setSelectedItem(active.profile().theme());
+                effects.setSelectedItem(active.profile().effect());
+            }
+            syncing[0]=false;
+            palettes.setEnabled(!Ui.customTheme());
+        };
+        details.addActionListener(e -> {
+            JPopupMenu popup=new JPopupMenu();
+            for (Component item:appearanceDetails.getMenuComponents())
+                if (item instanceof JMenu menu) popup.add(WindowChrome.copyMenu(menu,sync));
+                else if (item instanceof JMenuItem command) popup.add(WindowChrome.copyItem(command,sync));
+                else if (item instanceof JSeparator) popup.addSeparator();
+            popup.show(details,0,details.getHeight());
+        });
+        JPanel links=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); links.add(details);
+        extra.add(links,BorderLayout.SOUTH);
         body.add(form,BorderLayout.CENTER); body.add(extra,BorderLayout.SOUTH);
-        Ui.present(this,"Appearance",body,"Done");
+        return body;
     }
 
     private JMenuBar menus() {
         JMenuBar bar = new JMenuBar();
-        bar.setBorder(BorderFactory.createMatteBorder(0,0,1,0,Ui.LINE));
+        bar.setBorder(BorderFactory.createEmptyBorder());
         JMenu session = menu(bar,"Session",KeyEvent.VK_S);
         action(session,"Connect / disconnect","ctrl alt R",() -> active.connect());
         action(session,"Reconnect","ctrl alt shift R",() -> active.reconnect());
@@ -454,41 +488,45 @@ public final class Workspace extends JFrame {
         action(session,"Profiles...","ctrl alt P",this::profiles);
         action(session,"Switch profile...","ctrl alt O",this::quickSwitch);
         session.addSeparator();
-        action(session,"Insert profile username","ctrl alt U",() -> active.paste(active.profile().username()));
-        action(session,"Insert remembered password","ctrl alt shift P",() -> active.sendPassword());
+        JMenu signOn=new JMenu("Sign-on helpers"); session.add(signOn);
+        action(signOn,"Insert profile username","ctrl alt U",() -> active.paste(active.profile().username()));
+        action(signOn,"Insert remembered password","ctrl alt shift P",() -> active.sendPassword());
         session.addSeparator();
         action(session,"Quit","ctrl alt Q",() -> close(false));
         JMenu edit=menu(bar,"Edit",KeyEvent.VK_E);
         action(edit,"Copy selection / screen","ctrl alt shift C",() -> active.view().copy());
         action(edit,"Paste into fields","ctrl alt shift V",() -> active.view().paste());
+        action(edit,"RESET",null,() -> active.send(KeyMnemonic.RESET)).hostKey=KeyMnemonic.RESET;
         edit.addSeparator();
-        action(edit,"Shortcuts...",null,() -> shortcuts.show());
+        JMenu keyboard=new JMenu("Keyboard"); edit.add(keyboard);
+        action(keyboard,"Shortcuts...",null,() -> shortcuts.show());
         JMenu layoutMenu = menu(bar,"Panes",KeyEvent.VK_P);
         action(layoutMenu,"Add pane","ctrl alt H",() -> split(true));
         action(layoutMenu,"Swap panes...","ctrl alt D",this::dockingDialog);
         action(layoutMenu,"Close pane","ctrl alt W",this::closePane);
         layoutMenu.addSeparator();
-        action(layoutMenu,"Next pane","ctrl alt RIGHT",() -> cycle(1));
-        action(layoutMenu,"Previous pane","ctrl alt LEFT",() -> cycle(-1));
-        action(layoutMenu,"Decrease divider","ctrl alt OPEN_BRACKET",() -> adjustDivider(-.05));
-        action(layoutMenu,"Increase divider","ctrl alt CLOSE_BRACKET",() -> adjustDivider(.05));
-        layoutMenu.addSeparator();
-        action(layoutMenu,"Save layout to profile","ctrl alt S",this::saveProfileLayout);
-        action(layoutMenu,"Restore profile layout","ctrl alt L",this::restoreProfileLayout);
+        JMenu navigation=new JMenu("Navigation"); layoutMenu.add(navigation);
+        action(navigation,"Next pane","ctrl alt RIGHT",() -> cycle(1));
+        action(navigation,"Previous pane","ctrl alt LEFT",() -> cycle(-1));
+        JMenu arrangement=new JMenu("Layout"); layoutMenu.add(arrangement);
+        action(arrangement,"Decrease divider","ctrl alt OPEN_BRACKET",() -> adjustDivider(-.05));
+        action(arrangement,"Increase divider","ctrl alt CLOSE_BRACKET",() -> adjustDivider(.05));
+        arrangement.addSeparator();
+        action(arrangement,"Save layout to profile","ctrl alt S",this::saveProfileLayout);
+        action(arrangement,"Restore profile layout","ctrl alt L",this::restoreProfileLayout);
         JMenu view = menu(bar,"View",KeyEvent.VK_V);
+        action(view,"Fit host screen","ctrl alt 0",this::fit);
+        action(view,"Zoom in","ctrl alt EQUALS",() -> zoom(.1));
+        action(view,"Zoom out","ctrl alt MINUS",() -> zoom(-.1));
+        view.addSeparator();
         action(view,"Appearance...","ctrl alt T",this::appearance);
-        action(view,"Theme designer...",null,() -> new ThemeDesigner(this).setVisible(true));
-        action(view,"Fonts...",null,() -> AppearanceDialogs.fonts(this));
-        action(view,"Pane information...",null,() -> AppearanceDialogs.paneInfo(this));
-        JCheckBoxMenuItem outline=new JCheckBoxMenuItem("Active pane outline",appearance.outline());
-        outline.addActionListener(e -> appearanceSettings(appearance.withLayout(outline.isSelected(),appearance.info())));
-        view.add(outline);
-        view.addMenuListener(new javax.swing.event.MenuListener() {
-            @Override public void menuSelected(javax.swing.event.MenuEvent e) { outline.setSelected(appearance.outline()); }
-            @Override public void menuDeselected(javax.swing.event.MenuEvent e) {}
-            @Override public void menuCanceled(javax.swing.event.MenuEvent e) {}
-        });
-        JMenu themeMenu=new JMenu("Application themes"); view.add(themeMenu);
+        appearanceDetails=new JMenu("Appearance settings");
+        action(appearanceDetails,"Fonts...",null,() -> AppearanceDialogs.fonts(this));
+        action(appearanceDetails,"Pane information...",null,() -> AppearanceDialogs.paneInfo(this));
+        action(appearanceDetails,"Window and focus...",null,() -> AppearanceDialogs.windowFocus(this));
+        appearanceDetails.addSeparator();
+        action(appearanceDetails,"Theme designer...",null,() -> new ThemeDesigner(this).setVisible(true));
+        JMenu themeMenu=new JMenu("Application presets"); appearanceDetails.add(themeMenu);
         for (AppTheme theme : AppTheme.values()) {
             AppCommand change=new AppCommand("Theme: "+theme,"Application theme; does not reconnect sessions",null,
                     () -> applyTheme(theme),() -> !closing,"appearance color scheme "+theme.name());
@@ -498,16 +536,18 @@ public final class Workspace extends JFrame {
         AppCommand flux=new AppCommand("Flux animated text","Flowing multicolor text; opt-in, host attributes preserved",null,
                 () -> putProfile(active.profile().withDisplay(active.profile().theme(),Profile.FLUX)),
                 () -> active!=null && !closing,"theme gradient rainbow animated flowing effect");
-        commands.add(flux); view.add(new JMenuItem(flux));
-        view.addSeparator();
-        action(view,"Fit host screen","ctrl alt 0",this::fit);
-        action(view,"Zoom in","ctrl alt EQUALS",() -> zoom(.1));
-        action(view,"Zoom out","ctrl alt MINUS",() -> zoom(-.1));
+        commands.add(flux); appearanceDetails.add(new JMenuItem(flux));
         JMenu host = menu(bar,"Host",KeyEvent.VK_H);
+        for (KeyMnemonic key:List.of(KeyMnemonic.RESET,KeyMnemonic.ATTN,KeyMnemonic.SYSREQ)) {
+            if (key==KeyMnemonic.RESET) host.add(new JMenuItem(command("RESET")));
+            else action(host,key.name(),null,() -> active.send(key)).hostKey=key;
+        }
+        host.addSeparator();
         action(host,"Send host key...","ctrl alt F",this::hostKeys);
+        JMenu editing=new JMenu("Field and screen actions"); host.add(editing);
         for (KeyMnemonic key : List.of(KeyMnemonic.ENTER,KeyMnemonic.FIELD_EXIT,KeyMnemonic.FIELD_PLUS,KeyMnemonic.FIELD_MINUS,
-                KeyMnemonic.RESET,KeyMnemonic.ATTN,KeyMnemonic.SYSREQ,KeyMnemonic.CLEAR,KeyMnemonic.HELP,KeyMnemonic.PAGE_UP,KeyMnemonic.PAGE_DOWN))
-            action(host,key.name().replace('_',' '),null,() -> active.send(key)).hostKey=key;
+                KeyMnemonic.CLEAR,KeyMnemonic.HELP,KeyMnemonic.PAGE_UP,KeyMnemonic.PAGE_DOWN))
+            action(editing,key.name().replace('_',' '),null,() -> active.send(key)).hostKey=key;
         JMenu help = menu(bar,"Help",KeyEvent.VK_L);
         action(help,"Full manual / Getting Started",null,() -> {
             try { new ManualDialog(this).setVisible(true); }
@@ -520,7 +560,7 @@ public final class Workspace extends JFrame {
                 + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
                 + "Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
                 + "Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels\n"
-                + "Ctrl+Alt+T: Appearance     View: Theme designer, Fonts, Pane information",
+                + "Ctrl+Alt+T: Appearance     Appearance > More settings: Fonts, Information, Window and focus, Theme designer",
                 "Keyboard reference"));
         action(help,"Compatibility and connection safety",null,() -> Ui.message(this,
                 "TN5250J-based 5250 engine; only IBM-3477-FC.\nPlain TCP is not encrypted. Use only on a trusted network.\n"
@@ -575,13 +615,14 @@ public final class Workspace extends JFrame {
         AppCommand action=new AppCommand(text,menu.getText()+" / "+text,stroke,command,() -> {
             if (closing) return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
-            if (List.of("Profiles...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Keyboard reference",
+            if (List.of("Profiles...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
                     "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started").contains(text)) return true;
             if (active==null) return false;
             if (text.equals("Copy selection / screen")) return active.screen()!=null;
             if (List.of("Swap panes...","Next pane","Previous pane").contains(text)) return panes.size()>1;
             if (text.equals("Restore profile layout")) return !active.profile().savedLayout().isEmpty();
-            if (menu.getText().equals("Host") || text.startsWith("Insert ") || text.startsWith("Paste")) {
+            if (menu.getText().equals("Host") || menu.getText().equals("Field and screen actions") || text.equals("RESET")
+                    || text.startsWith("Insert ") || text.startsWith("Paste")) {
                 return active.connected() && (!active.screen().getOIA().isKeyBoardLocked()
                         || List.of("RESET","ATTN","SYSREQ").contains(text));
             }
@@ -606,7 +647,7 @@ public final class Workspace extends JFrame {
         menu.add(new JMenuItem(command("Paste into fields")));
         menu.addSeparator();
         menu.add(new JMenuItem(command("RESET")));
-        for (String action:List.of("Connect / disconnect","Add pane","Swap panes...","Close pane","Pane information..."))
+        for (String action:List.of("Connect / disconnect","Add pane","Swap panes...","Close pane"))
             menu.add(new JMenuItem(command(action)));
         return menu;
     }

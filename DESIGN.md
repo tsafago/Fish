@@ -54,7 +54,9 @@ into an application accent. Twelve workstation palettes alter restrained
 entries, not the terminal's attribute semantics.
 An active custom theme owns all sixteen host slots; a built-in app theme leaves
 the profile palette in charge. Selection/cursor, six gradient stops, glow,
-active tint, outline and header/footer/status colors have separate roles.
+active tint and header/footer/status colors have separate roles. Structure > Divider
+is the single color for every owned structural edge, including optional window/pane
+outlines; old LINE/OUTLINE roles link to the saved Divider on version-6 migration.
 
 ## Typography
 
@@ -138,7 +140,13 @@ cursor remain independent. None is still the default and immediate stop control.
 ## Shapes
 
 Rectangular panes and shared flat Swing controls. Hairline borders and the visible
-focus outline provide structure without rounded containers or ornamental chrome.
+focus underline provide structure without rounded containers or ornamental chrome.
+Structural edges are exactly one physical device pixel, including at 150% DPI.
+`Hairline` aligns rectangular clips and fills device coordinates; no bevel,
+compound perimeter, native shadow or rounded/cut corner is added.
+The optional whole-window perimeter is off by default, independent of active
+pane outline/tint, and configured only under Appearance > More settings >
+Window and focus. Native move/resize/snap does not depend on a visible outline.
 
 ## Components
 
@@ -175,7 +183,7 @@ menus and shortcuts; disabled actions remain disabled and modal focus isolates
 host input. Former Commands chords are retired no-ops until explicitly reassigned.
 Every app/host action is
 listed in the global shortcut editor, with recording, unbind/default controls,
-atomic conflict rejection and version-5 persistence. Window-scoped dispatch
+atomic conflict rejection and version-6 persistence. Window-scoped dispatch
 precedes Swing traversal/host input, so Ctrl+Tab works without taking keys in
 owned dialogs. Profile-specific host bindings are preserved unless the user
 explicitly reassigns that host action globally.

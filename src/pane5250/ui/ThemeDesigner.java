@@ -30,7 +30,8 @@ public final class ThemeDesigner extends JDialog {
             }
         });
         name.getAccessibleContext().setAccessibleName("Custom theme name");
-        JPanel top=new JPanel(new BorderLayout(12,0)); top.add(saved); top.add(name,BorderLayout.EAST);
+        JPanel top=new JPanel(new GridLayout(0,2,12,8));
+        Ui.labeled(top,"Load theme",saved); Ui.labeled(top,"Custom theme name",name);
         table.setRowHeight(26); table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.putClientProperty("terminateEditOnFocusLost",true);
         table.getAccessibleContext().setAccessibleName("Every semantic color role; edit exact RGB values");
@@ -45,10 +46,10 @@ public final class ThemeDesigner extends JDialog {
             }
         });
         JPanel buttons=new JPanel(new FlowLayout(FlowLayout.RIGHT,8,0));
+        buttons.add(Ui.button("Close / cancel preview",KeyEvent.VK_C,this::dismiss));
         buttons.add(Ui.button("Preview",KeyEvent.VK_P,this::preview));
         buttons.add(Ui.button("Save",KeyEvent.VK_S,() -> save(false)));
         buttons.add(Ui.button("Save & apply",KeyEvent.VK_A,() -> save(true)));
-        buttons.add(Ui.button("Close / cancel preview",KeyEvent.VK_C,this::dismiss));
         JPanel bottom=new JPanel(new BorderLayout(0,10)); bottom.add(status); bottom.add(buttons,BorderLayout.SOUTH);
         JPanel content=new JPanel(new BorderLayout(0,12)); content.setBorder(Ui.padding(12));
         content.add(top,BorderLayout.NORTH); content.add(new JScrollPane(table)); content.add(bottom,BorderLayout.SOUTH);

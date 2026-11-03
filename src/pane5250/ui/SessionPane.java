@@ -71,14 +71,12 @@ public final class SessionPane extends JPanel {
             }
             @Override public void paintBorder(Component c,Graphics graphics,int x,int y,int width,int height) {
                 if (!workspace.appearanceSettings().outline() || workspace.active()!=SessionPane.this) return;
-                Graphics2D g=(Graphics2D)graphics.create();
-                try {
-                    double scale=g.getTransform().getScaleX();
-                    g.setColor(Ui.color(ColorRole.OUTLINE)); g.setStroke(new BasicStroke((float)(1/scale)));
-                    double left=(Math.floor(x*scale)+.5)/scale,top=(Math.floor(y*scale)+.5)/scale;
-                    double right=(Math.floor((x+width)*scale)-.5)/scale,bottom=(Math.floor((y+height)*scale)-.5)/scale;
-                    g.draw(new java.awt.geom.Rectangle2D.Double(left,top,right-left,bottom-top));
-                } finally { g.dispose(); }
+                Container shell=workspace.getContentPane();
+                Rectangle bounds=SwingUtilities.convertRectangle(getParent(),getBounds(),shell);
+                boolean frame=workspace.appearanceSettings().windowOutline();
+                Hairline.rectangle(graphics,x,y,width,height,bounds.y!=WindowChrome.HEIGHT,
+                        !frame || bounds.x>0,!frame || bounds.y+height<shell.getHeight(),
+                        !frame || bounds.x+width<shell.getWidth());
             }
         });
         setBackground(Ui.BACKGROUND);
@@ -616,7 +614,7 @@ public final class SessionPane extends JPanel {
         Rectangle area = new Rectangle(0,0,getWidth(),getHeight());
         Graphics2D g = (Graphics2D) graphics.create();
         g.setColor(new Color(Ui.FOCUS.getRed(),Ui.FOCUS.getGreen(),Ui.FOCUS.getBlue(),45)); g.fill(area);
-        g.setColor(Ui.FOCUS); g.drawRect(area.x + 1,area.y + 1,area.width - 3,area.height - 3);
+        Hairline.rectangle(g,area.x+1,area.y+1,area.width-2,area.height-2);
         g.setColor(Ui.TEXT);
         g.drawString("Swap panes",area.x + 12, area.y + 44);
         g.dispose();

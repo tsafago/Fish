@@ -3,7 +3,7 @@ package pane5250.model;
 /** Every editable color belongs to a semantic role, including host and effect ink. */
 public enum ColorRole {
     BACKGROUND("Surfaces"), PANEL("Surfaces"), FIELD("Surfaces"), DIALOG("Surfaces"),
-    TEXT("Controls"), MUTED("Controls"), DISABLED("Controls"), LINE("Controls"),
+    TEXT("Controls"), MUTED("Controls"), DISABLED("Controls"),
     HOVER("Controls"), PRESSED("Controls"), FOCUS("Controls"), ERROR("Controls"),
     SELECTION("Controls"), SELECTION_TEXT("Controls"),
     CHROME("Chrome"), CHROME_TEXT("Chrome"), CHROME_INACTIVE("Chrome"),
@@ -11,7 +11,7 @@ public enum ColorRole {
     TOOLTIP("Menus"), TOOLTIP_TEXT("Menus"),
     HEADER("Panes"), HEADER_TEXT("Panes"), HEADER_MUTED("Panes"),
     FOOTER("Panes"), FOOTER_TEXT("Panes"), STATUS_ERROR("Panes"), STATUS_WAIT("Panes"),
-    OUTLINE("Panes"), ACTIVE_TINT("Panes"), DIVIDER("Panes"), DIVIDER_BACKGROUND("Panes"),
+    ACTIVE_TINT("Panes"), DIVIDER("Structure"), DIVIDER_BACKGROUND("Panes"),
     CURSOR("Terminal"), TERMINAL_SELECTION("Terminal"),
     HOST_0("Host attributes"), HOST_1("Host attributes"), HOST_2("Host attributes"), HOST_3("Host attributes"),
     HOST_4("Host attributes"), HOST_5("Host attributes"), HOST_6("Host attributes"), HOST_7("Host attributes"),

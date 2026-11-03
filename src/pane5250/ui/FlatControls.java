@@ -4,23 +4,13 @@ import java.awt.*;
 import javax.swing.*;
 import javax.swing.plaf.*;
 import javax.swing.plaf.basic.*;
-import javax.swing.border.AbstractBorder;
 import pane5250.model.ColorRole;
 
 /** Small shared Swing delegates: flat surfaces, one border treatment, explicit focus. */
 public final class FlatControls {
     private FlatControls() {}
-    public static final class Edge extends AbstractBorder implements UIResource {
-        private final int vertical,horizontal;
-        public Edge(int vertical,int horizontal) { this.vertical=vertical; this.horizontal=horizontal; }
-        @Override public Insets getBorderInsets(Component c) { return new Insets(vertical,horizontal,vertical,horizontal); }
-        @Override public Insets getBorderInsets(Component c,Insets insets) {
-            insets.set(vertical,horizontal,vertical,horizontal); return insets;
-        }
-        @Override public void paintBorder(Component c,Graphics g,int x,int y,int width,int height) {
-            g.setColor(c.hasFocus() ? Ui.FOCUS : Ui.LINE);
-            g.drawRect(x,y,width-1,height-1);
-        }
+    public static final class Edge extends Hairline {
+        public Edge(int vertical,int horizontal) { super(vertical,horizontal); }
     }
     public static final class Button extends BasicButtonUI {
         public static ComponentUI createUI(JComponent c) { return new Button(); }
@@ -31,16 +21,17 @@ public final class FlatControls {
         @Override public void update(Graphics g,JComponent c) {
             Ui.quality(g);
             AbstractButton button=(AbstractButton)c;
-            if (button.isContentAreaFilled() || button.getModel().isRollover() || button.getModel().isPressed()) {
+            if (button.isContentAreaFilled() || button.getModel().isRollover() || button.getModel().isPressed() || button.getModel().isSelected()) {
                 g.setColor(!button.isEnabled() ? Ui.PANEL : button.getModel().isPressed()
-                        ? Ui.color(ColorRole.PRESSED) : button.getModel().isRollover() ? Ui.HOVER : Ui.FIELD);
+                        || button.getModel().isSelected() ? Ui.color(ColorRole.PRESSED) : button.getModel().isRollover() ? Ui.HOVER : Ui.FIELD);
                 g.fillRect(0,0,c.getWidth(),c.getHeight());
             }
             super.paint(g,c);
         }
         @Override protected void paintButtonPressed(Graphics g,AbstractButton b) {}
         @Override protected void paintFocus(Graphics g,AbstractButton b,Rectangle view,Rectangle text,Rectangle icon) {
-            g.setColor(Ui.FOCUS); g.drawRect(2,2,b.getWidth()-5,b.getHeight()-5);
+            Rectangle ink=text.width>0 ? text : icon;
+            Hairline.horizontal(g,ink.x,ink.y+ink.height,Math.max(8,ink.width));
         }
         @Override protected void paintText(Graphics g,AbstractButton b,Rectangle text,String value) {
             g.setColor(b.isEnabled() ? b.getForeground() : Ui.color(ColorRole.DISABLED));
@@ -77,11 +68,24 @@ public final class FlatControls {
     public static final class Check extends BasicCheckBoxUI {
         public static ComponentUI createUI(JComponent c) { return new Check(); }
         @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); }
+        @Override protected void paintFocus(Graphics g,Rectangle text,Dimension size) {
+            Hairline.horizontal(g,text.x,text.y+text.height,text.width);
+        }
     }
     public static final class Combo extends BasicComboBoxUI {
         public static ComponentUI createUI(JComponent c) { return new Combo(); }
         @Override protected JButton createArrowButton() {
             return Ui.iconButton("Show choices","down",() -> {});
+        }
+        @Override protected ComboPopup createPopup() {
+            return new BasicComboPopup(comboBox) {
+                @Override protected void configurePopup() {
+                    super.configurePopup(); setBorder(Hairline.perimeter());
+                }
+                @Override protected void configureScroller() {
+                    super.configureScroller(); scroller.setBorder(BorderFactory.createEmptyBorder());
+                }
+            };
         }
         @Override public void paintCurrentValueBackground(Graphics g,Rectangle bounds,boolean focus) {
             g.setColor(Ui.FIELD); g.fillRect(bounds.x,bounds.y,bounds.width,bounds.height);
@@ -123,10 +127,9 @@ public final class FlatControls {
             BasicSplitPaneDivider divider=new BasicSplitPaneDivider(this) {
                 @Override public void paint(Graphics g) {
                     g.setColor(Ui.color(ColorRole.DIVIDER_BACKGROUND)); g.fillRect(0,0,getWidth(),getHeight());
-                    g.setColor(Ui.color(ColorRole.DIVIDER));
                     if (getOrientation()==JSplitPane.HORIZONTAL_SPLIT)
-                        g.drawLine(getWidth()/2,0,getWidth()/2,getHeight());
-                    else g.drawLine(0,getHeight()/2,getWidth(),getHeight()/2);
+                        Hairline.vertical(g,getWidth()/2.0,0,getHeight());
+                    else Hairline.horizontal(g,0,getHeight()/2.0,getWidth());
                 }
             };
             divider.setBorder(BorderFactory.createEmptyBorder());
@@ -142,11 +145,11 @@ public final class FlatControls {
             g.setColor(selected ? Ui.HOVER : Ui.PANEL); g.fillRect(x,y,w,h);
         }
         @Override protected void paintTabBorder(Graphics g,int placement,int index,int x,int y,int w,int h,boolean selected) {
-            if (selected) { g.setColor(Ui.FOCUS); g.fillRect(x,y+h-2,w,2); }
+            if (selected) Hairline.horizontal(g,x,y+h-1,w);
         }
         @Override protected void paintContentBorder(Graphics g,int placement,int selected) {}
         @Override protected void paintFocusIndicator(Graphics g,int placement,Rectangle[] rects,int index,Rectangle icon,Rectangle text,boolean selected) {
-            if (selected && tabPane.hasFocus()) { Rectangle r=rects[index]; g.setColor(Ui.FOCUS); g.drawRect(r.x+2,r.y+2,r.width-5,r.height-5); }
+            if (selected && tabPane.hasFocus()) Hairline.horizontal(g,text.x,text.y+text.height,text.width);
         }
     }
     public static final class CheckIcon implements Icon,UIResource {
@@ -156,10 +159,35 @@ public final class FlatControls {
             Ui.quality(g);
             AbstractButton b=(AbstractButton)c;
             g.setColor(Ui.FIELD); g.fillRect(x+1,y+1,14,14);
-            g.setColor(b.hasFocus() ? Ui.FOCUS : Ui.LINE); g.drawRect(x+1,y+1,14,14);
+            Hairline.rectangle(g,x+1,y+1,15,15);
             if (b.isSelected()) {
                 g.setColor(b.isEnabled() ? Ui.FOCUS : Ui.color(ColorRole.DISABLED));
                 g.drawLine(x+4,y+8,x+7,y+11); g.drawLine(x+7,y+11,x+12,y+5);
+            }
+        }
+    }
+    public static final class Separator extends BasicSeparatorUI {
+        public static ComponentUI createUI(JComponent c) { return new Separator(); }
+        @Override public Dimension getPreferredSize(JComponent c) {
+            return ((JSeparator)c).getOrientation()==SwingConstants.VERTICAL ? new Dimension(5,0) : new Dimension(0,7);
+        }
+        @Override public void paint(Graphics g,JComponent c) {
+            if (((JSeparator)c).getOrientation()==SwingConstants.VERTICAL) Hairline.vertical(g,c.getWidth()/2.0,0,c.getHeight());
+            else Hairline.horizontal(g,0,c.getHeight()/2.0,c.getWidth());
+        }
+    }
+    public static final class Table extends BasicTableUI {
+        public static ComponentUI createUI(JComponent c) { return new Table(); }
+        @Override protected void installDefaults() { super.installDefaults(); table.setShowGrid(false); table.setIntercellSpacing(new Dimension(0,0)); }
+        @Override public void paint(Graphics g,JComponent c) {
+            super.paint(g,c);
+            Rectangle clip=g.getClipBounds();
+            int first=Math.max(0,table.rowAtPoint(new Point(0,clip.y)));
+            int last=table.rowAtPoint(new Point(0,clip.y+clip.height));
+            if (last<0) last=table.getRowCount()-1;
+            for (int row=first;row<=last;row++) {
+                Rectangle cell=table.getCellRect(row,0,true);
+                Hairline.rectangle(g,0,cell.y,table.getWidth(),cell.height,false,false,true,false);
             }
         }
     }

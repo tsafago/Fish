@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.5.0 - experimental customization preview.
+Fish 0.5.1 - local experimental chrome-consistency preview; not published.
 This manual describes the implemented application, not an assurance of full ACS compatibility.
 Open Help > Full manual / Getting Started for the searchable topic index.
 
@@ -25,6 +25,9 @@ If connection fails, check the hostname, port, VPN/network and IBM i Telnet serv
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
+The local 0.5.1 build provides dist\Fish-0.5.1-setup.exe and dist\Fish-0.5.1-windows-x64.zip.
+Published downloads below remain the earlier 0.5.0 preview.
+
 Download Fish-0.5.0-setup.exe from the private HornadyIBM/Fish repository's v0.5.0 preview release, using a GitHub account with access. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
 Alternatively, extract Fish-0.5.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
@@ -41,7 +44,7 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.5.0-setup.exe, dist\Fish-0.5.0-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Outputs are dist\Fish\Fish.exe, dist\Fish-0.5.1-setup.exe, dist\Fish-0.5.1-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 
@@ -53,7 +56,7 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces are migrated on load; do not run two versions against the same directory simultaneously. Version-5 state adds custom themes, font references, independent outline and pane-information settings while retaining profiles, shortcuts and tint preferences. Older builds do not understand version-5 state; use a backup or a separate data directory for a downgrade.
+Older Fish/Pane5250 workspaces are migrated on load; do not run two versions against the same directory simultaneously. Version-6 state retains profiles, custom themes, font references, shortcuts, active-pane outline/tint and pane-information choices. The new whole-window outline starts off on upgrade unless already explicitly chosen in version 6. Structural colors are linked to the saved Divider role with an explicit load notice. Older builds do not understand version-6 state; use a backup or a separate data directory for a downgrade.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -73,9 +76,9 @@ The empty pane contains a preset selector and the arrow Connect button directly 
 
 ## Focus and switching panes
 
-The selected pane has an optional physical-pixel outline. View > Active pane outline or View > Pane information toggles it independently of Appearance > Tint selected pane background. Disabling the outline removes its border/insets, not just its color. Activating a different pane does not change spacing. Its header, terminal and footer share one surface; keyboard focus and the terminal cursor remain available with both outline and tint off. OLED themes retain a true-black terminal background.
+The selected pane has an optional physical-pixel outline. View > Appearance > More settings > Window and focus controls it independently of active tint and the whole-window outline. Disabling the pane outline removes its border/insets, not just its color. Activating a different pane does not change spacing. Its header, terminal and footer share one surface; keyboard focus and the terminal cursor remain available with both outline and tint off. OLED themes retain a true-black terminal background.
 
-Panes > Next pane and Previous pane cycle focus. The defaults are Ctrl+Alt+Right and Ctrl+Alt+Left. To use Ctrl+Tab, open Edit > Shortcuts, find Next pane, select it, choose Record shortcut and press Ctrl+Tab. For reverse cycling, assign Ctrl+Shift+Tab to Previous pane.
+Panes > Navigation > Next pane and Previous pane cycle focus. The defaults are Ctrl+Alt+Right and Ctrl+Alt+Left. To use Ctrl+Tab, open Edit > Keyboard > Shortcuts, find Next pane, select it, choose Record shortcut and press Ctrl+Tab. For reverse cycling, assign Ctrl+Shift+Tab to Previous pane.
 
 Ctrl+Alt+1 through Ctrl+Alt+8 focus the corresponding layout position. The Shortcuts list can change these too. These are panes inside Fish, not separate document tabs.
 
@@ -88,6 +91,11 @@ On Windows 11, hover over the maximize button to request Snap Layouts. Available
 Drag any window edge or corner to resize. Double-click the blank title area to maximize or restore. Upper-right buttons minimize, maximize/restore and close. A compact application-menu button replaces the menu labels in narrow windows.
 
 Alt+Space opens the Windows system menu. The default Ctrl+Alt+Space opens Fish's themed window menu. Its keyboard Move and Size commands use arrow keys, Shift+arrows for single-unit adjustments, Enter to finish and Escape to cancel.
+
+The whole-window outline is off by default and is not required for resizing.
+View > Appearance > More settings > Window and focus can enable a complete square one-physical-pixel perimeter.
+All owned structural borders, menu separators and the titlebar/content divider use Theme Designer's Structure > Divider color.
+Dialogs and popups have the same flat edge, without native shadows or rounded corners. Windows-owned system menus and installers remain OS-controlled.
 
 Window changes scale the terminal rendering; only the host may switch between 24x80 and 27x132. Very small snapped windows cannot make a dense 132-column screen as readable as a larger window.
 
@@ -113,9 +121,9 @@ Startup confirmations show an allocated/rejected device when the host supplies o
 
 ## Manual sign-on and remembered credentials
 
-Manual sign-on uses the host's own screen. Fish does not guess sign-on field positions or invent a signed-on state. Session > Insert profile username inserts into the current field using normal validation.
+Manual sign-on uses the host's own screen. Fish does not guess sign-on field positions or invent a signed-on state. Session > Sign-on helpers > Insert profile username inserts into the current field using normal validation.
 
-Enable Remember password and save a password in the profile editor to use Windows Credential Manager. Session > Insert remembered password is allowed only in an unlocked non-display input field with enough remaining capacity. It cannot spill into a visible field.
+Enable Remember password and save a password in the profile editor to use Windows Credential Manager. Session > Sign-on helpers > Insert remembered password is allowed only in an unlocked non-display input field with enough remaining capacity. It cannot spill into a visible field.
 
 A blank password field in the editor preserves an existing remembered secret; it is not an indication that no password exists. Disabling Remember and saving removes the remembered entry. Duplicating a profile does not copy its remembered password.
 
@@ -155,11 +163,11 @@ Escape sends Reset; Pause sends Attention; Shift+Escape sends System Request; Ct
 
 Page Up/Down send roll keys. Ctrl+Page Up/Down send horizontal roll actions. Tab/Shift+Tab move fields. Arrows move the cursor. Home, End, Insert, Delete, Backspace and Ctrl+End retain the core's corresponding editing actions.
 
-Host > Send host key offers the complete supported action list. Edit > Shortcuts lists those host actions and the application actions. Disabled actions remain disabled; sending an unavailable action never creates a fake host response.
+Host > Send host key offers the complete supported action list. Edit > Keyboard > Shortcuts lists those host actions and the application actions. Disabled actions remain disabled; sending an unavailable action never creates a fake host response.
 
 ## Global shortcut overrides
 
-Edit > Shortcuts lists every registered Fish action, including window/menu commands, profile actions, pane focus, clipboard, appearance and all host actions. The same list is reachable from Profiles > Keyboard.
+Edit > Keyboard > Shortcuts lists every registered Fish action, including window/menu commands, profile actions, pane focus, clipboard, appearance and all host actions. The same list is reachable from Profiles > Keyboard.
 
 Find an action, select its row and use Record shortcut. Press the desired keys and choose Use shortcut. Unbind clears its binding; Restore default restores the selected action. Save shortcuts persists the entire change; Cancel leaves existing bindings intact.
 
@@ -195,7 +203,7 @@ Tabs and newlines navigate without submitting Enter. Pasting never signs on or s
 
 The Commands window is removed. Session, Edit, Panes, View, Host and Help, the compact narrow-window menu, terminal context menu and configurable shortcuts reuse the same action handlers. Actions return focus to the intended pane and disabled actions remain disabled.
 
-Right-click a terminal for clipboard, Reset, connection and pane actions. View provides appearance, theme designer, fonts, pane information and animated-text controls. Host > Send host key retains every supported host action. No old Commands shortcut is silently redirected to a host key.
+Right-click a terminal for clipboard, Reset, connection and pane actions. Quick View contains Fit, Zoom and Appearance. Appearance starts with application theme, dependent host palette and text effect; these apply immediately and are saved. More settings groups Fonts, Pane information, Window and focus, Theme designer and preset/effect shortcuts. Panes groups occasional navigation/layout actions in submenus. Host keeps Reset/Attention/System Request close at hand, with field/screen actions and the complete Send host key list one level deeper. No old Commands shortcut is silently redirected to a host key.
 
 ## Application themes, OLED and focus
 
@@ -203,13 +211,13 @@ View > Appearance changes the complete application theme: Charcoal, Graphite, Mi
 
 Application themes are independent of host palettes. OLED themes use true-black terminal and chrome surfaces. High-contrast choices favor explicit boundaries and strong foreground contrast; Windows' own accessibility settings may also affect system-owned menus and installers.
 
-Tint selected pane background controls whole-pane background highlighting. Turn it off for an outline-only active pane, or disable Active pane outline separately. The enabled outline is snapped to a physical pixel; focusing a pane never changes its layout insets.
+Appearance > More settings > Window and focus controls whole-pane tint, active-pane outline and the separate default-off whole-window outline. Choose Apply to save, or Cancel to leave them unchanged. All enabled outlines use the shared one-physical-pixel Divider color; focusing a pane never changes its layout insets.
 
-Theme and focus changes are immediate and persisted. They do not reconnect sessions or alter host dimensions.
+Theme choices apply immediately; deeper settings use Apply/Cancel. Neither reconnects sessions or alters host dimensions.
 
 ## Theme designer and saved custom themes
 
-Open View > Theme designer. Load a built-in preset or a saved custom theme, then enter a name and precise #RRGGBB values in the color table. Its semantic roles cover every owned UI color: surfaces, text, disabled/hover/pressed/focus/selection states, chrome and inactive controls, menus/tooltips, header/footer/statuses, outline/tint/dividers, cursor/terminal selection, all sixteen host slots, six effect-gradient stops, glow and the logo gradient.
+Open View > Appearance > More settings > Theme designer. Load a built-in preset or a saved custom theme, then enter a name and precise #RRGGBB values in the color table. Its 60 semantic roles cover every owned UI color: surfaces, text, disabled/hover/pressed/focus/selection states, chrome and inactive controls, menus/tooltips, header/footer/statuses, tint/shared Divider, cursor/terminal selection, all sixteen host slots, six effect-gradient stops, glow and the logo gradient. Structure > Divider owns all structural edges and optional outlines; legacy LINE/OUTLINE entries migrate to the existing Divider color with a notice instead of leaving conflicting controls.
 
 Preview applies the draft to the real application without saving. Cancel, Escape or closing the designer restores the applied theme. Save creates/updates a reusable custom theme; Save & apply also selects it. Saving edits to the currently active named theme updates that active theme. Load it again to edit; choose a different name to save a copy. Names are case-insensitively unique, replacements require confirmation when values differ, and up to 32 custom themes are supported.
 
@@ -219,7 +227,7 @@ Selecting a built-in application theme preserves the saved custom-theme library.
 
 ## Terminal fonts and local custom fonts
 
-Open View > Fonts. The family list discovers actually installed fonts with equal printable-ASCII advances, prioritizing Cascadia Mono/Code, Consolas, Lucida Console, Courier New and available DejaVu/Liberation Mono faces. Automatic picks an available fixed-width face. Proportional fonts are not advertised as reliable terminal choices.
+Open View > Appearance > More settings > Fonts. The family list discovers actually installed fonts with equal printable-ASCII advances, prioritizing Cascadia Mono/Code, Consolas, Lucida Console, Courier New and available DejaVu/Liberation Mono faces. Automatic picks an available fixed-width face. Proportional fonts are not advertised as reliable terminal choices.
 
 Choose a family, or browse to a local monospaced TTF/OTF file. A custom file takes precedence; clear the path to use the family again. Check / preview font shows the actual regular face. Apply validates glyph coverage and that printable glyphs fit a cell for all current profiles' SBCS code pages. Unsupported font formats, proportional faces, missing files and missing/wide required glyphs are reported rather than silently accepted. Some OpenType formats may not be supported by Java's local font parser.
 
@@ -229,7 +237,7 @@ Glyphs remain positioned at exact fixed physical-pixel cell origins. Font change
 
 ## Pane information and zero-space rows
 
-View > Pane information controls header/footer visibility and each existing item: profile name, connection state, host, requested device, status/input message, host dimensions, cursor row:column and insert indicator. Outline and tint are separate controls in the same form. These preferences belong to the workspace, not a profile.
+View > Appearance > More settings > Pane information groups header/footer visibility with their dependent items: profile name, connection state, host, requested device, status/input message, host dimensions, cursor row:column and insert indicator. Disabled rows disable their item controls while retaining the choices. Outline and tint live separately in Window and focus. These preferences belong to the workspace, not a profile. Apply saves; Cancel leaves existing choices unchanged.
 
 A disabled row, or a row with no actual text, reserves zero vertical space. Close/connect/add/swap actions remain available through menus, shortcuts and the terminal context menu. Alt+drag swaps from the terminal when no header is shown.
 
@@ -261,7 +269,7 @@ At very small pane sizes, the screen must be small to fit. Increase the window, 
 
 Closing Fish saves window size, pane arrangement, profile selections, last-used preset, application/custom themes, font reference, shortcuts, outline/tint and pane-information preferences. Next launch is offline; saved layouts do not imply an auto-connect.
 
-Panes > Save layout to profile and Restore profile layout preserve a profile-specific arrangement. Restoring/replacing a layout can close sessions removed from it. Old arbitrary layouts are normalized into bounded slots with a notice. Layouts over eight panes are rejected rather than silently truncated.
+Panes > Layout > Save layout to profile and Restore profile layout preserve a profile-specific arrangement. The same submenu holds divider adjustment. Restoring/replacing a layout can close sessions removed from it. Old arbitrary layouts are normalized into bounded slots with a notice. Layouts over eight panes are rejected rather than silently truncated.
 
 The workspace is locked against concurrent writers. Another independent instance needs another directory: Fish.exe --data-dir "C:\Users\you\Fish-workspace-two". Do not point two copies at the same workspace file.
 

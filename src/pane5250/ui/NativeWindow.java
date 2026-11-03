@@ -11,6 +11,10 @@ final class NativeWindow {
     private final long handle;
     NativeWindow(JFrame window) {
         this.window=window;
+        load();
+        handle=install0(window);
+    }
+    private static void load() {
         if (!loaded) {
             try {
                 Path location=Path.of(NativeWindow.class.getProtectionDomain().getCodeSource().getLocation().toURI());
@@ -23,7 +27,10 @@ final class NativeWindow {
                 throw new IllegalStateException("Windows integration could not load. Keep the complete Fish folder together: "+e.getMessage(),e);
             }
         }
-        handle=install0(window);
+    }
+    static void flatten(Window window) {
+        load();
+        flat0(window);
     }
     void regions(Rectangle drag,Rectangle maximize) {
         if (!window.isDisplayable()) return;
@@ -39,4 +46,7 @@ final class NativeWindow {
     private static native void maximize0(long handle);
     private static native int hitTest0(long handle,int x,int y);
     private static native long style0(long handle);
+    private static native void flat0(Window window);
+    private static native int[] geometry0(long handle);
+    private static native int[] frameBounds0(long handle,boolean maximized);
 }

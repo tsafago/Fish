@@ -87,7 +87,7 @@ public final class CustomizationSmoke {
         }
         table.setValueAt("#101820",ColorRole.HOST_0.ordinal(),2);
         table.setValueAt("#6AE5BB",ColorRole.HOST_2.ordinal(),2);
-        table.setValueAt("#466080",ColorRole.OUTLINE.ordinal(),2);
+        table.setValueAt("#466080",ColorRole.DIVIDER.ordinal(),2);
         ColorTheme draft=designer.draft();
         designer.preview();
         check(w.appearanceSettings().equals(initial) && Ui.customTheme(),"Real live preview leaves the persistent workspace settings untouched.");

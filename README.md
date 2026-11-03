@@ -10,7 +10,18 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Customization preview
+## Local chrome-consistency preview
+
+**Fish 0.5.1** is a local-only revision; it has not been published.
+All owned structural edges use one subtle shared divider color and one physical
+pixel at 100%/150% DPI. The whole-window outline is off by default, including
+on upgrade. Enable it under **View > Appearance > More settings > Window and
+focus**; active-pane outline and tint remain separate options there.
+Flat square dialog/combo/popup perimeters replace compound bevels and shadows.
+Quick menus retain frequent actions; fonts, pane information, window details
+and the theme designer are behind **Appearance > More settings**.
+
+## Included customization
 
 **Fish 0.5.0** adds a complete named-theme designer, Lagoon/Afterglow/Eye Saver
 application presets, discovered monospaced fonts and local TTF/OTF support.
@@ -53,8 +64,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.5.0-setup.exe` | Install for the current Windows user |
-| `dist\Fish-0.5.0-windows-x64.zip` | Copy/extract a complete portable application |
+| `dist\Fish-0.5.1-setup.exe` | Install the local preview for the current Windows user |
+| `dist\Fish-0.5.1-windows-x64.zip` | Copy/extract the complete local portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -65,7 +76,8 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current package is **Fish 0.5.0**. Keep the entire application-image directory together:
+The current local package is **Fish 0.5.1**. Published downloads remain at 0.5.0.
+Keep the entire application-image directory together:
 
 ```powershell
 .\dist\Fish\Fish.exe
@@ -146,6 +158,11 @@ custom-theme save/preview/cancel/reload and role coverage, font validation/fixed
 cells, zero-space information rows, local Reset overlay/host-busy exclusion,
 outline off, Neon migration and removed Commands bindings. Its font fixture is
 private and deleted; it never touches the shared clipboard or credentials.
+`ChromeConsistencySmoke` checks exact one-device-pixel borders at 100%/150%,
+complete odd-sized perimeters, shared-color migration, default-off/explicit-on
+window-outline persistence, popup roots, compact menu order, native client/work
+area calculations and peer recreation. Synthetic offscreen images are written
+under `build\fish-051-*.png`; no real host screen or physical desktop is captured.
 A separately consented, bounded
 `StreamliningDesktop` pass verifies actual Ctrl+Tab recording, native side/quarter/top
 snapping and maximize/restore. It is not the full foreground stress suite.
@@ -200,7 +217,8 @@ New panes preselect the last used preset; restored panes retain their saved
 preset selection. Nothing auto-connects in normal mode.
 The active pane has a single subtle tinted surface across its header, terminal
 and footer, with an outer physical-pixel focus outline and no header underline.
-Disable **Appearance > Tint selected pane background** for outline-only focus.
+Open **View > Appearance > More settings > Window and focus** to change
+the active-pane outline and tint independently.
 Focus never changes the border's layout insets. OLED themes retain true-black surfaces.
 
 Native Windows frame styles and hit testing support Win+arrows, edge/corner
@@ -220,7 +238,7 @@ and errors. X remains available to cancel a pending connection. When only one
 pane remains and it is disconnected, its X is hidden; other pane-close and
 disconnect behavior is unchanged.
 
-**Edit > Shortcuts** lists every registered application and host action, with
+**Edit > Keyboard > Shortcuts** lists every registered application and host action, with
 record/unbind/default controls and conflict validation. The same list is linked
 from **Profiles > Keyboard**. Assign **Ctrl+Tab** to Next pane and
 **Ctrl+Shift+Tab** to Previous pane to use familiar cycling. Overrides are
@@ -280,7 +298,7 @@ legacy directory and lock instead, preserving existing profiles and passwords.
 The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored **offline** next launch.
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-5 state.
+preset are saved with version-6 state.
 Version-1/2/3 profiles and credentials are retained. Old freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. A legacy layout over eight panes is rejected explicitly
@@ -354,7 +372,7 @@ dividers and text. Application themes are independent of workstation host
 palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid,
 Mint, Rose, OLED green and OLED amber. Host
 color/reverse/underline/blink/non-display distinctions remain intact.
-**View > Theme designer** edits every semantic RGB role: surfaces, controls and
+**View > Appearance > More settings > Theme designer** edits all 60 semantic RGB roles: surfaces, controls and
 states, chrome, menus/tooltips, header/footer/statuses, outline/tint/dividers,
 cursor/terminal selection, all sixteen host slots, six gradient stops, glow
 and logo colors. Preview is temporary; Cancel restores the applied theme.
@@ -364,23 +382,27 @@ replacement confirmation; up to 32 custom themes are stored in the workspace.
 Valid colors are not silently contrast-corrected. When a custom theme is active,
 its host slots supersede the profile's built-in palette; other profile settings
 and host attributes are unchanged.
+**Structure > Divider** controls every owned structural border/separator,
+including optional pane/window outlines. Version-5 custom themes keep their
+existing divider color; old separate LINE/OUTLINE colors are linked to it with
+an explicit migration notice.
 
-**View > Fonts** discovers available regular monospaced families and accepts a
+**Appearance > More settings > Fonts** discovers available regular monospaced families and accepts a
 local TTF/OTF file. Apply checks printable fixed-cell widths and the current
 profiles' code-page glyphs. Missing/unsupported files are reported explicitly;
 startup uses an announced temporary Monospaced fallback without erasing the
 saved choice. Font files stay local and must remain available at the saved path.
 They are not bundled, uploaded or copied into releases.
 
-**View > Pane information** independently controls each header/footer item and
-both rows, with no space for empty rows. Outline and tint are separate toggles.
+**Appearance > More settings > Pane information** independently controls each header/footer item and
+both rows, with no space for empty rows. Outline and tint live in **Window and focus**.
 With a hidden header, use the terminal context menu, Panes menu or Alt+drag to
 swap. Workspace appearance settings apply across profiles; effects remain
 profile-specific.
 
 Optional Soft glow, column-gradient Prism and **Flux (animated)**
 effects are disabled by default. Choose **View > Appearance > Text effect >
-Flux (animated)**, or **View > Flux animated text**, for smoothly
+Flux (animated)**, or **Appearance > More settings > Flux animated text**, for smoothly
 flowing multicolor gradients. The effect is saved with the preset. Neutral host
 text carries the full color flow; chromatic text varies within its host hue
 family, reverse video retains its exact colors, and hidden data is never drawn.

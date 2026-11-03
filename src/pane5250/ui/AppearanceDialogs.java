@@ -82,14 +82,17 @@ final class AppearanceDialogs {
         }
     }
     static void windowFocus(Workspace workspace) {
+        Ui.showDialog(windowFocusDialog(workspace));
+    }
+    static JDialog windowFocusDialog(Workspace workspace) {
         Appearance a=workspace.appearanceSettings();
         JPanel form=windowFocusPanel(workspace);
-        if (Ui.form(workspace,"Window and focus",form,"Apply")) {
+        return Ui.promptDialog(workspace,"Window and focus",form,"Apply",true,() -> {
             JPanel choices=(JPanel)form.getComponent(0);
             JCheckBox window=(JCheckBox)choices.getComponent(0),pane=(JCheckBox)choices.getComponent(1),tint=(JCheckBox)choices.getComponent(2);
             workspace.appearanceSettings(a.withWindowOutline(window.isSelected()).withLayout(pane.isSelected(),a.info()));
             workspace.highlightActive(tint.isSelected());
-        }
+        });
     }
     static JPanel windowFocusPanel(Workspace workspace) {
         Appearance a=workspace.appearanceSettings();

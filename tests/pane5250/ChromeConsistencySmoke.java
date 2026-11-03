@@ -124,11 +124,81 @@ public final class ChromeConsistencySmoke {
         }
     }
     private static JDialog dialog(Workspace w,String title,JComponent body) {
-        JDialog dialog=new JDialog(w,title);
-        JPanel content=new JPanel(new BorderLayout()); content.setBorder(Ui.padding(16)); content.add(body);
-        JPanel buttons=new JPanel(new FlowLayout(FlowLayout.RIGHT,8,12)); buttons.add(Ui.button("Done",0,dialog::dispose));
-        content.add(buttons,BorderLayout.SOUTH); dialog.setContentPane(content); Ui.decorate(dialog,dialog::dispose);
-        dialog.pack(); dialog.setFocusableWindowState(false); dialog.addNotify(); dialog.validate(); return dialog;
+        JDialog dialog=Ui.promptDialog(w,title,body,"Done",false,() -> {});
+        dialog.setFocusableWindowState(false); dialog.validate(); return dialog;
+    }
+    private static JButton button(JDialog dialog,String text) {
+        return children(dialog.getRootPane()).stream().filter(c -> c instanceof JButton b && text.equals(b.getText()))
+                .map(c -> (JButton)c).findFirst().orElseThrow();
+    }
+    private static List<JCheckBox> choices(JDialog dialog) {
+        return children(dialog.getRootPane()).stream().filter(c -> c instanceof JCheckBox).map(c -> (JCheckBox)c).toList();
+    }
+    private static StateStore.State flush(Workspace w,StateStore store) throws Exception {
+        edt(() -> { w.saveAsync(); return null; });
+        ((ExecutorService)field(w,"persistence")).submit(() -> {}).get(5,TimeUnit.SECONDS);
+        return store.load();
+    }
+    private static void windowFocusChecks(Workspace w,StateStore store) throws Exception {
+        edt(() -> {
+            JDialog dialog=AppearanceDialogs.windowFocusDialog(w);
+            dialog.setFocusableWindowState(false); dialog.validate();
+            try {
+                var actions=children(dialog.getRootPane()).stream().filter(c -> c instanceof JButton b && b.getText()!=null && !b.getText().isEmpty())
+                        .map(c -> ((JButton)c).getText()).toList();
+                check(actions.equals(List.of("Cancel","Apply")),"Actual Window and focus uses Cancel then Apply, never a surrogate Done action.");
+                check(dialog.getRootPane().getDefaultButton()==button(dialog,"Apply"),"Apply is the actual default acceptance action.");
+                check(children(dialog.getRootPane()).stream().anyMatch(c -> c instanceof JLabel label
+                        && label.getText().contains("saved only when you choose Apply")),"Actual dialog copy names its actual acceptance action.");
+                check(choices(dialog).size()==3,"Actual dialog exposes all three independent saved choices.");
+                for (double scale:List.of(1.0,1.5)) {
+                    BufferedImage image=paint(dialog.getRootPane(),scale,"fish-051-focus-"+scale+".png");
+                    perimeter(image,"actual Window and focus "+scale);
+                    dialogInterior(image,"actual Window and focus "+scale);
+                }
+                check(!dialog.isVisible() && !w.isVisible(),"Actual dialog evidence does not expose the shared desktop.");
+            } finally { dialog.dispose(); }
+            return null;
+        });
+        for (int mask=0;mask<8;mask++) {
+            final int flags=mask;
+            edt(() -> {
+                Appearance before=w.appearanceSettings(); boolean tint=w.highlightActive();
+                JDialog dialog=AppearanceDialogs.windowFocusDialog(w);
+                var choices=choices(dialog);
+                for (int i=0;i<3;i++) choices.get(i).setSelected((flags&(1<<i))!=0);
+                check(w.appearanceSettings().equals(before) && w.highlightActive()==tint,"Editing checks does not apply or save before Apply: "+flags);
+                button(dialog,"Apply").doClick(0);
+                check(w.appearanceSettings().windowOutline()==((flags&1)!=0)
+                        && w.appearanceSettings().outline()==((flags&2)!=0) && w.highlightActive()==((flags&4)!=0),
+                        "Actual Apply updates all three choices consistently: "+flags);
+                check(!dialog.isDisplayable(),"Actual Apply closes its dialog: "+flags);
+                return null;
+            });
+            StateStore.State loaded=flush(w,store);
+            check(loaded.appearance().windowOutline()==((flags&1)!=0) && loaded.appearance().outline()==((flags&2)!=0)
+                    && loaded.highlightActive()==((flags&4)!=0),"All three applied choices reload together from disk: "+flags);
+        }
+        for (String dismiss:List.of("Cancel","Escape","Close")) {
+            Appearance before=edt(w::appearanceSettings);
+            boolean tint=edt(w::highlightActive);
+            edt(() -> {
+                JDialog dialog=AppearanceDialogs.windowFocusDialog(w);
+                for (JCheckBox box:choices(dialog)) box.setSelected(!box.isSelected());
+                if (dismiss.equals("Cancel")) button(dialog,"Cancel").doClick(0);
+                else if (dismiss.equals("Escape")) {
+                    Object key=dialog.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).get(KeyStroke.getKeyStroke("ESCAPE"));
+                    dialog.getRootPane().getActionMap().get(key).actionPerformed(new java.awt.event.ActionEvent(dialog,0,"escape"));
+                } else children(dialog.getRootPane()).stream().filter(c -> c instanceof JButton b
+                        && "Close dialog".equals(b.getAccessibleContext().getAccessibleName()))
+                        .map(c -> (JButton)c).findFirst().orElseThrow().doClick(0);
+                check(!dialog.isDisplayable(),"Actual dismissal closes the dialog: "+dismiss);
+                check(w.appearanceSettings().equals(before) && w.highlightActive()==tint,"Actual dismissal discards all three pending edits: "+dismiss);
+                return null;
+            });
+            StateStore.State loaded=flush(w,store);
+            check(loaded.appearance().equals(before) && loaded.highlightActive()==tint,"Dismissal preserves all three stored choices: "+dismiss);
+        }
     }
     private static void workspaceChecks(Workspace w,double scale) throws Exception {
         check(!w.appearanceSettings().windowOutline() && w.getRootPane().getInsets().equals(new Insets(0,0,0,0)),
@@ -168,8 +238,8 @@ public final class ChromeConsistencySmoke {
         JDialog basic=dialog(w,"Appearance",appearance);
         BufferedImage basicImage=paint(basic.getRootPane(),scale,"fish-051-appearance-"+scale+".png");
         perimeter(basicImage,"owned dialog "+scale); dialogInterior(basicImage,"Appearance "+scale);
-        JPanel focus=AppearanceDialogs.windowFocusPanel(w);
-        JDialog advanced=dialog(w,"Window and focus",focus);
+        JDialog advanced=AppearanceDialogs.windowFocusDialog(w);
+        advanced.setFocusableWindowState(false); advanced.validate();
         BufferedImage focusImage=paint(advanced.getRootPane(),scale,"fish-051-focus-"+scale+".png");
         perimeter(focusImage,"Window and focus "+scale); dialogInterior(focusImage,"Window and focus "+scale);
         basic.dispose(); advanced.dispose();
@@ -224,8 +294,9 @@ public final class ChromeConsistencySmoke {
     }
     public static void main(String[] args) throws Exception {
         Ui.install();
+        boolean focusOnly=List.of(args).equals(List.of("--focus-only"));
         Path root=Files.createTempDirectory(Path.of("build"),"chrome-smoke-");
-        migration(root.resolve("migration"));
+        if (!focusOnly) migration(root.resolve("migration"));
         CountDownLatch closed=new CountDownLatch(1);
         try {
             StateStore store=new StateStore(root.resolve("workspace"));
@@ -234,10 +305,13 @@ public final class ChromeConsistencySmoke {
                 window.setFocusableWindowState(false); window.setSize(1000,650);
                 window.onClosed(closed::countDown); window.addNotify(); window.validate(); return window;
             });
-            try { edt(() -> {
-                for (double scale:List.of(1.0,1.5)) { pixelChecks(scale); workspaceChecks(w,scale); }
-                return null;
-            }); }
+            try {
+                if (!focusOnly) edt(() -> {
+                    for (double scale:List.of(1.0,1.5)) { pixelChecks(scale); workspaceChecks(w,scale); }
+                    return null;
+                });
+                windowFocusChecks(w,store);
+            }
             finally { edt(() -> { w.close(false); return null; }); check(closed.await(5,TimeUnit.SECONDS),"Final local appearance persists and unlocks."); }
         } finally {
             try (var paths=Files.walk(root)) { for (Path path:paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path); }

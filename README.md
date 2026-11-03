@@ -10,9 +10,9 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Local chrome-consistency preview
+## Chrome-consistency preview
 
-**Fish 0.5.1** is a local-only revision; it has not been published.
+**Fish 0.5.1** is an unsigned experimental preview.
 All owned structural edges use one subtle shared divider color and one physical
 pixel at 100%/150% DPI. The whole-window outline is off by default, including
 on upgrade. Enable it under **View > Appearance > More settings > Window and
@@ -35,7 +35,7 @@ to None. The titlebar-only fish is smaller, mouse clicks no longer leave a
 focus box, and keyboard focus uses a subtle underline. Its approved geometry,
 Flux/None toggle, click target, 31px chrome and native monitor handling remain.
 UI text uses Windows' desktop font hints without bitmap scaling.
-Downloads are available from the private repository's **v0.5.0 preview release**.
+Downloads are available from the private repository's **v0.5.1 preview release**.
 It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
 available offline from **Help > Full manual / Getting Started**, with a
@@ -44,10 +44,10 @@ searchable full-text topic index.
 ## Install: no developer tools needed
 
 1. Open [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish) using an account with access.
-2. Download `Fish-0.5.0-setup.exe` and its matching `SHA256SUMS.txt`.
+2. Download `Fish-0.5.1-setup.exe` and its matching `SHA256SUMS.txt`.
 3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
 
-For a portable copy, extract `Fish-0.5.0-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.5.1-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -64,8 +64,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.5.1-setup.exe` | Install the local preview for the current Windows user |
-| `dist\Fish-0.5.1-windows-x64.zip` | Copy/extract the complete local portable application |
+| `dist\Fish-0.5.1-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.5.1-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -76,7 +76,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current local package is **Fish 0.5.1**. Published downloads remain at 0.5.0.
+The current package is **Fish 0.5.1**.
 Keep the entire application-image directory together:
 
 ```powershell
@@ -163,6 +163,10 @@ complete odd-sized perimeters, shared-color migration, default-off/explicit-on
 window-outline persistence, popup roots, compact menu order, native client/work
 area calculations and peer recreation. Synthetic offscreen images are written
 under `build\fish-051-*.png`; no real host screen or physical desktop is captured.
+Its `--focus-only` mode exercises the actual Window and focus dialog's
+Cancel/Apply buttons, all eight combinations of the three persistent settings,
+and Cancel/Escape/Close dismissal without saving. Evidence uses the real shared
+dialog builder rather than substituting a Done button.
 A separately consented, bounded
 `StreamliningDesktop` pass verifies actual Ctrl+Tab recording, native side/quarter/top
 snapping and maximize/restore. It is not the full foreground stress suite.

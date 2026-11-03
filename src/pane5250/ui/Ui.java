@@ -257,16 +257,20 @@ public final class Ui {
         return accepted[0];
     }
     private static boolean prompt(Component owner,String title,JComponent body,String accept,boolean cancel) {
+        boolean[] accepted={false};
+        JDialog dialog=promptDialog(owner,title,body,accept,cancel,() -> accepted[0]=true);
+        showDialog(dialog);
+        return accepted[0];
+    }
+    static JDialog promptDialog(Component owner,String title,JComponent body,String accept,boolean cancel,Runnable onAccept) {
         Window parent=owner instanceof Window w ? w : owner==null
                 ? KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow() : SwingUtilities.getWindowAncestor(owner);
-        Component focus=KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
         JDialog dialog=new JDialog(parent,title,Dialog.ModalityType.APPLICATION_MODAL);
         JPanel content=new JPanel(new BorderLayout(0,18)); content.setBorder(padding(16));
         content.add(body,BorderLayout.CENTER);
         JPanel actions=new JPanel(new FlowLayout(FlowLayout.RIGHT,8,0));
-        boolean[] accepted={false};
         if (cancel) actions.add(button("Cancel",KeyEvent.VK_C,dialog::dispose));
-        JButton ok=button(accept,KeyEvent.VK_O,() -> { accepted[0]=true; dialog.dispose(); });
+        JButton ok=button(accept,KeyEvent.VK_O,() -> { onAccept.run(); dialog.dispose(); });
         actions.add(ok); content.add(actions,BorderLayout.SOUTH); dialog.setContentPane(content);
         decorate(dialog,dialog::dispose); dialog.getRootPane().setDefaultButton(ok);
         dialog.pack();
@@ -280,9 +284,12 @@ public final class Ui {
                 (initial==null ? ok : initial).requestFocusInWindow();
             }
         });
+        return dialog;
+    }
+    static void showDialog(JDialog dialog) {
+        Component focus=KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();
         dialog.setVisible(true);
         if (focus!=null && focus.isShowing()) focus.requestFocusInWindow();
-        return accepted[0];
     }
     public static boolean confirm(Component owner,String message,String title) {
         return form(owner,title,messageBody(message),"OK");

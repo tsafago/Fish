@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.5.1 - local experimental chrome-consistency preview; not published.
+Fish 0.5.1 - unsigned experimental chrome-consistency preview.
 This manual describes the implemented application, not an assurance of full ACS compatibility.
 Open Help > Full manual / Getting Started for the searchable topic index.
 
@@ -25,12 +25,9 @@ If connection fails, check the hostname, port, VPN/network and IBM i Telnet serv
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The local 0.5.1 build provides dist\Fish-0.5.1-setup.exe and dist\Fish-0.5.1-windows-x64.zip.
-Published downloads below remain the earlier 0.5.0 preview.
+Download Fish-0.5.1-setup.exe from the private HornadyIBM/Fish repository's v0.5.1 preview release, using a GitHub account with access. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Download Fish-0.5.0-setup.exe from the private HornadyIBM/Fish repository's v0.5.0 preview release, using a GitHub account with access. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
-
-Alternatively, extract Fish-0.5.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.5.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 

@@ -5,13 +5,16 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.5.1 local chrome-consistency preview
+## Fish 0.5.1 chrome-consistency preview
 
 The whole-window outline is off by default, including for version-5 workspaces.
 Its explicit version-6 choice is independent of active-pane outline and tint.
 These occasional settings live in Appearance > More settings > Window and focus,
 not quick View. Quick menus retain shared action/shortcut identities; deeper
 settings group related choices and use Apply/Cancel.
+Window and focus evidence uses the actual runtime dialog and its Cancel/Apply
+actions. The targeted check verifies all eight combinations persist and that
+Cancel, Escape and Close discard pending changes to all three settings.
 
 All owned structural edges use one shared Divider role and device-coordinate
 one-pixel fills. This includes the titlebar separator, optional full square
@@ -28,7 +31,8 @@ perimeters and exact thickness, migration/persistence, quick/deep menu shape,
 native full-client/restored/maximized work-area calculations and peer recreation.
 These are not a physical mixed-monitor or Windows compositor screenshot test.
 No new physical desktop/clipboard automation, IBM i/ACS acceptance or protocol
-implementation is part of this local-only revision.
+implementation is part of this revision. Distribution remains an unsigned,
+experimental preview rather than a production/ACS compatibility claim.
 
 ## Fish 0.5.0 customization preview (included)
 

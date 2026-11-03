@@ -22,8 +22,9 @@ public final class ProfilesDialog extends JDialog {
     private final JComboBox<String> effect = new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
     private final JTextArea keymap = new JTextArea(8,32);
     private final JLabel error = new JLabel(" ");
-    private final JButton save, use, cancel, add, duplicate;
+    private final JButton save, done, use, cancel, add, duplicate;
     private Profile selected;
+    private java.util.List<Object> baseline;
     private boolean loading, dirty, saving;
 
     public ProfilesDialog(Workspace workspace, Profile initial) {
@@ -89,23 +90,24 @@ public final class ProfilesDialog extends JDialog {
         bottom.add(error,BorderLayout.CENTER);
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT,6,0));
         cancel = Ui.button("Cancel",KeyEvent.VK_L,this::dismiss);
-        save = Ui.button("Save",KeyEvent.VK_S,() -> save(false));
-        use = Ui.button("Save & connect",KeyEvent.VK_G,() -> save(true));
-        buttons.add(cancel); buttons.add(save); buttons.add(use); bottom.add(buttons,BorderLayout.EAST);
+        save = Ui.button("Apply",KeyEvent.VK_S,() -> save(false,false));
+        done = Ui.button("Done",KeyEvent.VK_D,() -> { if (dirty) save(false,true); else dismiss(); });
+        use = Ui.button("Save & connect",KeyEvent.VK_G,() -> save(true,true));
+        buttons.add(cancel); buttons.add(save); buttons.add(done); buttons.add(use); bottom.add(buttons,BorderLayout.EAST);
         add(body,BorderLayout.CENTER); add(bottom,BorderLayout.SOUTH);
-        getRootPane().setDefaultButton(use);
+        getRootPane().setDefaultButton(done);
         getRootPane().registerKeyboardAction(e -> dismiss(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         DocumentListener changes = new DocumentListener() {
-            private void changed() { if (!loading) dirty = true; }
+            private void changed() { if (!loading) updateDirty(); }
             @Override public void insertUpdate(DocumentEvent e) { changed(); }
             @Override public void removeUpdate(DocumentEvent e) { changed(); }
             @Override public void changedUpdate(DocumentEvent e) { changed(); }
         };
         for (JTextComponent text : java.util.List.of(name,host,port,device,username,password,keymap)) text.getDocument().addDocumentListener(changes);
-        for (JComboBox<String> combo : java.util.List.of(codePage,theme,effect)) combo.addActionListener(e -> { if (!loading) dirty = true; });
-        automatic.addActionListener(e -> dirty = true); automatic.setMnemonic(KeyEvent.VK_B);
-        remember.addActionListener(e -> dirty = true); remember.setMnemonic(KeyEvent.VK_R);
+        for (JComboBox<String> combo : java.util.List.of(codePage,theme,effect)) combo.addActionListener(e -> { if (!loading) updateDirty(); });
+        automatic.addItemListener(e -> { if (!loading) updateDirty(); }); automatic.setMnemonic(KeyEvent.VK_B);
+        remember.addItemListener(e -> { if (!loading) updateDirty(); }); remember.setMnemonic(KeyEvent.VK_R);
         list.addListSelectionListener(e -> {
             if (e.getValueIsAdjusting() || loading || list.getSelectedValue() == null) return;
             if (!discardChanges()) {
@@ -136,7 +138,16 @@ public final class ProfilesDialog extends JDialog {
         profile.keymap().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> text.append(e.getKey()).append(" = ").append(e.getValue()).append('\n'));
         keymap.setText(text.toString());
         error.setText(" ");
-        dirty = false; loading = false;
+        baseline=fields(); dirty = false; loading = false; updateDirty();
+    }
+    private java.util.List<Object> fields() {
+        return java.util.List.of(name.getText(),host.getText(),port.getText(),device.getText(),username.getText(),
+                password.getDocument().getLength(),automatic.isSelected(),remember.isSelected(),
+                codePage.getSelectedItem(),theme.getSelectedItem(),effect.getSelectedItem(),keymap.getText());
+    }
+    private void updateDirty() {
+        dirty=baseline==null || !baseline.equals(fields()) || workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()));
+        save.setEnabled(dirty && !saving);
     }
     private boolean discardChanges() {
         return !dirty || Ui.confirm(this,"Discard unsaved profile edits?","Unsaved edits");
@@ -148,9 +159,9 @@ public final class ProfilesDialog extends JDialog {
         if (!discardChanges()) return;
         Profile profile = copy ? selected.duplicate() : Profile.create("New workstation");
         loading = true; model.addElement(profile); list.setSelectedValue(profile,true); loading = false;
-        load(profile); dirty = true; name.requestFocusInWindow(); name.selectAll();
+        load(profile); updateDirty(); name.requestFocusInWindow(); name.selectAll();
     }
-    private void save(boolean connect) {
+    private void save(boolean connect,boolean finish) {
         Profile updated;
         char[] secret = password.getPassword();
         try {
@@ -184,12 +195,11 @@ public final class ProfilesDialog extends JDialog {
                     get();
                     workspace.putProfile(updated);
                     dirty = false;
-                    if (connect) { dispose(); workspace.useProfile(updated); }
+                    if (finish) { dispose(); if (connect) workspace.useProfile(updated); }
                     else {
                         int index = list.getSelectedIndex();
                         loading = true; model.set(index,updated); loading = false;
                         load(updated);
-                        error.setText("Saved.");
                     }
                 } catch (Exception e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();
@@ -201,7 +211,10 @@ public final class ProfilesDialog extends JDialog {
     }
     private void setSaving(boolean value) {
         saving = value;
-        for (JButton button : java.util.List.of(save,use,cancel,add,duplicate)) button.setEnabled(!value);
+        for (JButton button : java.util.List.of(save,done,use,cancel,add,duplicate)) button.setEnabled(!value);
+        for (JComponent input:java.util.List.of(name,host,port,device,username,password,keymap,codePage,theme,effect,automatic,remember))
+            input.setEnabled(!value);
+        if (!value) updateDirty();
         list.setEnabled(!value);
         error.setText(value ? "Saving..." : " ");
     }

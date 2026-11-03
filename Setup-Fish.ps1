@@ -32,9 +32,9 @@ try {
     .\build.ps1 Installer -Jdk $jdk
     Write-Host ''
     Write-Host 'Ready: dist\Fish\Fish.exe'
-    Write-Host 'Installer: dist\Fish-0.5.2-setup.exe (current user; no administrator installation)'
-    Write-Host 'Portable ZIP: dist\Fish-0.5.2-windows-x64.zip'
-    if ($Install) { Start-Process -FilePath (Join-Path $PSScriptRoot 'dist\Fish-0.5.2-setup.exe') -Wait }
+    Write-Host 'Installer: dist\Fish-0.5.3-setup.exe (current user; no administrator installation)'
+    Write-Host 'Portable ZIP: dist\Fish-0.5.3-windows-x64.zip'
+    if ($Install) { Start-Process -FilePath (Join-Path $PSScriptRoot 'dist\Fish-0.5.3-setup.exe') -Wait }
 } catch {
     Write-Error -ErrorAction Continue $_.Exception.Message
     exit 1

@@ -213,9 +213,10 @@ public final class FishSmoke {
         setField(view,"fluxPhase",.7);
         check(differences(still,paint(view,1),0,still.getHeight())==0,"Default static rendering does not animate or change users' defaults.");
         workspace.activate(pane);
+        Object cached=field(view,"rendered");
         workspace.toggleFlux();
-        check(pane.profile().effect().equals(Profile.FLUX) && field(view,"rendered")==null,
-                "Logo effect path invalidates the real terminal glyph/effect caches.");
+        check(pane.profile().effect().equals(Profile.FLUX) && field(view,"rendered")==cached,
+                "Logo effect path updates coloration while retaining the same glyph cache.");
         setField(view,"fluxPhase",0.0);
         BufferedImage animated=paint(view,1);
         check(differences(still,animated,0,still.getHeight())>100,"Logo animated Flux toggle visibly changes terminal ink, not just icon styling.");

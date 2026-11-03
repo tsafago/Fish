@@ -236,7 +236,11 @@ public final class Ui {
         });
         dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         dialog.addWindowListener(new WindowAdapter() { @Override public void windowClosing(WindowEvent e) { dismiss.run(); } });
-        dialog.getRootPane().registerKeyboardAction(e -> dismiss.run(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
+        dialog.getRootPane().registerKeyboardAction(e -> {
+            MenuSelectionManager selection=MenuSelectionManager.defaultManager();
+            if (selection.getSelectedPath().length>0) selection.clearSelectedPath();
+            else dismiss.run();
+        },KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
     }
     public static boolean form(Component owner,String title,JComponent body,String accept) {
         return prompt(owner,title,body,accept,true);
@@ -266,12 +270,51 @@ public final class Ui {
         Window parent=owner instanceof Window w ? w : owner==null
                 ? KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow() : SwingUtilities.getWindowAncestor(owner);
         JDialog dialog=new JDialog(parent,title,Dialog.ModalityType.APPLICATION_MODAL);
-        JPanel content=new JPanel(new BorderLayout(0,18)); content.setBorder(padding(16));
-        content.add(body,BorderLayout.CENTER);
         JPanel actions=new JPanel(new FlowLayout(FlowLayout.RIGHT,8,0));
         if (cancel) actions.add(button("Cancel",KeyEvent.VK_C,dialog::dispose));
         JButton ok=button(accept,KeyEvent.VK_O,() -> { onAccept.run(); dialog.dispose(); });
-        actions.add(ok); content.add(actions,BorderLayout.SOUTH); dialog.setContentPane(content);
+        actions.add(ok);
+        prepareDialog(dialog,body,actions,ok);
+        return dialog;
+    }
+    static JDialog settingsDialog(Component owner,String title,JComponent body,
+                                  java.util.function.BooleanSupplier dirty,java.util.function.BooleanSupplier commit) {
+        Window parent=owner instanceof Window w ? w : SwingUtilities.getWindowAncestor(owner);
+        JDialog dialog=new JDialog(parent,title,Dialog.ModalityType.APPLICATION_MODAL);
+        JPanel actions=new JPanel(new FlowLayout(FlowLayout.RIGHT,8,0));
+        JButton apply=new JButton("Apply");
+        apply.setMnemonic(KeyEvent.VK_A);
+        Runnable refresh=() -> apply.setEnabled(dirty.getAsBoolean());
+        apply.addActionListener(e -> { if (commit.getAsBoolean()) refresh.run(); });
+        JButton done=button("Done",KeyEvent.VK_D,() -> {
+            if (!dirty.getAsBoolean() || commit.getAsBoolean()) dialog.dispose();
+            refresh.run();
+        });
+        actions.add(button("Cancel",KeyEvent.VK_C,dialog::dispose)); actions.add(apply); actions.add(done);
+        observeEdits(body,refresh);
+        prepareDialog(dialog,body,actions,done); refresh.run();
+        return dialog;
+    }
+    static void observeEdits(Component component,Runnable changed) {
+        if (component instanceof javax.swing.text.JTextComponent text)
+            text.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+                @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { changed.run(); }
+                @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { changed.run(); }
+                @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { changed.run(); }
+            });
+        if (component instanceof AbstractButton button) button.addItemListener(e -> changed.run());
+        if (component instanceof JComboBox<?> combo) combo.addItemListener(e -> changed.run());
+        if (component instanceof JTable table) {
+            table.getModel().addTableModelListener(e -> changed.run());
+            table.addPropertyChangeListener("tableCellEditor",e -> changed.run());
+        }
+        if (component instanceof Container parent)
+            for (Component child:parent.getComponents()) observeEdits(child,changed);
+    }
+    private static void prepareDialog(JDialog dialog,JComponent body,JPanel actions,JButton ok) {
+        Window parent=dialog.getOwner();
+        JPanel content=new JPanel(new BorderLayout(0,18)); content.setBorder(padding(16));
+        content.add(body,BorderLayout.CENTER); content.add(actions,BorderLayout.SOUTH); dialog.setContentPane(content);
         decorate(dialog,dialog::dispose); dialog.getRootPane().setDefaultButton(ok);
         dialog.pack();
         Rectangle screen=(parent==null ? GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration()
@@ -284,7 +327,6 @@ public final class Ui {
                 (initial==null ? ok : initial).requestFocusInWindow();
             }
         });
-        return dialog;
     }
     static void showDialog(JDialog dialog) {
         Component focus=KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();

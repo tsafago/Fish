@@ -11,11 +11,14 @@ import pane5250.model.Appearance;
 final class AppearanceDialogs {
     private AppearanceDialogs() {}
     static void fonts(Workspace workspace) {
-        Appearance.FontChoice saved=workspace.appearanceSettings().font();
+        Ui.showDialog(fontsDialog(workspace));
+    }
+    static JDialog fontsDialog(Workspace workspace) {
+        Appearance.FontChoice[] saved={workspace.appearanceSettings().font()};
         JComboBox<String> family=new JComboBox<>();
         family.addItem("Automatic"); TerminalFonts.installed().forEach(family::addItem);
-        family.setSelectedItem(saved.family());
-        JTextField path=new JTextField(saved.file(),32);
+        family.setSelectedItem(saved[0].family());
+        JTextField path=new JTextField(saved[0].file(),32);
         path.getAccessibleContext().setAccessibleName("Local custom TTF or OTF font path");
         JPanel file=new JPanel(new BorderLayout(8,0)); file.add(path);
         file.add(Ui.button("Browse",KeyEvent.VK_B,() -> {
@@ -30,31 +33,39 @@ final class AppearanceDialogs {
         fields.add(local); fields.add(file);
         JLabel preview=new JLabel("Aa 0O 1Il | 0123456789 [] {} @ #");
         preview.setBorder(Ui.padding(12)); fields.add(preview);
-        JLabel status=new JLabel("Workspace-wide. Local files stay on this machine; they are not copied or uploaded.");
+        JLabel status=new JLabel(" ");
         Ui.role(status,"muted"); fields.add(status);
+        java.util.function.Supplier<Appearance.FontChoice> draft=() -> new Appearance.FontChoice(
+                Objects.toString(family.getSelectedItem(),"Automatic"),path.getText().strip());
         Runnable show=() -> {
             try {
-                Font face=TerminalFonts.resolve(new Appearance.FontChoice(Objects.toString(family.getSelectedItem(),"Automatic"),path.getText().strip()));
+                Font face=TerminalFonts.resolve(draft.get());
                 TerminalFonts.validate(face,workspace.profileList());
-                preview.setFont(face); status.setText("Fixed-width and current code-page glyphs verified. Regular weight; fit and zoom remain available.");
+                preview.setFont(face); status.setText(" "); status.setToolTipText(null);
                 status.setForeground(Ui.MUTED);
             } catch (IOException | IllegalArgumentException e) {
                 status.setText(e.getMessage()); status.setToolTipText(e.getMessage()); status.setForeground(Ui.ERROR);
             }
         };
         fields.add(Ui.button("Check / preview font",KeyEvent.VK_P,show)); show.run();
-        while (Ui.form(workspace,"Terminal fonts",fields,"Apply")) {
+        return Ui.settingsDialog(workspace,"Terminal fonts",fields,() -> !draft.get().equals(saved[0]),() -> {
             try {
-                Appearance.FontChoice choice=new Appearance.FontChoice(Objects.toString(family.getSelectedItem(),"Automatic"),path.getText().strip());
+                Appearance.FontChoice choice=draft.get();
                 Font face=TerminalFonts.resolve(choice); TerminalFonts.validate(face,workspace.profileList());
-                workspace.appearanceSettings(workspace.appearanceSettings().withFont(choice)); return;
+                workspace.appearanceSettings(workspace.appearanceSettings().withFont(choice));
+                saved[0]=choice; preview.setFont(face); status.setText(" "); status.setToolTipText(null); return true;
             } catch (IOException | IllegalArgumentException e) {
                 status.setText(e.getMessage()); status.setToolTipText(e.getMessage()); status.setForeground(Ui.ERROR);
+                return false;
             }
-        }
+        });
     }
     static void paneInfo(Workspace workspace) {
-        Appearance a=workspace.appearanceSettings(); Appearance.PaneInfo i=a.info();
+        Ui.showDialog(paneInfoDialog(workspace));
+    }
+    static JDialog paneInfoDialog(Workspace workspace) {
+        Appearance.PaneInfo[] saved={workspace.appearanceSettings().info()};
+        Appearance.PaneInfo i=saved[0];
         String[] names={"Show header","Profile name","Connection state","Host","Requested device name",
                 "Show footer","Status / input message","Host dimensions","Cursor row:column","Insert indicator"};
         boolean[] flags={i.header(),i.profile(),i.connection(),i.host(),i.device(),i.footer(),i.status(),i.dimensions(),i.cursor(),i.insert()};
@@ -69,29 +80,29 @@ final class AppearanceDialogs {
             Runnable dependencies=() -> { for (int n=first+1;n<first+5;n++) boxes.get(n).setEnabled(boxes.get(first).isSelected()); };
             boxes.get(first).addActionListener(e -> dependencies.run()); dependencies.run(); form.add(column);
         }
-        JPanel body=new JPanel(new BorderLayout(0,14)); body.add(form);
-        body.add(new JLabel("<html>Workspace-wide. Empty/disabled rows reserve no space.<br>"
-                +"With no footer, recoverable input errors show Reset as an overlay; host-busy is not reset.<br>"
-                +"Use Alt+drag on a terminal to swap without a header, or Panes > Swap panes.<br>"
-                +"Right-click a terminal for pane actions. Error notices remain visible without bars.</html>"),BorderLayout.SOUTH);
-        if (Ui.form(workspace,"Pane information",body,"Apply")) {
-            Appearance.PaneInfo value=new Appearance.PaneInfo(boxes.get(0).isSelected(),boxes.get(5).isSelected(),boxes.get(1).isSelected(),
+        java.util.function.Supplier<Appearance.PaneInfo> draft=() -> new Appearance.PaneInfo(boxes.get(0).isSelected(),boxes.get(5).isSelected(),boxes.get(1).isSelected(),
                     boxes.get(2).isSelected(),boxes.get(3).isSelected(),boxes.get(4).isSelected(),boxes.get(6).isSelected(),
                     boxes.get(7).isSelected(),boxes.get(8).isSelected(),boxes.get(9).isSelected());
-            workspace.appearanceSettings(a.withLayout(a.outline(),value));
-        }
+        return Ui.settingsDialog(workspace,"Pane information",form,() -> !draft.get().equals(saved[0]),() -> {
+            Appearance.PaneInfo value=draft.get();
+            Appearance current=workspace.appearanceSettings();
+            workspace.appearanceSettings(current.withLayout(current.outline(),value)); saved[0]=value; return true;
+        });
     }
     static void windowFocus(Workspace workspace) {
         Ui.showDialog(windowFocusDialog(workspace));
     }
     static JDialog windowFocusDialog(Workspace workspace) {
-        Appearance a=workspace.appearanceSettings();
         JPanel form=windowFocusPanel(workspace);
-        return Ui.promptDialog(workspace,"Window and focus",form,"Apply",true,() -> {
-            JPanel choices=(JPanel)form.getComponent(0);
-            JCheckBox window=(JCheckBox)choices.getComponent(0),pane=(JCheckBox)choices.getComponent(1),tint=(JCheckBox)choices.getComponent(2);
-            workspace.appearanceSettings(a.withWindowOutline(window.isSelected()).withLayout(pane.isSelected(),a.info()));
-            workspace.highlightActive(tint.isSelected());
+        JPanel choices=(JPanel)form.getComponent(0);
+        JCheckBox window=(JCheckBox)choices.getComponent(0),pane=(JCheckBox)choices.getComponent(1),tint=(JCheckBox)choices.getComponent(2);
+        record Choices(boolean window,boolean pane,boolean tint) {}
+        java.util.function.Supplier<Choices> draft=() -> new Choices(window.isSelected(),pane.isSelected(),tint.isSelected());
+        Choices[] saved={draft.get()};
+        return Ui.settingsDialog(workspace,"Window and focus",form,() -> !draft.get().equals(saved[0]),() -> {
+            Appearance current=workspace.appearanceSettings();
+            workspace.appearanceSettings(current.withWindowOutline(window.isSelected()).withLayout(pane.isSelected(),current.info()));
+            workspace.highlightActive(tint.isSelected()); saved[0]=draft.get(); return true;
         });
     }
     static JPanel windowFocusPanel(Workspace workspace) {
@@ -102,10 +113,6 @@ final class AppearanceDialogs {
         JCheckBox pane=new JCheckBox("Outline active pane",a.outline());
         JCheckBox tint=new JCheckBox("Tint active pane background",workspace.highlightActive());
         choices.add(window); choices.add(pane); choices.add(tint); form.add(choices,BorderLayout.NORTH);
-        JLabel note=new JLabel("<html>Workspace-wide. Outlines use the same one-device-pixel divider color.<br>"
-                +"Window resizing and keyboard focus do not require a visible outline.<br>"
-                +"Changes are saved only when you choose Apply.</html>");
-        Ui.role(note,"muted"); form.add(note,BorderLayout.SOUTH);
         return form;
     }
 }

@@ -100,7 +100,7 @@ public final class StreamliningDesktop {
             keys(KeyEvent.VK_CONTROL,KeyEvent.VK_TAB);
             click(button(record,"Use shortcut"));
             screenshot(workspace,"fish-shortcuts-desktop.png");
-            click(button(shortcuts,"Save shortcuts"));
+            click(button(shortcuts,"Done"));
             await(() -> edt(() -> !shortcuts.isShowing()),"Shortcut editor saves and closes");
             check(edt(() -> workspace.shortcutOverrides().get("Next pane").contains("TAB")),"Real recorder stores Ctrl+Tab");
             SessionPane initial=edt(workspace::active);

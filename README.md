@@ -10,7 +10,33 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## DPI-regression preview
+## Interaction refinement preview
+
+**Fish 0.5.3** is an unsigned experimental preview. Hidden/empty headers now have an invisible pane-top
+swap-drag target at the close X's height, without reserving a band or intercepting
+the X, Reset or terminal input below it. Manual zoom remains centered when it fits;
+larger content uses the existing scrollbars and keeps the editing cursor reachable.
+Active-pane outlines no longer add another line beside a shared pane divider.
+
+Editable font, information, window/focus, shortcut and profile settings use
+Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
+only drafts since the last Apply. Theme Designer retains Preview and Save for
+temporary previews and reusable themes, with Apply/Done for activation.
+Immediate appearance selectors remain immediate, without redundant helper copy
+or a duplicate Flux entry in More settings. Its configurable Flux action remains.
+
+The logo no longer waits for the double-click timer. Normal and Flux share
+cached per-channel LCD glyph coverage, changing only color; toggles do not reload
+fonts or rebuild host glyphs. Default font resolution avoids the eager full-family
+scan; no startup speedup is claimed without a measured cold-start comparison.
+Bounded production-path checks passed on 1080p at 100% and 4K at 150%, including
+hidden-header swapping and popup/dialog dismissal. The 4K logo switch changed
+terminal pixels in about 91 ms. Sampled resizing kept terminal ink visible without
+native background-erasure messages. The intermittent resize flicker was not
+reproduced; it remains an open hardware observation, not a verified fix.
+The known maximize/restore perimeter defect below is unchanged.
+
+## Included DPI-regression preview
 
 **Fish 0.5.2** is an unsigned experimental preview with a known maximize/restore outline defect.
 Owned structural edges share one subtle divider color and a one-physical-pixel
@@ -46,7 +72,7 @@ to None. The titlebar-only fish is smaller, mouse clicks no longer leave a
 focus box, and keyboard focus uses a subtle underline. Its approved geometry,
 Flux/None toggle, click target, 31px chrome and native monitor handling remain.
 UI text uses Windows' desktop font hints without bitmap scaling.
-Downloads are available from the private repository's **v0.5.2 preview release**; older releases remain intact.
+Downloads are available from the private repository's **v0.5.3 preview release**; older releases remain intact.
 It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
 available offline from **Help > Full manual / Getting Started**, with a
@@ -55,10 +81,10 @@ searchable full-text topic index.
 ## Install: no developer tools needed
 
 1. Open [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish) using an account with access.
-2. Download `Fish-0.5.2-setup.exe` and its matching `SHA256SUMS.txt`.
+2. Download `Fish-0.5.3-setup.exe` and its matching `SHA256SUMS.txt`.
 3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
 
-For a portable copy, extract `Fish-0.5.2-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.5.3-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -75,8 +101,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.5.2-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.5.2-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.5.3-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.5.3-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -87,7 +113,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The current local package is **Fish 0.5.2**.
+The matching local package is **Fish 0.5.3**.
 Keep the entire application-image directory together:
 
 ```powershell
@@ -175,9 +201,9 @@ window-outline persistence, popup roots, compact menu order, native client/work
 area calculations and peer recreation. Synthetic offscreen images are written
 under `build\fish-051-*.png`; no real host screen or physical desktop is captured.
 Its `--focus-only` mode exercises the actual Window and focus dialog's
-Cancel/Apply buttons, all eight combinations of the three persistent settings,
-and Cancel/Escape/Close dismissal without saving. Evidence uses the real shared
-dialog builder rather than substituting a Done button.
+Cancel/Apply/Done buttons, all eight combinations of the three persistent settings,
+and Cancel/Escape/Close dismissal without saving unapplied edits. Evidence uses the
+real shared dialog builder.
 Its `--geometry-only` mode adds 100%/125%/150%/175%/200% strict-clip and
 nonzero-origin cases using Swing's actual backing-buffer endpoint rule.
 `pane5250.ui.DpiDesktop` requires fresh foreground/shared-desktop consent:
@@ -252,8 +278,9 @@ The fish mark is a keyboard-focusable secret button: a single click toggles
 the active preset's text effect from Flux (animated) to None, or from any other
 effect to Flux (animated). Changes use the same persistent profile path as Appearance; panes using
 that same preset also refresh. Keyboard Space activates it immediately, with a
-visible focus indicator. Mouse clicks wait for Windows' double-click interval
-so double-clicks and drags do not accidentally change effects. The rest of the
+visible focus indicator. Mouse release and keyboard activation switch immediately;
+a double-click's second activation returns to the preceding effect, while a drag
+does not activate the logo. The rest of the
 title area remains available for moving/maximizing the window.
 
 While connecting, the preset controls are replaced by a small rotating ring
@@ -400,7 +427,8 @@ color/reverse/underline/blink/non-display distinctions remain intact.
 states, chrome, menus/tooltips, header/footer/statuses, outline/tint/dividers,
 cursor/terminal selection, all sixteen host slots, six gradient stops, glow
 and logo colors. Preview is temporary; Cancel restores the applied theme.
-Save keeps a reusable named theme; Save & apply activates it. Editing an already
+Save keeps a reusable named theme; Apply activates it and stays open; Done
+applies pending edits and closes. Editing an already
 active named theme updates that theme on Save. Duplicate names require explicit
 replacement confirmation; up to 32 custom themes are stored in the workspace.
 Valid colors are not silently contrast-corrected. When a custom theme is active,
@@ -422,13 +450,14 @@ They are not bundled, uploaded or copied into releases.
 both rows, with no space for empty rows. Outline and tint live in **Window and focus**.
 With a hidden/empty header, its independent close X overlays the upper-right
 corner without reserving a band; Reset remains a separate non-overlapping overlay.
-Use the terminal context menu, Panes menu or Alt+drag to swap.
+Drag the invisible top strip at X height to swap, or use the terminal context
+menu, Panes menu or Alt+drag below the strip.
 Workspace appearance settings apply across profiles; effects remain
 profile-specific.
 
 Optional Soft glow, column-gradient Prism and **Flux (animated)**
 effects are disabled by default. Choose **View > Appearance > Text effect >
-Flux (animated)**, or **Appearance > More settings > Flux animated text**, for smoothly
+Flux (animated)**, or toggle the fish logo, for smoothly
 flowing multicolor gradients. The effect is saved with the preset. Neutral host
 text carries the full color flow; chromatic text varies within its host hue
 family, reverse video retains its exact colors, and hidden data is never drawn.
@@ -438,12 +467,22 @@ disconnected and disposed terminals. Choose None to stop the effect.
 Persisted Neon effects migrate to None with an explicit load notice; the rest
 of each profile is retained.
 
+`RefinementSmoke` additionally covers hidden-header hit targets, single divider
+pixels with active outlines, centered fit/zoom/resize and cell hit coordinates
+at 100/125/150/175/200%, Ubuntu Mono/Consolas shared LCD coverage and next-paint
+color changes, and production Apply/Done/cancel persistence including asynchronous
+profile edits. It never sends physical input, touches the OS clipboard or stores
+credentials. `RefinementDesktop` is a separately consented, bounded real-monitor
+baseline/confirmation driver, with an optional test-only native message probe;
+it must not be run as an unattended foreground test.
+
 Default glyphs are created at the final physical font
 size, with integer-pixel cells/origins and LCD antialiasing; text is not scaled
 from a nominal font or bilinearly enlarged bitmap. Effect ink is cached in tight,
 background-composited row tiles at that same native physical resolution for
-the static effects. Flux reuses the native glyphs with per-used-color gradient
-paints, never rerasterizing an enlarged text bitmap.
+the static effects. None and Flux reuse exactly the same per-channel LCD glyph
+masks; only the per-used-color paint changes. Neither rerasterizes or scales an
+enlarged text bitmap, and a color-only switch preserves font metrics/coverage.
 Selection, reverse backgrounds and blink remain accurate; resizing does not
 recreate glyphs/effects while the fitted physical font size is unchanged. The application has no
 AI features, telemetry, embedded browser, dashboard or promotional UI.

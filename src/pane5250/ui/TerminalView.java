@@ -7,6 +7,9 @@ import java.awt.font.FontRenderContext;
 import java.awt.font.GlyphVector;
 import java.awt.geom.*;
 import java.awt.image.BufferedImage;
+import java.awt.image.DataBufferInt;
+import java.awt.image.ColorModel;
+import java.awt.image.Raster;
 import java.io.IOException;
 import javax.accessibility.*;
 import javax.swing.*;
@@ -31,7 +34,18 @@ public final class TerminalView extends JComponent implements Scrollable {
     private double baseWidth,baseHeight,ascent;
     private RenderFrame rendered;
     private Screen5250 renderedScreen;
+    private final java.util.Map<GlyphVector,GlyphMask> glyphMasks=new java.util.IdentityHashMap<>();
+    private BufferedImage sharedInk;
+    private Rectangle sharedBounds;
+    private Color[] sharedPalette;
+    private Color sharedBackground,sharedSelection;
+    private int sharedAnchor,sharedEnd;
+    private boolean sharedPhase;
+    private double sharedFlux=Double.NaN;
     private double cellWidth = 9, cellHeight = 18, originX = 12, originY = 10;
+    private int geometryWidth=-1,geometryHeight;
+    private double geometryDpiX=1,geometryDpiY=1,geometryZoom;
+    private boolean geometryFit,revealQueued;
     private int anchor = -1, end = -1;
     private boolean dragging;
     private boolean fit = true;
@@ -155,6 +169,9 @@ public final class TerminalView extends JComponent implements Scrollable {
         addHierarchyListener(event -> {
             if ((event.getChangeFlags()&HierarchyEvent.SHOWING_CHANGED)!=0) updateAnimation();
         });
+        addComponentListener(new ComponentAdapter() {
+            @Override public void componentResized(ComponentEvent e) { revealCursor(); }
+        });
     }
 
     @Override public void addNotify() {
@@ -170,7 +187,7 @@ public final class TerminalView extends JComponent implements Scrollable {
         animationWindow=null;
         super.removeNotify();
     }
-    public void dispose() { disposed=true; blink.stop(); stopAnimation(); }
+    public void dispose() { disposed=true; blink.stop(); stopAnimation(); glyphMasks.clear(); sharedInk=null; }
     private boolean canAnimate() {
         return !disposed && isShowing() && pane.connected() && pane.profile().effect().equals(Profile.FLUX)
                 && (animationWindow==null || (animationWindow.getExtendedState()&Frame.ICONIFIED)==0);
@@ -188,9 +205,14 @@ public final class TerminalView extends JComponent implements Scrollable {
         ANIMATED.remove(this);
         if (ANIMATED.isEmpty()) ANIMATION.stop();
     }
-    public void setFit(boolean value) { fit = value; revalidate(); repaint(); }
+    public void setFit(boolean value) { fit = value; revalidate(); repaint(); revealCursor(); }
     public boolean isFit() { return fit; }
-    public void screenChanged() { rendered = null; litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); repaint(); }
+    public void screenChanged() {
+        rendered=null; glyphMasks.clear(); sharedInk=null; geometryWidth=-1;
+        litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); repaint();
+        revealCursor();
+    }
+    public void displayChanged() { sharedPalette=null; litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); repaint(); }
     public void themeChanged() {
         setBackground(Ui.customTheme() ? Ui.color(ColorRole.HOST_0) : pane.getBackground()); screenChanged();
     }
@@ -198,7 +220,7 @@ public final class TerminalView extends JComponent implements Scrollable {
         face=pane.workspaceFont();
         nominalWidth=face.getStringBounds("M",TEXT_CONTEXT).getWidth();
         nominalHeight=face.getLineMetrics("M",TEXT_CONTEXT).getHeight();
-        fontMetrics.clear(); fontPixels=0; configureInk(metrics(16)); revalidate();
+        fontMetrics.clear(); fontPixels=0; geometryWidth=-1; configureInk(metrics(16)); revalidate();
         if (blink!=null) screenChanged();
     }
     public void resetSelection() { anchor = end = -1; repaint(); }
@@ -271,11 +293,46 @@ public final class TerminalView extends JComponent implements Scrollable {
     }
 
     private int position(Point point) {
+        ensureGeometry();
         int cols = pane.screen() == null ? 80 : pane.screen().getColumns();
         int rows = pane.screen() == null ? 24 : pane.screen().getRows();
         int col = Math.max(0, Math.min(cols - 1, (int) ((point.x - originX) / cellWidth)));
         int row = Math.max(0, Math.min(rows - 1, (int) ((point.y - originY) / cellHeight)));
         return row * cols + col;
+    }
+    private void ensureGeometry() {
+        if (geometryWidth!=getWidth() || geometryHeight!=getHeight() || geometryFit!=fit || geometryZoom!=pane.profile().zoom())
+            geometry(geometryDpiX,geometryDpiY);
+    }
+    private void revealCursor() {
+        if (fit || revealQueued || !hasFocus() || pane.screen()==null) return;
+        revealQueued=true;
+        SwingUtilities.invokeLater(() -> {
+            revealQueued=false;
+            Screen5250 screen=pane.screen();
+            if (disposed || fit || !hasFocus() || screen==null || !screen.isCursorActive()) return;
+            ensureGeometry();
+            int pos=screen.getCurrentPos()-1;
+            scrollRectToVisible(new Rectangle((int)Math.floor(originX+pos%screen.getColumns()*cellWidth),
+                    (int)Math.floor(originY+pos/screen.getColumns()*cellHeight),
+                    (int)Math.ceil(cellWidth)+1,(int)Math.ceil(cellHeight)+1));
+        });
+    }
+    private void geometry(double dpiX,double dpiY) {
+        Screen5250 screen=pane.screen();
+        int rows=screen==null ? 24 : screen.getRows(),cols=screen==null ? 80 : screen.getColumns();
+        double scale=fit ? Math.max(3.0/16,Math.min(28.0/16,
+                Math.min((getWidth()-24)/(cols*nominalWidth),(getHeight()-20)/(rows*nominalHeight)))) : pane.profile().zoom();
+        int pixels=Math.max(1,(int)Math.floor(16*scale*dpiY));
+        InkMetrics target=metrics(pixels);
+        while (fit && pixels>1 && (cols*target.width>(getWidth()-24)*dpiX || rows*target.height>(getHeight()-20)*dpiY))
+            target=metrics(--pixels);
+        configureInk(target);
+        cellWidth=baseWidth/dpiX; cellHeight=baseHeight/dpiY;
+        originX=Math.rint(Math.max(12,(getWidth()-cols*cellWidth)/2)*dpiX)/dpiX;
+        originY=Math.rint(Math.max(10,(getHeight()-rows*cellHeight)/2)*dpiY)/dpiY;
+        geometryWidth=getWidth(); geometryHeight=getHeight(); geometryFit=fit; geometryZoom=pane.profile().zoom();
+        geometryDpiX=dpiX; geometryDpiY=dpiY;
     }
 
     @Override protected void paintComponent(Graphics graphics) {
@@ -290,21 +347,11 @@ public final class TerminalView extends JComponent implements Scrollable {
             int rows = screen == null ? 24 : screen.getRows(), cols = screen == null ? 80 : screen.getColumns();
             if (screen==null) return;
             double dpiX=Math.abs(g.getTransform().getScaleX()),dpiY=Math.abs(g.getTransform().getScaleY());
-            double scale = fit ? Math.max(3.0 / 16,Math.min(28.0 / 16,
-                    Math.min((getWidth() - 24) / (cols * nominalWidth),(getHeight() - 20) / (rows * nominalHeight))))
-                    : pane.profile().zoom();
-            int pixels=Math.max(1,(int)Math.floor(16*scale*dpiY));
-            InkMetrics targetInk=metrics(pixels);
-            while (fit && pixels>1 && (cols*targetInk.width>(getWidth()-24)*dpiX || rows*targetInk.height>(getHeight()-20)*dpiY)) {
-                targetInk=metrics(--pixels);
-            }
-            configureInk(targetInk);
-            cellWidth=baseWidth/dpiX; cellHeight=baseHeight/dpiY;
-            originX=Math.rint(Math.max(12,(getWidth()-cols*cellWidth)/2)*dpiX)/dpiX;
-            originY=Math.rint(Math.max(10,(getHeight()-rows*cellHeight)/2)*dpiY)/dpiY;
+            geometry(dpiX,dpiY);
             if (rendered == null || renderedScreen != screen) {
                 rendered = snapshot(screen);
                 renderedScreen = screen;
+                glyphMasks.clear(); sharedPalette=null;
                 fluxPaints=null;
             }
             Graphics2D cells = (Graphics2D)g.create();
@@ -321,7 +368,7 @@ public final class TerminalView extends JComponent implements Scrollable {
                 String effect = pane.profile().effect();
                 if (effect.equals("None") || effect.equals(Profile.FLUX)) {
                     if (effect.equals(Profile.FLUX)) prepareFlux(palette,cols);
-                    paintInk(cells,palette,effect,cols,phase,clip);
+                    paintSharedInk(cells,palette,effect,rows,cols,phase,dpiX,dpiY);
                 }
                 else {
                     int resolution=1;
@@ -363,7 +410,99 @@ public final class TerminalView extends JComponent implements Scrollable {
         if (fontPixels==pixels) return;
         fontPixels=pixels; inkFace=metrics.font;
         baseWidth=metrics.width; baseHeight=metrics.height; ascent=metrics.ascent;
-        rendered=null; litEffect=dimEffect=null;
+        rendered=null; glyphMasks.clear(); sharedInk=null; litEffect=dimEffect=null;
+    }
+    private record GlyphMask(int left,int top,int width,int[] positions,int[] coverage) {}
+    private GlyphMask glyphMask(GlyphVector glyphs) {
+        return glyphMasks.computeIfAbsent(glyphs,vector -> {
+            Rectangle bounds=vector.getPixelBounds(TEXT_CONTEXT,0,0);
+            bounds.grow(2,2);
+            BufferedImage image=new BufferedImage(Math.max(1,bounds.width),Math.max(1,bounds.height),BufferedImage.TYPE_INT_RGB);
+            Graphics2D ink=image.createGraphics();
+            try {
+                ink.setColor(Color.BLACK); ink.fillRect(0,0,image.getWidth(),image.getHeight());
+                ink.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+                ink.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+                ink.setColor(Color.WHITE); ink.drawGlyphVector(vector,-bounds.x,-bounds.y);
+            } finally { ink.dispose(); }
+            int[] pixels=((DataBufferInt)image.getRaster().getDataBuffer()).getData();
+            int count=0;
+            for (int pixel:pixels) if ((pixel&0xffffff)!=0) count++;
+            int[] positions=new int[count],coverage=new int[count];
+            for (int i=0,n=0;i<pixels.length;i++) if ((pixels[i]&0xffffff)!=0) {
+                positions[n]=i; coverage[n++]=pixels[i]&0xffffff;
+            }
+            return new GlyphMask(bounds.x,bounds.y,image.getWidth(),positions,coverage);
+        });
+    }
+    private void paintSharedInk(Graphics2D cells,Color[] palette,String effect,int rows,int cols,boolean visiblePhase,
+                                double dpiX,double dpiY) {
+        Rectangle visible=getVisibleRect();
+        Rectangle bounds=new Rectangle((int)Math.floor((visible.x-originX)*dpiX),(int)Math.floor((visible.y-originY)*dpiY),
+                (int)Math.ceil(visible.width*dpiX)+2,(int)Math.ceil(visible.height*dpiY)+2);
+        bounds=bounds.intersection(new Rectangle(-4,-4,(int)(cols*baseWidth)+8,(int)(rows*baseHeight)+8));
+        if (bounds.isEmpty()) return;
+        boolean lit=visiblePhase || !rendered.blinking;
+        double time=effect.equals(Profile.FLUX) ? fluxPhase : -1;
+        boolean changed=sharedInk==null || !bounds.equals(sharedBounds) || sharedPalette!=palette
+                || !getBackground().equals(sharedBackground) || !Ui.color(ColorRole.TERMINAL_SELECTION).equals(sharedSelection)
+                || anchor!=sharedAnchor || end!=sharedEnd || sharedPhase!=lit || sharedFlux!=time;
+        if (changed) {
+            if (sharedInk==null || sharedInk.getWidth()!=bounds.width || sharedInk.getHeight()!=bounds.height)
+                sharedInk=new BufferedImage(bounds.width,bounds.height,BufferedImage.TYPE_INT_RGB);
+            Graphics2D ink=sharedInk.createGraphics();
+            PaintContext[] gradients=new PaintContext[palette.length];
+            try {
+                ink.setColor(getBackground()); ink.fillRect(0,0,bounds.width,bounds.height);
+                ink.translate(-bounds.x,-bounds.y); paintBackgrounds(ink,palette,cols,bounds);
+                int[] output=((DataBufferInt)sharedInk.getRaster().getDataBuffer()).getData();
+                for (RenderRun run:rendered.runs) {
+                    if (run.hidden || !intersects(run,bounds) || ((run.flags&EXTENDED_5250_BLINK)!=0 && !visiblePhase)) continue;
+                    if (run.glyphs!=null) {
+                        GlyphMask mask=glyphMask(run.glyphs);
+                        int left=(int)(run.inkStart*baseWidth)+mask.left,top=(int)(run.row*baseHeight+ascent)+mask.top;
+                        int[] colors=null;
+                        if (effect.equals(Profile.FLUX) && run.background==0) {
+                            PaintContext gradient=gradients[run.foreground];
+                            if (gradient==null) {
+                                gradient=fluxPaints[run.foreground].createContext(ColorModel.getRGBdefault(),bounds,bounds,
+                                        new AffineTransform(),cells.getRenderingHints());
+                                gradients[run.foreground]=gradient;
+                            }
+                            int height=mask.positions.length==0 ? 1 : mask.positions[mask.positions.length-1]/mask.width+1;
+                            Raster raster=gradient.getRaster(left,top,mask.width,height);
+                            colors=(int[])raster.getDataElements(raster.getMinX(),raster.getMinY(),mask.width,height,null);
+                        }
+                        int foreground=palette[run.foreground].getRGB();
+                        for (int n=0;n<mask.positions.length;n++) {
+                            int pixel=mask.positions[n],x=left+pixel%mask.width-bounds.x,y=top+pixel/mask.width-bounds.y;
+                            if (x<0 || y<0 || x>=bounds.width || y>=bounds.height) continue;
+                            int index=y*bounds.width+x;
+                            output[index]=blendInk(output[index],colors==null ? foreground : colors[pixel],mask.coverage[n]);
+                        }
+                    }
+                    ink.setColor(palette[run.foreground]);
+                    if ((run.flags&EXTENDED_5250_UNDERLINE)!=0)
+                        ink.draw(new Line2D.Double(run.start*baseWidth,run.row*baseHeight+ascent+1,run.end*baseWidth,run.row*baseHeight+ascent+1));
+                    if (run.separators!=null) ink.draw(run.separators);
+                }
+            } finally {
+                for (PaintContext context:gradients) if (context!=null) context.dispose();
+                ink.dispose();
+            }
+            sharedBounds=bounds; sharedPalette=palette; sharedBackground=getBackground();
+            sharedSelection=Ui.color(ColorRole.TERMINAL_SELECTION);
+            sharedAnchor=anchor; sharedEnd=end; sharedPhase=lit; sharedFlux=time;
+        }
+        cells.drawImage(sharedInk,bounds.x,bounds.y,null);
+    }
+    private static int blendInk(int background,int foreground,int coverage) {
+        int result=0xff000000;
+        for (int shift=0;shift<=16;shift+=8) {
+            int alpha=coverage>>shift&255,back=background>>shift&255,front=foreground>>shift&255;
+            result|=((back*(255-alpha)+front*alpha+127)/255)<<shift;
+        }
+        return result;
     }
     private void paintBackgrounds(Graphics2D cells,Color[] palette,int cols,Rectangle clip) {
         for (RenderRun run : rendered.runs) {
@@ -567,8 +706,12 @@ public final class TerminalView extends JComponent implements Scrollable {
     @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
     @Override public int getScrollableUnitIncrement(Rectangle visible, int orientation, int direction) { return 20; }
     @Override public int getScrollableBlockIncrement(Rectangle visible, int orientation, int direction) { return 100; }
-    @Override public boolean getScrollableTracksViewportWidth() { return fit; }
-    @Override public boolean getScrollableTracksViewportHeight() { return fit; }
+    @Override public boolean getScrollableTracksViewportWidth() {
+        return fit || getParent() instanceof JViewport viewport && getPreferredSize().width<=viewport.getExtentSize().width;
+    }
+    @Override public boolean getScrollableTracksViewportHeight() {
+        return fit || getParent() instanceof JViewport viewport && getPreferredSize().height<=viewport.getExtentSize().height;
+    }
     @Override public AccessibleContext getAccessibleContext() {
         if (accessibleContext == null) accessibleContext = new AccessibleTerminal();
         return accessibleContext;

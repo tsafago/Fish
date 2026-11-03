@@ -96,8 +96,9 @@ uses a 27x20 drawing viewport inside its unchanged 48x30 focus/click target.
 Its compact mode follows measured menu/action widths while reserving a drag area.
 The borderless mark is a focusable button with balanced insets and keyboard
 focus indication as a subtle underline, never a mouse-click box. Single clicks toggle the active preset's persistent Flux (animated)/None
-effect; keyboard Space is immediate. The system double-click interval disambiguates
-mouse activation, so double-clicks/drags never toggle. No logo shimmer remains.
+effect; mouse release and keyboard Space are immediate. A double-click's second
+activation returns to the preceding effect; dragging never activates.
+No logo shimmer remains.
 The titlebar is 31 logical pixels tall, with all controls centered in its actual
 layout; native hit regions follow those bounds and scale to current client pixels.
 Pane controls use transparent resting surfaces and the same type/rhythm
@@ -130,9 +131,11 @@ glyphs or replaces reverse-video backgrounds/host attributes.
 
 Flux is an explicitly opt-in flowing text-gradient preset, not animated chrome.
 Neutral text carries the rainbow; chromatic host text stays within its hue
-family and reverse video keeps its original colors. Cached physical-size glyph
-vectors use native rasterization with shared-per-color gradient paints; there
-are no per-cell animation allocations or blur/upscale passes. One coalescing
+family and reverse video keeps its original colors. None and Flux use identical
+cached physical-size, per-channel LCD glyph masks, changing only color and never
+switching between LCD/grayscale AA or changing glyph weight. The composited
+surface is limited to the visible host area; no blur/upscale pass is involved.
+One coalescing
 50ms clock serves visible connected Flux terminals and stops when none are
 eligible, including minimized windows. Host blink, secrecy, selection and
 cursor remain independent. None is still the default and immediate stop control.
@@ -160,6 +163,9 @@ Pane headers identify the profile and connection, support dragging and expose
 a right-click menu. The close X occupies the far-right header position, outside
 the drag target, or a zero-space upper-right overlay when information is hidden.
 It is independent of the selected header items and does not overlap Reset.
+An invisible, zero-layout-space pane-top drag target at X height supplies the same
+swap action when a header is hidden; controls remain excluded and normal terminal
+selection starts below it.
 X disconnects and removes the pane, reflowing bounded slots;
 only the final pane is retained as an empty offline tile. Window
 close disconnects all without confirmation. An offline tile contains only a
@@ -170,7 +176,9 @@ used preset; restored slots preserve their own selection. No visible A1/A2 IDs.
 One subtly tinted active surface spans header, terminal and
 footer; a constant-inset, physical-pixel outer focus border replaces the old terminal-only focus box
 and header underline. The optional pane-background tint and active outline can be disabled independently;
-outline off means zero border insets/paint, not a transparent spacer. OLED
+outline off means zero border insets/paint, not a transparent spacer. Shared pane
+dividers, titlebar edges and an enabled window perimeter own their boundaries:
+the pane outline never adds a parallel second divider. OLED
 remains true black. Activating a pane never replaces its border or reshow/validates
 an already-visible card. A terminal status line reports connection, inhibition,
 dimensions and cursor position, with Reset visible only for the core's actual
@@ -184,6 +192,10 @@ Enter is never remapped to recovery.
 Profile editing is a compact modal list and three-tab form; labels and mnemonics
 accompany controls. Owned forms, confirmations, errors and System Request
 prompts share custom draggable chrome, Escape dismissal and icon-free content.
+Editable settings have Cancel/Apply/Done in reading/tab order: Apply stays open
+and updates the baseline, Done accepts pending changes and closes, dismissal
+discards only drafts since Apply. Immediate selectors do not gain transaction
+buttons or tautological save helper text. Profile credential work stays asynchronous.
 Custom window controls retain visible keyboard focus. Native Alt+Space is not
 shadowed by a second popup; Ctrl+Alt+Space exposes the dark window menu.
 The Commands window is removed. A single registry backs menus, terminal context

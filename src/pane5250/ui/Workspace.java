@@ -115,10 +115,15 @@ public final class Workspace extends JFrame {
     public Appearance appearanceSettings() { return appearance; }
     public Font terminalFont() { return terminalFont; }
     public void appearanceSettings(Appearance value) {
+        Appearance previous=appearance;
         appearance=value;
-        resolveFont();
-        Ui.applyTheme(Ui.theme(),appearance.custom().orElse(null));
-        panes.values().forEach(p -> { p.view().fontChanged(); p.updateHeader(); });
+        boolean font=!previous.font().equals(value.font());
+        if (font) resolveFont();
+        if (!previous.custom().equals(value.custom())
+                || !Objects.equals(Ui.customTheme() ? Ui.colorTheme() : null,value.custom().orElse(null)))
+            Ui.applyTheme(Ui.theme(),appearance.custom().orElse(null));
+        else updateWindowOutline();
+        panes.values().forEach(p -> { if (font) p.view().fontChanged(); p.updateHeader(); });
         changed();
         if (!fontNotice.isEmpty()) active.problem(fontNotice);
     }
@@ -346,7 +351,10 @@ public final class Workspace extends JFrame {
                 || !a.username().equals(b.username()) || a.automaticSignOn() != b.automaticSignOn() || !a.codePage().equals(b.codePage());
     }
     public void putProfile(Profile value) {
-        validateProfile(value);
+        Profile existing=profiles.get(value.id());
+        if (value.equals(existing)) return;
+        if (existing==null || !existing.keymap().equals(value.keymap()) || !existing.codePage().equals(value.codePage()))
+            validateProfile(value);
         Profile old = profiles.put(value.id(),value);
         for (SessionPane pane : panes.values()) {
             if (pane.profile().id().equals(value.id())) {
@@ -449,8 +457,6 @@ public final class Workspace extends JFrame {
         }
         JPanel body=new JPanel(new BorderLayout(0,12));
         JPanel extra=new JPanel(new BorderLayout(0,8));
-        JLabel immediate=new JLabel("Changes apply immediately and are saved.");
-        Ui.role(immediate,"muted"); extra.add(immediate,BorderLayout.NORTH);
         JButton details=new JButton("More settings...");
         details.setMnemonic(KeyEvent.VK_M);
         Runnable sync=() -> {
@@ -537,7 +543,7 @@ public final class Workspace extends JFrame {
         AppCommand flux=new AppCommand("Flux animated text","Flowing multicolor text; opt-in, host attributes preserved",null,
                 () -> putProfile(active.profile().withDisplay(active.profile().theme(),Profile.FLUX)),
                 () -> active!=null && !closing,"theme gradient rainbow animated flowing effect");
-        commands.add(flux); appearanceDetails.add(new JMenuItem(flux));
+        commands.add(flux);
         JMenu host = menu(bar,"Host",KeyEvent.VK_H);
         for (KeyMnemonic key:List.of(KeyMnemonic.RESET,KeyMnemonic.ATTN,KeyMnemonic.SYSREQ)) {
             if (key==KeyMnemonic.RESET) host.add(new JMenuItem(command("RESET")));

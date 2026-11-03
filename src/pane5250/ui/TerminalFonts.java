@@ -16,6 +16,7 @@ public final class TerminalFonts {
     private record FileKey(Path path,long size,long modified) {}
     private static FileKey cachedFile;
     private static Font cachedFace;
+    private static final List<String> CURATED=List.of("Cascadia Mono","Cascadia Code","Consolas","Lucida Console","Courier New","DejaVu Sans Mono","Liberation Mono");
     private TerminalFonts() {}
     public static boolean fixed(Font font) {
         Font face=font.deriveFont(Font.PLAIN,16f);
@@ -30,8 +31,7 @@ public final class TerminalFonts {
             List<String> fonts=new ArrayList<>();
             for (String family:GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames())
                 if (fixed(new Font(family,Font.PLAIN,16))) fonts.add(family);
-            List<String> curated=List.of("Cascadia Mono","Cascadia Code","Consolas","Lucida Console","Courier New","DejaVu Sans Mono","Liberation Mono");
-            fonts.sort(Comparator.comparingInt((String name) -> curated.contains(name) ? curated.indexOf(name) : 100)
+            fonts.sort(Comparator.comparingInt((String name) -> CURATED.contains(name) ? CURATED.indexOf(name) : 100)
                     .thenComparing(Comparator.naturalOrder()));
             installed=List.copyOf(fonts);
         }
@@ -52,9 +52,16 @@ public final class TerminalFonts {
                 cachedFile=key; cachedFace=face;
             }
         } else {
-            String family=choice.family().equals("Automatic") ? installed().stream().findFirst().orElse(Font.MONOSPACED) : choice.family();
-            if (!family.equals(Font.MONOSPACED) && !installed().contains(family))
-                throw new IOException("Terminal font is missing or not fixed-width: "+family);
+            String family;
+            if (choice.family().equals("Automatic")) {
+                Set<String> available=Set.of(GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames());
+                family=CURATED.stream().filter(available::contains).filter(f -> fixed(new Font(f,Font.PLAIN,16)))
+                        .findFirst().orElseGet(() -> installed().stream().findFirst().orElse(Font.MONOSPACED));
+            } else {
+                family=choice.family();
+                if (!family.equals(Font.MONOSPACED) && !installed().contains(family))
+                    throw new IOException("Terminal font is missing or not fixed-width: "+family);
+            }
             face=new Font(family,Font.PLAIN,16);
         }
         if (!fixed(face)) throw new IOException("Choose a monospaced font; this face has unequal printable ASCII advances.");

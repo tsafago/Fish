@@ -186,10 +186,10 @@ public final class ChromeConsistencySmoke {
             try {
                 var actions=children(dialog.getRootPane()).stream().filter(c -> c instanceof JButton b && b.getText()!=null && !b.getText().isEmpty())
                         .map(c -> ((JButton)c).getText()).toList();
-                check(actions.equals(List.of("Cancel","Apply")),"Actual Window and focus uses Cancel then Apply, never a surrogate Done action.");
-                check(dialog.getRootPane().getDefaultButton()==button(dialog,"Apply"),"Apply is the actual default acceptance action.");
-                check(children(dialog.getRootPane()).stream().anyMatch(c -> c instanceof JLabel label
-                        && label.getText().contains("saved only when you choose Apply")),"Actual dialog copy names its actual acceptance action.");
+                check(actions.equals(List.of("Cancel","Apply","Done")),"Actual Window and focus uses Cancel, Apply, Done.");
+                check(dialog.getRootPane().getDefaultButton()==button(dialog,"Done"),"Done is the actual accepting/closing action.");
+                check(children(dialog.getRootPane()).stream().noneMatch(c -> c instanceof JLabel label
+                        && label.getText().contains("saved only when you choose Apply")),"Tautological dialog copy is absent.");
                 check(choices(dialog).size()==3,"Actual dialog exposes all three independent saved choices.");
                 for (double scale:List.of(1.0,1.5)) {
                     BufferedImage image=paint(dialog.getRootPane(),scale,"fish-051-focus-"+scale+".png");
@@ -208,11 +208,11 @@ public final class ChromeConsistencySmoke {
                 var choices=choices(dialog);
                 for (int i=0;i<3;i++) choices.get(i).setSelected((flags&(1<<i))!=0);
                 check(w.appearanceSettings().equals(before) && w.highlightActive()==tint,"Editing checks does not apply or save before Apply: "+flags);
-                button(dialog,"Apply").doClick(0);
+                button(dialog,"Done").doClick(0);
                 check(w.appearanceSettings().windowOutline()==((flags&1)!=0)
                         && w.appearanceSettings().outline()==((flags&2)!=0) && w.highlightActive()==((flags&4)!=0),
                         "Actual Apply updates all three choices consistently: "+flags);
-                check(!dialog.isDisplayable(),"Actual Apply closes its dialog: "+flags);
+                check(!dialog.isDisplayable(),"Actual Done closes its dialog: "+flags);
                 return null;
             });
             StateStore.State loaded=flush(w,store);

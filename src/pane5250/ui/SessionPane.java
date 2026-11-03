@@ -29,9 +29,20 @@ public final class SessionPane extends JPanel {
     private final TerminalView view;
     private final JPanel body=new JPanel(new CardLayout()),empty=new JPanel(new GridBagLayout());
     private final JPanel loading=new JPanel(new GridBagLayout());
+    private final JComponent dragZone=new JComponent() {
+        @Override public boolean contains(int x,int y) {
+            if (!super.contains(x,y)) return false;
+            for (JComponent control:java.util.List.of(close,reset,noticeOverlay))
+                if (control.isVisible() && control.getParent()==stage && control.getBounds().contains(x,y)) return false;
+            Component target=SwingUtilities.getDeepestComponentAt(body,x,y);
+            if (target instanceof AbstractButton || target instanceof JComboBox<?> || target instanceof javax.swing.text.JTextComponent) return false;
+            return true;
+        }
+    };
     private final JLayeredPane stage=new JLayeredPane() {
         @Override public void doLayout() {
             body.setBounds(0,0,getWidth(),getHeight());
+            dragZone.setBounds(0,0,getWidth(),Math.min(getHeight(),close.getPreferredSize().height));
             if (close.getParent()==this) {
                 Dimension size=close.getPreferredSize();
                 close.setBounds(Math.max(0,getWidth()-size.width),0,Math.min(size.width,getWidth()),size.height);
@@ -81,9 +92,9 @@ public final class SessionPane extends JPanel {
                 Container shell=workspace.getContentPane();
                 Rectangle bounds=SwingUtilities.convertRectangle(getParent(),getBounds(),shell);
                 boolean frame=workspace.appearanceSettings().windowOutline();
-                Hairline.rectangle(graphics,x,y,width,height,bounds.y!=WindowChrome.HEIGHT,
-                        !frame || bounds.x>0,!frame || bounds.y+height<shell.getHeight(),
-                        !frame || bounds.x+width<shell.getWidth());
+                Hairline.rectangle(graphics,x,y,width,height,false,
+                        !frame && bounds.x==0,!frame && bounds.y+height==shell.getHeight(),
+                        !frame && bounds.x+width==shell.getWidth());
             }
         });
         setBackground(Ui.BACKGROUND);
@@ -148,6 +159,10 @@ public final class SessionPane extends JPanel {
         reset.setVisible(false); footer.add(reset,BorderLayout.EAST);
         add(footer, BorderLayout.SOUTH);
         stage.add(body,JLayeredPane.DEFAULT_LAYER);
+        dragZone.setName("pane-top-drag-zone");
+        dragZone.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
+        dragZone.setToolTipText("Drag onto another pane to swap");
+        stage.add(dragZone,JLayeredPane.DRAG_LAYER);
         noticeOverlay.setOpaque(true); noticeOverlay.setBorder(Ui.padding(6)); noticeOverlay.setVisible(false);
         stage.add(noticeOverlay,JLayeredPane.PALETTE_LAYER); add(stage,BorderLayout.CENTER);
         noticeClock.setRepeats(false);
@@ -180,12 +195,14 @@ public final class SessionPane extends JPanel {
         } finally { updatingPresets=false; }
     }
     public void updateProfile(Profile value) {
+        Profile previous=profile;
         profile = value;
-        refreshKeys();
+        if (!previous.keymap().equals(value.keymap())) refreshKeys();
         refreshPresets();
         updateHeader();
-        view.revalidate();
-        view.screenChanged();
+        if (!previous.id().equals(value.id()) || !previous.codePage().equals(value.codePage())) view.screenChanged();
+        else if (!previous.theme().equals(value.theme()) || !previous.effect().equals(value.effect())) view.displayChanged();
+        if (previous.zoom()!=value.zoom()) { view.revalidate(); view.repaint(); }
     }
     public void updateHeader() {
         boolean active=workspace.active()==this;
@@ -207,6 +224,7 @@ public final class SessionPane extends JPanel {
         if (info.device() && !profile.device().isEmpty()) parts.add(profile.device());
         connection.setText(String.join("  ",parts));
         header.setVisible(info.header() && (!title.getText().isBlank() || !connection.getText().isBlank()));
+        dragZone.setVisible(!header.isVisible() && workspace.hasMultiplePanes());
         Container closeParent=header.isVisible() ? headerControls : stage;
         if (close.getParent()!=closeParent) {
             close.getParent().remove(close);
@@ -223,6 +241,7 @@ public final class SessionPane extends JPanel {
         String resetKey=workspace.shortcutLabel("RESET");
         reset.setToolTipText("Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
         header.setToolTipText("Drag onto another pane to swap. Ctrl+Alt+D swaps with the keyboard.");
+        header.setCursor(workspace.hasMultiplePanes() ? Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR) : Cursor.getDefaultCursor());
         presets.setEnabled(!busy()); connectButton.setEnabled(!busy());
         String card=connecting ? "connecting" : core!=null && connected() ? "terminal" : "offline";
         if (!card.equals(shownCard)) { ((CardLayout)body.getLayout()).show(body,card); shownCard=card; }
@@ -588,37 +607,52 @@ public final class SessionPane extends JPanel {
             @Override protected void exportDone(JComponent source, Transferable data, int action) { workspace.clearPreviews(); }
         };
         header.setTransferHandler(transfer);
+        dragZone.setTransferHandler(transfer);
         view.setTransferHandler(transfer);
         setTransferHandler(transfer);
         MouseAdapter drag = new MouseAdapter() {
             Point pressed;
             @Override public void mousePressed(MouseEvent e) {
                 activate();
-                if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e)) workspace.paneMenu(SessionPane.this).show(header,e.getX(),e.getY());
-                else pressed = e.getPoint();
+                pressed=null;
+                if (e.isPopupTrigger() || SwingUtilities.isRightMouseButton(e))
+                    workspace.paneMenu(SessionPane.this).show(e.getComponent(),e.getX(),e.getY());
+                else if (SwingUtilities.isLeftMouseButton(e) && workspace.hasMultiplePanes()) pressed = e.getPoint();
             }
             @Override public void mouseReleased(MouseEvent e) { pressed = null; }
             @Override public void mouseDragged(MouseEvent e) {
-                if (pressed != null && pressed.distance(e.getPoint()) > 5) {
-                    header.getTransferHandler().exportAsDrag(header,e,TransferHandler.MOVE);
+                if (pressed != null && pressed.distance(e.getPoint()) >= java.awt.dnd.DragSource.getDragThreshold()) {
+                    JComponent source=(JComponent)e.getComponent();
+                    source.getTransferHandler().exportAsDrag(source,e,TransferHandler.MOVE);
                     pressed = null;
                 }
             }
         };
-        header.addMouseListener(drag);
-        header.addMouseMotionListener(drag);
-        view.addMouseMotionListener(new MouseMotionAdapter() {
-            @Override public void mouseDragged(MouseEvent e) {
-                if (e.isAltDown()) view.getTransferHandler().exportAsDrag(view,e,TransferHandler.MOVE);
+        for (JComponent source:java.util.List.of(header,dragZone)) {
+            source.addMouseListener(drag); source.addMouseMotionListener(drag);
+        }
+        MouseAdapter altDrag=new MouseAdapter() {
+            Point pressed;
+            @Override public void mousePressed(MouseEvent e) {
+                pressed=SwingUtilities.isLeftMouseButton(e) && e.isAltDown() ? e.getPoint() : null;
             }
-        });
-        title.addMouseListener(new MouseAdapter() {
-            @Override public void mousePressed(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(title,e,header)); }
-            @Override public void mouseReleased(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(title,e,header)); }
-        });
-        title.addMouseMotionListener(new MouseMotionAdapter() {
-            @Override public void mouseDragged(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(title,e,header)); }
-        });
+            @Override public void mouseReleased(MouseEvent e) { pressed=null; }
+            @Override public void mouseExited(MouseEvent e) { if ((e.getModifiersEx()&InputEvent.BUTTON1_DOWN_MASK)==0) pressed=null; }
+            @Override public void mouseDragged(MouseEvent e) {
+                if (pressed!=null && pressed.distance(e.getPoint())>=java.awt.dnd.DragSource.getDragThreshold()) {
+                    view.getTransferHandler().exportAsDrag(view,e,TransferHandler.MOVE); pressed=null;
+                }
+            }
+        };
+        view.addMouseListener(altDrag); view.addMouseMotionListener(altDrag);
+        MouseAdapter forward=new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(e.getComponent(),e,header)); }
+            @Override public void mouseReleased(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(e.getComponent(),e,header)); }
+            @Override public void mouseDragged(MouseEvent e) { header.dispatchEvent(SwingUtilities.convertMouseEvent(e.getComponent(),e,header)); }
+        };
+        for (JComponent label:java.util.List.of(title,connection)) {
+            label.addMouseListener(forward); label.addMouseMotionListener(forward);
+        }
     }
     public void clearPreview() { preview = null; repaint(); }
     @Override protected void paintChildren(Graphics graphics) {

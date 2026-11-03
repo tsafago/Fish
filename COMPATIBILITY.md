@@ -5,7 +5,36 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.5.2 DPI-regression preview
+## Fish 0.5.3 interaction refinement preview
+
+Unsigned experimental preview, with no protocol expansion. Hidden headers
+gain a zero-space top drag target using the real swap handler. Manual zoom
+centers on axes that fit and retains existing scrolling for oversize screens.
+Normal and Flux share exact per-channel LCD glyph coverage; effect-only changes
+retain glyph/font caches and repaint without the logo's former double-click delay.
+Production settings use Apply/Done with repeated-Apply dismissal baselines.
+The redundant More settings Flux item is removed; its configurable action remains.
+Pane focus outlines no longer add a second shared middle-divider line.
+
+Focused noninteractive checks cover these production paths and Ubuntu Mono and
+Consolas at 100/125/150/175/200%, with real loopback sockets and stored settings.
+Freshly consented, bounded production desktop checks passed at 100% on the 1080p
+monitor and 150% on one 4K monitor, including actual logo/effect selection,
+font Apply/Done, submenu Escape dismissal and hidden-header mouse swapping.
+The current 4K logo switch changed terminal pixels in 90.7 ms. The sampled
+1080p/4K resize frames retained terminal ink; the native probe counted 20 size
+messages per resize and no background-erasure messages. Current 4K EDT p95 was
+18.65 ms for Flux and 10.94 ms for None. These are bounded samples, not guarantees
+against the user's intermittent flicker: it was not reproduced, and no verified
+hardware flicker fix is claimed. Physical 125/175/200% checks were not performed.
+No workspace, credentials, clipboard or real-host images were used.
+The initially interrupted confirmation exposed a shared dialog Escape handler
+that also dismissed its owning dialog; it now clears the active menu path first,
+and the real popup/Done sequence passed on both monitors.
+The previously demonstrated maximize/restore outline defect remains open.
+No full ACS/production claim is made.
+
+## Included Fish 0.5.2 DPI-regression preview
 
 **Known unresolved defect:** the outer perimeter still disappears after
 maximize/restore on the actual 1080p/4K monitors. AWT's classic frame insets and

@@ -4,6 +4,7 @@ import java.awt.*;
 import java.awt.event.*;
 import javax.swing.*;
 import pane5250.model.ColorRole;
+import pane5250.model.Profile;
 
 /** Native Swing window mechanics without a second, system-colored title/menu row. */
 final class WindowChrome extends JPanel {
@@ -273,15 +274,12 @@ final class WindowChrome extends JPanel {
     }
 
     private final class LogoButton extends JButton {
-        private final javax.swing.Timer click;
         private Point pressed;
         private boolean dragged;
         private boolean keyboardFocus;
+        private Profile firstClick;
         LogoButton(Runnable toggleFlux) {
             super(new FishIcon(27,20));
-            Object interval=Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
-            click=new javax.swing.Timer(interval instanceof Integer ms ? ms : 500,e -> toggleFlux.run());
-            click.setRepeats(false);
             setPreferredSize(new Dimension(48,HEIGHT-1));
             setBorder(BorderFactory.createEmptyBorder());
             setContentAreaFilled(false); setOpaque(false); setFocusPainted(false);
@@ -300,12 +298,11 @@ final class WindowChrome extends JPanel {
                 @Override public void keyPressed(KeyEvent e) { keyboardFocus=true; repaint(); }
             });
         }
-        void cancelClick() { click.stop(); pressed=null; }
+        void cancelClick() { pressed=null; firstClick=null; }
         @Override protected void processMouseEvent(MouseEvent event) {
             if (event.getID()==MouseEvent.MOUSE_PRESSED) {
                 keyboardFocus=false;
                 pressed=event.getPoint(); dragged=false;
-                if (event.getClickCount()>1) click.stop();
             }
             super.processMouseEvent(event);
             if (event.getID()==MouseEvent.MOUSE_RELEASED) pressed=null;
@@ -313,14 +310,21 @@ final class WindowChrome extends JPanel {
         @Override protected void processMouseMotionEvent(MouseEvent event) {
             if (event.getID()==MouseEvent.MOUSE_DRAGGED && pressed!=null
                     && pressed.distance(event.getPoint())>=java.awt.dnd.DragSource.getDragThreshold()) {
-                dragged=true; click.stop(); getModel().setArmed(false);
+                dragged=true; getModel().setArmed(false);
             }
             super.processMouseMotionEvent(event);
         }
         @Override protected void fireActionPerformed(ActionEvent event) {
             if (EventQueue.getCurrentEvent() instanceof MouseEvent mouse) {
-                if (!dragged && mouse.getClickCount()==1) click.restart();
-                else click.stop();
+                if (dragged || !SwingUtilities.isLeftMouseButton(mouse)) return;
+                if (mouse.getClickCount()>1 && mouse.getClickCount()%2==0 && firstClick!=null && window instanceof Workspace workspace) {
+                    for (Profile live:workspace.profileList()) if (live.id().equals(firstClick.id()))
+                        workspace.putProfile(live.withDisplay(live.theme(),firstClick.effect()));
+                    firstClick=null;
+                } else {
+                    firstClick=window instanceof Workspace workspace && workspace.active()!=null ? workspace.active().profile() : null;
+                    super.fireActionPerformed(event);
+                }
             } else super.fireActionPerformed(event);
         }
         @Override public void removeNotify() { cancelClick(); super.removeNotify(); }

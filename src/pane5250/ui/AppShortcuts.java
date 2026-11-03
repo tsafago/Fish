@@ -124,6 +124,9 @@ final class AppShortcuts implements KeyEventDispatcher {
         claimed.clear();
     }
     void show() {
+        Ui.showDialog(dialog());
+    }
+    JDialog dialog() {
         DefaultTableModel model=new DefaultTableModel(new String[]{"Action","Shortcut","Default"},0) {
             @Override public boolean isCellEditable(int row,int column) { return column==1; }
         };
@@ -195,20 +198,28 @@ final class AppShortcuts implements KeyEventDispatcher {
                 +"For Ctrl+Tab cycling, select Next pane and record Ctrl+Tab. Conflicting host keys are never silently replaced.</html>"),BorderLayout.SOUTH);
         JPanel body=new JPanel(new BorderLayout(0,12));
         body.add(header,BorderLayout.NORTH); body.add(new JScrollPane(table),BorderLayout.CENTER); body.add(bottom,BorderLayout.SOUTH);
-        while (Ui.form(workspace,"Shortcuts - all actions",body,"Save shortcuts")) {
-            if (table.isEditing()) table.getCellEditor().stopCellEditing();
-            try {
-                Map<String,String> values=new LinkedHashMap<>();
-                for (int row=0;row<model.getRowCount();row++) {
-                    String value=Objects.toString(model.getValueAt(row,1),"").strip();
-                    if (!value.isEmpty()) {
-                        KeyStroke parsed=stroke(value); value=parsed.toString();
-                    }
-                    if (!value.equals(model.getValueAt(row,2))) values.put((String)model.getValueAt(row,0),value);
-                }
-                workspace.applyShortcuts(values); break;
+        JLabel error=new JLabel(" "); Ui.role(error,"error");
+        bottom.add(error,BorderLayout.CENTER);
+        java.util.function.Supplier<Map<String,String>> draft=() -> {
+            Map<String,String> values=new LinkedHashMap<>();
+            for (int row=0;row<model.getRowCount();row++) {
+                String value=Objects.toString(model.getValueAt(row,1),"").strip();
+                if (!value.isEmpty()) value=stroke(value).toString();
+                if (!value.equals(model.getValueAt(row,2))) values.put((String)model.getValueAt(row,0),value);
             }
-            catch (IllegalArgumentException e) { Ui.error(workspace,e.getMessage()); }
-        }
+            return Map.copyOf(values);
+        };
+        java.util.function.BooleanSupplier dirty=() -> {
+            if (table.isEditing()) return true;
+            try { return !draft.get().equals(overrides); }
+            catch (IllegalArgumentException e) { return true; }
+        };
+        return Ui.settingsDialog(workspace,"Shortcuts - all actions",body,dirty,() -> {
+            if (table.isEditing() && !table.getCellEditor().stopCellEditing()) return false;
+            try {
+                workspace.applyShortcuts(draft.get()); error.setText(" "); error.setToolTipText(null); return true;
+            }
+            catch (IllegalArgumentException e) { error.setText(e.getMessage()); error.setToolTipText(e.getMessage()); return false; }
+        });
     }
 }

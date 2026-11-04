@@ -8,8 +8,13 @@ import pane5250.model.*;
 import pane5250.ui.*;
 
 public final class Main {
+    public static final String VERSION="0.6.0";
     private Main() {}
     public static void main(String[] args) {
+        if (args.length>0 && args[0].equals("--config")) {
+            System.exit(Configuration.run(Arrays.copyOfRange(args,1,args.length),System.out,System.err));
+            return;
+        }
         boolean demonstration = false;
         Path supplied = null;
         for (int i = 0; i < args.length; i++) {
@@ -17,7 +22,8 @@ public final class Main {
             else if (args[i].equals("--data-dir") && i + 1 < args.length) supplied = Path.of(args[++i]);
             else if (args[i].equals("--help")) {
                 System.out.println("Fish [--demo] [--data-dir DIRECTORY]\n"
-                        + "--demo starts a loopback-only synthetic TN5250 host in a separate temporary workspace.");
+                        + "--demo starts a loopback-only synthetic TN5250 host in a separate temporary workspace.\n"
+                        + "Fish --config <command> ... provides offline configuration.\n"+Configuration.HELP);
                 return;
             } else {
                 System.err.println("Unknown or incomplete argument: " + args[i]);
@@ -55,6 +61,7 @@ public final class Main {
                 if (!store.loadNotice().isEmpty())
                     System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
                 if (demo) SwingUtilities.invokeLater(window::connectAll);
+                else SwingUtilities.invokeLater(window::startTutorialIfNeeded);
                 } catch (RuntimeException e) {
                     if (host != null) host.close();
                     try { store.close(); }

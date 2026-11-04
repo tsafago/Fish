@@ -1,0 +1,1556 @@
+{
+  "actions": [
+    {
+      "default": "ctrl alt R",
+      "hostAction": null,
+      "title": "Connect / disconnect"
+    },
+    {
+      "default": "ctrl alt shift R",
+      "hostAction": null,
+      "title": "Reconnect"
+    },
+    {
+      "default": "ctrl alt P",
+      "hostAction": null,
+      "title": "Profiles..."
+    },
+    {
+      "default": "ctrl O",
+      "hostAction": null,
+      "title": "Switch profile..."
+    },
+    {
+      "default": "ctrl alt U",
+      "hostAction": null,
+      "title": "Insert profile username"
+    },
+    {
+      "default": "ctrl alt shift P",
+      "hostAction": null,
+      "title": "Insert remembered password"
+    },
+    {
+      "default": "ctrl Q",
+      "hostAction": null,
+      "title": "Quit"
+    },
+    {
+      "default": "ctrl C",
+      "hostAction": null,
+      "title": "Copy selection / screen"
+    },
+    {
+      "default": "ctrl V",
+      "hostAction": null,
+      "title": "Paste into fields"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Shortcuts..."
+    },
+    {
+      "default": "ctrl N",
+      "hostAction": null,
+      "title": "Add pane"
+    },
+    {
+      "default": "ctrl alt D",
+      "hostAction": null,
+      "title": "Swap panes..."
+    },
+    {
+      "default": "ctrl W",
+      "hostAction": null,
+      "title": "Close pane"
+    },
+    {
+      "default": "ctrl TAB",
+      "hostAction": null,
+      "title": "Next pane"
+    },
+    {
+      "default": "ctrl shift TAB",
+      "hostAction": null,
+      "title": "Previous pane"
+    },
+    {
+      "default": "ctrl alt OPEN_BRACKET",
+      "hostAction": null,
+      "title": "Decrease divider"
+    },
+    {
+      "default": "ctrl alt CLOSE_BRACKET",
+      "hostAction": null,
+      "title": "Increase divider"
+    },
+    {
+      "default": "ctrl alt S",
+      "hostAction": null,
+      "title": "Save layout to profile"
+    },
+    {
+      "default": "ctrl alt L",
+      "hostAction": null,
+      "title": "Restore profile layout"
+    },
+    {
+      "default": "ctrl 0",
+      "hostAction": null,
+      "title": "Fit host screen"
+    },
+    {
+      "default": "ctrl EQUALS",
+      "hostAction": null,
+      "title": "Zoom in"
+    },
+    {
+      "default": "ctrl MINUS",
+      "hostAction": null,
+      "title": "Zoom out"
+    },
+    {
+      "default": "ctrl COMMA",
+      "hostAction": null,
+      "title": "Appearance..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Fonts..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Pane information..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Window and focus..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme designer..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Flux animated text"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Full manual / Getting Started"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Getting started tutorial"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Configuration for external tools"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Keyboard reference"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Compatibility and connection safety"
+    },
+    {
+      "default": "ctrl alt M",
+      "hostAction": null,
+      "title": "Open menus"
+    },
+    {
+      "default": "ctrl alt SPACE",
+      "hostAction": null,
+      "title": "Window menu"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Maximize / restore window"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Minimize window"
+    },
+    {
+      "default": "ctrl alt F",
+      "hostAction": null,
+      "title": "Send host key..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Charcoal"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Graphite"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Midnight"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Paper"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: OLED"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: OLED Amber"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: High Contrast"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: High Contrast Light"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Lagoon"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Afterglow"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Eye Saver"
+    },
+    {
+      "default": "ctrl alt 1",
+      "hostAction": null,
+      "title": "Focus pane 1"
+    },
+    {
+      "default": "ctrl alt 2",
+      "hostAction": null,
+      "title": "Focus pane 2"
+    },
+    {
+      "default": "ctrl alt 3",
+      "hostAction": null,
+      "title": "Focus pane 3"
+    },
+    {
+      "default": "ctrl alt 4",
+      "hostAction": null,
+      "title": "Focus pane 4"
+    },
+    {
+      "default": "ctrl alt 5",
+      "hostAction": null,
+      "title": "Focus pane 5"
+    },
+    {
+      "default": "ctrl alt 6",
+      "hostAction": null,
+      "title": "Focus pane 6"
+    },
+    {
+      "default": "ctrl alt 7",
+      "hostAction": null,
+      "title": "Focus pane 7"
+    },
+    {
+      "default": "ctrl alt 8",
+      "hostAction": null,
+      "title": "Focus pane 8"
+    },
+    {
+      "default": "pressed BACK_SPACE",
+      "hostAction": "BACK_SPACE",
+      "title": "Host BACK SPACE"
+    },
+    {
+      "default": "shift pressed TAB",
+      "hostAction": "BACK_TAB",
+      "title": "Host BACK TAB"
+    },
+    {
+      "default": "pressed UP",
+      "hostAction": "UP",
+      "title": "Host UP"
+    },
+    {
+      "default": "pressed DOWN",
+      "hostAction": "DOWN",
+      "title": "Host DOWN"
+    },
+    {
+      "default": "pressed LEFT",
+      "hostAction": "LEFT",
+      "title": "Host LEFT"
+    },
+    {
+      "default": "pressed RIGHT",
+      "hostAction": "RIGHT",
+      "title": "Host RIGHT"
+    },
+    {
+      "default": "pressed DELETE",
+      "hostAction": "DELETE",
+      "title": "Host DELETE"
+    },
+    {
+      "default": "pressed TAB",
+      "hostAction": "TAB",
+      "title": "Host TAB"
+    },
+    {
+      "default": "pressed END",
+      "hostAction": "END_OF_FIELD",
+      "title": "Host END OF FIELD"
+    },
+    {
+      "default": "ctrl pressed END",
+      "hostAction": "ERASE_EOF",
+      "title": "Host ERASE EOF"
+    },
+    {
+      "default": "",
+      "hostAction": "ERASE_FIELD",
+      "title": "Host ERASE FIELD"
+    },
+    {
+      "default": "pressed INSERT",
+      "hostAction": "INSERT",
+      "title": "Host INSERT"
+    },
+    {
+      "default": "pressed HOME",
+      "hostAction": "HOME",
+      "title": "Host HOME"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD0",
+      "title": "Host KEYPAD0"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD1",
+      "title": "Host KEYPAD1"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD2",
+      "title": "Host KEYPAD2"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD3",
+      "title": "Host KEYPAD3"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD4",
+      "title": "Host KEYPAD4"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD5",
+      "title": "Host KEYPAD5"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD6",
+      "title": "Host KEYPAD6"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD7",
+      "title": "Host KEYPAD7"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD8",
+      "title": "Host KEYPAD8"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD9",
+      "title": "Host KEYPAD9"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD_PERIOD",
+      "title": "Host KEYPAD PERIOD"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD_COMMA",
+      "title": "Host KEYPAD COMMA"
+    },
+    {
+      "default": "",
+      "hostAction": "KEYPAD_MINUS",
+      "title": "Host KEYPAD MINUS"
+    },
+    {
+      "default": "ctrl pressed ENTER",
+      "hostAction": "FIELD_EXIT",
+      "title": "FIELD EXIT"
+    },
+    {
+      "default": "pressed ADD",
+      "hostAction": "FIELD_PLUS",
+      "title": "FIELD PLUS"
+    },
+    {
+      "default": "pressed SUBTRACT",
+      "hostAction": "FIELD_MINUS",
+      "title": "FIELD MINUS"
+    },
+    {
+      "default": "",
+      "hostAction": "BEGIN_OF_FIELD",
+      "title": "Host BEGIN OF FIELD"
+    },
+    {
+      "default": "pressed ENTER",
+      "hostAction": "ENTER",
+      "title": "ENTER"
+    },
+    {
+      "default": "pressed F1",
+      "hostAction": "PF1",
+      "title": "Host F1"
+    },
+    {
+      "default": "pressed F2",
+      "hostAction": "PF2",
+      "title": "Host F2"
+    },
+    {
+      "default": "pressed F3",
+      "hostAction": "PF3",
+      "title": "Host F3"
+    },
+    {
+      "default": "pressed F4",
+      "hostAction": "PF4",
+      "title": "Host F4"
+    },
+    {
+      "default": "pressed F5",
+      "hostAction": "PF5",
+      "title": "Host F5"
+    },
+    {
+      "default": "pressed F6",
+      "hostAction": "PF6",
+      "title": "Host F6"
+    },
+    {
+      "default": "pressed F7",
+      "hostAction": "PF7",
+      "title": "Host F7"
+    },
+    {
+      "default": "pressed F8",
+      "hostAction": "PF8",
+      "title": "Host F8"
+    },
+    {
+      "default": "pressed F9",
+      "hostAction": "PF9",
+      "title": "Host F9"
+    },
+    {
+      "default": "pressed F10",
+      "hostAction": "PF10",
+      "title": "Host F10"
+    },
+    {
+      "default": "pressed F11",
+      "hostAction": "PF11",
+      "title": "Host F11"
+    },
+    {
+      "default": "pressed F12",
+      "hostAction": "PF12",
+      "title": "Host F12"
+    },
+    {
+      "default": "shift pressed F1",
+      "hostAction": "PF13",
+      "title": "Host F13"
+    },
+    {
+      "default": "shift pressed F2",
+      "hostAction": "PF14",
+      "title": "Host F14"
+    },
+    {
+      "default": "shift pressed F3",
+      "hostAction": "PF15",
+      "title": "Host F15"
+    },
+    {
+      "default": "shift pressed F4",
+      "hostAction": "PF16",
+      "title": "Host F16"
+    },
+    {
+      "default": "shift pressed F5",
+      "hostAction": "PF17",
+      "title": "Host F17"
+    },
+    {
+      "default": "shift pressed F6",
+      "hostAction": "PF18",
+      "title": "Host F18"
+    },
+    {
+      "default": "shift pressed F7",
+      "hostAction": "PF19",
+      "title": "Host F19"
+    },
+    {
+      "default": "shift pressed F8",
+      "hostAction": "PF20",
+      "title": "Host F20"
+    },
+    {
+      "default": "shift pressed F9",
+      "hostAction": "PF21",
+      "title": "Host F21"
+    },
+    {
+      "default": "shift pressed F10",
+      "hostAction": "PF22",
+      "title": "Host F22"
+    },
+    {
+      "default": "shift pressed F11",
+      "hostAction": "PF23",
+      "title": "Host F23"
+    },
+    {
+      "default": "shift pressed F12",
+      "hostAction": "PF24",
+      "title": "Host F24"
+    },
+    {
+      "default": "pressed PAUSE",
+      "hostAction": "CLEAR",
+      "title": "CLEAR"
+    },
+    {
+      "default": "alt pressed F1",
+      "hostAction": "HELP",
+      "title": "HELP"
+    },
+    {
+      "default": "pressed PAGE_UP",
+      "hostAction": "PAGE_UP",
+      "title": "PAGE UP"
+    },
+    {
+      "default": "pressed PAGE_DOWN",
+      "hostAction": "PAGE_DOWN",
+      "title": "PAGE DOWN"
+    },
+    {
+      "default": "ctrl pressed PAGE_UP",
+      "hostAction": "ROLL_LEFT",
+      "title": "Host ROLL LEFT"
+    },
+    {
+      "default": "ctrl pressed PAGE_DOWN",
+      "hostAction": "ROLL_RIGHT",
+      "title": "Host ROLL RIGHT"
+    },
+    {
+      "default": "ctrl pressed PAUSE",
+      "hostAction": "PRINT",
+      "title": "Host PRINT"
+    },
+    {
+      "default": "",
+      "hostAction": "PA1",
+      "title": "Host PA1"
+    },
+    {
+      "default": "",
+      "hostAction": "PA2",
+      "title": "Host PA2"
+    },
+    {
+      "default": "",
+      "hostAction": "PA3",
+      "title": "Host PA3"
+    },
+    {
+      "default": "shift pressed ESCAPE",
+      "hostAction": "SYSREQ",
+      "title": "SYSREQ"
+    },
+    {
+      "default": "ctrl pressed R",
+      "hostAction": "RESET",
+      "title": "RESET"
+    },
+    {
+      "default": "",
+      "hostAction": "NEXTWORD",
+      "title": "Host NEXTWORD"
+    },
+    {
+      "default": "",
+      "hostAction": "PREVWORD",
+      "title": "Host PREVWORD"
+    },
+    {
+      "default": "pressed ESCAPE",
+      "hostAction": "ATTN",
+      "title": "ATTN"
+    },
+    {
+      "default": "shift pressed INSERT",
+      "hostAction": "DUP_FIELD",
+      "title": "Host DUP FIELD"
+    },
+    {
+      "default": "",
+      "hostAction": "NEW_LINE",
+      "title": "Host NEW LINE"
+    }
+  ],
+  "aliasRules": "Available while the primary action retains its default chord, unless reserved by a host/application/retired binding. Never overrides user bindings.",
+  "applicationAliases": {
+    "Copy selection / screen": [
+      "ctrl INSERT"
+    ],
+    "Fit host screen": [
+      "ctrl NUMPAD0"
+    ],
+    "Paste into fields": [
+      "ctrl shift INSERT",
+      "shift PAGE_DOWN"
+    ],
+    "Zoom in": [
+      "ctrl shift EQUALS",
+      "ctrl ADD"
+    ],
+    "Zoom out": [
+      "ctrl SUBTRACT"
+    ]
+  },
+  "catalogVersion": 1,
+  "format": "Fish XML properties configuration",
+  "hostDefaults": [
+    {
+      "action": "HELP",
+      "stroke": "alt pressed F1"
+    },
+    {
+      "action": "CLEAR",
+      "stroke": "ctrl pressed BACK_SPACE"
+    },
+    {
+      "action": "ERASE_EOF",
+      "stroke": "ctrl pressed END"
+    },
+    {
+      "action": "FIELD_EXIT",
+      "stroke": "ctrl pressed ENTER"
+    },
+    {
+      "action": "HELP",
+      "stroke": "ctrl pressed H"
+    },
+    {
+      "action": "ROLL_RIGHT",
+      "stroke": "ctrl pressed PAGE_DOWN"
+    },
+    {
+      "action": "ROLL_LEFT",
+      "stroke": "ctrl pressed PAGE_UP"
+    },
+    {
+      "action": "PRINT",
+      "stroke": "ctrl pressed PAUSE"
+    },
+    {
+      "action": "RESET",
+      "stroke": "ctrl pressed R"
+    },
+    {
+      "action": "FIELD_PLUS",
+      "stroke": "pressed ADD"
+    },
+    {
+      "action": "BACK_SPACE",
+      "stroke": "pressed BACK_SPACE"
+    },
+    {
+      "action": "DELETE",
+      "stroke": "pressed DELETE"
+    },
+    {
+      "action": "DOWN",
+      "stroke": "pressed DOWN"
+    },
+    {
+      "action": "END_OF_FIELD",
+      "stroke": "pressed END"
+    },
+    {
+      "action": "ENTER",
+      "stroke": "pressed ENTER"
+    },
+    {
+      "action": "ATTN",
+      "stroke": "pressed ESCAPE"
+    },
+    {
+      "action": "PF1",
+      "stroke": "pressed F1"
+    },
+    {
+      "action": "PF10",
+      "stroke": "pressed F10"
+    },
+    {
+      "action": "PF11",
+      "stroke": "pressed F11"
+    },
+    {
+      "action": "PF12",
+      "stroke": "pressed F12"
+    },
+    {
+      "action": "PF2",
+      "stroke": "pressed F2"
+    },
+    {
+      "action": "PF3",
+      "stroke": "pressed F3"
+    },
+    {
+      "action": "PF4",
+      "stroke": "pressed F4"
+    },
+    {
+      "action": "PF5",
+      "stroke": "pressed F5"
+    },
+    {
+      "action": "PF6",
+      "stroke": "pressed F6"
+    },
+    {
+      "action": "PF7",
+      "stroke": "pressed F7"
+    },
+    {
+      "action": "PF8",
+      "stroke": "pressed F8"
+    },
+    {
+      "action": "PF9",
+      "stroke": "pressed F9"
+    },
+    {
+      "action": "HOME",
+      "stroke": "pressed HOME"
+    },
+    {
+      "action": "INSERT",
+      "stroke": "pressed INSERT"
+    },
+    {
+      "action": "LEFT",
+      "stroke": "pressed LEFT"
+    },
+    {
+      "action": "PAGE_DOWN",
+      "stroke": "pressed PAGE_DOWN"
+    },
+    {
+      "action": "PAGE_UP",
+      "stroke": "pressed PAGE_UP"
+    },
+    {
+      "action": "CLEAR",
+      "stroke": "pressed PAUSE"
+    },
+    {
+      "action": "RIGHT",
+      "stroke": "pressed RIGHT"
+    },
+    {
+      "action": "FIELD_MINUS",
+      "stroke": "pressed SUBTRACT"
+    },
+    {
+      "action": "TAB",
+      "stroke": "pressed TAB"
+    },
+    {
+      "action": "UP",
+      "stroke": "pressed UP"
+    },
+    {
+      "action": "SYSREQ",
+      "stroke": "shift pressed ESCAPE"
+    },
+    {
+      "action": "PF13",
+      "stroke": "shift pressed F1"
+    },
+    {
+      "action": "PF22",
+      "stroke": "shift pressed F10"
+    },
+    {
+      "action": "PF23",
+      "stroke": "shift pressed F11"
+    },
+    {
+      "action": "PF24",
+      "stroke": "shift pressed F12"
+    },
+    {
+      "action": "PF14",
+      "stroke": "shift pressed F2"
+    },
+    {
+      "action": "PF15",
+      "stroke": "shift pressed F3"
+    },
+    {
+      "action": "PF16",
+      "stroke": "shift pressed F4"
+    },
+    {
+      "action": "PF17",
+      "stroke": "shift pressed F5"
+    },
+    {
+      "action": "PF18",
+      "stroke": "shift pressed F6"
+    },
+    {
+      "action": "PF19",
+      "stroke": "shift pressed F7"
+    },
+    {
+      "action": "PF20",
+      "stroke": "shift pressed F8"
+    },
+    {
+      "action": "PF21",
+      "stroke": "shift pressed F9"
+    },
+    {
+      "action": "DUP_FIELD",
+      "stroke": "shift pressed INSERT"
+    },
+    {
+      "action": "BACK_TAB",
+      "stroke": "shift pressed TAB"
+    }
+  ],
+  "hostOverridePrefix": "profile.{uuid}.key.{Swing pressed stroke}",
+  "hostOverrideRules": "Empty disables one stroke. Ctrl+Alt and OS chords are reserved. Equivalent duplicate strokes are rejected.",
+  "hostOverrideValues": [
+    "BACK_SPACE",
+    "BACK_TAB",
+    "UP",
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "DELETE",
+    "TAB",
+    "END_OF_FIELD",
+    "ERASE_EOF",
+    "ERASE_FIELD",
+    "INSERT",
+    "HOME",
+    "KEYPAD0",
+    "KEYPAD1",
+    "KEYPAD2",
+    "KEYPAD3",
+    "KEYPAD4",
+    "KEYPAD5",
+    "KEYPAD6",
+    "KEYPAD7",
+    "KEYPAD8",
+    "KEYPAD9",
+    "KEYPAD_PERIOD",
+    "KEYPAD_COMMA",
+    "KEYPAD_MINUS",
+    "FIELD_EXIT",
+    "FIELD_PLUS",
+    "FIELD_MINUS",
+    "BEGIN_OF_FIELD",
+    "ENTER",
+    "PF1",
+    "PF2",
+    "PF3",
+    "PF4",
+    "PF5",
+    "PF6",
+    "PF7",
+    "PF8",
+    "PF9",
+    "PF10",
+    "PF11",
+    "PF12",
+    "PF13",
+    "PF14",
+    "PF15",
+    "PF16",
+    "PF17",
+    "PF18",
+    "PF19",
+    "PF20",
+    "PF21",
+    "PF22",
+    "PF23",
+    "PF24",
+    "CLEAR",
+    "HELP",
+    "PAGE_UP",
+    "PAGE_DOWN",
+    "ROLL_LEFT",
+    "ROLL_RIGHT",
+    "PRINT",
+    "PA1",
+    "PA2",
+    "PA3",
+    "SYSREQ",
+    "RESET",
+    "NEXTWORD",
+    "PREVWORD",
+    "ATTN",
+    "DUP_FIELD",
+    "NEW_LINE"
+  ],
+  "layoutGrammar": {
+    "leaf": "L|{pane-uuid}|{profile-uuid}",
+    "ratio": "finite 0.05..0.95",
+    "shape": "1 full; 2 horizontal; 3 large left with vertically stacked right; 4-8 two rows, ceil(count/2) above. Each row is a right-nested horizontal chain.",
+    "split": "H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}"
+  },
+  "maxBytes": 2000000,
+  "metadata": {
+    "config.baseRevision": {
+      "constraints": "Required export revision; never edit it. Apply/validate require a matching, closed workspace.",
+      "default": null,
+      "type": "sha256-or-absent"
+    },
+    "config.format": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "1",
+      "type": "enum",
+      "values": [
+        "1"
+      ]
+    }
+  },
+  "profileFields": {
+    "auto": {
+      "constraints": "Explicit opt-in RFC 4777 plain automatic sign-on. Independent login requires username. False when linked.",
+      "default": false,
+      "type": "boolean"
+    },
+    "codePage": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "37",
+      "type": "enum",
+      "values": [
+        "37",
+        "273",
+        "277",
+        "278",
+        "280",
+        "284",
+        "285",
+        "297",
+        "500",
+        "870",
+        "871",
+        "1140",
+        "1141",
+        "1147",
+        "1148"
+      ]
+    },
+    "device": {
+      "constraints": "Empty or [A-Z#$@][A-Z0-9_#$@]{0,9}; canonicalized uppercase.",
+      "default": "",
+      "type": "ibmi-name"
+    },
+    "effect": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "None",
+      "type": "enum",
+      "values": [
+        "None",
+        "Soft glow",
+        "Prism",
+        "Flux (animated)"
+      ]
+    },
+    "host": {
+      "constraints": "0..253 characters, no whitespace/control characters. Empty is offline/unconfigured.",
+      "default": "",
+      "type": "hostname-or-ip"
+    },
+    "layout": {
+      "constraints": "Empty or saved bounded layout; every profile ID must exist.",
+      "default": "",
+      "type": "layout-or-empty"
+    },
+    "loginSource": {
+      "constraints": "Explicit source for THIS profile's host: independent source, nonempty username, remember=true. No self references, chains or cycles. Inherits login preferences.",
+      "default": "",
+      "type": "uuid-or-empty"
+    },
+    "name": {
+      "constraints": "1..80 characters; display name, not identity.",
+      "default": "Local IBM i",
+      "type": "text"
+    },
+    "port": {
+      "constraints": "1..65535; plain TN5250 TCP only.",
+      "default": 23,
+      "type": "integer"
+    },
+    "remember": {
+      "constraints": "Allow OS password lookup/storage on Connect. False when linked. Configuration never reads, copies or deletes OS credentials.",
+      "default": false,
+      "type": "boolean"
+    },
+    "theme": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "Phosphor",
+      "type": "enum",
+      "values": [
+        "Phosphor",
+        "Cool",
+        "Warm",
+        "Amber",
+        "Ice",
+        "Orchid",
+        "High contrast",
+        "IBM vivid",
+        "Mint",
+        "Rose",
+        "OLED green",
+        "OLED amber"
+      ]
+    },
+    "username": {
+      "constraints": "Same naming rule as device. Blank when loginSource is set.",
+      "default": "",
+      "type": "ibmi-name"
+    },
+    "zoom": {
+      "constraints": "Finite 0.5..3; existing fit/manual behavior retained.",
+      "default": 1,
+      "type": "number"
+    }
+  },
+  "profilePrefix": "profile.{uuid}.",
+  "properties": {
+    "appTheme": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "Charcoal",
+      "type": "enum",
+      "values": [
+        "Charcoal",
+        "Graphite",
+        "Midnight",
+        "Paper",
+        "OLED",
+        "OLED_Amber",
+        "High_Contrast",
+        "High_Contrast_Light",
+        "Lagoon",
+        "Afterglow",
+        "Eye_Saver"
+      ]
+    },
+    "appearance.outline": {
+      "constraints": "Active-pane outline; shared internal edges have one owner.",
+      "default": true,
+      "type": "boolean"
+    },
+    "appearance.retired": {
+      "constraints": "Former reserved shortcuts; only valid non-typing application strokes.",
+      "default": "ctrl alt K",
+      "type": "newline-separated-strokes"
+    },
+    "appearance.selected": {
+      "constraints": "Empty for builtin appTheme, otherwise exact custom theme name.",
+      "default": "",
+      "type": "text"
+    },
+    "appearance.themes": {
+      "constraints": "0..32; all theme indices 0 through count-1 must be complete.",
+      "default": 0,
+      "type": "integer"
+    },
+    "appearance.windowOutline": {
+      "constraints": "Whole-window outline; known maximize/restore defect remains.",
+      "default": true,
+      "type": "boolean"
+    },
+    "font.family": {
+      "constraints": "Automatic or an installed fixed-width family. Local file takes precedence.",
+      "default": "Automatic",
+      "type": "text"
+    },
+    "font.file": {
+      "constraints": "Empty or a local TTF/OTF path readable on this machine; only its path, never font bytes, is exported.",
+      "default": "",
+      "type": "local-font-path"
+    },
+    "height": {
+      "constraints": "260..10000 logical pixels.",
+      "default": 850,
+      "type": "integer"
+    },
+    "highlightActive": {
+      "constraints": "true or false; independent active-pane tint.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.connection": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.cursor": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.device": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": false,
+      "type": "boolean"
+    },
+    "info.dimensions": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.footer": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.header": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.host": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.insert": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.profile": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "info.status": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
+    "lastProfile": {
+      "constraints": "Must be a listed profile ID.",
+      "default": null,
+      "type": "uuid"
+    },
+    "layout": {
+      "constraints": "1-8 unique pane IDs referencing listed profiles; bounded Fish shape. See layoutGrammar.",
+      "default": null,
+      "type": "layout"
+    },
+    "profiles": {
+      "constraints": "Ordered, nonempty, unique saved profile IDs; no passwords.",
+      "default": null,
+      "type": "comma-separated-uuid-list"
+    },
+    "tutorial.status": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "NEW",
+      "type": "enum",
+      "values": [
+        "NEW",
+        "IN_PROGRESS",
+        "COMPLETED",
+        "SKIPPED"
+      ]
+    },
+    "version": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "8",
+      "type": "enum",
+      "values": [
+        "8"
+      ]
+    },
+    "width": {
+      "constraints": "330..10000 logical pixels.",
+      "default": 1360,
+      "type": "integer"
+    }
+  },
+  "semantics": "Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Changes take effect next launch offline; no connections/transactions/credential operations.",
+  "shortcutPrefix": "shortcut.{exact-action-title}",
+  "shortcutValue": "Swing pressed stroke or empty to unbind. Explicit entries, even equal to current defaults, remain explicit.",
+  "storage": "All values are XML strings; types below describe their logical values. Use export, edit, validate, apply.",
+  "themeFields": {
+    "ACTIVE_TINT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#14181A",
+      "type": "rgb"
+    },
+    "BACKGROUND": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#101213",
+      "type": "rgb"
+    },
+    "CHROME": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#171A1C",
+      "type": "rgb"
+    },
+    "CHROME_INACTIVE": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#B1C1C9",
+      "type": "rgb"
+    },
+    "CHROME_TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "CURSOR": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#87BBC8",
+      "type": "rgb"
+    },
+    "DIALOG": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#171A1C",
+      "type": "rgb"
+    },
+    "DISABLED": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#B1C1C9",
+      "type": "rgb"
+    },
+    "DIVIDER": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#38464D",
+      "type": "rgb"
+    },
+    "DIVIDER_BACKGROUND": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#101213",
+      "type": "rgb"
+    },
+    "ERROR": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#FFA3A3",
+      "type": "rgb"
+    },
+    "FIELD": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#202629",
+      "type": "rgb"
+    },
+    "FOCUS": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#87BBC8",
+      "type": "rgb"
+    },
+    "FOOTER": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#101213",
+      "type": "rgb"
+    },
+    "FOOTER_TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "GLOW": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#87BBC8",
+      "type": "rgb"
+    },
+    "GRADIENT_1": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#63DFC5",
+      "type": "rgb"
+    },
+    "GRADIENT_2": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#79A9FF",
+      "type": "rgb"
+    },
+    "GRADIENT_3": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#C795FF",
+      "type": "rgb"
+    },
+    "GRADIENT_4": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#F394BF",
+      "type": "rgb"
+    },
+    "GRADIENT_5": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#FFC477",
+      "type": "rgb"
+    },
+    "GRADIENT_6": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#82E0AD",
+      "type": "rgb"
+    },
+    "HEADER": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#101213",
+      "type": "rgb"
+    },
+    "HEADER_MUTED": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#B1C1C9",
+      "type": "rgb"
+    },
+    "HEADER_TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "HOST_0": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#101213",
+      "type": "rgb"
+    },
+    "HOST_1": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#8DAEFA",
+      "type": "rgb"
+    },
+    "HOST_10": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#B1EDAB",
+      "type": "rgb"
+    },
+    "HOST_11": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#A0F0EE",
+      "type": "rgb"
+    },
+    "HOST_12": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#FFB4B4",
+      "type": "rgb"
+    },
+    "HOST_13": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#F4B8F2",
+      "type": "rgb"
+    },
+    "HOST_14": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#FFECA3",
+      "type": "rgb"
+    },
+    "HOST_15": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#FFFFFF",
+      "type": "rgb"
+    },
+    "HOST_2": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#9BDB98",
+      "type": "rgb"
+    },
+    "HOST_3": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#84D9DF",
+      "type": "rgb"
+    },
+    "HOST_4": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#F69B9B",
+      "type": "rgb"
+    },
+    "HOST_5": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#D8A0DB",
+      "type": "rgb"
+    },
+    "HOST_6": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#E3D78C",
+      "type": "rgb"
+    },
+    "HOST_7": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#E4E5DF",
+      "type": "rgb"
+    },
+    "HOST_8": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#B5B9BC",
+      "type": "rgb"
+    },
+    "HOST_9": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#ACC7FF",
+      "type": "rgb"
+    },
+    "HOVER": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#2C363B",
+      "type": "rgb"
+    },
+    "LOGO_1": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#69CBBE",
+      "type": "rgb"
+    },
+    "LOGO_2": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#83A7E8",
+      "type": "rgb"
+    },
+    "LOGO_3": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#CF92B9",
+      "type": "rgb"
+    },
+    "MENU": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#171A1C",
+      "type": "rgb"
+    },
+    "MENU_HOVER": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#2C363B",
+      "type": "rgb"
+    },
+    "MENU_SELECTED_TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "MENU_TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "MUTED": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#B1C1C9",
+      "type": "rgb"
+    },
+    "PANEL": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#171A1C",
+      "type": "rgb"
+    },
+    "PRESSED": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#304A55",
+      "type": "rgb"
+    },
+    "SELECTION": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#304A55",
+      "type": "rgb"
+    },
+    "SELECTION_TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "STATUS_ERROR": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#FFA3A3",
+      "type": "rgb"
+    },
+    "STATUS_WAIT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#B1C1C9",
+      "type": "rgb"
+    },
+    "TERMINAL_SELECTION": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#304A55",
+      "type": "rgb"
+    },
+    "TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "TOOLTIP": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#171A1C",
+      "type": "rgb"
+    },
+    "TOOLTIP_TEXT": {
+      "constraints": "Exactly six RGB hex digits, optionally prefixed #. Complete theme required.",
+      "default": "#DDE3E5",
+      "type": "rgb"
+    },
+    "name": {
+      "constraints": "1..64 printable characters; names unique ignoring case.",
+      "default": null,
+      "type": "text"
+    }
+  },
+  "themePrefix": "appearance.theme.{zero-based-index}.",
+  "unknownKeys": "Rejected without writing. Future workspace versions are rejected, never downgraded.",
+  "workspaceVersion": "8"
+}

@@ -42,6 +42,10 @@ public final class Workspace extends JFrame {
     private final AppShortcuts shortcuts;
     private final WindowChrome chrome;
     private JMenu appearanceDetails;
+    private JButton addPane;
+    private JMenuBar menuBar;
+    private StateStore.Tutorial tutorialStatus;
+    private TutorialDialog tutorial;
     private Runnable afterClose = () -> {};
 
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
@@ -50,6 +54,7 @@ public final class Workspace extends JFrame {
         setIconImages(FishIcon.images());
         getAccessibleContext().setAccessibleName("Fish");
         appearance=state.appearance();
+        tutorialStatus=state.tutorial();
         Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         this.store = store;
         this.demonstration = demonstration;
@@ -72,11 +77,11 @@ public final class Workspace extends JFrame {
         Ui.background(shell,ColorRole.BACKGROUND);
         setContentPane(shell);
         updateWindowOutline();
-        JMenuBar menus=menus();
+        JMenuBar menus=menus(); menuBar=menus;
         JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); tools.setOpaque(false);
-        JButton addPane=new JButton(command("Add pane"));
+        addPane=new JButton(command("Add pane"));
         addPane.setText("Pane"); addPane.setIcon(Ui.symbol("plus"));
-        addPane.setToolTipText("Add the next pane (maximum 8; Ctrl+Alt+H)");
+        addPane.setToolTipText("Add the next pane (maximum 8)");
         addPane.getAccessibleContext().setAccessibleName("Add pane");
         for (JButton b : List.of(addPane)) {
             b.setBorder(BorderFactory.createEmptyBorder(6,9,6,9));
@@ -104,6 +109,34 @@ public final class Workspace extends JFrame {
     public CredentialStore credentials() { return credentials; }
     public List<Profile> profileList() { return List.copyOf(profiles.values()); }
     public Profile lastProfile() { return profiles.get(lastProfile); }
+    public Profile loginProfile(Profile profile) { return Profile.login(profile,profileList()); }
+    public Profile connectionProfile(Profile profile) { return Profile.effective(profile,profileList()); }
+    public StateStore.Tutorial tutorialStatus() { return tutorialStatus; }
+    void tutorialStatus(StateStore.Tutorial status) { tutorialStatus=status; changed(); }
+    public void startTutorialIfNeeded() {
+        if (!demonstration && tutorialStatus==StateStore.Tutorial.NEW) openTutorial(true);
+    }
+    public void showTutorial() { openTutorial(false); }
+    private void openTutorial(boolean firstRun) {
+        if (tutorial!=null && !tutorial.ended()) {
+            if (isShowing()) { tutorial.setVisible(true); tutorial.toFront(); }
+            return;
+        }
+        tutorial=new TutorialDialog(this,firstRun);
+        if (isShowing()) tutorial.setVisible(true);
+    }
+    void tutorialChanged() { if (tutorial!=null) tutorial.refreshTarget(); }
+    Component tutorialTarget(int step) {
+        if (step==0) return menuBar.getMenu(0);
+        if (step==1 || step==2) return active==null ? menuBar.getMenu(0) : active.tutorialConnectionTarget();
+        if (step==3) return addPane;
+        if (step==4) return active==null ? content : active.tutorialDragTarget();
+        return menuBar.getMenu(menuBar.getMenuCount()-1);
+    }
+    public void configurationGuide() {
+        try { new ManualDialog(this,"/AI-CONFIG.md","Configuration for external tools").setVisible(true); }
+        catch (java.io.IOException e) { Ui.error(this,"Configuration guide could not be opened: "+e.getMessage()); }
+    }
     public void selectProfile(SessionPane pane,Profile profile) {
         if (pane.busy()) throw new IllegalStateException("Disconnect before selecting a preset.");
         lastProfile=profile.id(); pane.updateProfile(profile); refreshShortcutLabels(); changed();
@@ -124,6 +157,7 @@ public final class Workspace extends JFrame {
             Ui.applyTheme(Ui.theme(),appearance.custom().orElse(null));
         else updateWindowOutline();
         panes.values().forEach(p -> { if (font) p.view().fontChanged(); p.updateHeader(); });
+        tutorialChanged();
         changed();
         if (!fontNotice.isEmpty()) active.problem(fontNotice);
     }
@@ -159,6 +193,12 @@ public final class Workspace extends JFrame {
     public void validateProfile(Profile profile) {
         List<Profile> candidates=new ArrayList<>(profileList());
         candidates.removeIf(p -> p.id().equals(profile.id())); candidates.add(profile);
+        Profile existing=profiles.get(profile.id());
+        if (existing!=null && (connectionChanged(existing,profile) || existing.rememberPassword()!=profile.rememberPassword())
+                && panes.values().stream().anyMatch(p -> p.connecting()
+                        && (p.profile().id().equals(profile.id()) || profile.id().equals(p.profile().loginSource()))))
+            throw new IllegalArgumentException("This login has a pending connection/password operation. Wait for it to finish before changing its login.");
+        for (Profile candidate:candidates) Profile.login(candidate,candidates);
         shortcuts.validate(shortcuts.overrides(),candidates);
         try { TerminalFonts.validate(terminalFont,candidates); }
         catch (java.io.IOException e) { throw new IllegalArgumentException(e.getMessage(),e); }
@@ -205,6 +245,7 @@ public final class Workspace extends JFrame {
     public void activate(SessionPane pane) {
         if (active==pane) { refreshCommands(); return; }
         active = pane;
+        tutorialChanged();
         refreshShortcutLabels();
         panes.values().forEach(SessionPane::updateHeader);
         refreshCommands();
@@ -230,6 +271,7 @@ public final class Workspace extends JFrame {
         content.revalidate();
         content.repaint();
         refreshCommands();
+        tutorialChanged();
         SwingUtilities.invokeLater(() -> { if (active != null) active.focusTerminal(); });
     }
     private Component component(Layout node) {
@@ -270,7 +312,7 @@ public final class Workspace extends JFrame {
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
     private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
-            shortcuts.overrides(),highlightActive,appearance); }
+            shortcuts.overrides(),highlightActive,appearance,tutorialStatus); }
     public void saveAsync() {
         if (closing) return;
         StateStore.State snapshot = state();
@@ -348,14 +390,18 @@ public final class Workspace extends JFrame {
     public void profiles() { new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true); }
     private static boolean connectionChanged(Profile a, Profile b) {
         return !a.host().equals(b.host()) || a.port() != b.port() || !a.device().equals(b.device())
-                || !a.username().equals(b.username()) || a.automaticSignOn() != b.automaticSignOn() || !a.codePage().equals(b.codePage());
+                || !a.username().equals(b.username()) || a.automaticSignOn() != b.automaticSignOn() || !a.codePage().equals(b.codePage())
+                || !Objects.equals(a.loginSource(),b.loginSource());
     }
     public void putProfile(Profile value) {
         Profile existing=profiles.get(value.id());
         if (value.equals(existing)) return;
-        if (existing==null || !existing.keymap().equals(value.keymap()) || !existing.codePage().equals(value.codePage()))
+        if (existing==null || !existing.keymap().equals(value.keymap()) || !existing.codePage().equals(value.codePage())
+                || connectionChanged(existing,value) || existing.rememberPassword()!=value.rememberPassword())
             validateProfile(value);
         Profile old = profiles.put(value.id(),value);
+        if (existing==null || !existing.keymap().equals(value.keymap()))
+            shortcuts.apply(shortcuts.overrides(),profileList());
         for (SessionPane pane : panes.values()) {
             if (pane.profile().id().equals(value.id())) {
                 if (old != null && connectionChanged(old,value)) pane.disconnect();
@@ -496,7 +542,7 @@ public final class Workspace extends JFrame {
         action(session,"Switch profile...","ctrl alt O",this::quickSwitch);
         session.addSeparator();
         JMenu signOn=new JMenu("Sign-on helpers"); session.add(signOn);
-        action(signOn,"Insert profile username","ctrl alt U",() -> active.paste(active.profile().username()));
+        action(signOn,"Insert profile username","ctrl alt U",() -> active.paste(connectionProfile(active.profile()).username()));
         action(signOn,"Insert remembered password","ctrl alt shift P",() -> active.sendPassword());
         session.addSeparator();
         action(session,"Quit","ctrl alt Q",() -> close(false));
@@ -556,18 +602,21 @@ public final class Workspace extends JFrame {
                 KeyMnemonic.CLEAR,KeyMnemonic.HELP,KeyMnemonic.PAGE_UP,KeyMnemonic.PAGE_DOWN))
             action(editing,key.name().replace('_',' '),null,() -> active.send(key)).hostKey=key;
         JMenu help = menu(bar,"Help",KeyEvent.VK_L);
+        action(help,"Getting started tutorial",null,this::showTutorial);
         action(help,"Full manual / Getting Started",null,() -> {
             try { new ManualDialog(this).setVisible(true); }
             catch (java.io.IOException e) { Ui.error(this,"The manual could not be opened: "+e.getMessage()); }
         });
+        action(help,"Configuration for external tools",null,this::configurationGuide);
         action(help,"Keyboard reference",null,() -> Ui.message(this,
-                Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+Alt+H: Add pane (max 8)     Ctrl+Alt+D: Swap\n"
-                + "Ctrl+Alt+Left/Right: Focus pane     Ctrl+Alt+1..8: Focus pane number\n"
-                + "Ctrl+Alt+[/]: Resize divider     Ctrl+Alt+0: Fit\nCtrl+Alt+Shift+C/V: Copy/paste\n"
+                Keymap.describeDefaults() + "\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+N: Add pane (max 8)     Ctrl+Alt+D: Swap\n"
+                + "Ctrl+Tab / Ctrl+Shift+Tab: Focus pane     Ctrl+Alt+1..8: Focus pane number\n"
+                + "Ctrl+Alt+[/]: Resize divider     Ctrl+0: Fit\nCtrl+C/V: Copy/paste\n"
                 + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
                 + "Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
                 + "Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels\n"
-                + "Ctrl+Alt+T: Appearance     Appearance > More settings: Fonts, Information, Window and focus, Theme designer",
+                + "Ctrl+comma: Appearance     Appearance > More settings: Fonts, Information, Window and focus, Theme designer\n"
+                + "Your saved custom bindings take precedence; Edit > Keyboard > Shortcuts shows current assignments.",
                 "Keyboard reference"));
         action(help,"Compatibility and connection safety",null,() -> Ui.message(this,
                 "TN5250J-based 5250 engine; only IBM-3477-FC.\nPlain TCP is not encrypted. Use only on a trusted network.\n"
@@ -619,11 +668,12 @@ public final class Workspace extends JFrame {
             case "Reconnect" -> "retry connect restart session";
             default -> "";
         };
-        AppCommand action=new AppCommand(text,menu.getText()+" / "+text,stroke,command,() -> {
+        AppCommand action=new AppCommand(text,menu.getText()+" / "+text,Shortcuts.defaultStroke(text),command,() -> {
             if (closing) return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
             if (List.of("Profiles...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
-                    "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started").contains(text)) return true;
+                    "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started",
+                    "Getting started tutorial","Configuration for external tools").contains(text)) return true;
             if (active==null) return false;
             if (text.equals("Copy selection / screen")) return active.screen()!=null;
             if (List.of("Swap panes...","Next pane","Previous pane").contains(text)) return panes.size()>1;
@@ -631,7 +681,7 @@ public final class Workspace extends JFrame {
             if (menu.getText().equals("Host") || menu.getText().equals("Field and screen actions") || text.equals("RESET")
                     || text.startsWith("Insert ") || text.startsWith("Paste")) {
                 return active.connected() && (!active.screen().getOIA().isKeyBoardLocked()
-                        || List.of("RESET","ATTN","SYSREQ").contains(text));
+                        || List.of("RESET","ATTN","SYSREQ").contains(text) || text.equals("ENTER") && active.recoverableInputError());
             }
             return true;
         },aliases);
@@ -663,6 +713,7 @@ public final class Workspace extends JFrame {
         saveTimer.stop();
         StateStore.State snapshot = state();
         closing = true;
+        if (tutorial!=null) tutorial.dispose();
         shortcuts.dispose();
         panes.values().forEach(SessionPane::dispose);
         dispose();

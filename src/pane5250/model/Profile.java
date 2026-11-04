@@ -7,7 +7,12 @@ import org.tn5250j.framework.tn5250.KbdTypesCodePages;
 public record Profile(UUID id, String name, String host, int port, String device, String username,
                       boolean automaticSignOn, boolean rememberPassword, String codePage,
                       String theme, String effect, double zoom, Map<String, String> keymap,
-                      String savedLayout) {
+                      String savedLayout,UUID loginSource) {
+    public Profile(UUID id,String name,String host,int port,String device,String username,boolean automaticSignOn,
+                   boolean rememberPassword,String codePage,String theme,String effect,double zoom,
+                   Map<String,String> keymap,String savedLayout) {
+        this(id,name,host,port,device,username,automaticSignOn,rememberPassword,codePage,theme,effect,zoom,keymap,savedLayout,null);
+    }
     public static final List<String> CODE_PAGES = List.of("37", "273", "277", "278", "280",
             "284", "285", "297", "500", "870", "871", "1140", "1141", "1147", "1148");
     public static final List<String> THEMES = List.of("Phosphor", "Cool", "Warm", "Amber", "Ice", "Orchid", "High contrast",
@@ -31,6 +36,9 @@ public record Profile(UUID id, String name, String host, int port, String device
             throw new IllegalArgumentException("Device must be a valid IBM i name, up to 10 characters.");
         if (!username.isEmpty() && !username.matches("[A-Z#$@][A-Z0-9_#$@]{0,9}"))
             throw new IllegalArgumentException("Username must be a valid IBM i profile name, up to 10 characters.");
+        if (loginSource!=null && (!username.isEmpty() || automaticSignOn || rememberPassword))
+            throw new IllegalArgumentException("A linked login inherits username and sign-in preferences; its own login fields must be empty/false.");
+        if (loginSource!=null && loginSource.equals(id)) throw new IllegalArgumentException("A profile cannot use its own login.");
         if (automaticSignOn && username.isEmpty()) throw new IllegalArgumentException("Automatic sign-on needs a username.");
         if (!CODE_PAGES.contains(codePage)) throw new IllegalArgumentException("Unsupported SBCS code page: " + codePage);
         if (!THEMES.contains(theme) || !EFFECTS.contains(effect)) throw new IllegalArgumentException("Unknown palette or effect.");
@@ -49,16 +57,34 @@ public record Profile(UUID id, String name, String host, int port, String device
 
     public Profile withLayout(String layout) {
         return new Profile(id, name, host, port, device, username, automaticSignOn, rememberPassword,
-                codePage, theme, effect, zoom, keymap, layout);
+                codePage, theme, effect, zoom, keymap, layout,loginSource);
     }
 
     public Profile withZoom(double value) {
         return new Profile(id, name, host, port, device, username, automaticSignOn, rememberPassword,
-                codePage, theme, effect, value, keymap, savedLayout);
+                codePage, theme, effect, value, keymap, savedLayout,loginSource);
     }
     public Profile withDisplay(String palette,String textEffect) {
         return new Profile(id,name,host,port,device,username,automaticSignOn,rememberPassword,
-                codePage,palette,textEffect,zoom,keymap,savedLayout);
+                codePage,palette,textEffect,zoom,keymap,savedLayout,loginSource);
+    }
+    public Profile withKeys(Map<String,String> keys) {
+        return new Profile(id,name,host,port,device,username,automaticSignOn,rememberPassword,codePage,theme,effect,zoom,keys,savedLayout,loginSource);
+    }
+    public static Profile login(Profile target,Collection<Profile> profiles) {
+        if (target.loginSource==null) return target;
+        Profile source=profiles.stream().filter(p -> p.id.equals(target.loginSource)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Login source is missing for "+target.name+". Choose an independent login or an existing source."));
+        if (source.loginSource!=null) throw new IllegalArgumentException("Login references must point directly to an independent profile; chains/cycles are not allowed.");
+        if (source.username.isEmpty() || !source.rememberPassword)
+            throw new IllegalArgumentException("Login source "+source.name+" must have a username and Save password enabled.");
+        return source;
+    }
+    public static Profile effective(Profile target,Collection<Profile> profiles) {
+        Profile login=login(target,profiles);
+        if (login==target) return target;
+        return new Profile(target.id,target.name,target.host,target.port,target.device,login.username,login.automaticSignOn,
+                login.rememberPassword,target.codePage,target.theme,target.effect,target.zoom,target.keymap,target.savedLayout);
     }
 
     public Charset charset() {

@@ -68,6 +68,7 @@ public final class SessionPane extends JPanel {
     private NetworkSession network;
     private Session5250 core;
     private boolean connecting, disposed;
+    private int credentialOperations;
     private long generation;
     private Layout.Dock preview;
     private String notice = "Disconnected";
@@ -268,10 +269,12 @@ public final class SessionPane extends JPanel {
         if (profile.host().isEmpty()) { workspace.profiles(); return; }
         workspace.rememberProfile(profile);
         long token = ++generation;
-        if (!profile.automaticSignOn()) { begin(new char[0], token); return; }
+        Profile connectionProfile=workspace.connectionProfile(profile);
+        if (!connectionProfile.automaticSignOn()) { begin(new char[0], token,connectionProfile); return; }
         connecting = true;
         updateHeader();
-        Profile target = profile;
+        Profile target = workspace.loginProfile(profile);
+        credentialOperations++;
         new SwingWorker<Optional<char[]>, Void>() {
             @Override protected Optional<char[]> doInBackground() throws IOException {
                 return target.rememberPassword() ? workspace.credentials().read(target) : Optional.empty();
@@ -287,40 +290,44 @@ public final class SessionPane extends JPanel {
                         JPanel panel = new JPanel(new BorderLayout(0,8));
                         panel.add(new JLabel("Plain TCP: the password and session are not encrypted."), BorderLayout.NORTH);
                         panel.add(input, BorderLayout.CENTER);
-                        if (!Ui.form(SessionPane.this,"Sign on as "+profile.username(),panel,"Connect")) { disconnect(); return; }
+                        if (!Ui.form(SessionPane.this,"Sign on as "+connectionProfile.username(),panel,"Connect")) { disconnect(); return; }
                         password = input.getPassword();
                         input.setText("");
                     }
-                    if (profile.rememberPassword() && saved.isEmpty()) rememberAndBegin(password, token);
-                    else begin(password, token);
-                } catch (Exception e) { problem("Credential lookup failed: " + message(e)); disconnectNetwork(); }
+                    if (token!=generation || disposed) { Arrays.fill(password,'\0'); return; }
+                    if (target.rememberPassword() && saved.isEmpty()) rememberAndBegin(password,token,target,connectionProfile);
+                    else begin(password,token,connectionProfile);
+                } catch (Exception e) {
+                    if (token==generation && !disposed) { problem("Credential lookup failed: " + message(e)); disconnectNetwork(); }
+                    else System.err.println("Canceled credential lookup failed: "+message(e));
+                } finally { credentialOperations--; }
             }
         }.execute();
     }
 
-    private void rememberAndBegin(char[] password, long token) {
-        Profile target = profile;
+    private void rememberAndBegin(char[] password,long token,Profile target,Profile connectionProfile) {
+        credentialOperations++;
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws IOException { workspace.credentials().write(target,password); return null; }
             @Override protected void done() {
                 try {
                     get();
-                    if (token == generation && !disposed) begin(password, token);
+                    if (token == generation && !disposed) begin(password,token,connectionProfile);
                     else Arrays.fill(password, '\0');
                 } catch (Exception e) {
                     Arrays.fill(password, '\0');
-                    problem("Password was not remembered: " + message(e));
-                    disconnectNetwork();
-                }
+                    if (token==generation && !disposed) { problem("Password was not remembered: " + message(e)); disconnectNetwork(); }
+                    else System.err.println("Canceled password save failed: "+message(e));
+                } finally { credentialOperations--; }
             }
         }.execute();
     }
 
-    private void begin(char[] password, long token) {
+    private void begin(char[] password,long token,Profile connectionProfile) {
         try {
-            Map<String,String> environment = profile.environment(password);
+            Map<String,String> environment = connectionProfile.environment(password);
             connecting = true;
-            notice = "Connecting to " + profile.host() + ":" + profile.port() + " - plain TCP";
+            notice = "Connecting to " + connectionProfile.host() + ":" + connectionProfile.port() + " - plain TCP";
             network = new NetworkSession(record -> {
                 if (generation == token && !disposed) {
                     core.accept(record);
@@ -338,13 +345,13 @@ public final class SessionPane extends JPanel {
                     view.screenChanged();
                 }
             }));
-            core = new Session5250(profile.name(), profile.codePage(), network.output(), this::problem);
+            core = new Session5250(connectionProfile.name(),connectionProfile.codePage(),network.output(),this::problem);
             core.getScreen().addScreenListener(new ScreenListener() {
                 @Override public void onScreenChanged(int u,int r,int c,int er,int ec) { view.screenChanged(); updateOia(); }
                 @Override public void onScreenSizeChanged(int r,int c) { view.resetSelection(); view.screenChanged(); view.revalidate(); }
             });
             core.getScreen().getOIA().addOIAListener((o,change) -> updateOia());
-            network.connect(profile.host(), profile.port(), environment);
+            network.connect(connectionProfile.host(),connectionProfile.port(),environment);
             environment.clear();
             updateHeader();
             updateOia();
@@ -450,7 +457,7 @@ public final class SessionPane extends JPanel {
         String dimensions = screen == null ? "" : (info.dimensions() ? "  " + screen.getRows() + "x" + screen.getColumns() : "")
                 + (info.cursor() ? "  " + screen.getCurrentRow() + ":" + screen.getCurrentCol() : "");
         String state = screen == null || !connected() ? notice : screen.getOIA().isKeyBoardLocked()
-                ? recoverableInputError() ? "Input error - Reset to continue" : "Waiting for host - input inhibited"
+                ? recoverableInputError() ? "Input error - Enter or Reset to continue" : "Waiting for host - input inhibited"
                 : notice;
         if (screen != null && screen.getOIA().getInhibitedText() != null && screen.getOIA().isKeyBoardLocked())
             state += "  " + screen.getOIA().getInhibitedText();
@@ -477,9 +484,13 @@ public final class SessionPane extends JPanel {
 
     public boolean send(KeyMnemonic key) {
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
+        if (key==KeyMnemonic.ENTER && recoverableInputError()) key=KeyMnemonic.RESET;
+        if (key==KeyMnemonic.RESET && screen().getOIA().isKeyBoardLocked() && !recoverableInputError()) {
+            problem("Waiting for host. Reset cannot clear host-busy inhibition."); return false;
+        }
         if (screen().getOIA().isKeyBoardLocked() && key != KeyMnemonic.RESET
                 && key != KeyMnemonic.ATTN && key != KeyMnemonic.SYSREQ) {
-            problem(recoverableInputError() ? "Input error. Use Reset; no keys were queued."
+            problem(recoverableInputError() ? "Input error. Press Enter or Reset; no keys were queued."
                     : "Waiting for host. Attention / System Request available; no keys were queued.");
             return false;
         }
@@ -549,6 +560,7 @@ public final class SessionPane extends JPanel {
     }
     public void sendPassword() {
         if (!connected()) { problem("Connect before inserting a password."); return; }
+        if (!workspace.loginProfile(profile).rememberPassword()) { problem("This login does not use a saved password."); return; }
         char[] extended = new char[screen().getScreenLength() + 1];
         screen().GetScreen(extended, extended.length, PLANE_EXTENDED);
         if ((extended[screen().getCurrentPos() - 1] & EXTENDED_5250_NON_DSP) == 0) {
@@ -557,7 +569,7 @@ public final class SessionPane extends JPanel {
         }
         new SwingWorker<Optional<char[]>, Void>() {
             final long token = generation;
-            final Profile target = profile;
+            final Profile target = workspace.loginProfile(profile);
             @Override protected Optional<char[]> doInBackground() throws IOException { return workspace.credentials().read(target); }
             @Override protected void done() {
                 try {
@@ -566,6 +578,9 @@ public final class SessionPane extends JPanel {
                     char[] password = value.get();
                     try {
                         if (token == generation && connected()) {
+                            Profile current=workspace.loginProfile(profile);
+                            if (!current.rememberPassword() || !target.credentialTarget().equals(current.credentialTarget()))
+                                throw new IllegalArgumentException("The selected login changed during lookup; nothing inserted.");
                             checkPasswordField(screen(),password.length);
                             for (char c : password)
                                 if (c < 32 || c == 127) throw new IllegalArgumentException("Password contains control characters; nothing inserted.");
@@ -577,6 +592,9 @@ public final class SessionPane extends JPanel {
         }.execute();
     }
 
+    Component tutorialConnectionTarget() { return presets.isVisible() && !busy() ? presets : this; }
+    boolean connecting() { return connecting || credentialOperations>0; }
+    Component tutorialDragTarget() { return header.isVisible() ? header : dragZone.isVisible() ? dragZone : this; }
     private void installDrag() {
         TransferHandler transfer = new TransferHandler() {
             @Override public int getSourceActions(JComponent c) { return MOVE; }

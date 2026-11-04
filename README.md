@@ -10,6 +10,31 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
+## Local usability preview
+
+**Fish 0.6.0** adds a first-run, modeless getting-started guide with Next/Back/Skip,
+real profile editing and pane instructions. Replay it through Help; upgrades do not
+force it over an existing workspace. The profile editor prominently recommends
+automatic sign-in plus OS password storage through an explicit choice, while
+retaining manual sign-in and the plain-TCP security/mechanism limitations.
+**Use login from...** explicitly reuses another profile's login on the selected
+target host using a stable reference, never a password copy.
+
+Ctrl+C/V now copy/paste, Ctrl+Tab cycles panes, Ctrl+N/W adds/closes a pane,
+Ctrl+0 and Ctrl+plus/minus fit/zoom, and Ctrl+comma opens Appearance.
+Escape sends Attention; Shift+Escape remains System Request. Enter during a
+recoverable local input error performs **Reset only** with no host submission;
+the next normal Enter resumes usual behavior. Ctrl+R remains an explicit Reset.
+Explicit conflicting custom mappings are preserved/reported during migration.
+
+[AI-CONFIG.md](AI-CONFIG.md) and [CONFIG-SCHEMA.json](CONFIG-SCHEMA.json) document
+every setting, enum, color role, action and layout constraint. The shipped
+`Fish-config.cmd` supports complete offline export, dry-run validation and atomic,
+revision/lock-checked apply. No embedded AI, secret export or automatic connection.
+This build is **local only**, not a newly published release. The native
+maximize/restore perimeter defect, intermittent flicker observation and real
+IBM i/ACS acceptance gates remain open.
+
 ## Interaction refinement preview
 
 **Fish 0.5.3** is an unsigned experimental preview. Hidden/empty headers now have an invisible pane-top
@@ -80,11 +105,13 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-1. Open [Releases](https://github.com/HornadyIBM/Fish/releases) in the private [HornadyIBM/Fish repository](https://github.com/HornadyIBM/Fish) using an account with access.
-2. Download `Fish-0.5.3-setup.exe` and its matching `SHA256SUMS.txt`.
-3. Run it for your Windows user. It creates Start menu/desktop shortcuts without a system-wide Java installation or administrator installation.
+Run the local `dist\Fish-0.6.0-setup.exe` for your Windows user. It creates
+Start menu/desktop shortcuts without a system-wide Java installation or
+administrator installation. Its matching `dist\SHA256SUMS.txt` covers these local
+artifacts. The last published baseline remains [v0.5.3](https://github.com/HornadyIBM/Fish/releases/tag/v0.5.3);
+do not mix that release's assets/checksums with the local 0.6.0 build.
 
-For a portable copy, extract `Fish-0.5.3-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.6.0-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -101,8 +128,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.5.3-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.5.3-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.6.0-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.6.0-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -113,7 +140,7 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.5.3**.
+The matching local package is **Fish 0.6.0**.
 Keep the entire application-image directory together:
 
 ```powershell
@@ -259,7 +286,7 @@ objects, socket connections and host state.
 
 The **X at the far right of each pane header** immediately disconnects and
 removes that pane, reflowing the remaining slots. Only the last pane is kept
-as an empty offline tile. Ctrl+Alt+W does the same; there is always at least
+as an empty offline tile. Ctrl+W does the same; there is always at least
 one pane. Headers show preset names, never A1/A2 identifiers.
 Offline content contains only a centered preset selector and adjacent arrow Connect
 icon button. The collapsed selector does not paint its value as selected text.
@@ -306,8 +333,9 @@ until explicitly assigned to another action, rather than leaking to host input.
 **Edit** menu.
 Without a selection, Copy exports the visible host screen; drag or Shift+arrows
 selects a rectangle. The keyboard's Context Menu key opens the same popup when
-it is not assigned to a host action. Existing **Ctrl+Alt+Shift+C/V** shortcuts
-remain available; Ctrl+C/V and Shift+F10 are not stolen from host mappings.
+it is not assigned to a host action. **Ctrl+C/V** are the clipboard defaults;
+native text fields/dialogs keep ordinary editing. Explicit conflicting host
+overrides migrate without being stolen, retaining the older app chord with a notice.
 Copy omits non-display data. Paste respects host fields, validation, code pages
 and inhibition; newlines/tabs navigate without submitting Enter. Clipboard
 failures are reported in the pane status and actions return focus to the terminal.
@@ -349,7 +377,7 @@ legacy directory and lock instead, preserving existing profiles and passwords.
 The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored **offline** next launch.
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-7 state.
+preset are saved with version-8 state, including tutorial progress and explicit login references.
 Version-1/2/3 profiles and credentials are retained. Old freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. A legacy layout over eight panes is rejected explicitly
@@ -363,36 +391,37 @@ removes it on normal exit.
 
 ## Keyboard
 
-Application shortcuts default to **Ctrl+Alt**; global overrides may use other
-safe keys such as Ctrl+Tab. Profile-specific host mappings cannot claim Ctrl+Alt.
+Common application actions use conventional Ctrl chords; less common terminal/workspace
+actions retain **Ctrl+Alt**. Profile-specific host mappings cannot claim Ctrl+Alt.
 **Alt+Space** and **Alt+F4** are also reserved for standard window operations.
 
 | Action | Shortcut |
 |---|---|
-| Profiles / quick profile switch | Ctrl+Alt+P / Ctrl+Alt+O |
+| Profiles / quick profile switch | Ctrl+Alt+P / Ctrl+O |
 | Connect or disconnect / reconnect | Ctrl+Alt+R / Ctrl+Alt+Shift+R |
-| Add the next bounded pane | Ctrl+Alt+H |
-| Swap / close and disconnect pane (keep the last tile) | Ctrl+Alt+D / Ctrl+Alt+W |
-| Next or previous pane / focus numbered pane | Ctrl+Alt+Right or Left / Ctrl+Alt+1..8 |
+| Add the next bounded pane | Ctrl+N |
+| Swap / close and disconnect pane (keep the last tile) | Ctrl+Alt+D / Ctrl+W |
+| Next or previous pane / focus numbered pane | Ctrl+Tab or Ctrl+Shift+Tab / Ctrl+Alt+1..8 |
 | Adjust nearest divider | Ctrl+Alt+[ or ] |
 | Save / restore profile layout | Ctrl+Alt+S / Ctrl+Alt+L |
-| Fit / zoom in or out | Ctrl+Alt+0 / Ctrl+Alt+Equals or Minus |
-| Copy selection (or whole screen) / paste | Ctrl+Alt+Shift+C / Ctrl+Alt+Shift+V |
+| Fit / zoom in or out | Ctrl+0 / Ctrl+Equals (or plus) or Ctrl+Minus |
+| Copy selection (or whole screen) / paste | Ctrl+C / Ctrl+V |
 | Rectangular selection | Shift+arrows, or mouse drag |
 | Insert profile username / remembered password | Ctrl+Alt+U / Ctrl+Alt+Shift+P |
 | Host key chooser / application menu | Ctrl+Alt+F / Ctrl+Alt+M |
-| Appearance | Ctrl+Alt+T |
+| Appearance | Ctrl+comma |
 | Dark window menu / standard Windows window menu | Ctrl+Alt+Space / Alt+Space |
 | Immediately close window and disconnect all | Alt+F4 |
-| Quit | Ctrl+Alt+Q |
+| Quit | Ctrl+Q |
 
 | Host action | Default key |
 |---|---|
 | F1-F12 / F13-F24 | F1-F12 / Shift+F1-F12 |
 | Enter / Field Exit | Enter / keypad Enter or Ctrl+Enter |
 | Field Plus / Field Minus | Keypad + / - |
-| Reset / Attention / System Request | Escape / Pause / Shift+Escape |
-| Clear / Help | Ctrl+Backspace / Ctrl+H |
+| Reset / Attention / System Request | Ctrl+R / Escape / Shift+Escape |
+| Clear / Help | Pause or Ctrl+Backspace / Alt+F1 or Ctrl+H |
+| Dup / Host print | Shift+Insert / Ctrl+Pause |
 | Roll up / down | Page Up / Page Down |
 | Next / previous field | Tab / Shift+Tab |
 | Insert, delete, home, end of field | Insert, Delete, Home, End |
@@ -411,8 +440,8 @@ For a recoverable terminal input error, a contextual **Reset** button appears
 in that pane's footer, or as a corner overlay when the footer is hidden.
 It clears the core's actual local pre-help/error state
 without submitting Enter. It is not offered as an unlock for host-busy or
-network failures. Enter retains its host meaning; Escape remains the default
-Reset key.
+network failures. During a recoverable local error, the first Enter resets only,
+without an AID; the next normal Enter submits. Escape sends Attention, not Reset.
 
 **Appearance** offers eleven persistent application themes: Charcoal, Graphite,
 Midnight, Paper, OLED, OLED Amber, High Contrast, High Contrast Light, Lagoon,

@@ -5,6 +5,35 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Local Fish 0.6.0 usability preview
+
+Local-only, unsigned build; no new publication or protocol expansion.
+The modeless first-run guide uses the real editor/pane controls and is replayable
+through Help without connecting or duplicating profiles. Explicit recommended
+automatic sign-in/storage and one-hop shared-login references retain OS-only
+password storage and the existing plain RFC 4777 limits.
+
+Production-path fixtures cover Ctrl+C/V with a private test clipboard, native
+dialog editing, conventional key migration/conflicts, exact zero host bytes for
+the first recoverable-error Enter and Enter AID F1 on the following normal press.
+Host-busy/disconnected states are not falsely recovered. Defaults use the IBM
+Personal Communications 5250 reference where applicable, not an asserted universal
+regional ACS map; documented Fish differences remain intentional.
+
+Complete configuration export/validate/apply, all theme roles, login graphs,
+saved layouts, font/shortcut validation, duplicate/hostile XML, exclusive locks
+and stale revisions are exercised without OS credentials or live user state.
+Synthetic images check actual new guide/profile constructors at 100%/150%;
+no new physical-desktop or real-clipboard automation was performed.
+Existing centering, glyph/Flux, hidden-header swapping and Apply/Done paths retain
+their focused regression checks.
+
+The broader historical `Check` runner currently stops at its unchanged Afterglow
+secondary/disabled-text contrast assertion; that pre-existing palette/test issue
+is outside this usability revision, not a passing full-suite claim.
+Known maximize/restore perimeter loss, intermittent resize flicker, cryptographic
+sign-on, enhanced datastream gaps and real IBM i/ACS acceptance remain open.
+
 ## Fish 0.5.3 interaction refinement preview
 
 Unsigned experimental preview, with no protocol expansion. Hidden headers

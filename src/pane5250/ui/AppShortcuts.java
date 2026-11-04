@@ -7,8 +7,10 @@ import java.util.List;
 import javax.swing.*;
 import javax.swing.table.*;
 import javax.swing.event.*;
+import javax.swing.text.JTextComponent;
 import org.tn5250j.keyboard.KeyMnemonic;
 import pane5250.model.Profile;
+import pane5250.model.Shortcuts;
 
 /** Window-scoped dispatch precedes Swing traversal and the host's key listener. */
 final class AppShortcuts implements KeyEventDispatcher {
@@ -40,56 +42,14 @@ final class AppShortcuts implements KeyEventDispatcher {
         return Set.copyOf(result);
     }
     static String defaultStroke(AppCommand command) {
-        if (command.defaultStroke!=null) return KeyStroke.getKeyStroke(command.defaultStroke).toString();
-        if (command.hostKey==null) return "";
-        return Keymap.defaultBindings().entrySet().stream().filter(e -> e.getValue()==command.hostKey)
-                .map(e -> e.getKey().toString()).min(Comparator.comparingInt(String::length)).orElse("");
+        String value=Shortcuts.defaultStroke(command.title);
+        return value.isBlank() ? "" : KeyStroke.getKeyStroke(value).toString();
     }
     void validate(Map<String,String> values,List<Profile> profiles) {
-        Map<String,AppCommand> names=new HashMap<>();
-        commands.forEach(c -> names.put(c.title,c));
-        Set<KeyMnemonic> reassigned=new HashSet<>();
-        for (var entry:values.entrySet()) {
-            AppCommand command=names.get(entry.getKey());
-            if (command==null) throw new IllegalArgumentException("Unknown shortcut action: "+entry.getKey());
-            if (command.hostKey!=null) reassigned.add(command.hostKey);
-            stroke(entry.getValue());
-        }
-        Map<KeyStroke,AppCommand> occupied=new HashMap<>();
-        for (AppCommand command:commands) {
-            if (command.hostKey!=null && !values.containsKey(command.title)) continue;
-            String value=values.getOrDefault(command.title,defaultStroke(command));
-            KeyStroke key=stroke(value);
-            if (key==null) continue;
-            AppCommand previous=occupied.putIfAbsent(key,command);
-            if (previous!=null) throw new IllegalArgumentException(key+" is already assigned to "+previous.title+".");
-            for (Profile profile:profiles) {
-                KeyMnemonic host=new Keymap(profile.keymap(),reassigned).bindings().get(key);
-                if (host==null && key.equals(KeyStroke.getKeyStroke("ENTER")) && !reassigned.contains(KeyMnemonic.FIELD_EXIT))
-                    host=KeyMnemonic.FIELD_EXIT;
-                if (host!=null) throw new IllegalArgumentException(key+" is used by host "+host+" in "+profile.name()
-                        +". Unbind or reassign that host action first.");
-            }
-        }
+        Shortcuts.validate(values,profiles);
     }
     private static KeyStroke stroke(String text) {
-        if (text.isBlank()) return null;
-        KeyStroke key=KeyStroke.getKeyStroke(text.strip());
-        if (key==null || key.getKeyCode()==0 || key.isOnKeyRelease())
-            throw new IllegalArgumentException("Invalid shortcut: "+text+". Use Record shortcut or a value such as ctrl TAB.");
-        if ((key.getModifiers()&InputEvent.META_DOWN_MASK)!=0
-                || key.equals(KeyStroke.getKeyStroke("alt F4")) || key.equals(KeyStroke.getKeyStroke("alt SPACE")))
-            throw new IllegalArgumentException("Windows keys, Alt+F4 and Alt+Space belong to the operating system.");
-        int code=key.getKeyCode();
-        if (List.of(KeyEvent.VK_CONTROL,KeyEvent.VK_SHIFT,KeyEvent.VK_ALT,KeyEvent.VK_META,KeyEvent.VK_ALT_GRAPH).contains(code))
-            throw new IllegalArgumentException("Record an action key as well as a modifier.");
-        if (key.getModifiers()==0 && (code>=KeyEvent.VK_A && code<=KeyEvent.VK_Z
-                || code>=KeyEvent.VK_0 && code<=KeyEvent.VK_9 || code>=KeyEvent.VK_NUMPAD0 && code<=KeyEvent.VK_NUMPAD9
-                || List.of(KeyEvent.VK_SPACE,KeyEvent.VK_COMMA,KeyEvent.VK_PERIOD,KeyEvent.VK_MINUS,KeyEvent.VK_EQUALS,
-                        KeyEvent.VK_SLASH,KeyEvent.VK_BACK_SLASH,KeyEvent.VK_SEMICOLON,KeyEvent.VK_QUOTE,
-                        KeyEvent.VK_OPEN_BRACKET,KeyEvent.VK_CLOSE_BRACKET,KeyEvent.VK_BACK_QUOTE).contains(code)))
-            throw new IllegalArgumentException("Unmodified typing keys cannot be application shortcuts.");
-        return key;
+        return Shortcuts.stroke(text);
     }
     void apply(Map<String,String> values,List<Profile> profiles) {
         validate(values,profiles);
@@ -100,6 +60,8 @@ final class AppShortcuts implements KeyEventDispatcher {
             if ((command.hostKey==null || values.containsKey(command.title)) && !value.isBlank())
                 next.put(stroke(value),command);
         }
+        Shortcuts.aliasBindings(values,profiles,workspace.appearanceSettings().retiredShortcuts()).forEach((key,title) ->
+                next.put(key,commands.stream().filter(c -> c.title.equals(title)).findFirst().orElseThrow()));
         overrides=Map.copyOf(values); bindings=Map.copyOf(next); claimed.clear();
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
@@ -112,8 +74,16 @@ final class AppShortcuts implements KeyEventDispatcher {
         } else if (event.getID()==KeyEvent.KEY_TYPED) {
             if (claimed.isEmpty()) return false;
         } else if (event.getID()==KeyEvent.KEY_PRESSED) {
+            if (source instanceof TerminalView && event.getKeyCode()==KeyEvent.VK_ENTER && event.getModifiersEx()==0
+                    && workspace.active().recoverableInputError()) {
+                claimed.add(event.getKeyCode());
+                workspace.active().send(KeyMnemonic.RESET);
+                event.consume(); return true;
+            }
             AppCommand command=bindings.get(KeyStroke.getKeyStrokeForEvent(event));
             if (command==null && !retired.contains(KeyStroke.getKeyStrokeForEvent(event))) return false;
+            if (source instanceof JTextComponent && command!=null
+                    && List.of("Copy selection / screen","Paste into fields").contains(command.title)) return false;
             claimed.add(event.getKeyCode());
             if (command!=null) command.actionPerformed(new ActionEvent(workspace,ActionEvent.ACTION_PERFORMED,"shortcut"));
         } else return false;
@@ -127,11 +97,17 @@ final class AppShortcuts implements KeyEventDispatcher {
         Ui.showDialog(dialog());
     }
     JDialog dialog() {
+        Set<String> explicit=new HashSet<>(overrides.keySet());
+        boolean[] restoring={false};
         DefaultTableModel model=new DefaultTableModel(new String[]{"Action","Shortcut","Default"},0) {
             @Override public boolean isCellEditable(int row,int column) { return column==1; }
         };
         for (AppCommand c:commands) model.addRow(new Object[]{c.title,
                 overrides.getOrDefault(c.title,defaultStroke(c)),defaultStroke(c)});
+        model.addTableModelListener(e -> {
+            if (!restoring[0] && e.getType()==TableModelEvent.UPDATE && e.getColumn()==1)
+                for (int row=e.getFirstRow();row<=e.getLastRow();row++) explicit.add((String)model.getValueAt(row,0));
+        });
         JTable table=new JTable(model);
         table.setRowHeight(29); table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         table.setFillsViewportHeight(true);
@@ -170,11 +146,12 @@ final class AppShortcuts implements KeyEventDispatcher {
             if (table.isEditing()) table.getCellEditor().stopCellEditing();
             int row=table.getSelectedRow(); if (row<0) return;
             JTextField capture=new JTextField("Press the shortcut",30);
-            capture.setFocusTraversalKeysEnabled(false);
+            capture.setFocusTraversalKeys(KeyboardFocusManager.FORWARD_TRAVERSAL_KEYS,Set.of(KeyStroke.getKeyStroke("TAB")));
+            capture.setFocusTraversalKeys(KeyboardFocusManager.BACKWARD_TRAVERSAL_KEYS,Set.of(KeyStroke.getKeyStroke("shift TAB")));
             String[] value={null};
             capture.addKeyListener(new KeyAdapter() {
                 @Override public void keyPressed(KeyEvent e) {
-                    if (List.of(KeyEvent.VK_CONTROL,KeyEvent.VK_ALT,KeyEvent.VK_SHIFT,KeyEvent.VK_META,KeyEvent.VK_ESCAPE).contains(e.getKeyCode())) return;
+                    if (List.of(KeyEvent.VK_CONTROL,KeyEvent.VK_ALT,KeyEvent.VK_SHIFT,KeyEvent.VK_META).contains(e.getKeyCode())) return;
                     value[0]=KeyStroke.getKeyStrokeForEvent(e).toString(); capture.setText(AppCommand.describeStroke(value[0])); e.consume();
                 }
                 @Override public void keyTyped(KeyEvent e) { e.consume(); }
@@ -189,13 +166,17 @@ final class AppShortcuts implements KeyEventDispatcher {
         actions.add(Ui.button("Restore default",KeyEvent.VK_D,() -> {
             if (table.isEditing()) table.getCellEditor().stopCellEditing();
             if (table.getSelectedRow()>=0) {
-                int row=table.convertRowIndexToModel(table.getSelectedRow()); model.setValueAt(model.getValueAt(row,2),row,1);
+                int row=table.convertRowIndexToModel(table.getSelectedRow());
+                explicit.remove((String)model.getValueAt(row,0));
+                restoring[0]=true;
+                try { model.setValueAt(model.getValueAt(row,2),row,1); }
+                finally { restoring[0]=false; }
             }
         }));
         JPanel bottom=new JPanel(new BorderLayout(0,10));
         bottom.add(actions,BorderLayout.NORTH);
         bottom.add(new JLabel("<html>Global within Fish, not system-wide. Blank means unbound.<br>"
-                +"For Ctrl+Tab cycling, select Next pane and record Ctrl+Tab. Conflicting host keys are never silently replaced.</html>"),BorderLayout.SOUTH);
+                +"Conflicting host keys are never silently replaced. Recording Escape does not send Attention.</html>"),BorderLayout.SOUTH);
         JPanel body=new JPanel(new BorderLayout(0,12));
         body.add(header,BorderLayout.NORTH); body.add(new JScrollPane(table),BorderLayout.CENTER); body.add(bottom,BorderLayout.SOUTH);
         JLabel error=new JLabel(" "); Ui.role(error,"error");
@@ -205,13 +186,18 @@ final class AppShortcuts implements KeyEventDispatcher {
             for (int row=0;row<model.getRowCount();row++) {
                 String value=Objects.toString(model.getValueAt(row,1),"").strip();
                 if (!value.isEmpty()) value=stroke(value).toString();
-                if (!value.equals(model.getValueAt(row,2))) values.put((String)model.getValueAt(row,0),value);
+                String action=(String)model.getValueAt(row,0);
+                if (explicit.contains(action) || !value.equals(model.getValueAt(row,2))) values.put(action,value);
             }
             return Map.copyOf(values);
         };
         java.util.function.BooleanSupplier dirty=() -> {
             if (table.isEditing()) return true;
-            try { return !draft.get().equals(overrides); }
+            try {
+                Map<String,String> normalized=new LinkedHashMap<>();
+                overrides.forEach((action,value) -> normalized.put(action,value.isBlank() ? "" : stroke(value).toString()));
+                return !draft.get().equals(normalized);
+            }
             catch (IllegalArgumentException e) { return true; }
         };
         return Ui.settingsDialog(workspace,"Shortcuts - all actions",body,dirty,() -> {

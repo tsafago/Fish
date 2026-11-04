@@ -31,6 +31,9 @@ public class Hairline extends AbstractBorder implements UIResource {
     public static void rectangle(Graphics g,double x,double y,double width,double height) {
         edges(g,x,y,width,height,true,true,true,true);
     }
+    public static void highlight(Graphics g,double x,double y,double width,double height) {
+        edges(g,x,y,width,height,true,true,true,true,Ui.FOCUS);
+    }
     static void rectangle(Graphics g,double x,double y,double width,double height,
                           boolean top,boolean left,boolean bottom,boolean right) {
         edges(g,x,y,width,height,top,left,bottom,right);
@@ -43,6 +46,10 @@ public class Hairline extends AbstractBorder implements UIResource {
     }
     private static void edges(Graphics graphics,double x,double y,double width,double height,
                               boolean top,boolean left,boolean bottom,boolean right) {
+        edges(graphics,x,y,width,height,top,left,bottom,right,Ui.color(ColorRole.DIVIDER));
+    }
+    private static void edges(Graphics graphics,double x,double y,double width,double height,
+                              boolean top,boolean left,boolean bottom,boolean right,Color color) {
         if (width<0 || height<0) return;
         Graphics2D g=(Graphics2D)graphics.create();
         try {
@@ -52,7 +59,7 @@ public class Hairline extends AbstractBorder implements UIResource {
             int x2=pixel(bounds.getMaxX()),y2=pixel(bounds.getMaxY());
             g.setTransform(new AffineTransform());
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_OFF);
-            g.setColor(Ui.color(ColorRole.DIVIDER));
+            g.setColor(color);
             if (top) g.fillRect(x1,y1,Math.max(1,x2-x1),1);
             if (bottom && y2>y1) g.fillRect(x1,y2-1,Math.max(1,x2-x1),1);
             int start=y1+(top ? 1 : 0),end=y2-(bottom ? 1 : 0);

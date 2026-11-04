@@ -224,8 +224,8 @@ public final class StreamliningSmoke {
                 logo.doClick(0); logo.doClick(0);
                 check(panes.get(1).profile().effect().equals("None") && first.profile().effect().equals(Profile.FLUX),
                         "Toggle targets the active preset without changing another pane's preset.");
-                Method install=nativeWindow.getClass().getDeclaredMethod("install0",Window.class); install.setAccessible(true);
-                check((long)install.invoke(null,workspace)==handle,"Attaching twice to the same HWND is idempotent.");
+                Method install=nativeWindow.getClass().getDeclaredMethod("install0",Window.class,nativeWindow.getClass()); install.setAccessible(true);
+                check((long)install.invoke(null,workspace,nativeWindow)==handle,"Attaching twice to the same HWND is idempotent.");
                 workspace.removeNotify();
                 check(field(chrome,"nativeWindow")==null,"Removing the peer releases the Java reference to its native handle.");
                 workspace.addNotify(); workspace.validate();

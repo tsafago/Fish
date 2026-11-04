@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.5.3 - unsigned experimental interaction preview.
+Fish 0.6.0 - unsigned experimental local usability preview.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -14,9 +14,9 @@ You need the IBM i's hostname or IP address, a valid IBM i username and password
 1. Run Fish.exe. Keep the complete Fish folder together if using the portable download.
 2. Open Session > Profiles. Select Local IBM i, or choose New.
 3. Give the profile a useful name. Enter the Host. Leave Port at 23 unless your administrator gave you another port.
-4. Leave Device empty to let the IBM i choose a workstation. Leave Automatic sign-on off for the simplest, most predictable first connection. The default code page is 37.
+4. Leave Device empty to let the IBM i choose a workstation. For everyday use on your trusted IBM i network, choose Use recommended sign-in to enable automatic sign-in and Save password in Windows Credential Manager. Enter a username and password to save; blank preserves an existing OS password. Manual sign-in remains available. The default code page is 37.
 5. Choose Save & connect. A TCP connection is not the same as a successful IBM i sign-on.
-6. On the IBM i's own sign-on screen, type your username, press Tab to reach its password field, type your password, then press Enter. The host controls the actual fields and their order. Password characters normally remain invisible.
+6. If using manual sign-in, type in the IBM i's own sign-on fields and press Enter. The host controls their actual order. Password characters normally remain invisible. Automatic sign-in requires host support for RFC 4777 plain sign-on; a saved password or TCP connection is not proof of sign-on.
 7. Work with the displayed IBM i application. Enter submits to the host. F1-F12 are host function keys; Shift+F1-F12 sends F13-F24.
 8. Use the pane's X to close that connection. The final pane stays as an empty tile. Closing Fish disconnects everything immediately, without confirmation.
 
@@ -24,13 +24,21 @@ Plain TCP is not encrypted. Use a trusted network approved by your administrator
 
 If connection fails, check the hostname, port, VPN/network and IBM i Telnet service first. A blank Device is the recommended starting point. Do not enter your password in a visible application field.
 
+Fresh workspaces show a modeless guided tutorial once, with Next, Back and Skip.
+It uses the actual profile editor and pane controls but never creates a profile or
+connects without your action. Apply/Done can save a profile with no connection;
+host and credentials may remain blank. Help > Getting started tutorial replays it
+without duplicating profiles, changing settings or interrupting sessions.
+Legacy upgrades do not force the guide over existing work. Closing the app midway
+does not nag on the next launch; replay remains available.
+
 ## Installation: ready-built downloads
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The v0.5.3 preview in the private HornadyIBM/Fish repository includes Fish-0.5.3-setup.exe and matching SHA256SUMS.txt; older releases remain separate. Use assets and checksums from the same release. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+The local 0.6.0 build includes Fish-0.6.0-setup.exe and matching SHA256SUMS.txt; it has not been published. The last published baseline is v0.5.3 in the private HornadyIBM/Fish repository. Keep versions/assets/checksums together. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Alternatively, extract Fish-0.5.3-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.6.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -44,7 +52,7 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.5.3-setup.exe, dist\Fish-0.5.3-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Outputs are dist\Fish\Fish.exe, dist\Fish-0.6.0-setup.exe, dist\Fish-0.6.0-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 
@@ -56,7 +64,7 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces are migrated on load; do not run two versions against the same directory simultaneously. Version-7 state retains profiles, custom themes, font references, shortcuts, active-pane outline/tint and pane-information choices. Whole-window outline is now on by default. Version-5/6 state did not distinguish an explicit off choice from the previous default: both migrate to on once. Turn it off again under Window and focus if desired; version-7 off choices persist unchanged. Expected migrations are informational console messages, never red startup errors. Malformed files and genuine font, credential, connection and filesystem failures remain explicit. Older builds do not understand version-7 state; use a backup or a separate data directory for a downgrade.
+Older Fish/Pane5250 workspaces migrate to version 8 on load, retaining profiles, themes, fonts, key overrides, outline/tint and information choices. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries now retain their provenance. Unresolved conflicts fail clearly. Legacy tutorials start skipped. Older builds cannot read version 8: use a backup/separate directory for downgrade. Malformed state is preserved, never replaced with defaults.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -78,7 +86,7 @@ The empty pane contains a preset selector and the arrow Connect button directly 
 
 The selected pane has an optional physical-pixel outline. View > Appearance > More settings > Window and focus controls it independently of active tint and the whole-window outline. Disabling the pane outline removes its border/insets, not just its color. Activating a different pane does not change spacing. Its header, terminal and footer share one surface; keyboard focus and the terminal cursor remain available with both outline and tint off. OLED themes retain a true-black terminal background.
 
-Panes > Navigation > Next pane and Previous pane cycle focus. The defaults are Ctrl+Alt+Right and Ctrl+Alt+Left. To use Ctrl+Tab, open Edit > Keyboard > Shortcuts, find Next pane, select it, choose Record shortcut and press Ctrl+Tab. For reverse cycling, assign Ctrl+Shift+Tab to Previous pane.
+Panes > Navigation > Next pane and Previous pane cycle focus. The defaults are Ctrl+Tab and Ctrl+Shift+Tab, including when the terminal or offline preset selector has focus. Edit > Keyboard > Shortcuts can change them.
 
 Ctrl+Alt+1 through Ctrl+Alt+8 focus the corresponding layout position. The Shortcuts list can change these too. These are panes inside Fish, not separate document tabs.
 
@@ -105,6 +113,8 @@ Window changes scale the terminal rendering; only the host may switch between 24
 Session > Profiles manages saved workstations. New creates an offline preset; Duplicate copies settings but clears the requested device name and remembered-password flag to avoid collisions.
 
 A profile stores name, host, port, optional device name, username, authentication preferences, SBCS code page, host palette, text effect, zoom, host-key overrides and a saved layout. Application/custom themes, terminal font, global shortcuts, outline, tint, pane-information preferences and last-used preset belong to the workspace.
+
+Use login from... appears when another independent profile has a username and Save password enabled. Explicitly choosing it authorizes that login for this profile's target host. It inherits username/sign-in preferences and looks up the source OS credential without copying the password. Name changes remain safe through stable IDs. Missing OS passwords prompt on Connect. Select Independent login to stop sharing; enter/save an independent password if desired. Duplicates become independent with remembering off. Chains/cycles/missing sources are rejected, and a source still referenced cannot be deleted or made ineligible. Login edits wait for pending credential/connection work and affect the next connection; saving/canceling a target never erases its source credential.
 
 Apply stores edits without connecting and leaves the editor open. Done stores pending edits and closes without connecting. Save & connect selects the profile and connects. Cancel discards only unapplied edits after the profile editor's unsaved-edit prompt; earlier Apply actions remain saved. Inputs are unavailable while an asynchronous credential/save operation is pending. That prompt is separate from pane/window closing, which has no confirmation.
 
@@ -150,7 +160,7 @@ Host colors, reverse video, underline, blink, separators and non-display attribu
 
 ## Input inhibition and Reset
 
-The optional footer reports connection, input state, cursor and host dimensions. A contextual Reset button appears for the core's recoverable local input error, such as rejected field input. When the footer is absent, Reset overlays a corner opposite the editing cursor without adding spacing or taking focus. It is keyboard reachable and disappears after recovery. Escape sends Reset by default.
+The optional footer reports connection, input state, cursor and host dimensions. A contextual Reset button appears for a recoverable local input error. Without a footer it overlays a corner opposite the cursor without adding spacing or taking focus. Ctrl+R is explicit Reset. During this local error only, the first physical Enter (including keypad Enter) performs Reset alone and emits no host transaction. The next normal Enter resumes its usual meaning. Escape sends Attention.
 
 Reset does not silently submit Enter and must not unlock an unrelated host-busy condition. If the host has inhibited input while processing, wait for the host. A disconnected network cannot be repaired by Reset; reconnect after diagnosing the connection.
 
@@ -160,7 +170,9 @@ Attention and System Request have separate host meanings and may be appropriate 
 
 Defaults: F1-F12 send F1-F12; Shift+F1-F12 send F13-F24. Enter sends Enter. Keypad Enter or Ctrl+Enter sends Field Exit. Keypad + and - send Field+ and Field-.
 
-Escape sends Reset; Pause sends Attention; Shift+Escape sends System Request; Ctrl+Backspace sends Clear; Ctrl+H sends Help.
+Escape sends Attention; Shift+Escape sends System Request; Ctrl+R sends Reset. Pause or Ctrl+Backspace sends Clear; Alt+F1 or Ctrl+H sends Help. Shift+Insert sends Dup and Ctrl+Pause sends Host Print.
+
+The IBM Personal Communications 5250 default-key reference supports these Attention/System Request, Clear, Help, Dup, Host Print, F-key and keypad assignments: https://www.ibm.com/docs/en/personal-communications/15.0.0?topic=assignments-default-key-functions-5250-layout . This is not a claim that every regional ACS layout is identical. Fish deliberately retains normal Enter for Enter, keypad/Ctrl+Enter for Field Exit, End for end-of-field and Ctrl+End for Erase EOF. Ctrl+R avoids modifier-only Reset firing at the start of conventional Ctrl shortcuts. Unsupported IBM text-assist actions are not guessed.
 
 Page Up/Down send roll keys. Ctrl+Page Up/Down send horizontal roll actions. Tab/Shift+Tab move fields. Arrows move the cursor. Home, End, Insert, Delete, Backspace and Ctrl+End retain the core's corresponding editing actions.
 
@@ -192,7 +204,7 @@ Profile-specific keys still apply unless their host action has been explicitly r
 
 Drag across the terminal to select a rectangular region. Shift+arrows extends keyboard selection. Right-click preserves the selection and opens Copy selection / screen and Paste into fields.
 
-Edit offers the same actions. Defaults are Ctrl+Alt+Shift+C and Ctrl+Alt+Shift+V. The Context Menu key opens the popup when it is not mapped to a host action. Ctrl+C/V and Shift+F10 are not newly claimed by clipboard support.
+Edit offers the same actions. Defaults are Ctrl+C and Ctrl+V; text fields/dialogs retain normal native editing. Ctrl+Insert copies; Ctrl+Shift+Insert and Shift+PageDown paste while their default action is unchanged and no custom binding needs that chord. The Context Menu key opens the popup when not mapped to a host action.
 
 Copy exports the selection, or the host screen when nothing is selected. Non-display data is omitted. Copy from an offline tile is unavailable.
 
@@ -260,7 +272,11 @@ Host hidden fields remain hidden. Selection, cursor, underline, blink and revers
 
 ## Fit, zoom and DPI
 
-Fit host screen centers the entire host presentation space inside the pane. Zoom in/out stays centered on each axis that fits, from 50% to 300%. Content that exceeds an axis uses the existing scrollbars from its padded start, with the editing cursor kept reachable. The default shortcuts are Ctrl+Alt+0, Ctrl+Alt+= and Ctrl+Alt+-.
+Fit host screen centers the entire host presentation space inside the pane. Zoom in/out stays centered on each axis that fits, from 50% to 300%. Content that exceeds an axis uses the existing scrollbars from its padded start, with the editing cursor kept reachable. Defaults are Ctrl+0, Ctrl+= (also Ctrl+plus/keypad plus) and Ctrl+- (also Ctrl+keypad minus).
+
+## Configuration for external tools
+
+Help > Configuration for external tools opens the complete offline AI-CONFIG.md guide. CONFIG-SCHEMA.json supplies typed fields, exact enum/default/constraint values, every theme role and action, and layout grammar. Fish-config.cmd beside Fish.exe provides paths, schema, export, validate (dry run) and apply. Close Fish first; use a separate full exported snapshot, preserve its revision and unedited settings, validate, then atomically apply. Locks, stale revisions, unknown fields and invalid values are rejected without resetting the workspace. Changes take effect next launch offline, never by connecting/replaying work. Passwords and font bytes are not exported. There is no embedded AI service or executable configuration hook.
 
 Glyphs are generated at final physical pixel resolution with fixed-cell positioning; default text is not a bilinear-upscaled bitmap. Windows scaling and monitor transitions may change the fitted physical font size, but never the host's row/column count.
 

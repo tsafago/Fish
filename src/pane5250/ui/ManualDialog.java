@@ -26,11 +26,15 @@ public final class ManualDialog extends JDialog {
     private final JEditorPane page=new JEditorPane();
     private final JLabel results=new JLabel();
     private boolean filtering;
+    private final String documentTitle;
 
     public static List<Topic> topics() throws IOException {
+        return topics("/MANUAL.md");
+    }
+    private static List<Topic> topics(String resource) throws IOException {
         String text;
-        try (InputStream input=ManualDialog.class.getResourceAsStream("/MANUAL.md")) {
-            if (input==null) throw new IOException("MANUAL.md is missing from this application package.");
+        try (InputStream input=ManualDialog.class.getResourceAsStream(resource)) {
+            if (input==null) throw new IOException(resource+" is missing from this application package.");
             text=new String(input.readAllBytes(),StandardCharsets.UTF_8);
         }
         List<Topic> result=new ArrayList<>();
@@ -40,19 +44,23 @@ public final class ManualDialog extends JDialog {
             String title=section.substring(0,newline).strip();
             result.add(new Topic(title,"topic-"+result.size(),section.substring(newline+1).strip()));
         }
-        if (result.isEmpty() || !result.getFirst().title().equals("Getting Started"))
-            throw new IOException("Manual index must begin with Getting Started.");
+        if (result.isEmpty() || resource.equals("/MANUAL.md") && !result.getFirst().title().equals("Getting Started"))
+            throw new IOException("Document index is missing its opening topic.");
         return List.copyOf(result);
     }
     public ManualDialog(Workspace owner) throws IOException {
-        super(owner,"Fish manual",false);
-        topics=topics();
-        find.getAccessibleContext().setAccessibleName("Find in full manual");
-        JLabel label=new JLabel("Find in manual"); label.setLabelFor(find);
+        this(owner,"/MANUAL.md","Fish manual");
+    }
+    public ManualDialog(Workspace owner,String resource,String title) throws IOException {
+        super(owner,title,false);
+        documentTitle=title;
+        topics=topics(resource);
+        find.getAccessibleContext().setAccessibleName("Find in "+title);
+        JLabel label=new JLabel("Find"); label.setLabelFor(find);
         JPanel search=new JPanel(new BorderLayout(10,0));
         search.add(label,BorderLayout.WEST); search.add(find,BorderLayout.CENTER); search.add(results,BorderLayout.EAST);
         page.setContentType("text/html"); page.setEditable(false);
-        page.getAccessibleContext().setAccessibleName("Full Fish manual");
+        page.getAccessibleContext().setAccessibleName(title);
         page.setText(html()); page.setCaretPosition(0);
         page.addHyperlinkListener(e -> {
             if (e.getEventType()==HyperlinkEvent.EventType.ACTIVATED && e.getDescription().startsWith("#"))
@@ -97,7 +105,7 @@ public final class ManualDialog extends JDialog {
         StringBuilder html=new StringBuilder("<html><head><style>body {font-family:Segoe UI; font-size:12pt; margin:18px;"
                 +"background:#"+hex(Ui.FIELD)+";color:#"+hex(Ui.TEXT)+";} h1 {font-size:21pt;} h2 {font-size:16pt;margin-top:24px;}"
                 +"p {margin-top:9px;margin-bottom:12px;} a {color:#"+hex(Ui.FOCUS)+";}</style></head><body>"
-                +"<h1>Fish manual</h1><p>0.5.3 experimental preview. Offline reference.</p>");
+                +"<h1>"+escape(documentTitle)+"</h1><p>"+pane5250.Main.VERSION+" experimental preview. Offline reference.</p>");
         for (Topic topic:topics) {
             html.append("<h2><a name=\"").append(topic.anchor()).append("\"></a>").append(escape(topic.title())).append("</h2>");
             for (String paragraph:topic.text().split("\\R\\s*\\R")) html.append("<p>").append(escape(paragraph).replace("\n","<br>")).append("</p>");

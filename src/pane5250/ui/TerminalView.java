@@ -52,6 +52,7 @@ public final class TerminalView extends JComponent implements Scrollable {
     private final Timer blink;
     private boolean phase = true;
     private boolean disposed;
+    private java.util.function.Supplier<Clipboard> clipboardSource=() -> Toolkit.getDefaultToolkit().getSystemClipboard();
     private double fluxPhase,paintedFluxPhase=Double.NaN;
     private Paint[] fluxPaints;
     private Color[] fluxPalette;
@@ -90,6 +91,9 @@ public final class TerminalView extends JComponent implements Scrollable {
             @Override public void keyPressed(KeyEvent event) {
                 suppressTyped = false;
                 if (event.isControlDown() && event.isAltDown() && !event.isAltGraphDown()) return;
+                if (event.getKeyCode()==KeyEvent.VK_ENTER && event.getModifiersEx()==0 && pane.recoverableInputError()) {
+                    suppressTyped=true; pane.send(KeyMnemonic.RESET); event.consume(); return;
+                }
                 if (event.getKeyCode()==KeyEvent.VK_CONTEXT_MENU && pane.keys().lookup(event)==null) {
                     suppressTyped=true; event.consume();
                     pane.clipboardMenu().show(TerminalView.this,
@@ -254,8 +258,8 @@ public final class TerminalView extends JComponent implements Scrollable {
         return result.toString();
     }
 
-    public void copy() { clipboard(true,() -> Toolkit.getDefaultToolkit().getSystemClipboard()); }
-    public void paste() { clipboard(false,() -> Toolkit.getDefaultToolkit().getSystemClipboard()); }
+    public void copy() { clipboard(true,clipboardSource); }
+    public void paste() { clipboard(false,clipboardSource); }
     private void clipboard(boolean copy,java.util.function.Supplier<Clipboard> source) {
         try {
             if (pane.screen()==null) { pane.problem("No host screen to "+(copy ? "copy." : "paste into.")); return; }

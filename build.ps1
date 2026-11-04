@@ -5,7 +5,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.5.3'
+$version = '0.6.0'
 if (-not $Jdk) {
     $manifest = Import-PowerShellDataFile .\tools.psd1
     $candidate = Join-Path $PSScriptRoot ('.tools\' + $manifest.Jdk.Directory)
@@ -59,14 +59,17 @@ $sourceList = Join-Path $PSScriptRoot 'build\sources.txt'
 [IO.File]::WriteAllLines($sourceList, $sources, [Text.UTF8Encoding]::new($false))
 & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -Xlint:unchecked -d build\classes "@$sourceList"
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
-Copy-Item MANUAL.md build\classes\MANUAL.md
+Copy-Item MANUAL.md,AI-CONFIG.md build\classes
+& "$Jdk\bin\java.exe" -cp build\classes pane5250.Main --config schema --file build\classes\CONFIG-SCHEMA.json
+if ($LASTEXITCODE -ne 0) { throw 'Configuration catalog generation failed.' }
+Copy-Item build\classes\CONFIG-SCHEMA.json CONFIG-SCHEMA.json -Force
 & "$Jdk\bin\jar.exe" --create --file dist\Fish.jar --main-class pane5250.Main -C build\classes .
 if ($LASTEXITCODE -ne 0) { throw 'JAR creation failed.' }
 Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item build\fish-window.dll dist\fish-window.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
 if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java,tests\pane5250\RefinementSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
+    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java,tests\pane5250\RefinementSmoke.java,tests\pane5250\UsabilitySmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -cp build\classes -d build\test-classes '@build\tests.txt'
@@ -77,6 +80,8 @@ if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
         & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.Tests @testArgs
         if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
     }
+    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.ui.UsabilitySmoke
+    if ($LASTEXITCODE -ne 0) { throw 'Usability smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.FishSmoke
     if ($LASTEXITCODE -ne 0) { throw 'Fish smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.StreamliningSmoke
@@ -97,7 +102,7 @@ if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
 if ($Task -eq 'Package') {
     if (Test-Path dist\Fish) { throw 'dist\Fish exists. Move it aside before packaging again.' }
     New-Item -ItemType Directory -Force build\package-input | Out-Null
-    Copy-Item dist\Fish.jar,dist\fish-window.dll,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,MANUAL.md,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
+    Copy-Item dist\Fish.jar,dist\fish-window.dll,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,MANUAL.md,AI-CONFIG.md,CONFIG-SCHEMA.json,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
     & "$Jdk\bin\java.exe" -cp build\classes pane5250.ui.FishIcon build\Fish.ico
     if ($LASTEXITCODE -ne 0) { throw 'Fish icon generation failed.' }
     & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version $version --icon build\Fish.ico `
@@ -105,10 +110,11 @@ if ($Task -eq 'Package') {
         --dest dist --vendor Fish --java-options '-Xmx192m' `
         --add-modules java.base,java.desktop,java.xml,java.logging,jdk.charsets
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed.' }
+    Copy-Item scripts\Fish-config.cmd dist\Fish\Fish-config.cmd
     $source = Join-Path $PSScriptRoot 'dist\Fish\app\source'
     New-Item -ItemType Directory -Force $source | Out-Null
     Copy-Item src,scripts,tests $source -Recurse
-    Copy-Item build.ps1,Setup-Fish.cmd,Setup-Fish.ps1,tools.psd1,README.md,MANUAL.md,COMPATIBILITY.md,LICENSE,NOTICE,PRODUCT.md,DESIGN.md $source
+    Copy-Item build.ps1,Setup-Fish.cmd,Setup-Fish.ps1,tools.psd1,README.md,MANUAL.md,AI-CONFIG.md,CONFIG-SCHEMA.json,COMPATIBILITY.md,LICENSE,NOTICE,PRODUCT.md,DESIGN.md $source
     $coreSource = Join-Path $source 'vendor\tn5250j'
     New-Item -ItemType Directory -Force $coreSource | Out-Null
     Copy-Item vendor\tn5250j\src $coreSource -Recurse

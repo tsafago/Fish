@@ -15,8 +15,12 @@ public final class ProfilesDialog extends JDialog {
     private final JTextField name = new JTextField(24), host = new JTextField(24), port = new JTextField(6);
     private final JTextField device = new JTextField(16), username = new JTextField(16);
     private final JPasswordField password = new JPasswordField(24);
-    private final JCheckBox automatic = new JCheckBox("Automatic sign-on (RFC 4777 plain text)");
-    private final JCheckBox remember = new JCheckBox("Remember password in Windows Credential Manager");
+    private final JCheckBox automatic = new JCheckBox("Automatic sign-in (recommended)");
+    private final JCheckBox remember = new JCheckBox("Save password in Windows Credential Manager (recommended)");
+    private final JComboBox<Object> loginFrom=new JComboBox<>();
+    private JLabel loginLabel;
+    private final JButton recommended;
+    private final JTextArea loginHint=new JTextArea(7,36);
     private final JComboBox<String> codePage = new JComboBox<>(Profile.CODE_PAGES.toArray(String[]::new));
     private final JComboBox<String> theme = new JComboBox<>(Profile.THEMES.toArray(String[]::new));
     private final JComboBox<String> effect = new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
@@ -50,22 +54,31 @@ public final class ProfilesDialog extends JDialog {
         field(connection,row++,"Host",host,KeyEvent.VK_H);
         field(connection,row++,"Port",port,KeyEvent.VK_O);
         field(connection,row++,"Device (optional)",device,KeyEvent.VK_E);
+        loginLabel=field(connection,row++,"Use login from...",loginFrom,KeyEvent.VK_F);
         field(connection,row++,"Username",username,KeyEvent.VK_U);
         field(connection,row++,"Code page",codePage,KeyEvent.VK_C);
+        recommended=Ui.button("Use recommended sign-in",KeyEvent.VK_I,() -> {
+            automatic.setSelected(true); remember.setSelected(true); username.requestFocusInWindow();
+        });
+        wide(connection,row++,recommended);
         wide(connection,row++,automatic);
         wide(connection,row++,remember);
         field(connection,row++,"Remembered password",password,KeyEvent.VK_W);
-        JLabel hint = new JLabel("<html>Leave blank to keep an existing remembered password.<br>"
-                + "Plain TCP does not encrypt passwords or host data.<br>Manual sign-on never guesses the host's field positions.</html>");
-        Ui.role(hint,"muted");
-        wide(connection,row,hint);
-        tabs.addTab("Connection",connection); tabs.setMnemonicAt(0,KeyEvent.VK_1);
+        loginHint.setEditable(false); loginHint.setFocusable(false); loginHint.setLineWrap(true); loginHint.setWrapStyleWord(true);
+        loginHint.setOpaque(false); loginHint.setBorder(BorderFactory.createEmptyBorder());
+        Ui.role(loginHint,"muted");
+        password.setToolTipText("Blank keeps an existing OS password. Changing the independent host/port/username requires entering it again.");
+        wide(connection,row,loginHint);
+        JScrollPane connectionScroll=new JScrollPane(connection);
+        connectionScroll.setBorder(BorderFactory.createEmptyBorder());
+        connectionScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        tabs.addTab("Connection",connectionScroll); tabs.setMnemonicAt(0,KeyEvent.VK_1);
         JPanel display = new JPanel(new GridBagLayout());
         display.setBorder(Ui.padding(12));
         field(display,0,"Palette",theme,KeyEvent.VK_T);
         field(display,1,"Text effect",effect,KeyEvent.VK_F);
         wide(display,2,new JLabel("<html>Host colors, reverse video, underline and hidden fields remain distinct.<br>"
-                + "Effects are off by default. Ctrl+Alt+0 fits without changing host dimensions.</html>"));
+                + "Effects are off by default. Ctrl+0 fits without changing host dimensions.</html>"));
         tabs.addTab("Display",display); tabs.setMnemonicAt(1,KeyEvent.VK_2);
         JPanel keyboard = new JPanel(new BorderLayout(0,10));
         keyboard.setBorder(Ui.padding(12));
@@ -108,6 +121,15 @@ public final class ProfilesDialog extends JDialog {
         for (JComboBox<String> combo : java.util.List.of(codePage,theme,effect)) combo.addActionListener(e -> { if (!loading) updateDirty(); });
         automatic.addItemListener(e -> { if (!loading) updateDirty(); }); automatic.setMnemonic(KeyEvent.VK_B);
         remember.addItemListener(e -> { if (!loading) updateDirty(); }); remember.setMnemonic(KeyEvent.VK_R);
+        loginFrom.addActionListener(e -> {
+            if (loading) return;
+            loading=true;
+            if (loginFrom.getSelectedItem() instanceof Profile source) {
+                username.setText(source.username()); automatic.setSelected(source.automaticSignOn()); remember.setSelected(source.rememberPassword());
+            } else remember.setSelected(false);
+            password.setText("");
+            loading=false; updateLoginControls(); updateDirty();
+        });
         list.addListSelectionListener(e -> {
             if (e.getValueIsAdjusting() || loading || list.getSelectedValue() == null) return;
             if (!discardChanges()) {
@@ -132,18 +154,36 @@ public final class ProfilesDialog extends JDialog {
         loading = true;
         name.setText(profile.name()); host.setText(profile.host()); port.setText(Integer.toString(profile.port()));
         device.setText(profile.device()); username.setText(profile.username()); password.setText("");
-        automatic.setSelected(profile.automaticSignOn()); remember.setSelected(profile.rememberPassword());
+        loginFrom.removeAllItems(); loginFrom.addItem("Independent login");
+        for (Profile source:workspace.profileList()) if (!source.id().equals(profile.id()) && source.loginSource()==null
+                && !source.username().isEmpty() && source.rememberPassword()) loginFrom.addItem(source);
+        Profile login=workspace.loginProfile(profile);
+        if (profile.loginSource()!=null) loginFrom.setSelectedItem(login);
+        loginFrom.setVisible(loginFrom.getItemCount()>1); loginLabel.setVisible(loginFrom.isVisible());
+        username.setText(login.username());
+        automatic.setSelected(login.automaticSignOn()); remember.setSelected(login.rememberPassword());
         codePage.setSelectedItem(profile.codePage()); theme.setSelectedItem(profile.theme()); effect.setSelectedItem(profile.effect());
         StringBuilder text = new StringBuilder();
         profile.keymap().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> text.append(e.getKey()).append(" = ").append(e.getValue()).append('\n'));
         keymap.setText(text.toString());
         error.setText(" ");
-        baseline=fields(); dirty = false; loading = false; updateDirty();
+        baseline=fields(); dirty = false; loading = false; updateLoginControls(); updateDirty();
+    }
+    private UUID loginSource() { return loginFrom.getSelectedItem() instanceof Profile source ? source.id() : null; }
+    private void updateLoginControls() {
+        boolean independent=loginSource()==null;
+        for (JComponent input:java.util.List.of(username,password,automatic,remember,recommended)) input.setEnabled(!saving && independent);
+        recommended.setVisible(independent);
+        loginHint.setText(independent
+                ? "Recommended on your trusted IBM i network: automatic sign-in + Save password. Passwords stay in Windows Credential Manager. Blank keeps an existing OS password. Plain TCP is unencrypted; automatic sign-in needs host support for RFC 4777 plain sign-on (1-128 printable ASCII characters). Manual sign-in remains available."
+                : "This profile uses the selected login for its own host when you connect. Username, sign-in preferences and the OS password come from that source; the password is not copied. A missing OS password prompts on Connect. Select Independent login to stop sharing. Plain TCP remains unencrypted.");
+        loginHint.setCaretPosition(0);
     }
     private java.util.List<Object> fields() {
         return java.util.List.of(name.getText(),host.getText(),port.getText(),device.getText(),username.getText(),
                 password.getDocument().getLength(),automatic.isSelected(),remember.isSelected(),
-                codePage.getSelectedItem(),theme.getSelectedItem(),effect.getSelectedItem(),keymap.getText());
+                codePage.getSelectedItem(),theme.getSelectedItem(),effect.getSelectedItem(),keymap.getText(),
+                Objects.toString(loginSource(),""));
     }
     private void updateDirty() {
         dirty=baseline==null || !baseline.equals(fields()) || workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()));
@@ -157,7 +197,7 @@ public final class ProfilesDialog extends JDialog {
     }
     private void addProfile(boolean copy) {
         if (!discardChanges()) return;
-        Profile profile = copy ? selected.duplicate() : Profile.create("New workstation");
+        Profile profile = copy ? workspace.connectionProfile(selected).duplicate() : Profile.create("New workstation");
         loading = true; model.addElement(profile); list.setSelectedValue(profile,true); loading = false;
         load(profile); updateDirty(); name.requestFocusInWindow(); name.selectAll();
     }
@@ -165,10 +205,11 @@ public final class ProfilesDialog extends JDialog {
         Profile updated;
         char[] secret = password.getPassword();
         try {
+            UUID source=loginSource();
             updated = new Profile(selected.id(),name.getText(),host.getText(),Integer.parseInt(port.getText().strip()),
-                    device.getText(),username.getText(),automatic.isSelected(),remember.isSelected(),
+                    device.getText(),source==null ? username.getText() : "",source==null && automatic.isSelected(),source==null && remember.isSelected(),
                     Objects.requireNonNull((String)codePage.getSelectedItem()),Objects.requireNonNull((String)theme.getSelectedItem()),
-                    Objects.requireNonNull((String)effect.getSelectedItem()),selected.zoom(),Keymap.parse(keymap.getText()),selected.savedLayout());
+                    Objects.requireNonNull((String)effect.getSelectedItem()),selected.zoom(),Keymap.parse(keymap.getText()),selected.savedLayout(),source);
             workspace.validateProfile(updated);
             if (secret.length > 0 && !updated.rememberPassword())
                 throw new IllegalArgumentException("Enable Remember password to save this password, or clear the password field.");
@@ -212,13 +253,14 @@ public final class ProfilesDialog extends JDialog {
     private void setSaving(boolean value) {
         saving = value;
         for (JButton button : java.util.List.of(save,done,use,cancel,add,duplicate)) button.setEnabled(!value);
-        for (JComponent input:java.util.List.of(name,host,port,device,username,password,keymap,codePage,theme,effect,automatic,remember))
+        for (JComponent input:java.util.List.of(name,host,port,device,username,password,keymap,codePage,theme,effect,automatic,remember,loginFrom,recommended))
             input.setEnabled(!value);
+        updateLoginControls();
         if (!value) updateDirty();
         list.setEnabled(!value);
         error.setText(value ? "Saving..." : " ");
     }
-    private static void field(JPanel panel,int row,String text,JComponent component,int mnemonic) {
+    private static JLabel field(JPanel panel,int row,String text,JComponent component,int mnemonic) {
         JLabel label = new JLabel(text); label.setLabelFor(component); label.setDisplayedMnemonic(mnemonic);
         GridBagConstraints left = new GridBagConstraints();
         left.gridx = 0; left.gridy = row; left.anchor = GridBagConstraints.LINE_START; left.insets = new Insets(0,0,10,12);
@@ -226,6 +268,7 @@ public final class ProfilesDialog extends JDialog {
         GridBagConstraints right = new GridBagConstraints();
         right.gridx = 1; right.gridy = row; right.weightx = 1; right.fill = GridBagConstraints.HORIZONTAL; right.insets = new Insets(0,0,10,0);
         panel.add(component,right);
+        return label;
     }
     private static void wide(JPanel panel,int row,JComponent component) {
         GridBagConstraints cell = new GridBagConstraints();

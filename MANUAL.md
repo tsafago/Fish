@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.7.0 - unsigned experimental local Kerberos preview.
+Fish 0.7.0 - unsigned experimental Kerberos prerelease.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -38,7 +38,7 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The local 0.7.0 build includes Fish-0.7.0-setup.exe and matching SHA256SUMS.txt; it has not been published. The last published baseline is v0.5.3 in the private HornadyIBM/Fish repository. Keep versions/assets/checksums together. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+The [v0.7.0 prerelease](https://github.com/HornadyIBM/Fish/releases/tag/v0.7.0) includes Fish-0.7.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt in the private HornadyIBM/Fish repository. Keep one release's assets/checksums together; do not mix earlier previews. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
 Alternatively, extract Fish-0.7.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
@@ -68,6 +68,14 @@ must be named Fish. Do not move or replace a running app's files.
 ## Upgrading, uninstalling and backups
 
 Close running Fish windows before an upgrade. Install the new version for the same Windows user. The stable installer upgrade identity allows later releases to replace the application without changing the profile directory.
+
+Before first launching the new version, copy the existing workspace.xml outside
+the application directory. Normally it is in %APPDATA%\Fish, or the retained
+legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
+The next save writes configuration version 10. Older binaries cannot read it:
+keep the pre-upgrade backup for downgrade, not just a version-10 export.
+Workspace/config backups contain safe credential references, not OS passwords
+or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 

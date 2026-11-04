@@ -5,7 +5,7 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Local Fish 0.7.0 Kerberos preview
+## Fish 0.7.0 Kerberos prerelease
 
 Implements RFC 4777 section 6 binary IBMTICKET using the current Windows logon's
 explicit Kerberos SSPI provider (never Negotiate/NTLM/password fallback).

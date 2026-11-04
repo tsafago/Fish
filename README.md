@@ -10,7 +10,7 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Local Kerberos preview
+## Kerberos preview
 
 **Fish 0.7.0** adds Windows Kerberos sign-on using RFC 4777 binary `IBMTICKET`
 and the Windows **Kerberos-only** SSPI provider. A fresh workspace starts with
@@ -49,7 +49,7 @@ emphasis rather than literal Markdown. No embedded AI or secret export.
 per launch; it starts off. Missing login details/passwords leave an actionable
 pane notice without password prompts. Adding a pane still never connects it.
 Configuration apply itself never connects or touches credentials.
-This build is **local only**, not a newly published release. The native
+This build is an **unsigned experimental prerelease**, not a production release. The native
 maximize/restore perimeter defect, intermittent flicker observation and real
 IBM i/ACS acceptance gates remain open.
 
@@ -123,17 +123,27 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Run the local `dist\Fish-0.7.0-setup.exe` for your Windows user. It creates
+Download `Fish-0.7.0-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.7.0](https://github.com/HornadyIBM/Fish/releases/tag/v0.7.0), then run the
+installer for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
-administrator installation. Its matching `dist\SHA256SUMS.txt` covers these local
-artifacts. The last published baseline remains [v0.5.3](https://github.com/HornadyIBM/Fish/releases/tag/v0.5.3);
-do not mix that release's assets/checksums with the local 0.7.0 build.
+administrator installation. Keep one release's installer, portable ZIP, complete
+source and checksums together; earlier previews remain available. Downloads
+require access to this private repository.
 
 For a portable copy, extract `Fish-0.7.0-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
 may warn or block them. Checksums accompany the package; do not bypass IT policy.
+
+**Back up before upgrading:** close Fish normally and copy its `workspace.xml`
+outside the application folder before first launching 0.7.0. The usual location
+is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
+and custom `--data-dir` locations still apply. The next save upgrades configuration
+to **version 10**, which older binaries cannot read. Keep a pre-upgrade backup
+for downgrade. XML/config exports contain no passwords or Kerberos tickets;
+OS credentials are separate.
 
 ## Generate an executable and installer yourself
 

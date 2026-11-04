@@ -115,7 +115,8 @@ public final class Tests {
         check(envResponse.contains("IBMRSEED\1\3IBMSUBSPW\1DUMMYPW"),"Plain sign-on uses the RFC 4777 empty seed mechanism.");
         check(envResponse.contains("DEVNAME\1WORK01"),"Workstation name is negotiated.");
         check(envResponse.contains("KBDTYPE\1USB") && envResponse.contains("CODEPAGE\1" + "37"),"Code page includes required keyboard type.");
-        check(!Profile.create("Manual").environment(new char[0]).containsKey("USER"),"Manual sign-on does not negotiate credentials.");
+        Profile manual=new Profile(UUID.randomUUID(),"Manual","",23,"","",false,false,"37","Phosphor","None",1,Map.of(),"");
+        check(!manual.environment(new char[0]).containsKey("USER"),"Manual sign-on does not negotiate credentials.");
         namedDevices();
         output.reset(); notices.clear();
         Map<String,String> autoDevice=new LinkedHashMap<>(environment); autoDevice.remove("DEVNAME");

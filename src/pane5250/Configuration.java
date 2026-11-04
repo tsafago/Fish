@@ -70,7 +70,7 @@ public final class Configuration {
                     if (command.equals("apply")) store.save(candidate);
                 }
                 out.println(ConfigSchema.json(Map.of("ok",true,"command",command,"revision",store.revision(),
-                        "workspace",store.file().toString(),"runtime","Next launch remains offline; no sessions or credentials changed.")));
+                        "workspace",store.file().toString(),"runtime","No sessions or credentials changed. Next normal launch follows the saved connectOnStartup preference.")));
                 if (!store.loadNotice().isEmpty()) error.println("Migration information: "+store.loadNotice());
             }
             return 0;

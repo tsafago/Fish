@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.6.0 exposes its complete local configuration without an AI service, network
+Fish 0.6.1 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -50,7 +50,8 @@ status. From sources, the identical interface is:
 4. Validate the complete candidate. This is a dry run: no workspace writes,
    connections, transactions or credential operations.
 5. Apply only after successful validation. Open Fish normally to use the result.
-   Startup remains offline; no imported profile auto-connects.
+   Startup stays offline unless the user enabled `connectOnStartup`. Do not change
+   that preference unless requested. Apply itself never connects.
 
 All three commands acquire the normal exclusive `workspace.lock`. A running Fish
 instance or another cooperating editor causes clean rejection, not live reload.
@@ -73,10 +74,12 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 8 with informational migration
+An exported legacy workspace is migrated to version 9 with informational migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries cannot read version 8: restore a backup for a downgrade.
-Do not manually relabel old/future data as version 8.
+save. Older binaries cannot read version 9: restore a backup for a downgrade.
+Do not manually relabel old/future data as version 9. Version-8 hosts, sign-in
+choices, login references and tutorial status are retained; startup connection
+is off on upgrade.
 
 ## Format and complete coverage
 
@@ -96,7 +99,7 @@ The catalog lists exact field types/defaults/limits and all dynamic prefixes:
 
 | Area | Entries |
 |---|---|
-| Workspace | version, ordered profiles, current layout, lastProfile, width, height, appTheme, highlightActive |
+| Workspace | version, ordered profiles, current layout, lastProfile, width, height, appTheme, highlightActive, connectOnStartup |
 | Profiles | `profile.{uuid}.` name, host, port, device, username, auto, remember, loginSource, codePage, theme, effect, zoom, layout |
 | Per-profile keys | `profile.{uuid}.key.{Swing stroke}` to a supported host mnemonic or empty to disable |
 | Global shortcuts | `shortcut.{exact action title}` to a Swing pressed stroke or empty to unbind |
@@ -113,8 +116,12 @@ enum values, all color roles (including all host colors, gradients, logo and glo
 layout grammar and constraints. Use `schema` for the running binary's authoritative
 catalog rather than hardcoding a different release's definitions.
 
-Profile host may be empty: it is an unconfigured offline profile, not a fake endpoint.
-Device and username may be empty; when supplied they follow IBM i naming constraints.
+New profiles default to the user-requested host `10.1.2.3` with auto/remember true.
+These are creation defaults, not migration replacements. Preserve existing
+hosts (including blank) and explicit off choices unless asked to change them.
+Host may be empty: an unconfigured profile. Device and username may be empty;
+when supplied they follow IBM i naming constraints. auto=true with a blank username
+is a valid unfinished profile, but cannot connect until a username is supplied.
 Fixed-width fonts are checked against the configured code pages, with explicit
 errors rather than silent replacement during config validation.
 font.file takes precedence over font.family; clear font.file to choose a family.
@@ -237,8 +244,8 @@ prompt on Connect. Chains, cycles, self references, missing sources and deleting
 or disabling a source still in use are rejected. Duplicating through the UI
 produces an independent profile with remembering off, not a secret copy.
 
-auto=true requests negotiated RFC 4777 **plain** automatic sign-on; it requires a
-username and a 1-128 printable US-ASCII password supplied by the UI/OS store.
+auto=true requests negotiated RFC 4777 **plain** automatic sign-on; connecting
+requires a username and a 1-128 printable US-ASCII password supplied by the UI/OS store.
 It does not inject credentials into guessed screen coordinates. Plain TN5250
 TCP is unencrypted, cryptographic sign-on is not implemented, and real IBM i/ACS
 acceptance remains unverified. A saved password or TCP connection is not proof of
@@ -252,6 +259,16 @@ IN_PROGRESS; user Done/Skip records COMPLETED/SKIPPED. Interrupting the app midw
 does not force the guide over the next session. Legacy upgrades use SKIPPED.
 Help can replay it without modifying profiles/sockets or resetting the status.
 Set NEW only when the user explicitly wants the first-run behavior again.
+
+`connectOnStartup=false` is the fresh/upgrade default. The Session menu can enable
+it, or set that exact boolean in an exported snapshot when requested. A normal
+launch then attempts each restored pane once, using its own selected profile.
+Manual sign-in profiles connect to the host sign-on screen; automatic sign-in
+requires a saved OS password. Incomplete profiles, remembering disabled or missing
+saved passwords remain offline with a pane notice, not password/profile dialogs.
+Credential lookup failures and connection errors stay visible in the affected pane.
+This never reconnects current work, connects newly added panes or repeats failed
+attempts until the next launch/user Connect. Demo stays isolated to its loopback host.
 
 Apply never launches Fish or connects, sends Enter/AIDs or replays terminal work.
 A restart is required to use bulk edits. Host screen content, live socket/input

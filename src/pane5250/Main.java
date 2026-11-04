@@ -8,7 +8,7 @@ import pane5250.model.*;
 import pane5250.ui.*;
 
 public final class Main {
-    public static final String VERSION="0.6.0";
+    public static final String VERSION="0.6.1";
     private Main() {}
     public static void main(String[] args) {
         if (args.length>0 && args[0].equals("--config")) {
@@ -61,7 +61,7 @@ public final class Main {
                 if (!store.loadNotice().isEmpty())
                     System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
                 if (demo) SwingUtilities.invokeLater(window::connectAll);
-                else SwingUtilities.invokeLater(window::startTutorialIfNeeded);
+                else SwingUtilities.invokeLater(window::startup);
                 } catch (RuntimeException e) {
                     if (host != null) host.close();
                     try { store.close(); }

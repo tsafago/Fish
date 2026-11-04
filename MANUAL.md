@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.6.0 - unsigned experimental local usability preview.
+Fish 0.6.1 - unsigned experimental local usability preview.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -13,8 +13,8 @@ You need the IBM i's hostname or IP address, a valid IBM i username and password
 
 1. Run Fish.exe. Keep the complete Fish folder together if using the portable download.
 2. Open Session > Profiles. Select Local IBM i, or choose New.
-3. Give the profile a useful name. Enter the Host. Leave Port at 23 unless your administrator gave you another port.
-4. Leave Device empty to let the IBM i choose a workstation. For everyday use on your trusted IBM i network, choose Use recommended sign-in to enable automatic sign-in and Save password in Windows Credential Manager. Enter a username and password to save; blank preserves an existing OS password. Manual sign-in remains available. The default code page is 37.
+3. Give the profile a useful name. Check Host (new profiles start at 10.1.2.3). Leave Port at 23 unless your administrator gave you another port.
+4. Enter your username and password. Leave the two recommended options checked to sign in automatically next time and save the password in Windows Credential Manager. Blank keeps an existing saved password. Turn automatic sign-in off for manual login. Device can stay empty; the default code page is 37.
 5. Choose Save & connect. A TCP connection is not the same as a successful IBM i sign-on.
 6. If using manual sign-in, type in the IBM i's own sign-on fields and press Enter. The host controls their actual order. Password characters normally remain invisible. Automatic sign-in requires host support for RFC 4777 plain sign-on; a saved password or TCP connection is not proof of sign-on.
 7. Work with the displayed IBM i application. Enter submits to the host. F1-F12 are host function keys; Shift+F1-F12 sends F13-F24.
@@ -25,7 +25,9 @@ Plain TCP is not encrypted. Use a trusted network approved by your administrator
 If connection fails, check the hostname, port, VPN/network and IBM i Telnet service first. A blank Device is the recommended starting point. Do not enter your password in a visible application field.
 
 Fresh workspaces show a modeless guided tutorial once, with Next, Back and Skip.
-It uses the actual profile editor and pane controls but never creates a profile or
+Short hints move beside the actual menus, profile fields and pane controls.
+Use Show menu to open the real menu and follow its highlighted action. The guide
+stays usable while editing a profile, but never creates a profile or
 connects without your action. Apply/Done can save a profile with no connection;
 host and credentials may remain blank. Help > Getting started tutorial replays it
 without duplicating profiles, changing settings or interrupting sessions.
@@ -36,9 +38,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The local 0.6.0 build includes Fish-0.6.0-setup.exe and matching SHA256SUMS.txt; it has not been published. The last published baseline is v0.5.3 in the private HornadyIBM/Fish repository. Keep versions/assets/checksums together. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+The local 0.6.1 build includes Fish-0.6.1-setup.exe and matching SHA256SUMS.txt; it has not been published. The last published baseline is v0.5.3 in the private HornadyIBM/Fish repository. Keep versions/assets/checksums together. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Alternatively, extract Fish-0.6.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.6.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -52,11 +54,16 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.6.0-setup.exe, dist\Fish-0.6.0-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Outputs are dist\Fish\Fish.exe, dist\Fish-0.6.1-setup.exe, dist\Fish-0.6.1-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
+
+For a side-by-side build while an older image is running, use
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.6.1\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.6.1\Fish`. The final directory
+must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
 
@@ -64,7 +71,7 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces migrate to version 8 on load, retaining profiles, themes, fonts, key overrides, outline/tint and information choices. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries now retain their provenance. Unresolved conflicts fail clearly. Legacy tutorials start skipped. Older builds cannot read version 8: use a backup/separate directory for downgrade. Malformed state is preserved, never replaced with defaults.
+Older Fish/Pane5250 workspaces migrate to version 9 on load, retaining profiles, themes, fonts, key overrides, outline/tint and information choices. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults from before version 8 change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries now retain their provenance. Unresolved conflicts fail clearly. Pre-version-8 tutorials start skipped; version-8 tutorial/login choices remain unchanged. Startup connection starts off on upgrade; new host/sign-in defaults never replace existing profile choices. Older builds cannot read version 9: use a backup/separate directory for downgrade. Malformed state is preserved, never replaced with defaults.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -81,6 +88,13 @@ If headers are hidden, drag near the pane's top at the X overlay's height to swa
 Pane X disconnects and removes its tile immediately; other panes reflow and stay connected. The last pane disconnects but remains as an empty tile. Closing the window is immediate and does not ask about unsent host edits.
 
 The empty pane contains a preset selector and the arrow Connect button directly to its right. New tiles preselect the last-used preset, but never auto-connect. Existing offline tiles remember their own preset.
+
+Session > Connect panes on startup optionally reconnects restored panes when you
+open Fish. It is off by default. Each pane uses its own profile, once per launch.
+Automatic sign-in needs a saved password; incomplete profiles or missing saved
+passwords stay offline with a notice. Click Connect to finish signing in.
+Manual sign-in profiles connect to the host's sign-on screen without password prompts.
+Adding a pane, applying settings or replaying the guide never starts a connection.
 
 ## Focus and switching panes
 
@@ -276,7 +290,7 @@ Fit host screen centers the entire host presentation space inside the pane. Zoom
 
 ## Configuration for external tools
 
-Help > Configuration for external tools opens the complete offline AI-CONFIG.md guide. CONFIG-SCHEMA.json supplies typed fields, exact enum/default/constraint values, every theme role and action, and layout grammar. Fish-config.cmd beside Fish.exe provides paths, schema, export, validate (dry run) and apply. Close Fish first; use a separate full exported snapshot, preserve its revision and unedited settings, validate, then atomically apply. Locks, stale revisions, unknown fields and invalid values are rejected without resetting the workspace. Changes take effect next launch offline, never by connecting/replaying work. Passwords and font bytes are not exported. There is no embedded AI service or executable configuration hook.
+Help > Configuration for external tools opens the formatted offline AI-CONFIG.md guide, with selectable commands and tables. CONFIG-SCHEMA.json supplies typed fields, exact enum/default/constraint values, every theme role and action, and layout grammar. Fish-config.cmd beside Fish.exe provides paths, schema, export, validate (dry run) and apply. Close Fish first; use a separate full exported snapshot, preserve its revision and unedited settings, validate, then atomically apply. Locks, stale revisions, unknown fields and invalid values are rejected without resetting the workspace. Changes take effect next launch; apply never connects/replays work or touches credentials. Normal startup stays offline unless you enabled Connect panes on startup. Passwords and font bytes are not exported. There is no embedded AI service or executable configuration hook.
 
 Glyphs are generated at final physical pixel resolution with fixed-cell positioning; default text is not a bilinear-upscaled bitmap. Windows scaling and monitor transitions may change the fitted physical font size, but never the host's row/column count.
 
@@ -284,7 +298,7 @@ At very small pane sizes, the screen must be small to fit. Increase the window, 
 
 ## Layout persistence and multiple instances
 
-Closing Fish saves window size, pane arrangement, profile selections, last-used preset, application/custom themes, font reference, shortcuts, outline/tint and pane-information preferences. Next launch is offline; saved layouts do not imply an auto-connect.
+Closing Fish saves window size, pane arrangement, profile selections, last-used preset, application/custom themes, font reference, shortcuts, outline/tint, pane-information and startup connection preferences. Next launch is offline unless Connect panes on startup is enabled; saved layouts alone never imply auto-connect.
 
 Panes > Layout > Save layout to profile and Restore profile layout preserve a profile-specific arrangement. The same submenu holds divider adjustment. Restoring/replacing a layout can close sessions removed from it. Old arbitrary layouts are normalized into bounded slots with a notice. Layouts over eight panes are rejected rather than silently truncated.
 

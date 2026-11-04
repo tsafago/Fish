@@ -166,6 +166,11 @@
       "title": "Compatibility and connection safety"
     },
     {
+      "default": "",
+      "hostAction": null,
+      "title": "Connect panes on startup"
+    },
+    {
       "default": "ctrl alt M",
       "hostAction": null,
       "title": "Open menus"
@@ -982,8 +987,8 @@
   },
   "profileFields": {
     "auto": {
-      "constraints": "Explicit opt-in RFC 4777 plain automatic sign-on. Independent login requires username. False when linked.",
-      "default": false,
+      "constraints": "Recommended new-profile default: RFC 4777 plain automatic sign-on. Username required before connecting, not to save an unfinished profile. False when linked. Existing choices unchanged.",
+      "default": true,
       "type": "boolean"
     },
     "codePage": {
@@ -1025,8 +1030,8 @@
       ]
     },
     "host": {
-      "constraints": "0..253 characters, no whitespace/control characters. Empty is offline/unconfigured.",
-      "default": "",
+      "constraints": "0..253 characters, no whitespace/control characters. Empty is offline/unconfigured. New-profile default only; existing hosts are unchanged.",
+      "default": "10.1.2.3",
       "type": "hostname-or-ip"
     },
     "layout": {
@@ -1050,8 +1055,8 @@
       "type": "integer"
     },
     "remember": {
-      "constraints": "Allow OS password lookup/storage on Connect. False when linked. Configuration never reads, copies or deletes OS credentials.",
-      "default": false,
+      "constraints": "Recommended new-profile default: allow OS password lookup/storage on Connect. False when linked. Configuration never reads, copies or deletes OS credentials. Existing choices unchanged.",
+      "default": true,
       "type": "boolean"
     },
     "theme": {
@@ -1127,6 +1132,11 @@
     "appearance.windowOutline": {
       "constraints": "Whole-window outline; known maximize/restore defect remains.",
       "default": true,
+      "type": "boolean"
+    },
+    "connectOnStartup": {
+      "constraints": "Connect each restored pane once on normal startup. Incomplete logins or missing saved passwords stay offline with a pane notice; no password prompts. Adding a pane never auto-connects.",
+      "default": false,
       "type": "boolean"
     },
     "font.family": {
@@ -1227,10 +1237,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "8",
+      "default": "9",
       "type": "enum",
       "values": [
-        "8"
+        "9"
       ]
     },
     "width": {
@@ -1239,7 +1249,7 @@
       "type": "integer"
     }
   },
-  "semantics": "Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Changes take effect next launch offline; no connections/transactions/credential operations.",
+  "semantics": "Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Apply performs no connections/transactions/credential operations. Normal startup stays offline unless connectOnStartup is explicitly enabled.",
   "shortcutPrefix": "shortcut.{exact-action-title}",
   "shortcutValue": "Swing pressed stroke or empty to unbind. Explicit entries, even equal to current defaults, remain explicit.",
   "storage": "All values are XML strings; types below describe their logical values. Use export, edit, validate, apply.",
@@ -1552,5 +1562,5 @@
   },
   "themePrefix": "appearance.theme.{zero-based-index}.",
   "unknownKeys": "Rejected without writing. Future workspace versions are rejected, never downgraded.",
-  "workspaceVersion": "8"
+  "workspaceVersion": "9"
 }

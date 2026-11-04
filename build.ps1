@@ -1,11 +1,14 @@
 param(
     [ValidateSet('Build', 'Smoke', 'Check', 'Test', 'Package', 'Installer', 'Run', 'Demo')]
     [string]$Task = 'Build',
-    [string]$Jdk = $env:JAVA_HOME
+    [string]$Jdk = $env:JAVA_HOME,
+    [string]$ImageDirectory = 'dist\Fish'
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.6.0'
+$version = '0.6.1'
+$image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
+if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
 if (-not $Jdk) {
     $manifest = Import-PowerShellDataFile .\tools.psd1
     $candidate = Join-Path $PSScriptRoot ('.tools\' + $manifest.Jdk.Directory)
@@ -15,20 +18,24 @@ if (-not $Jdk -or -not (Test-Path "$Jdk\bin\javac.exe")) {
     throw 'JDK 21 required. Set JAVA_HOME or run .\scripts\bootstrap.ps1.'
 }
 if ($Task -eq 'Installer') {
-    if (-not (Test-Path dist\Fish\Fish.exe)) { throw 'Build the application first: .\build.ps1 Package' }
+    $executable=Join-Path $image 'Fish.exe'
+    if (-not (Test-Path -LiteralPath $executable)) { throw 'Build the application first: .\build.ps1 Package' }
+    if ((Get-Item -LiteralPath $executable).VersionInfo.ProductVersion -ne $version) {
+        throw "Application image is not Fish $version. Package first, or select its matching -ImageDirectory."
+    }
     & "$PSScriptRoot\scripts\prepare-tools.ps1" -Kind Installer
     $manifest = Import-PowerShellDataFile .\tools.psd1
     $env:PATH = (Join-Path $PSScriptRoot ('.tools\' + $manifest.Installer.Directory)) + ';' + $env:PATH
     $installerOutput = Join-Path $PSScriptRoot ('build\installer-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
     New-Item -ItemType Directory -Path $installerOutput | Out-Null
     # WiX 3 needs jpackage's short OS temporary path when source lives in a deep directory.
-    & "$Jdk\bin\jpackage.exe" --type exe --name Fish --app-version $version --app-image dist\Fish `
+    & "$Jdk\bin\jpackage.exe" --type exe --name Fish --app-version $version --app-image $image `
         --dest $installerOutput --vendor Fish --win-per-user-install --install-dir Fish `
         --win-dir-chooser --win-menu --win-shortcut --win-menu-group Fish `
         --win-upgrade-uuid '55b0674d-e226-46cb-852f-6beddd35a74b'
     if ($LASTEXITCODE -ne 0) { throw 'User-wide installer generation failed.' }
     Copy-Item (Join-Path $installerOutput "Fish-$version.exe") "dist\Fish-$version-setup.exe" -Force
-    Compress-Archive -Path dist\Fish -DestinationPath "dist\Fish-$version-windows-x64.zip" -Force
+    Compress-Archive -Path $image -DestinationPath "dist\Fish-$version-windows-x64.zip" -Force
     $checksums = foreach ($file in @("dist\Fish-$version-setup.exe","dist\Fish-$version-windows-x64.zip",'dist\Fish-source.zip')) {
         (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($file)
     }
@@ -100,18 +107,19 @@ if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
     }
 }
 if ($Task -eq 'Package') {
-    if (Test-Path dist\Fish) { throw 'dist\Fish exists. Move it aside before packaging again.' }
+    if (Test-Path -LiteralPath $image) { throw 'Application image exists. Close/preserve it first, or use -ImageDirectory dist\Fish-VERSION\Fish for a side-by-side build.' }
     New-Item -ItemType Directory -Force build\package-input | Out-Null
     Copy-Item dist\Fish.jar,dist\fish-window.dll,dist\credential-store.ps1,dist\COPYING-TN5250J,README.md,MANUAL.md,AI-CONFIG.md,CONFIG-SCHEMA.json,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
     & "$Jdk\bin\java.exe" -cp build\classes pane5250.ui.FishIcon build\Fish.ico
     if ($LASTEXITCODE -ne 0) { throw 'Fish icon generation failed.' }
+    New-Item -ItemType Directory -Force (Split-Path -Parent $image) | Out-Null
     & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version $version --icon build\Fish.ico `
         --input build\package-input --main-jar Fish.jar --main-class pane5250.Main `
-        --dest dist --vendor Fish --java-options '-Xmx192m' `
+        --dest (Split-Path -Parent $image) --vendor Fish --java-options '-Xmx192m' `
         --add-modules java.base,java.desktop,java.xml,java.logging,jdk.charsets
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed.' }
-    Copy-Item scripts\Fish-config.cmd dist\Fish\Fish-config.cmd
-    $source = Join-Path $PSScriptRoot 'dist\Fish\app\source'
+    Copy-Item scripts\Fish-config.cmd (Join-Path $image 'Fish-config.cmd')
+    $source = Join-Path $image 'app\source'
     New-Item -ItemType Directory -Force $source | Out-Null
     Copy-Item src,scripts,tests $source -Recurse
     Copy-Item build.ps1,Setup-Fish.cmd,Setup-Fish.ps1,tools.psd1,README.md,MANUAL.md,AI-CONFIG.md,CONFIG-SCHEMA.json,COMPATIBILITY.md,LICENSE,NOTICE,PRODUCT.md,DESIGN.md $source

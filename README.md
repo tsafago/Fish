@@ -12,11 +12,12 @@ to a production system.
 
 ## Local usability preview
 
-**Fish 0.6.0** adds a first-run, modeless getting-started guide with Next/Back/Skip,
-real profile editing and pane instructions. Replay it through Help; upgrades do not
-force it over an existing workspace. The profile editor prominently recommends
-automatic sign-in plus OS password storage through an explicit choice, while
-retaining manual sign-in and the plain-TCP security/mechanism limitations.
+**Fish 0.6.1** has short, moving tutorial hints anchored to the real menus,
+profile fields and pane controls. Next/Back/Skip stay usable while editing a
+profile. Replay through Help; upgrades do not force the guide over existing work.
+New profiles start at **10.1.2.3** with automatic sign-in and Save password checked.
+Existing saved hosts and sign-in choices stay unchanged. Passwords remain in
+Windows Credential Manager; plain TCP and the sign-on mechanism have the limits below.
 **Use login from...** explicitly reuses another profile's login on the selected
 target host using a stable reference, never a password copy.
 
@@ -30,7 +31,12 @@ Explicit conflicting custom mappings are preserved/reported during migration.
 [AI-CONFIG.md](AI-CONFIG.md) and [CONFIG-SCHEMA.json](CONFIG-SCHEMA.json) document
 every setting, enum, color role, action and layout constraint. The shipped
 `Fish-config.cmd` supports complete offline export, dry-run validation and atomic,
-revision/lock-checked apply. No embedded AI, secret export or automatic connection.
+revision/lock-checked apply. The in-app guide now renders code, tables, lists and
+emphasis rather than literal Markdown. No embedded AI or secret export.
+**Session > Connect panes on startup** optionally reconnects restored panes once
+per launch; it starts off. Missing login details/passwords leave an actionable
+pane notice without password prompts. Adding a pane still never connects it.
+Configuration apply itself never connects or touches credentials.
 This build is **local only**, not a newly published release. The native
 maximize/restore perimeter defect, intermittent flicker observation and real
 IBM i/ACS acceptance gates remain open.
@@ -105,13 +111,13 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Run the local `dist\Fish-0.6.0-setup.exe` for your Windows user. It creates
+Run the local `dist\Fish-0.6.1-setup.exe` for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Its matching `dist\SHA256SUMS.txt` covers these local
 artifacts. The last published baseline remains [v0.5.3](https://github.com/HornadyIBM/Fish/releases/tag/v0.5.3);
-do not mix that release's assets/checksums with the local 0.6.0 build.
+do not mix that release's assets/checksums with the local 0.6.1 build.
 
-For a portable copy, extract `Fish-0.6.0-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.6.1-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -128,8 +134,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.6.0-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.6.0-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.6.1-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.6.1-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -140,7 +146,9 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.6.0**.
+The matching local package is **Fish 0.6.1**.
+To package without replacing an open image, pass
+`-ImageDirectory dist\Fish-0.6.1\Fish` to both Package and Installer.
 Keep the entire application-image directory together:
 
 ```powershell
@@ -156,7 +164,8 @@ independent connections. F5 requests a 27x132 screen; F6 requests 24x80; Enter
 sends edited fields to that server. It is not a simulated IBM i sign-on or
 evidence of ACS parity.
 
-Normal mode starts offline. Press **Ctrl+Alt+P**, enter the IBM i hostname or
+Normal mode starts offline unless **Session > Connect panes on startup** is enabled.
+Press **Ctrl+Alt+P**, enter the IBM i hostname or
 IP address, leave port **23** unless configured otherwise, and choose
 **Save & connect**. Only `IBM-3477-FC` is offered. A host controls whether the
 screen is 24x80 or 27x132; resizing a pane only scales its rendering.

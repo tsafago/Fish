@@ -14,6 +14,7 @@ import java.util.concurrent.*;
 import java.util.function.Supplier;
 import javax.imageio.ImageIO;
 import javax.swing.*;
+import javax.swing.text.html.*;
 import org.tn5250j.Session5250;
 import org.tn5250j.keyboard.KeyMnemonic;
 import pane5250.*;
@@ -69,6 +70,14 @@ public final class UsabilitySmoke {
     private static void properties(Path file,Properties values) throws IOException {
         try (OutputStream out=Files.newOutputStream(file)) { values.storeToXML(out,"Synthetic configuration fixture","UTF-8"); }
     }
+    private static boolean hasTag(HTMLDocument doc,HTML.Tag tag) {
+        HTMLDocument.Iterator inline=doc.getIterator(tag);
+        if (inline!=null && inline.isValid()) return true;
+        var elements=new javax.swing.text.ElementIterator(doc);
+        for (var element=elements.first();element!=null;element=elements.next())
+            if (tag.equals(element.getAttributes().getAttribute(javax.swing.text.StyleConstants.NameAttribute))) return true;
+        return false;
+    }
     private static void rejected(Path directory,Path candidate,Properties values,String reason) throws IOException {
         properties(candidate,values); byte[] original=Files.readAllBytes(directory.resolve("workspace.xml"));
         ByteArrayOutputStream error=new ByteArrayOutputStream();
@@ -85,7 +94,7 @@ public final class UsabilitySmoke {
         Appearance a=new Appearance(false,false,new Appearance.PaneInfo(false,true,false,true,false,true,false,true,false,true),
                 new Appearance.FontChoice("Automatic",""),theme.name(),List.of(theme),Set.of("ctrl alt K","ctrl alt Y"));
         StateStore.State state=new StateStore.State(List.of(login,target),layout,910,610,AppTheme.Afterglow,target.id(),
-                Map.of("Next pane","ctrl F10","Host F1","ctrl F1"),false,a,StateStore.Tutorial.COMPLETED);
+                Map.of("Next pane","ctrl F10","Host F1","ctrl F1"),false,a,StateStore.Tutorial.COMPLETED,true);
         try (StateStore store=new StateStore(dir)) { store.save(state); }
         ByteArrayOutputStream error=new ByteArrayOutputStream();
         check(cli(dir,"export",candidate,error)==0,"Full production export succeeds.");
@@ -108,7 +117,7 @@ public final class UsabilitySmoke {
         try (StateStore store=new StateStore(dir)) {
             StateStore.State loaded=store.load();
             check(loaded.profiles().equals(state.profiles()) && loaded.appearance().themes().equals(a.themes())
-                    && loaded.shortcuts().equals(state.shortcuts()) && loaded.width()==1010 && loaded.appearance().info().header(),
+                    && loaded.shortcuts().equals(state.shortcuts()) && loaded.width()==1010 && loaded.appearance().info().header() && loaded.connectOnStartup(),
                     "Unedited profiles, key provenance, saved layouts and every theme role survive bulk edits.");
             check(!oldRevision.equals(store.revision()),"Applied bytes have a new revision.");
             check(cli(dir,"apply",candidate,new ByteArrayOutputStream())!=0,"A running/locked workspace cleanly rejects config apply.");
@@ -148,10 +157,18 @@ public final class UsabilitySmoke {
         Path legacy=root.resolve("legacy"); Files.createDirectory(legacy);
         Properties old=StateStore.properties(state);
         old.setProperty("version","7"); old.remove("tutorial.status");
+        old.remove("connectOnStartup");
         old.remove("profile."+login.id()+".loginSource"); old.remove("profile."+target.id()+".loginSource");
         properties(legacy.resolve("workspace.xml"),old);
         try (StateStore store=new StateStore(legacy)) {
             check(store.load().tutorial()==StateStore.Tutorial.SKIPPED,"Upgrade does not force a tutorial over an experienced session.");
+        }
+        Properties v8=StateStore.properties(state); v8.setProperty("version","8"); v8.remove("connectOnStartup");
+        try (StateStore store=new StateStore(root.resolve("migration-8"))) {
+            StateStore.State migrated=store.decode(v8);
+            check(!migrated.connectOnStartup() && migrated.profiles().equals(state.profiles())
+                    && migrated.appearance().equals(state.appearance()) && migrated.shortcuts().equals(state.shortcuts())
+                    && migrated.tutorial()==state.tutorial(),"Version-8 upgrade retains login references, disabled outlines, tutorial and explicit bindings without opting into startup connections.");
         }
         try (StateStore store=new StateStore(dir)) {
             store.load(); Files.writeString(store.file(),"\n",StandardCharsets.UTF_8,StandardOpenOption.APPEND);
@@ -237,15 +254,37 @@ public final class UsabilitySmoke {
         check(!pane.send(KeyMnemonic.ENTER) && bytes.size()==0,"Disconnected Enter does not invent recovery or submit.");
     }
     private static void tutorial(Workspace w) throws Exception {
+        int menuListeners=MenuSelectionManager.defaultManager().getChangeListeners().length;
         w.tutorialStatus(StateStore.Tutorial.NEW); w.startTutorialIfNeeded();
         TutorialDialog guide=(TutorialDialog)field(w,"tutorial"); ready(guide);
         List<Profile> original=w.profileList(); int panes=w.sessionPanes().size();
         check(w.tutorialStatus()==StateStore.Tutorial.IN_PROGRESS && !guide.isModal(),"First-run production guide is user-paced and modeless.");
-        guide.go(1); image(guide,"profile-step-100",1); image(guide,"profile-step-150",1.5);
+        check(field(guide,"anchor")==w.tutorialMenuTarget("Session","Profiles..."),"First hint is anchored to the actual Session menu (or its compact menu button).");
+        button(guide,"Show menu").doClick(0);
+        check(button(guide,"Skip setup").isEnabled(),"Menu walkthrough permits skipping setup without creating or connecting.");
+        ProfilesDialog editor=new ProfilesDialog(w,w.active().profile()); ready(editor); layout(editor); guide.refreshTarget();
+        check(field(guide,"anchor")==field(editor,"host") && (int)field(guide,"step")==1,"Opening the shared real profile editor advances and points to its host input.");
+        Point hostHint=guide.getLocation();
+        guide.go(2); Point loginHint=guide.getLocation();
+        check(field(guide,"anchor")==field(editor,"automatic") && !loginHint.equals(hostHint),"Hint visibly moves beside the real recommended login controls.");
+        check(guide.getModalExclusionType()==Dialog.ModalExclusionType.APPLICATION_EXCLUDE
+                && ((JComponent)field(guide,"highlight")).getParent()==editor.getLayeredPane(),
+                "Guide navigation remains outside profile modality, and its nonblocking highlight follows the modal editor.");
+        image(editor,"guided-profile-100",1); image(guide,"profile-step-150",1.5);
         check(button(guide,"Back").isEnabled() && button(guide,"Skip").isEnabled(),"Next, Back and Skip remain available in the profile step.");
+        guide.go(3); check(field(guide,"anchor")==field(editor,"done"),"Save instructions point at the actual Done control, not a synthetic shortcut.");
+        editor.dispose(); w.profileEditorClosed(editor);
+        check((int)field(guide,"step")==4,"Closing Profiles resumes the pane walkthrough without forcing a save or connection.");
+        Dimension size=w.getSize(); w.setSize(360,550); layout(w); guide.go(0);
+        check(field(guide,"anchor")!=((JMenuBar)field(w,"menuBar")).getMenu(0)
+                && ((Component)field(guide,"anchor")).isVisible(),"Narrow-window guide targets the real compact menu button, not an invisible menu label.");
+        w.setSize(size); layout(w); guide.go(6); layout(guide);
+        check(field(guide,"anchor") instanceof javax.swing.plaf.basic.BasicSplitPaneDivider
+                && field(field(guide,"highlight"),"target")==null,"Resize hint follows the real divider without painting an extra divider/outline.");
         guide.go(4); image(guide,"panes-step-150",1.5);
         check(!((JComponent)field(guide,"highlight")).contains(15,15),"Tutorial highlight never intercepts input.");
         guide.finish(true);
+        check(MenuSelectionManager.defaultManager().getChangeListeners().length==menuListeners,"Finishing removes the menu observer and target highlight.");
         check(w.tutorialStatus()==StateStore.Tutorial.COMPLETED && w.profileList().equals(original) && w.sessionPanes().size()==panes,
                 "Walking the guide alone creates no profile, connection or pane.");
         w.showTutorial(); guide=(TutorialDialog)field(w,"tutorial"); ready(guide); guide.go(3); guide.finish(false);
@@ -257,15 +296,92 @@ public final class UsabilitySmoke {
                 new StateStore.State(w.profileList(),Layout.bounded(w.sessionPanes().stream().map(p -> new Layout.Leaf(p.id(),p.profile().id())).toList()),
                         900,600,Ui.theme(),w.lastProfile().id(),w.shortcutOverrides(),w.highlightActive(),w.appearanceSettings(),w.tutorialStatus())));
         check(snapshot.tutorial()==StateStore.Tutorial.SKIPPED,"Tutorial status round-trips through the production XML codec.");
-        ManualDialog manual=new ManualDialog(w,"/AI-CONFIG.md","Configuration for external tools"); manual.dispose();
-        check(true,"AI guide is discoverable through the actual bundled document viewer.");
+        ManualDialog manual=new ManualDialog(w,"/AI-CONFIG.md","Configuration for external tools"); ready(manual);
+        JEditorPane page=(JEditorPane)field(manual,"page"); HTMLDocument doc=(HTMLDocument)page.getDocument();
+        check(hasTag(doc,HTML.Tag.TABLE) && hasTag(doc,HTML.Tag.PRE)
+                && hasTag(doc,HTML.Tag.CODE) && hasTag(doc,HTML.Tag.STRONG)
+                && hasTag(doc,HTML.Tag.OL),"Actual AI page renders tables, fenced commands, inline code, emphasis and numbered workflow.");
+        String rendered=doc.getText(0,doc.getLength());
+        check(rendered.contains("Read CONFIG-SCHEMA.json for") && rendered.contains("machine-readable typed field catalog"),
+                "Inline formatting preserves word spaces in the actual Swing document.");
+        check(!rendered.contains("```") && !rendered.contains("**") && !rendered.contains("|---|")
+                && rendered.contains("$writer.WriteRaw('<!DOCTYPE properties SYSTEM \"http://java.sun.com/dtd/properties.dtd\">')"),
+                "Rendered, copyable guide contains exact XML-writing commands, not raw Markdown punctuation.");
+        ((JTextField)field(manual,"find")).setText("baseRevision");
+        check(((DefaultListModel<?>)field(manual,"index")).size()>0 && page.getHighlighter().getHighlights().length>0,
+                "Formatted document retains full-text index and rendered-document search highlights.");
+        ((JTextField)field(manual,"find")).setText(""); image(manual,"ai-guide-100",1);
+        manual.themeChanged();
+        check(hasTag((HTMLDocument)page.getDocument(),HTML.Tag.PRE),"Theme rebuild retains real formatting.");
+        manual.dispose();
+        String safe=Markdown.render("**Bold** `*literal*`\n\n<script>x</script>\n\n![remote](https://example.invalid/a.png)\n\n[bad](file:///bad)\n\n| A | B |\n|---|---|\n| `a|b` | x |");
+        check(safe.contains("<strong>Bold</strong>") && safe.contains("<code>*literal*</code>")
+                && safe.contains("&lt;script&gt;") && !safe.contains("<img") && !safe.contains("href=\"file:")
+                && safe.contains("<td><code>a|b</code></td>"),"Renderer escapes raw HTML, loads no images, blocks file links and keeps literal pipes/code.");
+    }
+    private static void startup(Path root) throws Exception {
+        Profile fresh=Profile.create("Defaults");
+        check(fresh.host().equals("10.1.2.3") && fresh.automaticSignOn() && fresh.rememberPassword(),"New profile defaults match the explicit user choices.");
+        try { fresh.environment("fixture".toCharArray()); throw new AssertionError("Blank automatic username sent."); }
+        catch (IllegalArgumentException expected) { checks++; }
+        try (StateStore store=new StateStore(root.resolve("fresh-default"))) {
+            StateStore.State state=store.load();
+            check(!state.connectOnStartup() && state.profiles().getFirst().automaticSignOn(),"Fresh startup is offline even with recommended profile options enabled.");
+            store.save(state);
+            check(store.load().equals(state),"Unfinished recommended profiles can be saved and reopened without credentials.");
+        }
+        Path helper=root.resolve("fixture-missing.ps1");
+        Files.writeString(helper,"$null = [Console]::In.ReadToEnd()\n[Console]::Out.WriteLine('MISSING')\n");
+        try (DemoHost host=new DemoHost()) {
+            StateStore.State demo=Main.demoState(host.port());
+            Profile missing=new Profile(UUID.randomUUID(),"Missing fixture login","127.0.0.1",host.port(),"","FIXTURE",true,true,"37","Mint","None",1,Map.of(),"");
+            Profile unremembered=new Profile(UUID.randomUUID(),"No saved consent","127.0.0.1",host.port(),"","FIXTURE",true,false,"37","Mint","None",1,Map.of(),"");
+            List<Profile> profiles=new ArrayList<>(demo.profiles()); profiles.addAll(List.of(fresh,missing,unremembered));
+            Layout panes=Layout.bounded(profiles.stream().map(p -> new Layout.Leaf(UUID.randomUUID(),p.id())).toList());
+            StateStore.State state=new StateStore.State(profiles,panes,1100,700,demo.appTheme(),demo.lastProfile(),Map.of(),true,Appearance.defaults(),StateStore.Tutorial.SKIPPED,true);
+            CountDownLatch closed=new CountDownLatch(1);
+            StateStore store=new StateStore(root.resolve("startup"));
+            Workspace w=edt(() -> {
+                Workspace window=new Workspace(store,state,helper,false);
+                window.setFocusableWindowState(false); window.onClosed(closed::countDown); window.addNotify(); window.validate();
+                check(window.sessionPanes().stream().noneMatch(SessionPane::busy),"Restoring state alone does not connect.");
+                window.startup(); return window;
+            });
+            try {
+                await(() -> edt(() -> w.sessionPanes().stream().filter(SessionPane::connected).count()==3
+                        && w.sessionPanes().stream().noneMatch(p -> {
+                            try { return (int)field(p,"credentialOperations")>0; } catch (Exception e) { throw new AssertionError(e); }
+                        })),"Only complete loopback/manual profiles connect at startup; fixture missing-password lookup completes.");
+                edt(() -> {
+                    check(host.connectionCount()==3 && host.requestCount()==0,"Startup opens exactly the intended independent loopback sockets without AID transactions.");
+                    check(w.lastProfile().id().equals(state.lastProfile()),"Background startup attempts retain the saved last-selected profile.");
+                    for (SessionPane pane:w.sessionPanes()) if (!pane.connected())
+                        check(!pane.busy() && ((String)field(pane,"notice")).startsWith("Startup:"),"Incomplete/no-password startup remains offline with an actionable pane notice.");
+                    check(Arrays.stream(w.getOwnedWindows()).noneMatch(Window::isVisible),"Startup creates no password/profile prompt storm.");
+                    w.startup();
+                    check(w.sessionPanes().stream().filter(SessionPane::connected).count()==3,"Repeated startup callback never toggles connected sockets off.");
+                    JMenu session=((JMenuBar)field(w,"menuBar")).getMenu(0);
+                    JCheckBoxMenuItem toggle=Arrays.stream(session.getMenuComponents()).filter(c -> c instanceof JCheckBoxMenuItem).map(c -> (JCheckBoxMenuItem)c).findFirst().orElseThrow();
+                    JMenu copy=WindowChrome.copyMenu(session);
+                    JCheckBoxMenuItem compact=Arrays.stream(copy.getMenuComponents()).filter(c -> c instanceof JCheckBoxMenuItem).map(c -> (JCheckBoxMenuItem)c).findFirst().orElseThrow();
+                    compact.doClick(0);
+                    check(!toggle.isSelected() && !compact.isSelected() && !invokeState(w).connectOnStartup(),
+                            "Real compact and normal Session menu checkboxes share the persisted startup preference.");
+                    check(w.sessionPanes().stream().filter(SessionPane::connected).count()==3,"Changing startup preference never reconnects/disconnects current work.");
+                    return null;
+                });
+            } finally { edt(() -> { w.close(false); return null; }); check(closed.await(5,TimeUnit.SECONDS),"Startup fixture closes cleanly."); }
+        }
+    }
+    private static StateStore.State invokeState(Workspace w) throws Exception {
+        Method state=Workspace.class.getDeclaredMethod("state"); state.setAccessible(true); return (StateStore.State)state.invoke(w);
     }
     public static void main(String[] args) throws Exception {
         Ui.install(); Path root=Files.createTempDirectory(Path.of("build"),"usability-smoke-");
         List<Throwable> errors=new CopyOnWriteArrayList<>();
         Thread.setDefaultUncaughtExceptionHandler((thread,error) -> { errors.add(error); error.printStackTrace(); });
         try {
-            configurations(root); mappings();
+            configurations(root); mappings(); startup(root);
             CountDownLatch closed=new CountDownLatch(1);
             try (DemoHost host=new DemoHost()) {
                 StateStore store=new StateStore(root.resolve("ui"));
@@ -319,13 +435,32 @@ public final class UsabilitySmoke {
                         d.dispose();
                         Profile fresh=Profile.create("Recommended"); w.putProfile(fresh);
                         ProfilesDialog recommendation=new ProfilesDialog(w,fresh); ready(recommendation);
-                        check(!((JCheckBox)field(recommendation,"automatic")).isSelected() && !((JCheckBox)field(recommendation,"remember")).isSelected(),
-                                "Fresh profiles require explicit sign-in/storage consent.");
-                        button(recommendation,"Use recommended sign-in").doClick(0);
                         check(((JCheckBox)field(recommendation,"automatic")).isSelected() && ((JCheckBox)field(recommendation,"remember")).isSelected(),
-                                "One explicit recommended choice enables both preferences, never silently on existing profiles.");
+                                "New-profile recommendation checkboxes start enabled, as explicitly requested.");
+                        check(((JTextField)field(recommendation,"host")).getText().equals("10.1.2.3"),"Real profile form starts at the user-directed IP.");
                         recommendation.dispose();
+                        Profile manual=new Profile(UUID.randomUUID(),"Existing manual","",23,"","",false,false,"37","Phosphor","None",1,Map.of(),"");
+                        w.putProfile(manual); ProfilesDialog existing=new ProfilesDialog(w,manual); ready(existing);
+                        check(!((JCheckBox)field(existing,"automatic")).isSelected() && !((JCheckBox)field(existing,"remember")).isSelected()
+                                && ((JTextField)field(existing,"host")).getText().isEmpty(),"Existing explicit off/blank choices are never overwritten by new defaults.");
+                        existing.dispose();
                         return null;
+                    });
+                    ProfilesDialog unfinished=edt(() -> {
+                        Profile fresh=Profile.create("Unfinished"); w.putProfile(fresh);
+                        ProfilesDialog form=new ProfilesDialog(w,fresh); ready(form);
+                        ((JTextField)field(form,"name")).setText("Unfinished saved");
+                        button(form,"Apply").doClick(0); return form;
+                    });
+                    await(() -> edt(() -> !(boolean)field(unfinished,"saving")),"Recommended blank-username Apply finishes without credentials.");
+                    edt(() -> {
+                        check(!button(unfinished,"Apply").isEnabled() && ((JLabel)field(unfinished,"error")).getText().isBlank()
+                                && ((Profile)field(unfinished,"selected")).automaticSignOn(),
+                                "Actual profile Apply saves an unfinished recommended login and updates its cancel baseline.");
+                        button(unfinished,"Save & connect").doClick(0);
+                        check(((JLabel)field(unfinished,"error")).getText().contains("Enter a username")
+                                && !w.active().busy(),"Save & connect requires username before any credential/network attempt.");
+                        unfinished.dispose(); return null;
                     });
                     check(errors.isEmpty(),"No asynchronous UI/configuration failures: "+errors);
                 } finally {

@@ -39,14 +39,13 @@ public record Profile(UUID id, String name, String host, int port, String device
         if (loginSource!=null && (!username.isEmpty() || automaticSignOn || rememberPassword))
             throw new IllegalArgumentException("A linked login inherits username and sign-in preferences; its own login fields must be empty/false.");
         if (loginSource!=null && loginSource.equals(id)) throw new IllegalArgumentException("A profile cannot use its own login.");
-        if (automaticSignOn && username.isEmpty()) throw new IllegalArgumentException("Automatic sign-on needs a username.");
         if (!CODE_PAGES.contains(codePage)) throw new IllegalArgumentException("Unsupported SBCS code page: " + codePage);
         if (!THEMES.contains(theme) || !EFFECTS.contains(effect)) throw new IllegalArgumentException("Unknown palette or effect.");
         if (!Double.isFinite(zoom) || zoom < 0.5 || zoom > 3) throw new IllegalArgumentException("Zoom must be 50-300%.");
     }
 
     public static Profile create(String name) {
-        return new Profile(UUID.randomUUID(), name, "", 23, "", "", false, false,
+        return new Profile(UUID.randomUUID(), name, "10.1.2.3", 23, "", "", true, true,
                 "37", "Phosphor", "None", 1, Map.of(), "");
     }
 
@@ -115,6 +114,7 @@ public record Profile(UUID id, String name, String host, int port, String device
         if (!device.isEmpty()) values.put("DEVNAME", device);
         values.put("IBMSENDCONFREC","YES");
         if (automaticSignOn) {
+            if (username.isEmpty()) throw new IllegalArgumentException("Enter a username for automatic sign-in, or turn it off.");
             if (password.length == 0 || password.length > 128)
                 throw new IllegalArgumentException("Automatic sign-on needs a 1-128 character password.");
             for (char c : password) {

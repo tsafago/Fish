@@ -5,13 +5,18 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Local Fish 0.6.0 usability preview
+## Local Fish 0.6.1 usability preview
 
 Local-only, unsigned build; no new publication or protocol expansion.
-The modeless first-run guide uses the real editor/pane controls and is replayable
-through Help without connecting or duplicating profiles. Explicit recommended
-automatic sign-in/storage and one-hop shared-login references retain OS-only
-password storage and the existing plain RFC 4777 limits.
+The modeless first-run guide uses short hints beside real menus/editor/pane controls
+and is replayable through Help without connecting or duplicating profiles.
+New profiles default to 10.1.2.3 and checked automatic sign-in/password storage;
+existing choices are retained. OS-only storage, one-hop login references and the
+existing plain RFC 4777 limits remain. Session's optional startup connection
+setting defaults off, attempts restored panes once and leaves missing/incomplete
+credentials offline without prompt storms. Configuration apply never connects.
+Offline help formats actual Markdown tables, commands, emphasis and lists without
+loading embedded images or executing raw HTML.
 
 Production-path fixtures cover Ctrl+C/V with a private test clipboard, native
 dialog editing, conventional key migration/conflicts, exact zero host bytes for
@@ -379,7 +384,7 @@ and cursor-only idle repaints avoid unnecessarily redrawing whole panes.
 | Enhanced Write-to-Display structured fields (windows, GUI selection fields, scrollbars, grids) | Stop the connection explicitly. These are not advertised as capabilities. Real applications using them will not work. |
 | WEA extended attributes and WSF beyond the basic Query | Explicit failure rather than silent skipping. Additional valid IBM i datastreams may therefore be rejected. |
 | Full applicable 5250 order/FCW validation | Mature upstream behavior is inherited where not adapted; exhaustive conformance, transparent field FCWs and all signed/continued/mandatory-field combinations are not independently established. |
-| Cryptographically substituted automatic sign-on | DES/SHA substitutions and server-specific password-policy variants are not implemented. Only opt-in RFC 4777 plain sign-on is offered. |
+| Cryptographically substituted automatic sign-on | DES/SHA substitutions and server-specific password-policy variants are not implemented. Only RFC 4777 plain sign-on is offered; new profiles recommend it by default, existing preferences are unchanged. |
 | Other startup/confirmation variants and optional IBM environment extensions | RFC 4777 display startup confirmation is now requested and parsed. Unknown results/formats fail explicitly; other IBM environment extensions are not implemented or guessed. |
 | DBCS and other terminal models | Unsupported; only IBM-3477-FC and the listed SBCS pages are offered. |
 | TLS / Kerberos | Not implemented; TLS is out of scope and Kerberos was optional. |

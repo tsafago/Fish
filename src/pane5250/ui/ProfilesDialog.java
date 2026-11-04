@@ -16,11 +16,11 @@ public final class ProfilesDialog extends JDialog {
     private final JTextField device = new JTextField(16), username = new JTextField(16);
     private final JPasswordField password = new JPasswordField(24);
     private final JCheckBox automatic = new JCheckBox("Automatic sign-in (recommended)");
-    private final JCheckBox remember = new JCheckBox("Save password in Windows Credential Manager (recommended)");
+    private final JCheckBox remember = new JCheckBox("Save password (recommended)");
     private final JComboBox<Object> loginFrom=new JComboBox<>();
     private JLabel loginLabel;
-    private final JButton recommended;
-    private final JTextArea loginHint=new JTextArea(7,36);
+    private final JTextArea loginHint=new JTextArea(3,36);
+    private final JTabbedPane tabs = new JTabbedPane();
     private final JComboBox<String> codePage = new JComboBox<>(Profile.CODE_PAGES.toArray(String[]::new));
     private final JComboBox<String> theme = new JComboBox<>(Profile.THEMES.toArray(String[]::new));
     private final JComboBox<String> effect = new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
@@ -46,7 +46,6 @@ public final class ProfilesDialog extends JDialog {
         duplicate = Ui.button("Duplicate",KeyEvent.VK_D,() -> addProfile(true));
         listActions.add(add); listActions.add(duplicate);
         sidebar.add(listActions,BorderLayout.SOUTH);
-        JTabbedPane tabs = new JTabbedPane();
         JPanel connection = new JPanel(new GridBagLayout());
         connection.setBorder(Ui.padding(12));
         int row = 0;
@@ -57,17 +56,13 @@ public final class ProfilesDialog extends JDialog {
         loginLabel=field(connection,row++,"Use login from...",loginFrom,KeyEvent.VK_F);
         field(connection,row++,"Username",username,KeyEvent.VK_U);
         field(connection,row++,"Code page",codePage,KeyEvent.VK_C);
-        recommended=Ui.button("Use recommended sign-in",KeyEvent.VK_I,() -> {
-            automatic.setSelected(true); remember.setSelected(true); username.requestFocusInWindow();
-        });
-        wide(connection,row++,recommended);
         wide(connection,row++,automatic);
         wide(connection,row++,remember);
-        field(connection,row++,"Remembered password",password,KeyEvent.VK_W);
+        field(connection,row++,"Password",password,KeyEvent.VK_W);
         loginHint.setEditable(false); loginHint.setFocusable(false); loginHint.setLineWrap(true); loginHint.setWrapStyleWord(true);
         loginHint.setOpaque(false); loginHint.setBorder(BorderFactory.createEmptyBorder());
         Ui.role(loginHint,"muted");
-        password.setToolTipText("Blank keeps an existing OS password. Changing the independent host/port/username requires entering it again.");
+        password.setToolTipText("Leave blank to keep a saved password. Automatic sign-in supports 1-128 printable ASCII characters.");
         wide(connection,row,loginHint);
         JScrollPane connectionScroll=new JScrollPane(connection);
         connectionScroll.setBorder(BorderFactory.createEmptyBorder());
@@ -143,10 +138,26 @@ public final class ProfilesDialog extends JDialog {
         Ui.decorate(this,this::dismiss);
         addWindowListener(new WindowAdapter() {
             @Override public void windowOpened(WindowEvent e) { name.requestFocusInWindow(); }
+            @Override public void windowClosed(WindowEvent e) { workspace.profileEditorClosed(ProfilesDialog.this); }
         });
+        tabs.addChangeListener(e -> workspace.tutorialChanged());
         setSize(850,650);
         setMinimumSize(new Dimension(760,550));
         setLocationRelativeTo(workspace);
+        workspace.profileEditorOpened(this);
+    }
+    Component tutorialTarget(int step) {
+        if (step==0) return cancel;
+        if (step>=3) return done;
+        if (tabs.getSelectedIndex()!=0) return tabs;
+        JComponent target=step==1 ? host : automatic;
+        target.scrollRectToVisible(new Rectangle(0,0,target.getWidth(),target.getHeight()));
+        return target;
+    }
+    String tutorialSignInText() {
+        if (loginSource()!=null) return "This profile uses the selected login. Its username and saved password come from there; no need to enter them again.";
+        return (automatic.isSelected() && remember.isSelected() ? "Leave" : "Turn")
+                +" both recommended options on to skip typing your login next time. Enter your password below. Windows saves it; plain TCP is unencrypted.";
     }
 
     private void load(Profile profile) {
@@ -172,11 +183,10 @@ public final class ProfilesDialog extends JDialog {
     private UUID loginSource() { return loginFrom.getSelectedItem() instanceof Profile source ? source.id() : null; }
     private void updateLoginControls() {
         boolean independent=loginSource()==null;
-        for (JComponent input:java.util.List.of(username,password,automatic,remember,recommended)) input.setEnabled(!saving && independent);
-        recommended.setVisible(independent);
+        for (JComponent input:java.util.List.of(username,password,automatic,remember)) input.setEnabled(!saving && independent);
         loginHint.setText(independent
-                ? "Recommended on your trusted IBM i network: automatic sign-in + Save password. Passwords stay in Windows Credential Manager. Blank keeps an existing OS password. Plain TCP is unencrypted; automatic sign-in needs host support for RFC 4777 plain sign-on (1-128 printable ASCII characters). Manual sign-in remains available."
-                : "This profile uses the selected login for its own host when you connect. Username, sign-in preferences and the OS password come from that source; the password is not copied. A missing OS password prompts on Connect. Select Independent login to stop sharing. Plain TCP remains unencrypted.");
+                ? "Skip typing your login next time. Saved passwords stay in Windows Credential Manager. Plain TCP is unencrypted; automatic sign-in needs host support."
+                : "Uses the selected profile's username and saved password for this host. Choose Independent login to stop sharing. Plain TCP is unencrypted.");
         loginHint.setCaretPosition(0);
     }
     private java.util.List<Object> fields() {
@@ -211,8 +221,13 @@ public final class ProfilesDialog extends JDialog {
                     Objects.requireNonNull((String)codePage.getSelectedItem()),Objects.requireNonNull((String)theme.getSelectedItem()),
                     Objects.requireNonNull((String)effect.getSelectedItem()),selected.zoom(),Keymap.parse(keymap.getText()),selected.savedLayout(),source);
             workspace.validateProfile(updated);
+            Profile login=workspace.loginProfile(updated);
+            if (secret.length>0 && login.username().isEmpty())
+                throw new IllegalArgumentException("Enter a username before saving a password.");
+            if (connect && login.automaticSignOn() && login.username().isEmpty())
+                throw new IllegalArgumentException("Enter a username for automatic sign-in, or turn it off.");
             if (secret.length > 0 && !updated.rememberPassword())
-                throw new IllegalArgumentException("Enable Remember password to save this password, or clear the password field.");
+                throw new IllegalArgumentException("Enable Save password, or clear the password field.");
         } catch (IllegalArgumentException e) {
             Arrays.fill(secret,'\0');
             error.setText(e instanceof NumberFormatException ? "Port must be a number." : e.getMessage());
@@ -224,7 +239,7 @@ public final class ProfilesDialog extends JDialog {
         new SwingWorker<Void,Void>() {
             @Override protected Void doInBackground() throws java.io.IOException {
                 if (updated.rememberPassword() && secret.length > 0) workspace.credentials().write(updated,secret);
-                if (previous.rememberPassword() && (!updated.rememberPassword()
+                if (previous.rememberPassword() && !previous.username().isEmpty() && (!updated.rememberPassword()
                         || !previous.credentialTarget().equals(updated.credentialTarget()))) workspace.credentials().delete(previous);
                 return null;
             }
@@ -253,7 +268,7 @@ public final class ProfilesDialog extends JDialog {
     private void setSaving(boolean value) {
         saving = value;
         for (JButton button : java.util.List.of(save,done,use,cancel,add,duplicate)) button.setEnabled(!value);
-        for (JComponent input:java.util.List.of(name,host,port,device,username,password,keymap,codePage,theme,effect,automatic,remember,loginFrom,recommended))
+        for (JComponent input:java.util.List.of(name,host,port,device,username,password,keymap,codePage,theme,effect,automatic,remember,loginFrom))
             input.setEnabled(!value);
         updateLoginControls();
         if (!value) updateDirty();

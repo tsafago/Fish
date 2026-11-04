@@ -30,6 +30,7 @@ public final class ConfigSchema {
         fields.put("height",field("integer",850,"260..10000 logical pixels."));
         fields.put("appTheme",enumeration("Charcoal",Arrays.stream(AppTheme.values()).map(Enum::name).toList()));
         fields.put("highlightActive",field("boolean",true,"true or false; independent active-pane tint."));
+        fields.put("connectOnStartup",field("boolean",false,"Connect each restored pane once on normal startup. Incomplete logins or missing saved passwords stay offline with a pane notice; no password prompts. Adding a pane never auto-connects."));
         fields.put("appearance.outline",field("boolean",true,"Active-pane outline; shared internal edges have one owner."));
         fields.put("appearance.windowOutline",field("boolean",true,"Whole-window outline; known maximize/restore defect remains."));
         fields.put("appearance.selected",field("text","","Empty for builtin appTheme, otherwise exact custom theme name."));
@@ -43,12 +44,12 @@ public final class ConfigSchema {
         boolean[] defaults={info.header(),info.footer(),info.profile(),info.connection(),info.host(),info.device(),info.status(),info.dimensions(),info.cursor(),info.insert()};
         for (int i=0;i<flags.length;i++) fields.put("info."+flags[i],field("boolean",defaults[i],"true or false; hidden/empty information rows reserve no band."));
         profile.put("name",field("text","Local IBM i","1..80 characters; display name, not identity."));
-        profile.put("host",field("hostname-or-ip","","0..253 characters, no whitespace/control characters. Empty is offline/unconfigured."));
+        profile.put("host",field("hostname-or-ip","10.1.2.3","0..253 characters, no whitespace/control characters. Empty is offline/unconfigured. New-profile default only; existing hosts are unchanged."));
         profile.put("port",field("integer",23,"1..65535; plain TN5250 TCP only."));
         profile.put("device",field("ibmi-name","","Empty or [A-Z#$@][A-Z0-9_#$@]{0,9}; canonicalized uppercase."));
         profile.put("username",field("ibmi-name","","Same naming rule as device. Blank when loginSource is set."));
-        profile.put("auto",field("boolean",false,"Explicit opt-in RFC 4777 plain automatic sign-on. Independent login requires username. False when linked."));
-        profile.put("remember",field("boolean",false,"Allow OS password lookup/storage on Connect. False when linked. Configuration never reads, copies or deletes OS credentials."));
+        profile.put("auto",field("boolean",true,"Recommended new-profile default: RFC 4777 plain automatic sign-on. Username required before connecting, not to save an unfinished profile. False when linked. Existing choices unchanged."));
+        profile.put("remember",field("boolean",true,"Recommended new-profile default: allow OS password lookup/storage on Connect. False when linked. Configuration never reads, copies or deletes OS credentials. Existing choices unchanged."));
         profile.put("loginSource",field("uuid-or-empty","","Explicit source for THIS profile's host: independent source, nonempty username, remember=true. No self references, chains or cycles. Inherits login preferences."));
         profile.put("codePage",enumeration("37",Profile.CODE_PAGES));
         profile.put("theme",enumeration("Phosphor",Profile.THEMES));
@@ -76,7 +77,7 @@ public final class ConfigSchema {
         root.put("aliasRules","Available while the primary action retains its default chord, unless reserved by a host/application/retired binding. Never overrides user bindings.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",
                 "ratio","finite 0.05..0.95","shape","1 full; 2 horizontal; 3 large left with vertically stacked right; 4-8 two rows, ceil(count/2) above. Each row is a right-nested horizontal chain."));
-        root.put("semantics","Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Changes take effect next launch offline; no connections/transactions/credential operations.");
+        root.put("semantics","Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Apply performs no connections/transactions/credential operations. Normal startup stays offline unless connectOnStartup is explicitly enabled.");
         return root;
     }
     public static String document() { return json(catalog(),0,true)+"\n"; }

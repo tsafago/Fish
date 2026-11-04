@@ -122,12 +122,35 @@ final class WindowChrome extends JPanel {
     }
     void openMenus() { if (menus.isVisible()) menus.getMenu(0).doClick(); else openCompactMenu(); }
     void showSystemMenu() { systemMenu().show(this,0,getHeight()); }
-    private void openCompactMenu() {
+    private JPopupMenu openCompactMenu() {
         JPopupMenu popup=new JPopupMenu();
         for (int i=0;i<menus.getMenuCount();i++) {
             popup.add(copyMenu(menus.getMenu(i)));
         }
         popup.show(menuButton,0,menuButton.getHeight());
+        return popup;
+    }
+    void showTutorialMenu(String title) {
+        if (!window.isShowing()) return;
+        if (menus.isVisible()) {
+            for (int i=0;i<menus.getMenuCount();i++) if (menus.getMenu(i).getText().equals(title)) {
+                menus.getMenu(i).doClick(0); return;
+            }
+        } else {
+            JPopupMenu popup=openCompactMenu();
+            for (Component item:popup.getComponents()) if (item instanceof JMenu menu && menu.getText().equals(title)) {
+                MenuSelectionManager.defaultManager().setSelectedPath(new MenuElement[]{popup,menu,menu.getPopupMenu()}); return;
+            }
+        }
+    }
+    Component tutorialMenuTarget(String title,String action) {
+        for (MenuElement element:MenuSelectionManager.defaultManager().getSelectedPath())
+            if (element instanceof JPopupMenu popup && popup.isShowing())
+                for (Component item:popup.getComponents())
+                    if (item instanceof JMenuItem command && command.getText().equals(action)) return command;
+        if (!menus.isVisible()) return menuButton;
+        for (int i=0;i<menus.getMenuCount();i++) if (menus.getMenu(i).getText().equals(title)) return menus.getMenu(i);
+        throw new IllegalArgumentException("Tutorial menu is missing: "+title);
     }
     static JMenu copyMenu(JMenu original) {
         return copyMenu(original,null);
@@ -147,11 +170,13 @@ final class WindowChrome extends JPanel {
     }
     static JMenuItem copyItem(JMenuItem original,Runnable after) {
         if (after!=null) {
-            JMenuItem copy=new JMenuItem(original.getText());
+            JMenuItem copy=original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getText(),original.isSelected())
+                    : new JMenuItem(original.getText());
             copy.setEnabled(original.isEnabled()); copy.setAccelerator(original.getAccelerator());
             copy.addActionListener(e -> { original.doClick(0); after.run(); }); return copy;
         }
-        if (original.getAction()!=null) return new JMenuItem(original.getAction());
+        if (original.getAction()!=null) return original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getAction())
+                : new JMenuItem(original.getAction());
         JMenuItem copy=original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getText(),original.isSelected())
                 : new JMenuItem(original.getText());
         copy.addActionListener(e -> original.doClick(0)); return copy;

@@ -32,7 +32,7 @@ public final class Shortcuts {
             {"Fit host screen","ctrl 0"},{"Zoom in","ctrl EQUALS"},{"Zoom out","ctrl MINUS"},{"Appearance...","ctrl COMMA"},
             {"Fonts...",""},{"Pane information...",""},{"Window and focus...",""},{"Theme designer...",""},{"Flux animated text",""},
             {"Full manual / Getting Started",""},{"Getting started tutorial",""},{"Configuration for external tools",""},
-            {"Keyboard reference",""},{"Compatibility and connection safety",""},
+            {"Keyboard reference",""},{"Compatibility and connection safety",""},{"Connect panes on startup",""},
             {"Open menus","ctrl alt M"},{"Window menu","ctrl alt SPACE"},{"Maximize / restore window",""},{"Minimize window",""},
             {"Send host key...","ctrl alt F"}
         };

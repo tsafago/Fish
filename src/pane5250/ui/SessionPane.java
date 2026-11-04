@@ -265,12 +265,26 @@ public final class SessionPane extends JPanel {
     }
 
     public void connect() {
+        connect(true);
+    }
+    void connectOnStartup() {
+        if (!busy()) connect(false);
+    }
+    private void connect(boolean interactive) {
         if (busy()) { disconnect(); return; }
-        if (profile.host().isEmpty()) { workspace.profiles(); return; }
-        workspace.rememberProfile(profile);
-        long token = ++generation;
         Profile connectionProfile=workspace.connectionProfile(profile);
-        if (!connectionProfile.automaticSignOn()) { begin(new char[0], token,connectionProfile); return; }
+        if (profile.host().isEmpty() || connectionProfile.automaticSignOn() && connectionProfile.username().isEmpty()) {
+            if (interactive) workspace.profiles();
+            else problem("Startup: finish this profile in Session > Profiles, then Connect.");
+            return;
+        }
+        if (!interactive && connectionProfile.automaticSignOn() && !connectionProfile.rememberPassword()) {
+            problem("Startup: Connect to enter a password, or enable Save password in Profiles.");
+            return;
+        }
+        if (interactive) workspace.rememberProfile(profile);
+        long token = ++generation;
+        if (!connectionProfile.automaticSignOn()) { begin(new char[0], token,connectionProfile,interactive); return; }
         connecting = true;
         updateHeader();
         Profile target = workspace.loginProfile(profile);
@@ -286,6 +300,11 @@ public final class SessionPane extends JPanel {
                     char[] password;
                     if (saved.isPresent()) password = saved.get();
                     else {
+                        if (!interactive) {
+                            problem("Startup: no saved password. Connect to sign in.");
+                            disconnectNetwork();
+                            return;
+                        }
                         JPasswordField input = new JPasswordField(24);
                         JPanel panel = new JPanel(new BorderLayout(0,8));
                         panel.add(new JLabel("Plain TCP: the password and session are not encrypted."), BorderLayout.NORTH);
@@ -295,8 +314,8 @@ public final class SessionPane extends JPanel {
                         input.setText("");
                     }
                     if (token!=generation || disposed) { Arrays.fill(password,'\0'); return; }
-                    if (target.rememberPassword() && saved.isEmpty()) rememberAndBegin(password,token,target,connectionProfile);
-                    else begin(password,token,connectionProfile);
+                    if (target.rememberPassword() && saved.isEmpty()) rememberAndBegin(password,token,target,connectionProfile,interactive);
+                    else begin(password,token,connectionProfile,interactive);
                 } catch (Exception e) {
                     if (token==generation && !disposed) { problem("Credential lookup failed: " + message(e)); disconnectNetwork(); }
                     else System.err.println("Canceled credential lookup failed: "+message(e));
@@ -305,14 +324,14 @@ public final class SessionPane extends JPanel {
         }.execute();
     }
 
-    private void rememberAndBegin(char[] password,long token,Profile target,Profile connectionProfile) {
+    private void rememberAndBegin(char[] password,long token,Profile target,Profile connectionProfile,boolean interactive) {
         credentialOperations++;
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() throws IOException { workspace.credentials().write(target,password); return null; }
             @Override protected void done() {
                 try {
                     get();
-                    if (token == generation && !disposed) begin(password,token,connectionProfile);
+                    if (token == generation && !disposed) begin(password,token,connectionProfile,interactive);
                     else Arrays.fill(password, '\0');
                 } catch (Exception e) {
                     Arrays.fill(password, '\0');
@@ -323,7 +342,7 @@ public final class SessionPane extends JPanel {
         }.execute();
     }
 
-    private void begin(char[] password,long token,Profile connectionProfile) {
+    private void begin(char[] password,long token,Profile connectionProfile,boolean interactive) {
         try {
             Map<String,String> environment = connectionProfile.environment(password);
             connecting = true;
@@ -355,7 +374,7 @@ public final class SessionPane extends JPanel {
             environment.clear();
             updateHeader();
             updateOia();
-            focusTerminal();
+            if (interactive) focusTerminal();
         } catch (RuntimeException e) {
             disconnectNetwork();
             problem("Connection failed: " + e.getMessage());
@@ -593,6 +612,7 @@ public final class SessionPane extends JPanel {
     }
 
     Component tutorialConnectionTarget() { return presets.isVisible() && !busy() ? presets : this; }
+    Component tutorialCloseTarget() { return close.isVisible() ? close : this; }
     boolean connecting() { return connecting || credentialOperations>0; }
     Component tutorialDragTarget() { return header.isVisible() ? header : dragZone.isVisible() ? dragZone : this; }
     private void installDrag() {

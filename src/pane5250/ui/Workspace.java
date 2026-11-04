@@ -46,6 +46,7 @@ public final class Workspace extends JFrame {
     private JMenuBar menuBar;
     private StateStore.Tutorial tutorialStatus;
     private TutorialDialog tutorial;
+    private boolean connectOnStartup, startupHandled;
     private Runnable afterClose = () -> {};
 
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
@@ -55,6 +56,7 @@ public final class Workspace extends JFrame {
         getAccessibleContext().setAccessibleName("Fish");
         appearance=state.appearance();
         tutorialStatus=state.tutorial();
+        connectOnStartup=state.connectOnStartup();
         Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         this.store = store;
         this.demonstration = demonstration;
@@ -116,22 +118,33 @@ public final class Workspace extends JFrame {
     public void startTutorialIfNeeded() {
         if (!demonstration && tutorialStatus==StateStore.Tutorial.NEW) openTutorial(true);
     }
+    public void startup() {
+        if (startupHandled || demonstration || closing) return;
+        startupHandled=true;
+        if (connectOnStartup) sessionPanes().forEach(SessionPane::connectOnStartup);
+        startTutorialIfNeeded();
+    }
     public void showTutorial() { openTutorial(false); }
     private void openTutorial(boolean firstRun) {
         if (tutorial!=null && !tutorial.ended()) {
-            if (isShowing()) { tutorial.setVisible(true); tutorial.toFront(); }
+            if (isShowing()) { tutorial.setVisible(true); tutorial.toFront(); tutorial.focusGuide(); }
             return;
         }
         tutorial=new TutorialDialog(this,firstRun);
-        if (isShowing()) tutorial.setVisible(true);
+        if (isShowing()) { tutorial.setVisible(true); tutorial.focusGuide(); }
     }
     void tutorialChanged() { if (tutorial!=null) tutorial.refreshTarget(); }
+    void profileEditorOpened(ProfilesDialog dialog) { if (tutorial!=null && !tutorial.ended()) tutorial.profileOpened(dialog); }
+    void profileEditorClosed(ProfilesDialog dialog) { if (tutorial!=null && !tutorial.ended()) tutorial.profileClosed(dialog); }
+    Component tutorialMenuTarget(String menu,String action) { return chrome.tutorialMenuTarget(menu,action); }
+    void showTutorialMenu(String menu) { chrome.showTutorialMenu(menu); }
     Component tutorialTarget(int step) {
-        if (step==0) return menuBar.getMenu(0);
-        if (step==1 || step==2) return active==null ? menuBar.getMenu(0) : active.tutorialConnectionTarget();
-        if (step==3) return addPane;
-        if (step==4) return active==null ? content : active.tutorialDragTarget();
-        return menuBar.getMenu(menuBar.getMenuCount()-1);
+        if (step<=3) return tutorialMenuTarget("Session","Profiles...");
+        if (step==4) return active==null ? content : active.tutorialConnectionTarget();
+        if (step==5) return tutorialMenuTarget("Panes","Add pane");
+        if (tree instanceof JSplitPane split && split.getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI ui)
+            return ui.getDivider();
+        return active==null ? content : active.tutorialDragTarget();
     }
     public void configurationGuide() {
         try { new ManualDialog(this,"/AI-CONFIG.md","Configuration for external tools").setVisible(true); }
@@ -312,7 +325,7 @@ public final class Workspace extends JFrame {
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
     private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
-            shortcuts.overrides(),highlightActive,appearance,tutorialStatus); }
+            shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup); }
     public void saveAsync() {
         if (closing) return;
         StateStore.State snapshot = state();
@@ -537,6 +550,14 @@ public final class Workspace extends JFrame {
         JMenu session = menu(bar,"Session",KeyEvent.VK_S);
         action(session,"Connect / disconnect","ctrl alt R",() -> active.connect());
         action(session,"Reconnect","ctrl alt shift R",() -> active.reconnect());
+        AppCommand startup=new AppCommand("Connect panes on startup","Reconnect restored panes using saved logins; missing passwords wait for Connect",null,
+                () -> {
+                    connectOnStartup=!connectOnStartup;
+                    command("Connect panes on startup").putValue(Action.SELECTED_KEY,connectOnStartup);
+                    changed();
+                },() -> !closing,"automatic reconnect launch");
+        startup.putValue(Action.SELECTED_KEY,connectOnStartup);
+        commands.add(startup); session.add(new JCheckBoxMenuItem(startup));
         session.addSeparator();
         action(session,"Profiles...","ctrl alt P",this::profiles);
         action(session,"Switch profile...","ctrl alt O",this::quickSwitch);

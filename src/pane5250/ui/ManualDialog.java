@@ -63,8 +63,15 @@ public final class ManualDialog extends JDialog {
         page.getAccessibleContext().setAccessibleName(title);
         page.setText(html()); page.setCaretPosition(0);
         page.addHyperlinkListener(e -> {
-            if (e.getEventType()==HyperlinkEvent.EventType.ACTIVATED && e.getDescription().startsWith("#"))
-                page.scrollToReference(e.getDescription().substring(1));
+            if (e.getEventType()!=HyperlinkEvent.EventType.ACTIVATED) return;
+            String target=e.getDescription();
+            if (target.startsWith("#")) page.scrollToReference(target.substring(1));
+            else if (target.startsWith("https://") || target.startsWith("http://")) {
+                try { Desktop.getDesktop().browse(java.net.URI.create(target)); }
+                catch (IOException | IllegalArgumentException | UnsupportedOperationException ex) {
+                    Ui.error(this,"Could not open this link: "+target+"\n"+ex.getMessage());
+                }
+            }
         });
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.setFixedCellHeight(28); list.getAccessibleContext().setAccessibleName("Manual topic index");
@@ -98,17 +105,19 @@ public final class ManualDialog extends JDialog {
             }
         });
     }
-    private static String escape(String text) {
-        return text.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;");
-    }
     private String html() {
         StringBuilder html=new StringBuilder("<html><head><style>body {font-family:Segoe UI; font-size:12pt; margin:18px;"
                 +"background:#"+hex(Ui.FIELD)+";color:#"+hex(Ui.TEXT)+";} h1 {font-size:21pt;} h2 {font-size:16pt;margin-top:24px;}"
-                +"p {margin-top:9px;margin-bottom:12px;} a {color:#"+hex(Ui.FOCUS)+";}</style></head><body>"
-                +"<h1>"+escape(documentTitle)+"</h1><p>"+pane5250.Main.VERSION+" experimental preview. Offline reference.</p>");
+                +"p {margin-top:9px;margin-bottom:12px;} li {margin-bottom:6px;} h3 {font-size:13pt;margin-top:18px;}"
+                +"code,pre {font-family:Consolas;font-size:10pt;} pre {padding:10px;background:#"+hex(Ui.PANEL)+";}"
+                +"table {margin-top:10px;margin-bottom:14px;} td,th {border:1px solid #"+hex(Ui.LINE)+";text-align:left;}"
+                +"th {background:#"+hex(Ui.PANEL)+";} a {color:#"+hex(Ui.FOCUS)+";}</style></head><body>"
+                +"<h1>"+Markdown.escape(documentTitle)+"</h1>");
         for (Topic topic:topics) {
-            html.append("<h2><a name=\"").append(topic.anchor()).append("\"></a>").append(escape(topic.title())).append("</h2>");
-            for (String paragraph:topic.text().split("\\R\\s*\\R")) html.append("<p>").append(escape(paragraph).replace("\n","<br>")).append("</p>");
+            html.append("<h2><a name=\"").append(topic.anchor()).append("\"></a><a name=\"")
+                    .append(topic.title().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 -]","").replace(' ','-'))
+                    .append("\"></a>").append(Markdown.escape(topic.title())).append("</h2>");
+            html.append(Markdown.render(topic.text()));
         }
         return html.append("</body></html>").toString();
     }

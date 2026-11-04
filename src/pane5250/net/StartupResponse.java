@@ -24,6 +24,22 @@ public record StartupResponse(String code,String system,String device) {
             Map.entry("0002","Unknown user"),Map.entry("0003","User disabled"),Map.entry("0004","Invalid password"),
             Map.entry("0005","Password expired"),Map.entry("0006","Pre-V2R2 password"),
             Map.entry("0008","Next invalid sign-on will revoke user"));
+    private static final Map<String,String> KERBEROS_ERRORS=Map.ofEntries(
+            Map.entry("0001","Mapped IBM i user profile is disabled"),
+            Map.entry("0002","Kerberos principal maps to a system user profile; that mapping is not allowed"),
+            Map.entry("0003","IBM i EIM configuration error"),
+            Map.entry("0004","EIM has no IBM i user mapping for this Kerberos principal"),
+            Map.entry("0005","EIM maps this Kerberos principal to multiple IBM i user profiles"),
+            Map.entry("0006","EIM maps this principal to an IBM i user profile that does not exist"),
+            Map.entry("1000","IBM i does not support a requested Kerberos mechanism; check Network Authentication Service"),
+            Map.entry("2000","Kerberos input name is invalid or incorrectly formatted"),
+            Map.entry("6000","Kerberos token signature is incorrect; check IBM i keytab and registered service identity"),
+            Map.entry("7000","No usable credentials for the server security context"),
+            Map.entry("9000","Kerberos token consistency checks failed"),
+            Map.entry("A000","Kerberos credential structure consistency checks failed"),
+            Map.entry("B000","Kerberos credentials have expired"),
+            Map.entry("D000","IBM i Kerberos/GSS runtime failure; check NAS/EIM diagnostics"),
+            Map.entry("I906","IBM i refused automatic sign-on. Check QRMTSIGN (*VERIFY), Network Authentication Service and EIM. No password fallback was used"));
     public static StartupResponse parse(byte[] bytes) throws IOException {
         if (bytes.length<38 || (bytes[4]&255)!=0x90 || bytes[5]!=0 || bytes[6]!=5
                 || bytes[7]!=0x60 || bytes[8]!=6 || bytes[9]!=0
@@ -35,6 +51,9 @@ public record StartupResponse(String code,String system,String device) {
         return new String(bytes,offset,length,Charset.forName("Cp037")).replace("\0","").strip();
     }
     public String diagnostic(String requested) throws IOException {
+        return diagnostic(requested,false);
+    }
+    public String diagnostic(String requested,boolean kerberos) throws IOException {
         String context="Host startup "+code+(system.isEmpty() ? "" : " on "+system)
                 +(device.isEmpty() ? "" : ", device "+device)+(requested.isEmpty() ? "" : " (requested "+requested+")");
         String detail=switch (code) {
@@ -43,7 +62,10 @@ public record StartupResponse(String code,String system,String device) {
             case "I906" -> "Automatic sign-on not allowed; use the coming host sign-on screen";
             default -> null;
         };
-        if (detail==null) throw new IOException(context+": "+ERRORS.getOrDefault(code,"Unrecognized startup result; session stopped"));
+        if (kerberos && KERBEROS_ERRORS.containsKey(code)) throw new IOException(context+": "+KERBEROS_ERRORS.get(code));
+        if (detail==null) throw new IOException(context+": "+(kerberos && code.startsWith("000")
+                ? "Unrecognized Kerberos startup result; session stopped"
+                : ERRORS.getOrDefault(code,"Unrecognized startup result; session stopped")));
         if (!requested.isEmpty() && !device.isEmpty() && !requested.equals(device))
             throw new IOException(context+": host allocated a different device; requested name was not changed by the client.");
         return context+": "+detail;

@@ -1,14 +1,13 @@
 package pane5250.ui;
 
 import java.awt.*;
-import java.nio.file.*;
+import pane5250.NativeLibrary;
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
 import java.util.function.Consumer;
 
 /** Small Windows-only bridge; the OS, not the EDT, owns interactive move/resize. */
 final class NativeWindow {
-    private static boolean loaded;
     private final JFrame window;
     private final long handle;
     private final Consumer<Boolean> hover;
@@ -22,18 +21,7 @@ final class NativeWindow {
         SwingUtilities.invokeLater(() -> { if (window.isDisplayable()) hover.accept(value); });
     }
     private static void load() {
-        if (!loaded) {
-            try {
-                Path location=Path.of(NativeWindow.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-                Path dll=Files.isDirectory(location) ? Path.of("build","fish-window.dll").toAbsolutePath()
-                        : location.getParent().resolve("fish-window.dll");
-                System.load(Path.of(System.getProperty("java.home"),"bin","jawt.dll").toString());
-                System.load(dll.toString());
-                loaded=true;
-            } catch (java.net.URISyntaxException | UnsatisfiedLinkError e) {
-                throw new IllegalStateException("Windows integration could not load. Keep the complete Fish folder together: "+e.getMessage(),e);
-            }
-        }
+        NativeLibrary.load();
     }
     static void flatten(Window window) {
         load();

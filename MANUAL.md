@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.6.1 - unsigned experimental local usability preview.
+Fish 0.7.0 - unsigned experimental local Kerberos preview.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -14,7 +14,7 @@ You need the IBM i's hostname or IP address, a valid IBM i username and password
 1. Run Fish.exe. Keep the complete Fish folder together if using the portable download.
 2. Open Session > Profiles. Select Local IBM i, or choose New.
 3. Give the profile a useful name. Check Host (new profiles start at 10.1.2.3). Leave Port at 23 unless your administrator gave you another port.
-4. Enter your username and password. Leave the two recommended options checked to sign in automatically next time and save the password in Windows Credential Manager. Blank keeps an existing saved password. Turn automatic sign-in off for manual login. Device can stay empty; the default code page is 37.
+4. Fresh installs already select Local IBM i at 10.1.2.3 with Windows (Kerberos) sign-in. No password is needed; see Windows sign-in below for administrator prerequisites. For a password profile choose Password / manual, enter your username and password, and leave the recommended options checked to sign in automatically and save the password in Windows Credential Manager. Blank keeps a saved password. Turn automatic sign-in off for manual login. Device can stay empty; code page defaults to 37.
 5. Choose Save & connect. A TCP connection is not the same as a successful IBM i sign-on.
 6. If using manual sign-in, type in the IBM i's own sign-on fields and press Enter. The host controls their actual order. Password characters normally remain invisible. Automatic sign-in requires host support for RFC 4777 plain sign-on; a saved password or TCP connection is not proof of sign-on.
 7. Work with the displayed IBM i application. Enter submits to the host. F1-F12 are host function keys; Shift+F1-F12 sends F13-F24.
@@ -38,9 +38,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The local 0.6.1 build includes Fish-0.6.1-setup.exe and matching SHA256SUMS.txt; it has not been published. The last published baseline is v0.5.3 in the private HornadyIBM/Fish repository. Keep versions/assets/checksums together. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+The local 0.7.0 build includes Fish-0.7.0-setup.exe and matching SHA256SUMS.txt; it has not been published. The last published baseline is v0.5.3 in the private HornadyIBM/Fish repository. Keep versions/assets/checksums together. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
 
-Alternatively, extract Fish-0.6.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.7.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -54,15 +54,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Outputs are dist\Fish\Fish.exe, dist\Fish-0.6.1-setup.exe, dist\Fish-0.6.1-windows-x64.zip and dist\Fish-source.zip. Prior dist\Fish directories are preserved as timestamped backups. Close a running copy before rebuilding its directory.
+Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.0-setup.exe, dist\Fish-0.7.0-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.0\Fish\Fish.exe. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.6.1\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.6.1\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.0\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.0\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -71,7 +71,7 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces migrate to version 9 on load, retaining profiles, themes, fonts, key overrides, outline/tint and information choices. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults from before version 8 change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries now retain their provenance. Unresolved conflicts fail clearly. Pre-version-8 tutorials start skipped; version-8 tutorial/login choices remain unchanged. Startup connection starts off on upgrade; new host/sign-in defaults never replace existing profile choices. Older builds cannot read version 9: use a backup/separate directory for downgrade. Malformed state is preserved, never replaced with defaults.
+Older Fish/Pane5250 workspaces migrate to version 10 on load, retaining profiles, themes, fonts, key overrides, outline/tint and information choices. Existing profiles remain Password / manual with their exact auto/remember choices; the Kerberos default is seeded only when no workspace exists. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults from before version 8 change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries retain their provenance. Unresolved conflicts fail clearly. Pre-version-8 tutorials start skipped; version-8/9 tutorial/login choices remain unchanged. Startup connection starts off on pre-9 upgrade; version-9 explicit startup choices remain unchanged. Older builds cannot read version 10: use a backup/separate directory for downgrade. Malformed state is preserved, never replaced with defaults.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -150,7 +150,7 @@ Manual sign-on uses the host's own screen. Fish does not guess sign-on field pos
 
 Enable Remember password and save a password in the profile editor to use Windows Credential Manager. Session > Sign-on helpers > Insert remembered password is allowed only in an unlocked non-display input field with enough remaining capacity. It cannot spill into a visible field.
 
-A blank password field in the editor preserves an existing remembered secret; it is not an indication that no password exists. Disabling Remember and saving removes the remembered entry. Duplicating a profile does not copy its remembered password.
+A blank password field in the editor preserves an existing remembered secret; it is not an indication that no password exists. Disabling Remember while staying in password mode removes the remembered entry. Changing to Kerberos does not delete the previous OS password; changing back requires explicitly enabling remembering again. Duplicating a profile does not copy its remembered password.
 
 Credential targets retain the legacy Pane5250 prefix so existing secrets remain reachable after rebranding. Passwords are not stored in profile XML or process arguments. Clipboard export omits non-display fields.
 
@@ -158,9 +158,54 @@ Credential targets retain the legacy Pane5250 prefix so existing secrets remain 
 
 Automatic sign-on is optional and requires a profile username. The current implemented mechanism uses RFC 4777 NEW-ENVIRON USER, an empty IBMRSEED and a negotiated plain-text IBMSUBSPW password.
 
-Cryptographic password substitution is not implemented. TLS and Kerberos are not implemented. Plain TCP transmits credentials and terminal data without encryption; use only a trusted approved network. If the host requires an unsupported authentication mechanism, Fish must not claim success.
+Cryptographic password substitution is not implemented. TLS is out of scope. Plain TCP transmits password sign-on credentials and terminal data without encryption; use only a trusted approved network. If the host requires an unsupported authentication mechanism, Fish must not claim success.
 
 Do not treat Connected/TCP as proof of authentication. The IBM i host decides whether sign-on succeeded. JVM/PowerShell strings and host screen memory are not guaranteed to be securely erased.
+
+## Windows sign-in (Kerberos)
+
+Fresh installations select Local IBM i, 10.1.2.3, port 23, Windows (Kerberos).
+Nothing connects on launch: click Connect when ready. Existing installations are
+not converted and a deleted default is never added back to a saved workspace.
+
+Kerberos uses your signed-in Windows identity, not a Fish username or saved
+password. In Profiles, choose Windows (Kerberos). Leave Kerberos server blank
+when Host is a fully qualified DNS name, or when the IP has a reverse DNS name
+that resolves back to that IP. Otherwise enter the IBM i's full DNS name in
+Kerberos server. This changes only the service identity, not the TCP destination.
+Fish requests `krbsvr400/{lowercase DNS name}`; Windows chooses the realm.
+Fish never trusts an SPN supplied by the Telnet host or guesses a realm.
+
+Your administrator must configure domain/KDC reachability, synchronized clocks,
+the IBM i Network Authentication Service/keytab and the matching registered
+krbsvr400 service principal, EIM mapping to one enabled IBM i user profile, and
+remote sign-on policy permitting bypass (IBM documents QRMTSIGN *VERIFY).
+Fish does not install/change any of those policies. An IP alone cannot supply
+an arbitrary deployment's service identity. If DNS discovery fails, ask for the
+registered IBM i DNS/service name.
+
+Windows SSPI acquires an outbound **Kerberos** credential handle for the current
+logon, then creates the complete initial GSS service token. Fish sends that
+opaque binary token as RFC 4777 `IBMTICKET`, with RFC 1572 control-byte escaping
+and Telnet IAC quoting, maximum 16,384 raw bytes. It requests `IBMSENDCONFREC=YES`
+and reports Kerberos-specific IBM i NAS/EIM rejection codes. A host refusing
+NEW-ENVIRON/ticket negotiation or explicitly refusing automatic sign-on ends the
+attempt; there is no NTLM, password or screen-field injection fallback.
+
+Ticket/DNS work stays off the UI thread. Cancel invalidates the attempt; a late
+token is wiped and never connects. A 20-second UI deadline abandons a slow
+attempt. Windows controls any remaining KDC call timeout; a pane cannot launch
+another lookup until that call returns and its handles are released. Ticket
+buffers/queued frames are wiped on completion/close; tickets are never logged,
+exported or saved. Password helpers and shared-password sources are disabled
+for Kerberos. No Java installation, ticket-cache extraction or registry
+weakening is needed.
+
+This is one-way initial-token sign-on, without requesting delegation or claiming
+mutual authentication. Kerberos does not encrypt the subsequent plain-TCP
+terminal traffic. A created ticket, I902 device startup or Connected/TCP is not
+proof that the application is signed in; inspect the host result with your
+administrator. Synthetic verification is not Windows-domain/IBM i acceptance.
 
 ## Host screens, fields and cursor
 
@@ -342,7 +387,7 @@ Installer fails under organizational policy: use the portable ZIP if permitted, 
 
 Fish is an experimental TN5250J-based implementation, not a demonstrated full ACS-compatible replacement. The only terminal type is IBM-3477-FC. Only SBCS code pages in the profile list are offered; DBCS is not implemented.
 
-Known gaps include enhanced WTD/WEA/structured-field behavior and cryptographic automatic sign-on. Unsupported engine behavior is reported/stops the affected session instead of inventing a successful response. Real-host acceptance requires an IBM i, valid test credentials, ACS access and representative captures that have not been supplied.
+Known gaps include enhanced WTD/WEA/structured-field behavior and cryptographic password substitution. Kerberos initial-token sign-on is implemented but not real-host verified. Unsupported engine behavior is reported/stops the affected session instead of inventing a successful response. Real-host acceptance requires an IBM i, valid test credentials, ACS access and representative captures that have not been supplied.
 
 Read COMPATIBILITY.md for exact locally demonstrated behavior and the remaining acceptance checklist. The streamlining preview is not a claim of production readiness or successful real-host authentication.
 

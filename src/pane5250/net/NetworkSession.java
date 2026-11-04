@@ -16,10 +16,15 @@ public final class NetworkSession implements AutoCloseable {
     private volatile boolean closed;
     private volatile boolean connected;
     private Thread reader, writer;
+    private byte[] pendingTicket;
     private final OutputStream queued = new OutputStream() {
-        private final ByteArrayOutputStream pending = new ByteArrayOutputStream();
-        @Override public synchronized void write(int value) { pending.write(value); }
-        @Override public synchronized void write(byte[] value, int offset, int length) {
+        private final SensitiveBuffer pending = new SensitiveBuffer();
+        @Override public synchronized void write(int value) throws IOException {
+            if (closed) throw new IOException("Session is disconnected.");
+            pending.write(value);
+        }
+        @Override public synchronized void write(byte[] value, int offset, int length) throws IOException {
+            if (closed) throw new IOException("Session is disconnected.");
             pending.write(value, offset, length);
         }
         @Override public synchronized void flush() throws IOException {
@@ -33,6 +38,7 @@ public final class NetworkSession implements AutoCloseable {
                 throw new IOException("Outbound queue full.");
             }
         }
+        @Override public synchronized void close() { pending.close(); }
     };
 
     public NetworkSession(Consumer<byte[]> records, Consumer<String> status) {
@@ -44,8 +50,14 @@ public final class NetworkSession implements AutoCloseable {
     public boolean isConnected() { return connected && !closed; }
 
     public void connect(String host, int port, Map<String, String> environment) {
-        if (reader != null) throw new IllegalStateException("Session cannot be reused.");
+        connect(host,port,environment,null);
+    }
+    public synchronized void connect(String host,int port,Map<String,String> environment,byte[] ticket) {
+        if (reader != null || closed) throw new IllegalStateException("Session cannot be reused.");
+        if (ticket!=null && (ticket.length==0 || ticket.length>pane5250.security.Kerberos.MAX_TOKEN))
+            throw new IllegalArgumentException("Kerberos token must be 1-16384 bytes.");
         Map<String, String> copy = new LinkedHashMap<>(environment);
+        pendingTicket=ticket==null ? null : ticket.clone();
         reader = Thread.ofPlatform().daemon().name("tn5250-reader").start(() -> {
             try {
                 socket.connect(new InetSocketAddress(host, port), 10000);
@@ -54,7 +66,13 @@ public final class NetworkSession implements AutoCloseable {
                 socket.setKeepAlive(true);
                 socket.setSoTimeout(20000);
                 startWriter();
-                try (TelnetCodec codec = new TelnetCodec(socket.getInputStream(), queued, copy, status)) {
+                TelnetCodec prepared;
+                synchronized (NetworkSession.this) {
+                    if (closed) return;
+                    prepared=new TelnetCodec(socket.getInputStream(),queued,copy,status,pendingTicket);
+                    wipeTicket();
+                }
+                try (TelnetCodec codec = prepared) {
                     copy.clear();
                     boolean first = true;
                     while (!closed) {
@@ -66,7 +84,8 @@ public final class NetworkSession implements AutoCloseable {
                         if (first) {
                             socket.setSoTimeout(0);
                             connected = true;
-                            status.accept("Connected - IBM-3477-FC"+(codec.allocatedDevice().isEmpty() ? "" : " - device "+codec.allocatedDevice()));
+                            status.accept("Connected - IBM-3477-FC"+(codec.allocatedDevice().isEmpty() ? "" : " - device "+codec.allocatedDevice())
+                                    +codec.authenticationStatus());
                             first = false;
                         }
                     }
@@ -112,15 +131,25 @@ public final class NetworkSession implements AutoCloseable {
         status.accept("Disconnected - " + message);
         close();
     }
+    private void wipeTicket() {
+        if (pendingTicket!=null) Arrays.fill(pendingTicket,(byte)0);
+        pendingTicket=null;
+    }
 
-    @Override public synchronized void close() {
-        if (closed) return;
-        closed = true;
-        connected = false;
+    @Override public void close() {
+        synchronized (this) {
+            if (closed) return;
+            closed = true;
+            connected = false;
+            wipeTicket();
+        }
+        // Queue failure calls close while holding its own lock; do not invert that lock order.
         try { socket.close(); }
         catch (IOException e) { status.accept("Socket close failed: " + e.getMessage()); }
         if (writer != null) writer.interrupt();
         byte[] bytes;
         while ((bytes = outbound.poll()) != null) Arrays.fill(bytes, (byte) 0);
+        try { queued.close(); }
+        catch (IOException e) { status.accept("Outbound cleanup failed: "+e.getMessage()); }
     }
 }

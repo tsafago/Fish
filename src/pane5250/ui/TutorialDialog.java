@@ -112,7 +112,9 @@ final class TutorialDialog extends JDialog {
             };
             Component target=editor==null ? workspace.tutorialTarget(step) : editor.tutorialTarget(step);
             String message=instructions[step];
+            if (editor!=null && step==1) message=editor.tutorialConnectionText();
             if (editor!=null && step==2) message=editor.tutorialSignInText();
+            if (editor!=null && editor.kerberos() && step==2) titles[2]="Use Windows sign-in";
             if (editor==null && step>=1 && step<=3) message="Open Session > Profiles to try this step. You can also keep going without changing a profile.";
             if (editor!=null && (step==0 || step>=4)) message="Finish with Done, or Cancel to return to your panes. You can leave this guide open while you edit.";
             if (editor==null && step==4 && workspace.active()!=null && workspace.active().busy())

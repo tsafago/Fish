@@ -131,6 +131,7 @@ public final class ChromeConsistencySmoke {
             Properties p=new Properties();
             try (var in=Files.newInputStream(store.file())) { p.loadFromXML(in); }
             p.setProperty("version","5"); p.remove("appearance.windowOutline");
+            p.setProperty("profile."+fresh.profiles().getFirst().id()+".authentication","PASSWORD");
             p.setProperty("appearance.theme.0.LINE","#EEDDCC"); p.setProperty("appearance.theme.0.OUTLINE","#FF0011");
             try (var out=Files.newOutputStream(store.file())) { p.storeToXML(out,"Synthetic legacy appearance"); }
             StateStore.State loaded=store.load();

@@ -5,6 +5,41 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Local Fish 0.7.0 Kerberos preview
+
+Implements RFC 4777 section 6 binary IBMTICKET using the current Windows logon's
+explicit Kerberos SSPI provider (never Negotiate/NTLM/password fallback).
+Fresh absent workspaces seed/select Local IBM i at 10.1.2.3:23, offline until
+Connect. Existing profiles, startup choices, credentials and usability features
+are retained. Kerberos service DNS identity is separate from TCP destination;
+an IP uses forward-confirmed reverse DNS or an explicit configured DNS override.
+No deployment-specific domain/SPN/realm has been guessed or queried.
+
+The initial GSS token is bounded to 16,384 bytes, environment-escaped and IAC
+quoted without string/base64/hex conversion. NEW-ENVIRON refusal, presentation
+without ticket negotiation and Kerberos-specific startup/EIM rejections fail
+explicitly. Optional absence of a startup record does not break synchronization
+or assert sign-on; Connected/TCP and I902 remain authentication-unverified.
+This one-hop flow does not request delegation or assert mutual authentication.
+Windows handles are disposed and owned native/Java token buffers are wiped.
+Cancellation/20-second UI deadlines suppress late connections; a native KDC
+operation can continue until Windows returns, with at most one per pane.
+NAS/keytab, registered krbsvr400 identity, EIM, Windows/domain credentials and
+remote sign-on policy are external administrator prerequisites.
+
+Synthetic native-provider fixtures check exact package/current-logon arguments,
+context flags, opaque token copying, success/continue/error/unsupported completion,
+size rejection and handle cleanup without acquiring user credentials.
+Java fixtures cover exact RFC bytes, both escape layers, 16 KiB limits,
+refused/missing negotiation, mode-specific errors, fresh seed/old-state migration,
+no password-helper access, production async/socket cancellation and hidden UI.
+Actual Windows-domain/IBM i SSO, identity mapping and ACS comparison remain open.
+No real credentials, ticket-cache inspection, policy changes or shared-desktop
+automation were used. TLS and other emulation gaps remain unchanged.
+The delivered private JVM also loads its shipped native DLL and discovers the
+Windows Kerberos package successfully using `tests\native\packaged-kerberos.c`;
+that non-secret capability check requests no tickets and opens no windows.
+
 ## Local Fish 0.6.1 usability preview
 
 Local-only, unsigned build; no new publication or protocol expansion.
@@ -384,10 +419,11 @@ and cursor-only idle repaints avoid unnecessarily redrawing whole panes.
 | Enhanced Write-to-Display structured fields (windows, GUI selection fields, scrollbars, grids) | Stop the connection explicitly. These are not advertised as capabilities. Real applications using them will not work. |
 | WEA extended attributes and WSF beyond the basic Query | Explicit failure rather than silent skipping. Additional valid IBM i datastreams may therefore be rejected. |
 | Full applicable 5250 order/FCW validation | Mature upstream behavior is inherited where not adapted; exhaustive conformance, transparent field FCWs and all signed/continued/mandatory-field combinations are not independently established. |
-| Cryptographically substituted automatic sign-on | DES/SHA substitutions and server-specific password-policy variants are not implemented. Only RFC 4777 plain sign-on is offered; new profiles recommend it by default, existing preferences are unchanged. |
+| Cryptographically substituted password sign-on | DES/SHA password substitutions and server-specific password-policy variants are not implemented. PASSWORD mode offers RFC 4777 plain sign-on; Kerberos is a separate implemented mode. Existing preferences are unchanged. |
 | Other startup/confirmation variants and optional IBM environment extensions | RFC 4777 display startup confirmation is now requested and parsed. Unknown results/formats fail explicitly; other IBM environment extensions are not implemented or guessed. |
 | DBCS and other terminal models | Unsupported; only IBM-3477-FC and the listed SBCS pages are offered. |
-| TLS / Kerberos | Not implemented; TLS is out of scope and Kerberos was optional. |
+| Kerberos real-host acceptance | Implemented initial-token SSPI/IBMTICKET flow with synthetic fixtures; actual Windows-domain/IBM i NAS/EIM sign-on is not verified. |
+| TLS | Not implemented; remains out of scope. Kerberos does not encrypt terminal traffic. |
 | Accessibility / DPI matrices | Native 150% DPI, real window controls and keyboard/focus routes are locally checked. Screen-reader terminal semantics, mixed-DPI monitors and other Windows scaling/keyboard layouts still need hands-on acceptance. |
 | Performance | Continuous desktop resize is locally measured above; startup latency and memory have no claimed SLA. Other hardware and live-host workloads remain unverified. |
 
@@ -439,9 +475,19 @@ the client production-ready, fully TN5250-conformant or ACS-compatible.
 
 - [RFC 1205](https://www.rfc-editor.org/rfc/rfc1205), especially framing,
   operation flows, transparent data, alternate reads and the basic Query.
-- [RFC 4777](https://www.rfc-editor.org/rfc/rfc4777), sections 3/4/7/10:
-  IBM i NEW-ENVIRON, device negotiation, optional plain sign-on and startup
+- [RFC 4777](https://www.rfc-editor.org/rfc/rfc4777), sections 3/4/6/7/10:
+  IBM i NEW-ENVIRON, device negotiation, Kerberos GSS IBMTICKET, plain sign-on and startup
   confirmation codes/byte example.
+- [IBM i Kerberos service principals](https://www.ibm.com/docs/en/i/7.5.0?topic=service-adding-i-principals-kerberos-server):
+  registered service class `krbsvr400`. The RFC's SSPI prose sample transposes
+  its spelling; Fish uses IBM's named service/configuration example.
+- [IBM i NAS/EIM verification](https://www.ibm.com/docs/en/i/7.5.0?topic=i-verifying-network-authentication-service-eim-configuration):
+  EIM identity mapping and QRMTSIGN *VERIFY prerequisite.
+- Microsoft [AcquireCredentialsHandle (Kerberos)](https://learn.microsoft.com/en-us/windows/win32/secauthn/acquirecredentialshandle--kerberos)
+  and [InitializeSecurityContext (Kerberos)](https://learn.microsoft.com/en-us/windows/win32/secauthn/initializesecuritycontext--kerberos):
+  explicit package/current-logon handles, opaque token, status and resource semantics.
+  Fish requests neither optional delegation nor mutual authentication for the
+  one-way TN5250 initial-token flow.
 - [RFC 1572](https://www.rfc-editor.org/rfc/rfc1572), ordered SEND/IS exchange,
   variable types/wildcards, undefined variables and escaping.
 - RFC 854/855/856, 885, 1091 and 1572 for Telnet option semantics.
@@ -449,6 +495,10 @@ the client production-ready, fully TN5250-conformant or ACS-compatible.
   pinned source, original licenses retained.
 - [tn5250 session implementation](https://github.com/tn5250/tn5250/blob/b8448fecd2825bc8e1aa3361371844fb8f25697d/lib5250/session.c),
   cross-check of field-read formatting; not an additional binary dependency.
+- [LGPL tn5250 Telnet transport](https://github.com/tn5250/tn5250/blob/b8448fecd2825bc8e1aa3361371844fb8f25697d/lib5250/telnetstr.c),
+  inspected with the pinned TN5250J core for licensed prior art. Neither provides
+  a Kerberos token producer; the SSPI bridge/binary ticket path is Fish's own
+  implementation of the cited protocol/API contracts, not copied ticket code.
 
 RFC 1205 supplements IBM publication SA21-9247-6; it is not the entire 5250
 specification. That complete IBM reference and actual ACS captures were not

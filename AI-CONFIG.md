@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.6.1 exposes its complete local configuration without an AI service, network
+Fish 0.7.0 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -74,12 +74,13 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 9 with informational migration
+An exported legacy workspace is migrated to version 10 with informational migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries cannot read version 9: restore a backup for a downgrade.
-Do not manually relabel old/future data as version 9. Version-8 hosts, sign-in
+save. Older binaries cannot read version 10: restore a backup for a downgrade.
+Do not manually relabel old/future data as version 10. Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
-is off on upgrade.
+is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles
+remain PASSWORD, never silently Kerberos. No existing profile is replaced by a seed.
 
 ## Format and complete coverage
 
@@ -100,7 +101,7 @@ The catalog lists exact field types/defaults/limits and all dynamic prefixes:
 | Area | Entries |
 |---|---|
 | Workspace | version, ordered profiles, current layout, lastProfile, width, height, appTheme, highlightActive, connectOnStartup |
-| Profiles | `profile.{uuid}.` name, host, port, device, username, auto, remember, loginSource, codePage, theme, effect, zoom, layout |
+| Profiles | `profile.{uuid}.` name, host, port, device, authentication, kerberosServer, username, auto, remember, loginSource, codePage, theme, effect, zoom, layout |
 | Per-profile keys | `profile.{uuid}.key.{Swing stroke}` to a supported host mnemonic or empty to disable |
 | Global shortcuts | `shortcut.{exact action title}` to a Swing pressed stroke or empty to unbind |
 | Information | `info.` header, footer, profile, connection, host, device, status, dimensions, cursor, insert |
@@ -116,7 +117,10 @@ enum values, all color roles (including all host colors, gradients, logo and glo
 layout grammar and constraints. Use `schema` for the running binary's authoritative
 catalog rather than hardcoding a different release's definitions.
 
-New profiles default to the user-requested host `10.1.2.3` with auto/remember true.
+Fresh workspaces seed/select a KERBEROS profile at `10.1.2.3:23` with auto/remember
+false, loginSource empty, kerberosServer empty, connectOnStartup false. The
+user explicitly chose **wait for Connect**. It is not reseeded into existing data.
+The New button still creates a PASSWORD profile at `10.1.2.3` with auto/remember true.
 These are creation defaults, not migration replacements. Preserve existing
 hosts (including blank) and explicit off choices unless asked to change them.
 Host may be empty: an unconfigured profile. Device and username may be empty;
@@ -244,13 +248,43 @@ prompt on Connect. Chains, cycles, self references, missing sources and deleting
 or disabling a source still in use are rejected. Duplicating through the UI
 produces an independent profile with remembering off, not a secret copy.
 
-auto=true requests negotiated RFC 4777 **plain** automatic sign-on; connecting
+For PASSWORD mode, auto=true requests negotiated RFC 4777 **plain** automatic sign-on; connecting
 requires a username and a 1-128 printable US-ASCII password supplied by the UI/OS store.
 It does not inject credentials into guessed screen coordinates. Plain TN5250
-TCP is unencrypted, cryptographic sign-on is not implemented, and real IBM i/ACS
+TCP is unencrypted, cryptographic password substitution is not implemented, and real IBM i/ACS
 acceptance remains unverified. A saved password or TCP connection is not proof of
 successful IBM i sign-on. Do not enable automatic sign-in or sharing for an
 unrelated host without the user's request.
+
+### Kerberos metadata
+
+`profile.{uuid}.authentication` is exactly `PASSWORD` or `KERBEROS`.
+For KERBEROS, set auto=false, remember=false, loginSource empty. Username is ignored;
+it never selects/retrieves a password. Profile code page/device/display/layout
+remain independent. Selecting Kerberos in the editor does not delete an existing
+OS password; config apply never touches OS credentials in either mode.
+
+`profile.{uuid}.kerberosServer` is empty or a fully qualified DNS name, at most
+253 characters, DNS labels 1-63 ASCII letters/digits/hyphens, normalized lowercase
+and without the final root dot. It is **not** an IP, realm, raw SPN, command or
+token. An explicit value determines `krbsvr400/{DNS}` while host/port still select
+the TCP endpoint. Empty uses a fully qualified host name, or an IP's reverse DNS
+only when forward lookup contains the original IP. No domain/realm is guessed.
+Set the administrator-provided identity, not an invented example host name.
+
+A safe requested bulk conversion updates these five fields together:
+authentication=KERBEROS, auto=false, remember=false, loginSource empty,
+kerberosServer set to the provided DNS name or left empty for discovery.
+Preserve all other entries, validate the full export, then apply while closed.
+Do not add IBMTICKET/password/realm/SSPI flags: such settings are not supported.
+Tickets are transient binary buffers, never configuration or export content.
+The catalog's freshWorkspaceProfile describes first-install defaults separately
+from the New password-profile editor's field defaults.
+
+Windows logon credentials, an IBM i krbsvr400 SPN/keytab, NAS/EIM and remote-sign-on
+policy must already be configured. Fish does not fall back to NTLM/password,
+extract the ticket cache, change registry/policies or authenticate during config
+commands. See the manual for diagnostics and the unverified real-host gate.
 
 ## Tutorial, runtime and limits
 
@@ -263,10 +297,13 @@ Set NEW only when the user explicitly wants the first-run behavior again.
 `connectOnStartup=false` is the fresh/upgrade default. The Session menu can enable
 it, or set that exact boolean in an exported snapshot when requested. A normal
 launch then attempts each restored pane once, using its own selected profile.
-Manual sign-in profiles connect to the host sign-on screen; automatic sign-in
+Manual sign-in profiles connect to the host sign-on screen; PASSWORD automatic sign-in
 requires a saved OS password. Incomplete profiles, remembering disabled or missing
 saved passwords remain offline with a pane notice, not password/profile dialogs.
 Credential lookup failures and connection errors stay visible in the affected pane.
+KERBEROS panes use Windows sign-in only if this startup preference was explicitly
+enabled; changing authentication does not silently enable it. Fresh installs wait
+for Connect. Keep the explicit user's startup choice unchanged in bulk edits.
 This never reconnects current work, connects newly added panes or repeats failed
 attempts until the next launch/user Connect. Demo stays isolated to its loopback host.
 

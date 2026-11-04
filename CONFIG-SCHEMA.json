@@ -673,6 +673,16 @@
   },
   "catalogVersion": 1,
   "format": "Fish XML properties configuration",
+  "freshWorkspaceProfile": {
+    "authentication": "KERBEROS",
+    "auto": false,
+    "connectOnStartup": false,
+    "host": "10.1.2.3",
+    "kerberosServer": "",
+    "loginSource": "",
+    "port": 23,
+    "remember": false
+  },
   "hostDefaults": [
     {
       "action": "HELP",
@@ -986,8 +996,17 @@
     }
   },
   "profileFields": {
+    "authentication": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "PASSWORD",
+      "type": "enum",
+      "values": [
+        "PASSWORD",
+        "KERBEROS"
+      ]
+    },
     "auto": {
-      "constraints": "Recommended new-profile default: RFC 4777 plain automatic sign-on. Username required before connecting, not to save an unfinished profile. False when linked. Existing choices unchanged.",
+      "constraints": "New PASSWORD-profile editor default: RFC 4777 plain automatic sign-on. Username required before connecting. Must be false for KERBEROS or linked profiles. Fresh workspace Kerberos profile uses false; existing choices unchanged.",
       "default": true,
       "type": "boolean"
     },
@@ -1034,13 +1053,18 @@
       "default": "10.1.2.3",
       "type": "hostname-or-ip"
     },
+    "kerberosServer": {
+      "constraints": "Optional fully qualified DNS service identity, not an IP/realm/SPN; normalized lowercase. Kerberos SPN is krbsvr400/{DNS}. Blank uses a fully qualified host, or reverse DNS with forward confirmation for an IP. Windows chooses realm; no NTLM/password fallback.",
+      "default": "",
+      "type": "dns-name-or-empty"
+    },
     "layout": {
       "constraints": "Empty or saved bounded layout; every profile ID must exist.",
       "default": "",
       "type": "layout-or-empty"
     },
     "loginSource": {
-      "constraints": "Explicit source for THIS profile's host: independent source, nonempty username, remember=true. No self references, chains or cycles. Inherits login preferences.",
+      "constraints": "PASSWORD only: explicit independent PASSWORD source with username and remember=true for THIS target host. No self references, chains or cycles. KERBEROS must be empty; Windows identity is used directly.",
       "default": "",
       "type": "uuid-or-empty"
     },
@@ -1055,7 +1079,7 @@
       "type": "integer"
     },
     "remember": {
-      "constraints": "Recommended new-profile default: allow OS password lookup/storage on Connect. False when linked. Configuration never reads, copies or deletes OS credentials. Existing choices unchanged.",
+      "constraints": "New PASSWORD-profile editor default: OS password lookup/storage. Must be false for KERBEROS or linked profiles. Fresh Kerberos profile uses false. Configuration never touches OS credentials.",
       "default": true,
       "type": "boolean"
     },
@@ -1079,7 +1103,7 @@
       ]
     },
     "username": {
-      "constraints": "Same naming rule as device. Blank when loginSource is set.",
+      "constraints": "Same naming rule as device. Blank when loginSource is set. Ignored for KERBEROS (Windows identity/EIM supplies the user).",
       "default": "",
       "type": "ibmi-name"
     },
@@ -1135,7 +1159,7 @@
       "type": "boolean"
     },
     "connectOnStartup": {
-      "constraints": "Connect each restored pane once on normal startup. Incomplete logins or missing saved passwords stay offline with a pane notice; no password prompts. Adding a pane never auto-connects.",
+      "constraints": "Connect each restored pane once on normal startup; KERBEROS requests Windows credentials only when enabled. Fresh installs wait for Connect. Incomplete PASSWORD logins or missing saved passwords stay offline without prompts. Adding a pane never auto-connects.",
       "default": false,
       "type": "boolean"
     },
@@ -1237,10 +1261,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "9",
+      "default": "10",
       "type": "enum",
       "values": [
-        "9"
+        "10"
       ]
     },
     "width": {
@@ -1562,5 +1586,5 @@
   },
   "themePrefix": "appearance.theme.{zero-based-index}.",
   "unknownKeys": "Rejected without writing. Future workspace versions are rejected, never downgraded.",
-  "workspaceVersion": "9"
+  "workspaceVersion": "10"
 }

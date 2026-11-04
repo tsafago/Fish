@@ -14,6 +14,7 @@ import org.tn5250j.framework.tn5250.ScreenField;
 import org.tn5250j.keyboard.KeyMnemonic;
 import pane5250.model.*;
 import pane5250.net.NetworkSession;
+import pane5250.security.Kerberos;
 import static org.tn5250j.TN5250jConstants.*;
 
 public final class SessionPane extends JPanel {
@@ -69,6 +70,9 @@ public final class SessionPane extends JPanel {
     private Session5250 core;
     private boolean connecting, disposed;
     private int credentialOperations;
+    private Kerberos.Provider kerberosProvider=Kerberos::ticket;
+    private Kerberos.Resolver kerberosResolver=Kerberos::resolve;
+    private javax.swing.Timer kerberosDeadline;
     private long generation;
     private Layout.Dock preview;
     private String notice = "Disconnected";
@@ -243,7 +247,7 @@ public final class SessionPane extends JPanel {
         reset.setToolTipText("Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
         header.setToolTipText("Drag onto another pane to swap. Ctrl+Alt+D swaps with the keyboard.");
         header.setCursor(workspace.hasMultiplePanes() ? Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR) : Cursor.getDefaultCursor());
-        presets.setEnabled(!busy()); connectButton.setEnabled(!busy());
+        presets.setEnabled(!busy() && credentialOperations==0); connectButton.setEnabled(!busy() && credentialOperations==0);
         String card=connecting ? "connecting" : core!=null && connected() ? "terminal" : "offline";
         if (!card.equals(shownCard)) { ((CardLayout)body.getLayout()).show(body,card); shownCard=card; }
         spinner.updateAnimation();
@@ -272,6 +276,7 @@ public final class SessionPane extends JPanel {
     }
     private void connect(boolean interactive) {
         if (busy()) { disconnect(); return; }
+        if (credentialOperations>0) { problem("The previous Windows sign-in lookup is still finishing. Please wait before reconnecting."); return; }
         Profile connectionProfile=workspace.connectionProfile(profile);
         if (profile.host().isEmpty() || connectionProfile.automaticSignOn() && connectionProfile.username().isEmpty()) {
             if (interactive) workspace.profiles();
@@ -284,6 +289,9 @@ public final class SessionPane extends JPanel {
         }
         if (interactive) workspace.rememberProfile(profile);
         long token = ++generation;
+        if (connectionProfile.authentication()==Profile.Authentication.KERBEROS) {
+            kerberosConnect(token,connectionProfile,interactive); return;
+        }
         if (!connectionProfile.automaticSignOn()) { begin(new char[0], token,connectionProfile,interactive); return; }
         connecting = true;
         updateHeader();
@@ -319,9 +327,47 @@ public final class SessionPane extends JPanel {
                 } catch (Exception e) {
                     if (token==generation && !disposed) { problem("Credential lookup failed: " + message(e)); disconnectNetwork(); }
                     else System.err.println("Canceled credential lookup failed: "+message(e));
-                } finally { credentialOperations--; }
+                } finally { credentialOperations--; updateHeader(); }
             }
         }.execute();
+    }
+
+    private void kerberosConnect(long token,Profile connectionProfile,boolean interactive) {
+        connecting=true;
+        credentialOperations++;
+        notice="Getting a Windows Kerberos ticket - no password or NTLM fallback";
+        updateHeader();
+        kerberosDeadline=new javax.swing.Timer(20000,e -> kerberosTimedOut(token));
+        kerberosDeadline.setRepeats(false); kerberosDeadline.start();
+        new SwingWorker<byte[],Void>() {
+            @Override protected byte[] doInBackground() throws IOException {
+                String principal=Kerberos.principal(connectionProfile.host(),connectionProfile.kerberosServer(),kerberosResolver);
+                return kerberosProvider.ticket(principal);
+            }
+            @Override protected void done() {
+                byte[] ticket=null;
+                try {
+                    ticket=get();
+                    if (token!=generation || disposed) return;
+                    if (ticket==null || ticket.length==0 || ticket.length>Kerberos.MAX_TOKEN)
+                        throw new IOException("Windows returned an invalid or oversized Kerberos token (TN5250 limit: 16384 bytes).");
+                    begin(new char[0],token,connectionProfile,interactive,ticket);
+                } catch (Exception e) {
+                    if (token==generation && !disposed) { disconnectNetwork(); problem("Kerberos sign-in failed: "+message(e)); }
+                    else System.err.println("Canceled Kerberos sign-in failed: "+message(e));
+                } finally {
+                    if (ticket!=null) Arrays.fill(ticket,(byte)0);
+                    if (kerberosDeadline!=null) { kerberosDeadline.stop(); kerberosDeadline=null; }
+                    credentialOperations--; updateHeader();
+                }
+            }
+        }.execute();
+    }
+    private void kerberosTimedOut(long token) {
+        if (token!=generation || disposed) return;
+        generation++;
+        disconnectNetwork();
+        problem("Kerberos timed out. Check domain/VPN connectivity and the server DNS name. Windows may still be finishing its lookup; no connection or fallback will follow.");
     }
 
     private void rememberAndBegin(char[] password,long token,Profile target,Profile connectionProfile,boolean interactive) {
@@ -337,12 +383,15 @@ public final class SessionPane extends JPanel {
                     Arrays.fill(password, '\0');
                     if (token==generation && !disposed) { problem("Password was not remembered: " + message(e)); disconnectNetwork(); }
                     else System.err.println("Canceled password save failed: "+message(e));
-                } finally { credentialOperations--; }
+                } finally { credentialOperations--; updateHeader(); }
             }
         }.execute();
     }
 
     private void begin(char[] password,long token,Profile connectionProfile,boolean interactive) {
+        begin(password,token,connectionProfile,interactive,null);
+    }
+    private void begin(char[] password,long token,Profile connectionProfile,boolean interactive,byte[] kerberosTicket) {
         try {
             Map<String,String> environment = connectionProfile.environment(password);
             connecting = true;
@@ -370,7 +419,7 @@ public final class SessionPane extends JPanel {
                 @Override public void onScreenSizeChanged(int r,int c) { view.resetSelection(); view.screenChanged(); view.revalidate(); }
             });
             core.getScreen().getOIA().addOIAListener((o,change) -> updateOia());
-            network.connect(connectionProfile.host(),connectionProfile.port(),environment);
+            network.connect(connectionProfile.host(),connectionProfile.port(),environment,kerberosTicket);
             environment.clear();
             updateHeader();
             updateOia();
@@ -378,7 +427,10 @@ public final class SessionPane extends JPanel {
         } catch (RuntimeException e) {
             disconnectNetwork();
             problem("Connection failed: " + e.getMessage());
-        } finally { Arrays.fill(password, '\0'); }
+        } finally {
+            Arrays.fill(password, '\0');
+            if (kerberosTicket!=null) Arrays.fill(kerberosTicket,(byte)0);
+        }
     }
 
     public void disconnect() {
@@ -388,6 +440,7 @@ public final class SessionPane extends JPanel {
         updateOia();
     }
     private void disconnectNetwork() {
+        if (kerberosDeadline!=null) { kerberosDeadline.stop(); kerberosDeadline=null; }
         if (network != null) network.close();
         network = null;
         connecting = false;
@@ -578,6 +631,9 @@ public final class SessionPane extends JPanel {
         }
     }
     public void sendPassword() {
+        if (workspace.connectionProfile(profile).authentication()==Profile.Authentication.KERBEROS) {
+            problem("Kerberos uses Windows sign-in; there is no remembered password to insert."); return;
+        }
         if (!connected()) { problem("Connect before inserting a password."); return; }
         if (!workspace.loginProfile(profile).rememberPassword()) { problem("This login does not use a saved password."); return; }
         char[] extended = new char[screen().getScreenLength() + 1];

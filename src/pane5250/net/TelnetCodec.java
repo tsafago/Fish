@@ -4,6 +4,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Consumer;
+import pane5250.security.Kerberos;
 
 /** RFC 854/855/856/885/1091/1572/1205/4777 stream boundary, independent of TCP packets. */
 public final class TelnetCodec implements AutoCloseable {
@@ -17,13 +18,25 @@ public final class TelnetCodec implements AutoCloseable {
     private final boolean[] requestedRemote = new boolean[256];
     private boolean deviceSent,deviceRetry;
     private String allocatedDevice="";
+    private final byte[] ticket;
+    private boolean ticketSent;
 
     public TelnetCodec(InputStream input, OutputStream output, Map<String, String> environment,
                        Consumer<String> notice) {
+        this(input,output,environment,notice,null);
+    }
+    public TelnetCodec(InputStream input,OutputStream output,Map<String,String> environment,
+                       Consumer<String> notice,byte[] kerberosTicket) {
+        if (environment.containsKey("IBMTICKET"))
+            throw new IllegalArgumentException("IBMTICKET must be supplied as a binary GSS token, never a String.");
+        if (kerberosTicket!=null && (kerberosTicket.length==0 || kerberosTicket.length>Kerberos.MAX_TOKEN
+                || environment.containsKey("USER") || environment.containsKey("IBMSUBSPW") || environment.containsKey("IBMRSEED")))
+            throw new IllegalArgumentException("Kerberos requires a 1-16384 byte token without password sign-on metadata.");
         this.input = input;
         this.output = output;
         this.environment = new LinkedHashMap<>(environment);
         this.notice = notice;
+        this.ticket=kerberosTicket==null ? null : kerberosTicket.clone();
     }
 
     public byte[] readRecord() throws IOException {
@@ -49,13 +62,15 @@ public final class TelnetCodec implements AutoCloseable {
                     validateRecord(bytes);
                     if ((bytes[4]&0x80)!=0) {
                         StartupResponse startup=StartupResponse.parse(bytes);
-                        notice.accept(startup.diagnostic(environment.getOrDefault("DEVNAME","")));
+                        notice.accept(startup.diagnostic(environment.getOrDefault("DEVNAME",""),ticket!=null));
                         allocatedDevice=startup.device();
                         record.reset();
                         continue;
                     }
                     if (environment.containsKey("DEVNAME") && !deviceSent)
                         throw new IOException("Host began presentation without negotiating requested device "+environment.get("DEVNAME")+". No automatic-name fallback was used.");
+                    if (ticket!=null && !ticketSent)
+                        throw new IOException("Host began presentation without requesting IBMTICKET through NEW-ENVIRON. Kerberos was not negotiated; no password fallback was used.");
                     return bytes;
                 } else if (command >= WILL && command <= DONT) {
                     option(command, required());
@@ -116,6 +131,8 @@ public final class TelnetCodec implements AutoCloseable {
             if (local[option]) reply(WONT, option);
             local[option] = false;
             if (option == 0 || option == 25) throw new IOException("Host refused required BINARY/EOR option.");
+            if (option==39 && ticket!=null)
+                throw new IOException("Host refused NEW-ENVIRON. IBM i TN5250 Kerberos requires IBMTICKET negotiation; no NTLM/password fallback was used.");
             if (option == 39 && environment.containsKey("IBMSUBSPW"))
                 notice.accept("Host declined NEW-ENVIRON; automatic sign-on was not negotiated. Sign on manually.");
             if (option==39 && environment.containsKey("DEVNAME"))
@@ -187,8 +204,11 @@ public final class TelnetCodec implements AutoCloseable {
     }
 
     private void sendEnvironment(java.util.List<Requested> requested) throws IOException {
-        ByteArrayOutputStream data = new ByteArrayOutputStream();
+        SensitiveBuffer data = new SensitiveBuffer();
+        try {
         data.write(0);
+        int ticketBytes=0;
+        boolean includedTicket=false;
         if (requested==null) requested=java.util.List.of(new Requested(0,""),new Requested(3,""));
         if (deviceSent && requested.size()==1 && requested.getFirst().name.equals("DEVNAME")) {
             deviceRetry=true;
@@ -200,14 +220,34 @@ public final class TelnetCodec implements AutoCloseable {
                     if ((entry.getKey().equals("USER") ? 0 : 3)==request.type)
                         environmentValue(data,request.type,entry.getKey(),entry.getValue());
                 }
+                if (ticket!=null && request.type==3 && !includedTicket) {
+                    ticketBytes=environmentTicket(data); includedTicket=true;
+                }
             } else {
                 String name=request.name.startsWith("IBMRSEED") ? "IBMRSEED" : request.name;
+                if (ticket!=null && name.equals("IBMRSEED")) continue;
                 boolean sameType=(name.equals("USER") ? 0 : 3)==request.type;
-                environmentValue(data,request.type,name,sameType ? environment.get(name) : null);
+                if (ticket!=null && name.equals("IBMTICKET") && request.type==3) {
+                    if (!includedTicket) { ticketBytes=environmentTicket(data); includedTicket=true; }
+                } else environmentValue(data,request.type,name,sameType ? environment.get(name) : null);
             }
         }
-        if (data.size() > 1024) throw new IOException("RFC 4777 environment exceeds 1024 bytes.");
-        sendSub(39, data.toByteArray());
+        if (data.size()-ticketBytes > 1024) throw new IOException("RFC 4777 environment metadata exceeds 1024 bytes.");
+        byte[] bytes=data.toByteArray();
+        try { sendSub(39, bytes); }
+        finally { Arrays.fill(bytes,(byte)0); }
+        if (includedTicket) ticketSent=true;
+        } finally { data.close(); }
+    }
+    private int environmentTicket(ByteArrayOutputStream data) throws IOException {
+        data.write(3); escapedEnvironment(data,"IBMTICKET"); data.write(1);
+        int start=data.size();
+        for (byte value:ticket) {
+            int c=value&255;
+            if (c<=3) data.write(2);
+            data.write(c);
+        }
+        return data.size()-start;
     }
     private void environmentValue(ByteArrayOutputStream data,int type,String name,String value) throws IOException {
         data.write(type); escapedEnvironment(data,name);
@@ -215,6 +255,7 @@ public final class TelnetCodec implements AutoCloseable {
         if (name.equals("DEVNAME") && value!=null) deviceSent=true;
     }
     public String allocatedDevice() { return allocatedDevice; }
+    public String authenticationStatus() { return ticket==null ? "" : " - Kerberos token sent; sign-on not independently verified"; }
 
     private static void escapedEnvironment(ByteArrayOutputStream out, String value) throws IOException {
         for (int i = 0; i < value.length(); i++) {
@@ -226,7 +267,8 @@ public final class TelnetCodec implements AutoCloseable {
     }
 
     private void sendSub(int option, byte[] data) throws IOException {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        SensitiveBuffer bytes = new SensitiveBuffer();
+        try {
         bytes.writeBytes(new byte[]{(byte) IAC, (byte) SB, (byte) option});
         for (byte value : data) {
             bytes.write(value);
@@ -234,7 +276,10 @@ public final class TelnetCodec implements AutoCloseable {
         }
         bytes.write(IAC);
         bytes.write(SE);
-        send(bytes.toByteArray());
+        byte[] frame=bytes.toByteArray();
+        try { send(frame); }
+        finally { Arrays.fill(frame,(byte)0); }
+        } finally { bytes.close(); }
     }
 
     private void send(byte[] bytes) throws IOException {
@@ -255,5 +300,8 @@ public final class TelnetCodec implements AutoCloseable {
         return bytes.toByteArray();
     }
 
-    @Override public void close() { environment.clear(); }
+    @Override public void close() {
+        environment.clear();
+        if (ticket!=null) Arrays.fill(ticket,(byte)0);
+    }
 }

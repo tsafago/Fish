@@ -2,7 +2,7 @@
 
 A Windows-first, keyboard-driven desktop 5250 workspace. Java 21 / Swing,
 plain TN5250 TCP, a pinned TN5250J screen/field engine, a small source-built
-Windows frame bridge, and no third-party runtime JAR dependencies.
+Windows frame/SSPI bridge, and no third-party runtime JAR dependencies.
 
 **Working experimental implementation, not an ACS-compatible release.**
 Real IBM i sign-on and ACS comparison have not been performed. Enhanced display
@@ -10,12 +10,24 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Local usability preview
+## Local Kerberos preview
 
-**Fish 0.6.1** has short, moving tutorial hints anchored to the real menus,
+**Fish 0.7.0** adds Windows Kerberos sign-on using RFC 4777 binary `IBMTICKET`
+and the Windows **Kerberos-only** SSPI provider. A fresh workspace starts with
+**Local IBM i**, **10.1.2.3:23**, Kerberos selected, and stays **offline until Connect**.
+There is no NTLM or password fallback. Existing profiles/settings are not replaced.
+Windows domain credentials, the administrator-registered `krbsvr400/{server DNS}`
+service/keytab, IBM i NAS/EIM and remote-sign-on policy must already be configured.
+The optional **Kerberos server** field separates the service DNS identity from the
+TCP IP; blank uses a fully qualified host name or forward-confirmed reverse DNS.
+No realm is guessed and no ticket cache/registry changes are required.
+See [Windows sign-in in the manual](MANUAL.md#windows-sign-in-kerberos).
+Actual Windows-domain/IBM i SSO and ACS parity remain **unverified**.
+
+The short, moving tutorial hints remain anchored to the real menus,
 profile fields and pane controls. Next/Back/Skip stay usable while editing a
 profile. Replay through Help; upgrades do not force the guide over existing work.
-New profiles start at **10.1.2.3** with automatic sign-in and Save password checked.
+New password profiles start at **10.1.2.3** with automatic sign-in and Save password checked.
 Existing saved hosts and sign-in choices stay unchanged. Passwords remain in
 Windows Credential Manager; plain TCP and the sign-on mechanism have the limits below.
 **Use login from...** explicitly reuses another profile's login on the selected
@@ -111,13 +123,13 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Run the local `dist\Fish-0.6.1-setup.exe` for your Windows user. It creates
+Run the local `dist\Fish-0.7.0-setup.exe` for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Its matching `dist\SHA256SUMS.txt` covers these local
 artifacts. The last published baseline remains [v0.5.3](https://github.com/HornadyIBM/Fish/releases/tag/v0.5.3);
-do not mix that release's assets/checksums with the local 0.6.1 build.
+do not mix that release's assets/checksums with the local 0.7.0 build.
 
-For a portable copy, extract `Fish-0.6.1-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.7.0-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
@@ -134,8 +146,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.6.1-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.6.1-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.7.0-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.7.0-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -146,9 +158,11 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.6.1**.
+The matching local package is **Fish 0.7.0**.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.6.1\Fish` to both Package and Installer.
+`-ImageDirectory dist\Fish-0.7.0\Fish` to both Package and Installer.
+This local delivery is at `dist\Fish-0.7.0\Fish\Fish.exe`; `dist\Fish`
+may still be an older running version.
 Keep the entire application-image directory together:
 
 ```powershell
@@ -165,13 +179,15 @@ sends edited fields to that server. It is not a simulated IBM i sign-on or
 evidence of ACS parity.
 
 Normal mode starts offline unless **Session > Connect panes on startup** is enabled.
-Press **Ctrl+Alt+P**, enter the IBM i hostname or
+Fresh installs can select **Connect** for the preselected Kerberos profile.
+To change authentication or DNS identity, press **Ctrl+Alt+P**, enter the IBM i hostname or
 IP address, leave port **23** unless configured otherwise, and choose
 **Save & connect**. Only `IBM-3477-FC` is offered. A host controls whether the
 screen is 24x80 or 27x132; resizing a pane only scales its rendering.
 
 **Plain TCP does not encrypt credentials or terminal data.** Use only on a
-trusted network. TLS and Kerberos are not implemented.
+trusted network. Kerberos authenticates using Windows credentials but does **not**
+encrypt terminal traffic or provide verified mutual authentication. TLS is out of scope.
 
 ## Advanced build commands
 

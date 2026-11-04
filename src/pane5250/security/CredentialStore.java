@@ -26,6 +26,8 @@ public final class CredentialStore {
     public void delete(Profile profile) throws IOException { execute("delete", profile, new char[0]); }
 
     private String execute(String operation, Profile profile, char[] password) throws IOException {
+        if (profile.authentication()==Profile.Authentication.KERBEROS)
+            throw new IOException("Kerberos uses Windows sign-in, never Credential Manager passwords.");
         if (!System.getProperty("os.name").startsWith("Windows"))
             throw new IOException("Remembered credentials require Windows Credential Manager.");
         if (!Files.isRegularFile(helper)) throw new IOException("Credential helper is missing: " + helper);

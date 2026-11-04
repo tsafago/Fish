@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.6.1'
+$version = '0.7.0'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
 if (-not $Jdk) {
@@ -57,7 +57,7 @@ foreach ($directory in @('build\classes','build\generated','build\test-classes',
 }
 New-Item -ItemType Directory -Force build\classes,build\generated,dist | Out-Null
 & "$PSScriptRoot\scripts\prepare-core.ps1"
-& "$PSScriptRoot\scripts\build-native.ps1" -Jdk $Jdk
+& "$PSScriptRoot\scripts\build-native.ps1" -Jdk $Jdk -Test:($Task -in @('Smoke','Check','Test'))
 $sources = @(
     Get-ChildItem src -Recurse -Filter *.java
     Get-ChildItem build\generated -Recurse -Filter *.java
@@ -76,7 +76,7 @@ Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item build\fish-window.dll dist\fish-window.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
 if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java,tests\pane5250\RefinementSmoke.java,tests\pane5250\UsabilitySmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
+    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\Tests.java,tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java,tests\pane5250\RefinementSmoke.java,tests\pane5250\UsabilitySmoke.java,tests\pane5250\KerberosSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -cp build\classes -d build\test-classes '@build\tests.txt'
@@ -86,7 +86,12 @@ if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
         if ($Task -eq 'Check') { $testArgs+='--core-only' }
         & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.Tests @testArgs
         if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
+    } else {
+        & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.Tests --protocol-only
+        if ($LASTEXITCODE -ne 0) { throw 'Protocol/model fixtures failed.' }
     }
+    & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.ui.KerberosSmoke
+    if ($LASTEXITCODE -ne 0) { throw 'Kerberos fixture checks failed.' }
     & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.ui.UsabilitySmoke
     if ($LASTEXITCODE -ne 0) { throw 'Usability smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' pane5250.FishSmoke

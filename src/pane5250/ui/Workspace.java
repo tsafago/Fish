@@ -404,7 +404,8 @@ public final class Workspace extends JFrame {
     private static boolean connectionChanged(Profile a, Profile b) {
         return !a.host().equals(b.host()) || a.port() != b.port() || !a.device().equals(b.device())
                 || !a.username().equals(b.username()) || a.automaticSignOn() != b.automaticSignOn() || !a.codePage().equals(b.codePage())
-                || !Objects.equals(a.loginSource(),b.loginSource());
+                || !Objects.equals(a.loginSource(),b.loginSource()) || a.authentication()!=b.authentication()
+                || !a.kerberosServer().equals(b.kerberosServer());
     }
     public void putProfile(Profile value) {
         Profile existing=profiles.get(value.id());
@@ -696,6 +697,8 @@ public final class Workspace extends JFrame {
                     "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started",
                     "Getting started tutorial","Configuration for external tools").contains(text)) return true;
             if (active==null) return false;
+            if (text.startsWith("Insert ") && connectionProfile(active.profile()).authentication()==Profile.Authentication.KERBEROS)
+                return false;
             if (text.equals("Copy selection / screen")) return active.screen()!=null;
             if (List.of("Swap panes...","Next pane","Previous pane").contains(text)) return panes.size()>1;
             if (text.equals("Restore profile layout")) return !active.profile().savedLayout().isEmpty();

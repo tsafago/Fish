@@ -38,6 +38,10 @@ public final class Tests {
             Ui.install();
             codec();
             models();
+            if (Arrays.asList(args).contains("--protocol-only")) {
+                System.out.println("PASS - "+checks+" protocol/model fixtures; no credentials or desktop access.");
+                return;
+            }
             themesAndCommands();
             core();
             effectRendering();

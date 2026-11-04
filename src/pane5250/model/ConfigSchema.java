@@ -18,6 +18,8 @@ public final class ConfigSchema {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
         root.put("catalogVersion",1); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
+                "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",false));
         root.put("storage","All values are XML strings; types below describe their logical values. Use export, edit, validate, apply.");
         root.put("maxBytes",StateStore.MAX_BYTES); root.put("unknownKeys","Rejected without writing. Future workspace versions are rejected, never downgraded.");
         root.put("metadata",Map.of("config.format",enumeration("1",List.of("1")),
@@ -30,7 +32,7 @@ public final class ConfigSchema {
         fields.put("height",field("integer",850,"260..10000 logical pixels."));
         fields.put("appTheme",enumeration("Charcoal",Arrays.stream(AppTheme.values()).map(Enum::name).toList()));
         fields.put("highlightActive",field("boolean",true,"true or false; independent active-pane tint."));
-        fields.put("connectOnStartup",field("boolean",false,"Connect each restored pane once on normal startup. Incomplete logins or missing saved passwords stay offline with a pane notice; no password prompts. Adding a pane never auto-connects."));
+        fields.put("connectOnStartup",field("boolean",false,"Connect each restored pane once on normal startup; KERBEROS requests Windows credentials only when enabled. Fresh installs wait for Connect. Incomplete PASSWORD logins or missing saved passwords stay offline without prompts. Adding a pane never auto-connects."));
         fields.put("appearance.outline",field("boolean",true,"Active-pane outline; shared internal edges have one owner."));
         fields.put("appearance.windowOutline",field("boolean",true,"Whole-window outline; known maximize/restore defect remains."));
         fields.put("appearance.selected",field("text","","Empty for builtin appTheme, otherwise exact custom theme name."));
@@ -46,11 +48,13 @@ public final class ConfigSchema {
         profile.put("name",field("text","Local IBM i","1..80 characters; display name, not identity."));
         profile.put("host",field("hostname-or-ip","10.1.2.3","0..253 characters, no whitespace/control characters. Empty is offline/unconfigured. New-profile default only; existing hosts are unchanged."));
         profile.put("port",field("integer",23,"1..65535; plain TN5250 TCP only."));
+        profile.put("authentication",enumeration("PASSWORD",Arrays.stream(Profile.Authentication.values()).map(Enum::name).toList()));
+        profile.put("kerberosServer",field("dns-name-or-empty","","Optional fully qualified DNS service identity, not an IP/realm/SPN; normalized lowercase. Kerberos SPN is krbsvr400/{DNS}. Blank uses a fully qualified host, or reverse DNS with forward confirmation for an IP. Windows chooses realm; no NTLM/password fallback."));
         profile.put("device",field("ibmi-name","","Empty or [A-Z#$@][A-Z0-9_#$@]{0,9}; canonicalized uppercase."));
-        profile.put("username",field("ibmi-name","","Same naming rule as device. Blank when loginSource is set."));
-        profile.put("auto",field("boolean",true,"Recommended new-profile default: RFC 4777 plain automatic sign-on. Username required before connecting, not to save an unfinished profile. False when linked. Existing choices unchanged."));
-        profile.put("remember",field("boolean",true,"Recommended new-profile default: allow OS password lookup/storage on Connect. False when linked. Configuration never reads, copies or deletes OS credentials. Existing choices unchanged."));
-        profile.put("loginSource",field("uuid-or-empty","","Explicit source for THIS profile's host: independent source, nonempty username, remember=true. No self references, chains or cycles. Inherits login preferences."));
+        profile.put("username",field("ibmi-name","","Same naming rule as device. Blank when loginSource is set. Ignored for KERBEROS (Windows identity/EIM supplies the user)."));
+        profile.put("auto",field("boolean",true,"New PASSWORD-profile editor default: RFC 4777 plain automatic sign-on. Username required before connecting. Must be false for KERBEROS or linked profiles. Fresh workspace Kerberos profile uses false; existing choices unchanged."));
+        profile.put("remember",field("boolean",true,"New PASSWORD-profile editor default: OS password lookup/storage. Must be false for KERBEROS or linked profiles. Fresh Kerberos profile uses false. Configuration never touches OS credentials."));
+        profile.put("loginSource",field("uuid-or-empty","","PASSWORD only: explicit independent PASSWORD source with username and remember=true for THIS target host. No self references, chains or cycles. KERBEROS must be empty; Windows identity is used directly."));
         profile.put("codePage",enumeration("37",Profile.CODE_PAGES));
         profile.put("theme",enumeration("Phosphor",Profile.THEMES));
         profile.put("effect",enumeration("None",Profile.EFFECTS));

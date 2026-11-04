@@ -326,7 +326,8 @@ public final class UsabilitySmoke {
         catch (IllegalArgumentException expected) { checks++; }
         try (StateStore store=new StateStore(root.resolve("fresh-default"))) {
             StateStore.State state=store.load();
-            check(!state.connectOnStartup() && state.profiles().getFirst().automaticSignOn(),"Fresh startup is offline even with recommended profile options enabled.");
+            check(!state.connectOnStartup() && state.profiles().getFirst().authentication()==Profile.Authentication.KERBEROS,
+                    "Fresh startup selects Kerberos without connecting.");
             store.save(state);
             check(store.load().equals(state),"Unfinished recommended profiles can be saved and reopened without credentials.");
         }

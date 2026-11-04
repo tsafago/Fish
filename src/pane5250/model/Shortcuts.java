@@ -29,7 +29,8 @@ public final class Shortcuts {
             {"Next pane","ctrl TAB"},{"Previous pane","ctrl shift TAB"},
             {"Decrease divider","ctrl alt OPEN_BRACKET"},{"Increase divider","ctrl alt CLOSE_BRACKET"},
             {"Save layout to profile","ctrl alt S"},{"Restore profile layout","ctrl alt L"},
-            {"Fit host screen","ctrl 0"},{"Zoom in","ctrl EQUALS"},{"Zoom out","ctrl MINUS"},{"Appearance...","ctrl COMMA"},
+            {"Fit host screen","ctrl 0"},{"Zoom in","ctrl EQUALS"},{"Zoom out","ctrl MINUS"},{"Appearance...",""},
+            {"Preferences...","ctrl COMMA"},
             {"Fonts...",""},{"Pane information...",""},{"Window and focus...",""},{"Theme designer...",""},{"Flux animated text",""},
             {"Full manual / Getting Started",""},{"Getting started tutorial",""},{"Configuration for external tools",""},
             {"Keyboard reference",""},{"Compatibility and connection safety",""},{"Connect panes on startup",""},
@@ -79,6 +80,9 @@ public final class Shortcuts {
         return key;
     }
     public static void validate(Map<String,String> values,List<Profile> profiles) {
+        KeyBindings.effective(values);
+    }
+    private static void validateLegacy(Map<String,String> values,List<Profile> profiles) {
         Map<String,Command> names=new HashMap<>();
         commands().forEach(c -> names.put(c.title,c));
         Set<KeyMnemonic> reassigned=new HashSet<>();
@@ -92,6 +96,7 @@ public final class Shortcuts {
         Map<UUID,Map<KeyStroke,KeyMnemonic>> hostBindings=new HashMap<>();
         for (Profile profile:profiles) hostBindings.put(profile.id(),new HostKeys(profile.keymap(),reassigned).bindings());
         for (Command command:commands()) {
+            if (command.title.equals("Preferences...")) continue;
             if (command.host!=null && !values.containsKey(command.title)) continue;
             KeyStroke key=stroke(values.getOrDefault(command.title,command.stroke));
             if (key==null) continue;
@@ -155,7 +160,7 @@ public final class Shortcuts {
             migrated.set(i,profile.withKeys(keys));
         }
         for (Command command:commands()) {
-            if (!PREVIOUS.containsKey(command.title) || saved.containsKey(command.title)) continue;
+            if (!PREVIOUS.containsKey(command.title) || saved.containsKey(command.title) || command.stroke.isBlank()) continue;
             KeyStroke proposed=stroke(command.stroke);
             boolean conflict=explicitGlobal.contains(proposed) || retired.stream().anyMatch(s -> Objects.equals(KeyStroke.getKeyStroke(s),proposed))
                     || migrated.stream().anyMatch(p -> new HostKeys(p.keymap()).bindings().containsKey(proposed));
@@ -164,7 +169,7 @@ public final class Shortcuts {
                 notices.add("Kept "+command.title+" on "+PREVIOUS.get(command.title)+" because its new default conflicts with a retained binding.");
             }
         }
-        validate(values,migrated);
+        validateLegacy(values,migrated);
         return new Migration(List.copyOf(migrated),Map.copyOf(values),List.copyOf(notices));
     }
 }

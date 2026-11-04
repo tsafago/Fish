@@ -205,6 +205,6 @@ public final class MaintenanceSmoke {
         Path root=Files.createTempDirectory("Fish-071-fixtures-");
         try { versions(); state(root); downloads(root); }
         finally { remove(root); }
-        System.out.println("Fish 0.7.1 noninteractive maintenance/update checks passed: "+checks);
+        System.out.println("Fish 0.7.2 noninteractive maintenance/update checks passed: "+checks);
     }
 }

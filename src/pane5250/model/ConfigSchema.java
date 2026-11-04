@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",1); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",2); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",false));
         root.put("storage","All values are XML strings; types below describe their logical values. Use export, edit, validate, apply.");
@@ -51,12 +51,12 @@ public final class ConfigSchema {
         profile.put("name",field("text","Local IBM i","1..80 characters; display name, not identity."));
         profile.put("host",field("hostname-or-ip","10.1.2.3","0..253 characters, no whitespace/control characters. Empty is offline/unconfigured. New-profile default only; existing hosts are unchanged."));
         profile.put("port",field("integer",23,"1..65535; plain TN5250 TCP only."));
-        profile.put("authentication",enumeration("PASSWORD",Arrays.stream(Profile.Authentication.values()).map(Enum::name).toList()));
+        profile.put("authentication",enumeration("KERBEROS",Arrays.stream(Profile.Authentication.values()).map(Enum::name).toList()));
         profile.put("kerberosServer",field("dns-name-or-empty","","Optional fully qualified DNS service identity, not an IP/realm/SPN; normalized lowercase. Kerberos SPN is krbsvr400/{DNS}. Blank uses a fully qualified host, or reverse DNS with forward confirmation for an IP. Windows chooses realm; no NTLM/password fallback."));
         profile.put("device",field("ibmi-name","","Empty or [A-Z#$@][A-Z0-9_#$@]{0,9}; canonicalized uppercase."));
         profile.put("username",field("ibmi-name","","Same naming rule as device. Blank when loginSource is set. Ignored for KERBEROS (Windows identity/EIM supplies the user)."));
-        profile.put("auto",field("boolean",true,"New PASSWORD-profile editor default: RFC 4777 plain automatic sign-on. Username required before connecting. Must be false for KERBEROS or linked profiles. Fresh workspace Kerberos profile uses false; existing choices unchanged."));
-        profile.put("remember",field("boolean",true,"New PASSWORD-profile editor default: OS password lookup/storage. Must be false for KERBEROS or linked profiles. Fresh Kerberos profile uses false. Configuration never touches OS credentials."));
+        profile.put("auto",field("boolean",false,"PASSWORD only: RFC 4777 plain automatic sign-on. Username required before connecting. Must be false for KERBEROS or linked profiles. Fresh and New profiles start with Kerberos/false; changing modes retains current choices. Existing choices unchanged."));
+        profile.put("remember",field("boolean",false,"PASSWORD only: OS password lookup/storage. Must be false for KERBEROS or linked profiles. Fresh and New profiles start with Kerberos/false; changing modes retains current choices. Configuration never touches OS credentials."));
         profile.put("loginSource",field("uuid-or-empty","","PASSWORD only: explicit independent PASSWORD source with username and remember=true for THIS target host. No self references, chains or cycles. KERBEROS must be empty; Windows identity is used directly."));
         profile.put("codePage",enumeration("37",Profile.CODE_PAGES));
         profile.put("theme",enumeration("Phosphor",Profile.THEMES));
@@ -69,19 +69,20 @@ public final class ConfigSchema {
             theme.put(role.name(),field("rgb",String.format("#%06X",colors.rgb(role)),"Exactly six RGB hex digits, optionally prefixed #. Complete theme required."));
         root.put("properties",fields); root.put("profilePrefix","profile.{uuid}."); root.put("profileFields",profile);
         root.put("themePrefix","appearance.theme.{zero-based-index}."); root.put("themeFields",theme);
-        root.put("shortcutPrefix","shortcut.{exact-action-title}");
-        root.put("shortcutValue","Swing pressed stroke or empty to unbind. Explicit entries, even equal to current defaults, remain explicit.");
+        root.put("shortcutPrefix","binding.{exact-action-title}");
+        root.put("shortcutValue","Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.");
         root.put("actions",Shortcuts.commands().stream().map(c -> {
             Map<String,Object> data=new LinkedHashMap<>();
-            data.put("title",c.title()); data.put("default",c.stroke()); data.put("hostAction",c.host()==null ? null : c.host().name()); return data;
+            data.put("title",c.title()); data.put("default",KeyBindings.defaultText(c.title())); data.put("hostAction",c.host()==null ? null : c.host().name()); return data;
         }).toList());
-        root.put("hostOverridePrefix","profile.{uuid}.key.{Swing pressed stroke}");
-        root.put("hostOverrideValues",HostKeys.hostActions().stream().map(Enum::name).toList());
-        root.put("hostOverrideRules","Empty disables one stroke. Ctrl+Alt and OS chords are reserved. Equivalent duplicate strokes are rejected.");
-        root.put("hostDefaults",HostKeys.defaultBindings().entrySet().stream().sorted(Comparator.comparing(e -> e.getKey().toString()))
-                .map(e -> Map.of("stroke",e.getKey().toString(),"action",e.getValue().name())).toList());
-        root.put("applicationAliases",Shortcuts.aliases());
-        root.put("aliasRules","Available while the primary action retains its default chord, unless reserved by a host/application/retired binding. Never overrides user bindings.");
+        root.put("keyUnbinding",Map.of("property","binding."+KeyBindings.UNBOUND,"value","Newline-separated exact chords disabled only in terminals; empty removes these per-key suppressions."));
+        root.put("keyRules","All bindings are application-wide. Custom keys replace their default owners; two explicit owners, duplicate equivalent keys, OS chords and unmodified typing keys for Fish actions are rejected. Host actions only dispatch in terminals; dialog text editing/IME are not intercepted. Unknown-location events use an explicit @unknown binding or standard fallback only.");
+        root.put("keyboardRecoveryPrefix","keyboard.legacy.");
+        root.put("keyboardRecoveryFields",Map.of("report","Retained actionable conflict report; at most 100000 characters.",
+                "shortcut.{old-action-title}","Original single Swing stroke or empty.",
+                "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
+                "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
+        root.put("keyboardMigration","Formats 1-11 migrate explicit app and unambiguous per-profile keys. Identical definitions deduplicate. Conflicting explicit definitions leave the exact key inactive in Unbound keys; all originals remain in keyboard.legacy.*. Legacy app Enter spans main/keypad; legacy profile plain Enter affected main only. New defaults give both Enter keys host Enter; Ctrl+Enter remains Field Exit. Profile key.* and shortcut.* entries are not accepted in format 12.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",
                 "ratio","finite 0.05..0.95","shape","1 full; 2 horizontal; 3 large left with vertically stacked right; 4-8 two rows, ceil(count/2) above. Each row is a right-nested horizontal chain."));
         root.put("semantics","Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Apply performs no connections/transactions/credential operations. Normal startup stays offline unless connectOnStartup is explicitly enabled.");

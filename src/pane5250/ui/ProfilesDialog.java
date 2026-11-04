@@ -23,11 +23,14 @@ public final class ProfilesDialog extends JDialog {
     private final JComboBox<Object> loginFrom=new JComboBox<>();
     private JLabel loginLabel;
     private final JTextArea loginHint=new JTextArea(3,36);
-    private final JTabbedPane tabs = new JTabbedPane();
+    private final JPanel connection=new JPanel(new GridBagLayout());
+    private final JPanel advanced=new JPanel(new GridBagLayout());
+    private final JPanel advancedIdentity=new JPanel(new BorderLayout());
+    private final JPanel identity=new JPanel(new BorderLayout(12,0));
+    private final JToggleButton disclosure=new JToggleButton("Advanced");
     private final JComboBox<String> codePage = new JComboBox<>(Profile.CODE_PAGES.toArray(String[]::new));
     private final JComboBox<String> theme = new JComboBox<>(Profile.THEMES.toArray(String[]::new));
     private final JComboBox<String> effect = new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
-    private final JTextArea keymap = new JTextArea(8,32);
     private final JLabel error = new JLabel(" ");
     private final JButton save, done, use, cancel, add, duplicate, up, down, delete;
     private Profile selected;
@@ -65,19 +68,17 @@ public final class ProfilesDialog extends JDialog {
         list.getActionMap().put("move-down",new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { down.doClick(); } });
         list.getActionMap().put("delete-profile",new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { delete.doClick(); } });
         sidebar.add(listActions,BorderLayout.SOUTH);
-        JPanel connection = new JPanel(new GridBagLayout());
         connection.setBorder(Ui.padding(12));
         int row = 0;
         field(connection,row++,"Name",name,KeyEvent.VK_A);
         field(connection,row++,"Host",host,KeyEvent.VK_H);
-        field(connection,row++,"Port",port,KeyEvent.VK_O);
         field(connection,row++,"Sign in with",authentication,KeyEvent.VK_I);
-        kerberosLabel=field(connection,row++,"Kerberos server",kerberosServer,KeyEvent.VK_K);
+        kerberosLabel=new JLabel("Kerberos server"); kerberosLabel.setLabelFor(kerberosServer); kerberosLabel.setDisplayedMnemonic(KeyEvent.VK_K);
+        identity.add(kerberosLabel,BorderLayout.WEST); identity.add(kerberosServer,BorderLayout.CENTER);
+        advancedIdentity.add(identity,BorderLayout.CENTER);
         kerberosServer.setToolTipText("Optional fully qualified IBM i DNS name, separate from the TCP host. Blank: use the host name or forward-confirmed reverse DNS. No realm or SPN needed.");
-        field(connection,row++,"Device (optional)",device,KeyEvent.VK_E);
         loginLabel=field(connection,row++,"Use login from...",loginFrom,KeyEvent.VK_F);
         usernameLabel=field(connection,row++,"Username",username,KeyEvent.VK_U);
-        field(connection,row++,"Code page",codePage,KeyEvent.VK_C);
         wide(connection,row++,automatic);
         wide(connection,row++,remember);
         passwordLabel=field(connection,row++,"Password",password,KeyEvent.VK_W);
@@ -85,35 +86,28 @@ public final class ProfilesDialog extends JDialog {
         loginHint.setOpaque(false); loginHint.setBorder(BorderFactory.createEmptyBorder());
         Ui.role(loginHint,"muted");
         password.setToolTipText("Leave blank to keep a saved password. Automatic sign-in supports 1-128 printable ASCII characters.");
-        wide(connection,row,loginHint);
-        JScrollPane connectionScroll=new JScrollPane(connection);
+        wide(connection,row++,loginHint);
+        disclosure.setMnemonic(KeyEvent.VK_V);
+        disclosure.getAccessibleContext().setAccessibleName("Show advanced profile settings");
+        disclosure.addActionListener(e -> showAdvanced(disclosure.isSelected()));
+        disclosure.setIcon(Ui.symbol("right")); advanced.setVisible(false);
+        wide(connection,row++,disclosure);
+        wide(advanced,0,advancedIdentity);
+        field(advanced,1,"Port",port,KeyEvent.VK_O);
+        field(advanced,2,"Device (optional)",device,KeyEvent.VK_E);
+        field(advanced,3,"Code page",codePage,KeyEvent.VK_C);
+        field(advanced,4,"Palette",theme,KeyEvent.VK_T);
+        field(advanced,5,"Text effect (opt-in)",effect,0);
+        wide(advanced,6,new JLabel("Layout: Panes menu. Application-wide keys: Edit > Preferences > Keyboard."));
+        wide(connection,row,advanced);
+        JPanel connectionTop=new JPanel(new BorderLayout());
+        connectionTop.add(connection,BorderLayout.NORTH);
+        JScrollPane connectionScroll=new JScrollPane(connectionTop);
         connectionScroll.setBorder(BorderFactory.createEmptyBorder());
         connectionScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        tabs.addTab("Connection",connectionScroll); tabs.setMnemonicAt(0,KeyEvent.VK_1);
-        JPanel display = new JPanel(new GridBagLayout());
-        display.setBorder(Ui.padding(12));
-        field(display,0,"Palette",theme,KeyEvent.VK_T);
-        field(display,1,"Text effect",effect,KeyEvent.VK_F);
-        wide(display,2,new JLabel("<html>Host colors, reverse video, underline and hidden fields remain distinct.<br>"
-                + "Effects are off by default. Ctrl+0 fits without changing host dimensions.</html>"));
-        tabs.addTab("Display",display); tabs.setMnemonicAt(1,KeyEvent.VK_2);
-        JPanel keyboard = new JPanel(new BorderLayout(0,10));
-        keyboard.setBorder(Ui.padding(12));
-        JTextArea defaults = new JTextArea(Keymap.describeDefaults());
-        defaults.setEditable(false);
-        defaults.setFocusable(false);
-        defaults.setFont(new Font(Font.MONOSPACED,Font.PLAIN,11));
-        defaults.setBackground(Ui.PANEL);
-        defaults.setBorder(BorderFactory.createEmptyBorder());
-        keyboard.add(defaults,BorderLayout.NORTH);
-        keymap.setFont(new Font(Font.MONOSPACED,Font.PLAIN,12));
-        keymap.getAccessibleContext().setAccessibleName("Keyboard overrides: KEY = ACTION");
-        keyboard.add(new JScrollPane(keymap),BorderLayout.CENTER);
-        keyboard.add(Ui.button("All actions / global shortcuts...",KeyEvent.VK_J,() -> workspace.showShortcuts()),BorderLayout.SOUTH);
-        tabs.addTab("Keyboard",keyboard); tabs.setMnemonicAt(2,KeyEvent.VK_3);
         JPanel body = new JPanel(new BorderLayout(12,0));
         body.setBorder(Ui.padding(12));
-        body.add(sidebar,BorderLayout.WEST); body.add(tabs,BorderLayout.CENTER);
+        body.add(sidebar,BorderLayout.WEST); body.add(connectionScroll,BorderLayout.CENTER);
         JPanel bottom = new JPanel(new BorderLayout(8,0));
         bottom.setBorder(BorderFactory.createEmptyBorder(0,12,12,12));
         Ui.role(error,"error");
@@ -129,19 +123,19 @@ public final class ProfilesDialog extends JDialog {
         getRootPane().registerKeyboardAction(e -> dismiss(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
         setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
         DocumentListener changes = new DocumentListener() {
-            private void changed() { if (!loading) updateDirty(); }
+            private void changed() { if (!loading) { updateIdentity(); updateDirty(); } }
             @Override public void insertUpdate(DocumentEvent e) { changed(); }
             @Override public void removeUpdate(DocumentEvent e) { changed(); }
             @Override public void changedUpdate(DocumentEvent e) { changed(); }
         };
-        for (JTextComponent text : java.util.List.of(name,host,port,device,username,password,keymap,kerberosServer)) text.getDocument().addDocumentListener(changes);
+        for (JTextComponent text : java.util.List.of(name,host,port,device,username,password,kerberosServer)) text.getDocument().addDocumentListener(changes);
         for (JComboBox<String> combo : java.util.List.of(codePage,theme,effect)) combo.addActionListener(e -> { if (!loading) updateDirty(); });
         automatic.addItemListener(e -> { if (!loading) updateDirty(); }); automatic.setMnemonic(KeyEvent.VK_B);
         remember.addItemListener(e -> { if (!loading) updateDirty(); }); remember.setMnemonic(KeyEvent.VK_R);
         authentication.addActionListener(e -> {
             if (loading) return;
             if (kerberos()) {
-                loading=true; loginFrom.setSelectedIndex(0); password.setText(""); loading=false;
+                loading=true; password.setText(""); loading=false;
             }
             updateLoginControls(); updateDirty(); workspace.tutorialChanged();
         });
@@ -169,7 +163,6 @@ public final class ProfilesDialog extends JDialog {
             @Override public void windowOpened(WindowEvent e) { name.requestFocusInWindow(); }
             @Override public void windowClosed(WindowEvent e) { workspace.profileEditorClosed(ProfilesDialog.this); }
         });
-        tabs.addChangeListener(e -> workspace.tutorialChanged());
         setSize(850,650);
         setMinimumSize(new Dimension(760,550));
         setLocationRelativeTo(workspace);
@@ -178,20 +171,19 @@ public final class ProfilesDialog extends JDialog {
     Component tutorialTarget(int step) {
         if (step==0) return cancel;
         if (step>=3) return done;
-        if (tabs.getSelectedIndex()!=0) return tabs;
         JComponent target=step==1 ? host : kerberos() ? authentication : automatic;
         target.scrollRectToVisible(new Rectangle(0,0,target.getWidth(),target.getHeight()));
         return target;
     }
     String tutorialSignInText() {
-        if (kerberos()) return "Kerberos uses your Windows sign-in. No password to type or save. Connect requests a ticket for this IBM i; your administrator must enable Kerberos and map your account. Terminal traffic is still unencrypted.";
+        if (kerberos()) return "Kerberos uses your Windows sign-in. No password to type or save. Connect requests a ticket for this IBM i; your administrator must enable Kerberos and map your account. Advanced contains optional device, port and display settings. Terminal traffic is still unencrypted.";
         if (loginSource()!=null) return "This profile uses the selected login. Its username and saved password come from there; no need to enter them again.";
         return (automatic.isSelected() && remember.isSelected() ? "Leave" : "Turn")
                 +" both recommended options on to skip typing your login next time. Enter your password below. Windows saves it; plain TCP is unencrypted.";
     }
     boolean kerberos() { return authentication.getSelectedItem()==Profile.Authentication.KERBEROS; }
     String tutorialConnectionText() {
-        return kerberos() ? "Check the host. Kerberos normally finds its DNS identity. If it cannot, enter the IBM i's full DNS name in Kerberos server. Device is optional."
+        return kerberos() ? "Check the host address. Advanced contains the optional separate Kerberos server DNS name, device and port."
                 : "Check the host address, then enter your username. Give the profile a name you'll recognize. Device is optional.";
     }
 
@@ -210,13 +202,21 @@ public final class ProfilesDialog extends JDialog {
         username.setText(login.username());
         automatic.setSelected(login.automaticSignOn()); remember.setSelected(login.rememberPassword());
         codePage.setSelectedItem(profile.codePage()); theme.setSelectedItem(profile.theme()); effect.setSelectedItem(profile.effect());
-        StringBuilder text = new StringBuilder();
-        profile.keymap().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> text.append(e.getKey()).append(" = ").append(e.getValue()).append('\n'));
-        keymap.setText(text.toString());
         error.setText(" ");
         baseline=fields(); dirty = false; loading = false; updateLoginControls(); updateDirty();
     }
-    private UUID loginSource() { return loginFrom.getSelectedItem() instanceof Profile source ? source.id() : null; }
+    private UUID loginSource() { return !kerberos() && loginFrom.getSelectedItem() instanceof Profile source ? source.id() : null; }
+    private void showAdvanced(boolean show) {
+        disclosure.setSelected(show); advanced.setVisible(show);
+        disclosure.setIcon(Ui.symbol(show ? "down" : "right"));
+        disclosure.getAccessibleContext().setAccessibleName(show ? "Hide advanced profile settings" : "Show advanced profile settings");
+        connection.revalidate(); connection.repaint();
+    }
+    private void updateIdentity() {
+        advancedIdentity.setVisible(kerberos());
+        identity.setVisible(kerberos());
+        connection.revalidate(); connection.repaint();
+    }
     private void updateLoginControls() {
         boolean independent=loginSource()==null;
         boolean windows=kerberos();
@@ -227,6 +227,7 @@ public final class ProfilesDialog extends JDialog {
         loginFrom.setVisible(!windows && loginFrom.getItemCount()>1); loginLabel.setVisible(loginFrom.isVisible());
         kerberosServer.setVisible(windows); kerberosLabel.setVisible(windows);
         kerberosServer.setEnabled(windows && !saving);
+        updateIdentity();
         loginHint.setText(windows ? "Use your Windows sign-in. No password saving or NTLM fallback. IBM i needs Kerberos and EIM set up; ask your administrator if Connect cannot sign you in. Terminal traffic is still unencrypted."
                 : independent
                 ? "Skip typing your login next time. Saved passwords stay in Windows Credential Manager. Plain TCP is unencrypted; automatic sign-in needs host support."
@@ -237,7 +238,7 @@ public final class ProfilesDialog extends JDialog {
     private java.util.List<Object> fields() {
         return java.util.List.of(name.getText(),host.getText(),port.getText(),device.getText(),username.getText(),
                 password.getDocument().getLength(),automatic.isSelected(),remember.isSelected(),
-                codePage.getSelectedItem(),theme.getSelectedItem(),effect.getSelectedItem(),keymap.getText(),
+                codePage.getSelectedItem(),theme.getSelectedItem(),effect.getSelectedItem(),
                 Objects.toString(loginSource(),""),authentication.getSelectedItem(),kerberosServer.getText());
     }
     private void updateDirty() {
@@ -256,7 +257,7 @@ public final class ProfilesDialog extends JDialog {
     }
     private void addProfile(boolean copy) {
         if (!discardChanges()) return;
-        Profile profile = copy ? workspace.connectionProfile(selected).duplicate() : Profile.create("New workstation");
+        Profile profile = copy ? workspace.connectionProfile(selected).duplicate() : Profile.createKerberos("New workstation");
         loading = true; model.addElement(profile); list.setSelectedValue(profile,true); loading = false;
         load(profile); updateDirty(); name.requestFocusInWindow(); name.selectAll();
     }
@@ -291,7 +292,7 @@ public final class ProfilesDialog extends JDialog {
             updated = new Profile(selected.id(),name.getText(),host.getText(),Integer.parseInt(port.getText().strip()),
                     device.getText(),source==null ? username.getText() : "",!kerberos() && source==null && automatic.isSelected(),!kerberos() && source==null && remember.isSelected(),
                     Objects.requireNonNull((String)codePage.getSelectedItem()),Objects.requireNonNull((String)theme.getSelectedItem()),
-                    Objects.requireNonNull((String)effect.getSelectedItem()),selected.zoom(),Keymap.parse(keymap.getText()),selected.savedLayout(),source,
+                    Objects.requireNonNull((String)effect.getSelectedItem()),selected.zoom(),Map.of(),selected.savedLayout(),source,
                     (Profile.Authentication)Objects.requireNonNull(authentication.getSelectedItem()),kerberosServer.getText());
             workspace.validateProfile(updated);
             Profile login=workspace.loginProfile(updated);
@@ -305,6 +306,15 @@ public final class ProfilesDialog extends JDialog {
             Arrays.fill(secret,'\0');
             error.setText(e instanceof NumberFormatException ? "Port must be a number." : e.getMessage());
             error.setToolTipText(error.getText());
+            if (e instanceof NumberFormatException || error.getText().startsWith("Port") || error.getText().startsWith("Device")
+                    || error.getText().startsWith("Unsupported") || error.getText().startsWith("Unknown palette")) {
+                showAdvanced(true);
+            }
+            if (error.getText().startsWith("Kerberos server")) {
+                showAdvanced(true);
+                kerberosServer.scrollRectToVisible(new Rectangle(0,0,kerberosServer.getWidth(),kerberosServer.getHeight()));
+                kerberosServer.requestFocusInWindow();
+            }
             return;
         }
         Profile previous = selected;
@@ -342,7 +352,7 @@ public final class ProfilesDialog extends JDialog {
     private void setSaving(boolean value) {
         saving = value;
         for (JButton button : java.util.List.of(save,done,use,cancel,add,duplicate,up,down,delete)) button.setEnabled(!value);
-        for (JComponent input:java.util.List.of(name,host,port,device,username,password,keymap,codePage,theme,effect,automatic,remember,loginFrom,authentication,kerberosServer))
+        for (JComponent input:java.util.List.of(name,host,port,device,username,password,codePage,theme,effect,automatic,remember,loginFrom,authentication,kerberosServer,disclosure))
             input.setEnabled(!value);
         updateLoginControls();
         if (!value) updateDirty();

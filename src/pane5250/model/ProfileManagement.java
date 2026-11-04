@@ -27,6 +27,6 @@ public final class ProfileManagement {
                 .map(p -> p.savedLayout().isEmpty() ? p : p.withLayout(Layout.decode(p.savedLayout()).replaceProfile(id,replacement).encode())).toList();
         return new StateStore.State(profiles,state.layout().replaceProfile(id,replacement),state.width(),state.height(),state.appTheme(),
                 state.lastProfile().equals(id) ? replacement : state.lastProfile(),state.shortcuts(),state.highlightActive(),
-                state.appearance(),state.tutorial(),state.connectOnStartup(),state.updates());
+                state.appearance(),state.tutorial(),state.connectOnStartup(),state.updates(),state.keyboardRecovery());
     }
 }

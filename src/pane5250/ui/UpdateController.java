@@ -71,29 +71,7 @@ final class UpdateController implements AutoCloseable {
         }.execute();
     }
     void settings() {
-        JCheckBox startup=new JCheckBox("Check for updates at startup",workspace.updateSettings().startup());
-        JComboBox<UpdateSettings.Channel> channel=new JComboBox<>(UpdateSettings.Channel.values());
-        channel.setSelectedItem(workspace.updateSettings().channel());
-        JLabel hidden=new JLabel(workspace.updateSettings().ignoredVersion().isEmpty() ? "No hidden version"
-                : "Hidden on startup: "+workspace.updateSettings().ignoredVersion());
-        JButton show=Ui.button("Show hidden updates again",0,() -> {
-            workspace.updateSettings(workspace.updateSettings().ignore("")); hidden.setText("No hidden version");
-        });
-        JPanel body=new JPanel(new GridLayout(0,1,0,10));
-        body.add(startup); Ui.labeled(body,"Update channel",channel); body.add(hidden); body.add(show);
-        body.add(Ui.button("Check for updates...",0,() -> {
-            workspace.updateSettings(new UpdateSettings(startup.isSelected(),(UpdateSettings.Channel)channel.getSelectedItem(),
-                    workspace.updateSettings().ignoredVersion()));
-            manual();
-        }));
-        body.add(new JSeparator());
-        body.add(Ui.button("Revert to factory defaults...",0,workspace::factoryDefaults));
-        if (Ui.form(workspace,"Application settings",body,"Done")) {
-            workspace.updateSettings(new UpdateSettings(startup.isSelected(),(UpdateSettings.Channel)channel.getSelectedItem(),
-                    workspace.updateSettings().ignoredVersion()));
-            if (!startup.isSelected()) { startupTimer.stop(); if (startupCancel!=null) startupCancel.cancel(); }
-            notice.dismiss();
-        }
+        workspace.preferences("Updates");
     }
     void manual() {
         if (closed || workspace.closing()) return;

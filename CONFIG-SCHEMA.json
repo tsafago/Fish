@@ -6,7 +6,7 @@
       "title": "Connect / disconnect"
     },
     {
-      "default": "ctrl alt shift R",
+      "default": "shift ctrl alt R",
       "hostAction": null,
       "title": "Reconnect"
     },
@@ -26,7 +26,7 @@
       "title": "Insert profile username"
     },
     {
-      "default": "ctrl alt shift P",
+      "default": "shift ctrl alt P",
       "hostAction": null,
       "title": "Insert remembered password"
     },
@@ -36,12 +36,12 @@
       "title": "Quit"
     },
     {
-      "default": "ctrl C",
+      "default": "ctrl C\nctrl INSERT",
       "hostAction": null,
       "title": "Copy selection / screen"
     },
     {
-      "default": "ctrl V",
+      "default": "ctrl V\nshift ctrl INSERT\nshift PAGE_DOWN",
       "hostAction": null,
       "title": "Paste into fields"
     },
@@ -71,7 +71,7 @@
       "title": "Next pane"
     },
     {
-      "default": "ctrl shift TAB",
+      "default": "shift ctrl TAB",
       "hostAction": null,
       "title": "Previous pane"
     },
@@ -96,24 +96,29 @@
       "title": "Restore profile layout"
     },
     {
-      "default": "ctrl 0",
+      "default": "ctrl 0\nctrl NUMPAD0@numpad",
       "hostAction": null,
       "title": "Fit host screen"
     },
     {
-      "default": "ctrl EQUALS",
+      "default": "ctrl EQUALS\nshift ctrl EQUALS\nctrl ADD@numpad",
       "hostAction": null,
       "title": "Zoom in"
     },
     {
-      "default": "ctrl MINUS",
+      "default": "ctrl MINUS\nctrl SUBTRACT@numpad",
       "hostAction": null,
       "title": "Zoom out"
     },
     {
-      "default": "ctrl COMMA",
+      "default": "",
       "hostAction": null,
       "title": "Appearance..."
+    },
+    {
+      "default": "ctrl COMMA",
+      "hostAction": null,
+      "title": "Preferences..."
     },
     {
       "default": "",
@@ -306,52 +311,52 @@
       "title": "Focus pane 8"
     },
     {
-      "default": "pressed BACK_SPACE",
+      "default": "BACK_SPACE",
       "hostAction": "BACK_SPACE",
       "title": "Host BACK SPACE"
     },
     {
-      "default": "shift pressed TAB",
+      "default": "shift TAB",
       "hostAction": "BACK_TAB",
       "title": "Host BACK TAB"
     },
     {
-      "default": "pressed UP",
+      "default": "UP\nUP@numpad",
       "hostAction": "UP",
       "title": "Host UP"
     },
     {
-      "default": "pressed DOWN",
+      "default": "DOWN\nDOWN@numpad",
       "hostAction": "DOWN",
       "title": "Host DOWN"
     },
     {
-      "default": "pressed LEFT",
+      "default": "LEFT\nLEFT@numpad",
       "hostAction": "LEFT",
       "title": "Host LEFT"
     },
     {
-      "default": "pressed RIGHT",
+      "default": "RIGHT\nRIGHT@numpad",
       "hostAction": "RIGHT",
       "title": "Host RIGHT"
     },
     {
-      "default": "pressed DELETE",
+      "default": "DELETE\nDELETE@numpad",
       "hostAction": "DELETE",
       "title": "Host DELETE"
     },
     {
-      "default": "pressed TAB",
+      "default": "TAB",
       "hostAction": "TAB",
       "title": "Host TAB"
     },
     {
-      "default": "pressed END",
+      "default": "END\nEND@numpad",
       "hostAction": "END_OF_FIELD",
       "title": "Host END OF FIELD"
     },
     {
-      "default": "ctrl pressed END",
+      "default": "ctrl END\nctrl END@numpad",
       "hostAction": "ERASE_EOF",
       "title": "Host ERASE EOF"
     },
@@ -361,12 +366,12 @@
       "title": "Host ERASE FIELD"
     },
     {
-      "default": "pressed INSERT",
+      "default": "INSERT\nINSERT@numpad",
       "hostAction": "INSERT",
       "title": "Host INSERT"
     },
     {
-      "default": "pressed HOME",
+      "default": "HOME\nHOME@numpad",
       "hostAction": "HOME",
       "title": "Host HOME"
     },
@@ -436,17 +441,17 @@
       "title": "Host KEYPAD MINUS"
     },
     {
-      "default": "ctrl pressed ENTER",
+      "default": "ctrl ENTER\nctrl ENTER@numpad",
       "hostAction": "FIELD_EXIT",
       "title": "FIELD EXIT"
     },
     {
-      "default": "pressed ADD",
+      "default": "ADD@numpad",
       "hostAction": "FIELD_PLUS",
       "title": "FIELD PLUS"
     },
     {
-      "default": "pressed SUBTRACT",
+      "default": "SUBTRACT@numpad",
       "hostAction": "FIELD_MINUS",
       "title": "FIELD MINUS"
     },
@@ -456,162 +461,162 @@
       "title": "Host BEGIN OF FIELD"
     },
     {
-      "default": "pressed ENTER",
+      "default": "ENTER\nENTER@numpad",
       "hostAction": "ENTER",
       "title": "ENTER"
     },
     {
-      "default": "pressed F1",
+      "default": "F1",
       "hostAction": "PF1",
       "title": "Host F1"
     },
     {
-      "default": "pressed F2",
+      "default": "F2",
       "hostAction": "PF2",
       "title": "Host F2"
     },
     {
-      "default": "pressed F3",
+      "default": "F3",
       "hostAction": "PF3",
       "title": "Host F3"
     },
     {
-      "default": "pressed F4",
+      "default": "F4",
       "hostAction": "PF4",
       "title": "Host F4"
     },
     {
-      "default": "pressed F5",
+      "default": "F5",
       "hostAction": "PF5",
       "title": "Host F5"
     },
     {
-      "default": "pressed F6",
+      "default": "F6",
       "hostAction": "PF6",
       "title": "Host F6"
     },
     {
-      "default": "pressed F7",
+      "default": "F7",
       "hostAction": "PF7",
       "title": "Host F7"
     },
     {
-      "default": "pressed F8",
+      "default": "F8",
       "hostAction": "PF8",
       "title": "Host F8"
     },
     {
-      "default": "pressed F9",
+      "default": "F9",
       "hostAction": "PF9",
       "title": "Host F9"
     },
     {
-      "default": "pressed F10",
+      "default": "F10",
       "hostAction": "PF10",
       "title": "Host F10"
     },
     {
-      "default": "pressed F11",
+      "default": "F11",
       "hostAction": "PF11",
       "title": "Host F11"
     },
     {
-      "default": "pressed F12",
+      "default": "F12",
       "hostAction": "PF12",
       "title": "Host F12"
     },
     {
-      "default": "shift pressed F1",
+      "default": "shift F1",
       "hostAction": "PF13",
       "title": "Host F13"
     },
     {
-      "default": "shift pressed F2",
+      "default": "shift F2",
       "hostAction": "PF14",
       "title": "Host F14"
     },
     {
-      "default": "shift pressed F3",
+      "default": "shift F3",
       "hostAction": "PF15",
       "title": "Host F15"
     },
     {
-      "default": "shift pressed F4",
+      "default": "shift F4",
       "hostAction": "PF16",
       "title": "Host F16"
     },
     {
-      "default": "shift pressed F5",
+      "default": "shift F5",
       "hostAction": "PF17",
       "title": "Host F17"
     },
     {
-      "default": "shift pressed F6",
+      "default": "shift F6",
       "hostAction": "PF18",
       "title": "Host F18"
     },
     {
-      "default": "shift pressed F7",
+      "default": "shift F7",
       "hostAction": "PF19",
       "title": "Host F19"
     },
     {
-      "default": "shift pressed F8",
+      "default": "shift F8",
       "hostAction": "PF20",
       "title": "Host F20"
     },
     {
-      "default": "shift pressed F9",
+      "default": "shift F9",
       "hostAction": "PF21",
       "title": "Host F21"
     },
     {
-      "default": "shift pressed F10",
+      "default": "shift F10",
       "hostAction": "PF22",
       "title": "Host F22"
     },
     {
-      "default": "shift pressed F11",
+      "default": "shift F11",
       "hostAction": "PF23",
       "title": "Host F23"
     },
     {
-      "default": "shift pressed F12",
+      "default": "shift F12",
       "hostAction": "PF24",
       "title": "Host F24"
     },
     {
-      "default": "pressed PAUSE",
+      "default": "ctrl BACK_SPACE\nPAUSE",
       "hostAction": "CLEAR",
       "title": "CLEAR"
     },
     {
-      "default": "alt pressed F1",
+      "default": "alt F1\nctrl H",
       "hostAction": "HELP",
       "title": "HELP"
     },
     {
-      "default": "pressed PAGE_UP",
+      "default": "PAGE_UP\nPAGE_UP@numpad",
       "hostAction": "PAGE_UP",
       "title": "PAGE UP"
     },
     {
-      "default": "pressed PAGE_DOWN",
+      "default": "PAGE_DOWN\nPAGE_DOWN@numpad",
       "hostAction": "PAGE_DOWN",
       "title": "PAGE DOWN"
     },
     {
-      "default": "ctrl pressed PAGE_UP",
+      "default": "ctrl PAGE_UP\nctrl PAGE_UP@numpad",
       "hostAction": "ROLL_LEFT",
       "title": "Host ROLL LEFT"
     },
     {
-      "default": "ctrl pressed PAGE_DOWN",
+      "default": "ctrl PAGE_DOWN\nctrl PAGE_DOWN@numpad",
       "hostAction": "ROLL_RIGHT",
       "title": "Host ROLL RIGHT"
     },
     {
-      "default": "ctrl pressed PAUSE",
+      "default": "ctrl PAUSE",
       "hostAction": "PRINT",
       "title": "Host PRINT"
     },
@@ -631,12 +636,12 @@
       "title": "Host PA3"
     },
     {
-      "default": "shift pressed ESCAPE",
+      "default": "shift ESCAPE",
       "hostAction": "SYSREQ",
       "title": "SYSREQ"
     },
     {
-      "default": "ctrl pressed R",
+      "default": "ctrl R",
       "hostAction": "RESET",
       "title": "RESET"
     },
@@ -651,12 +656,12 @@
       "title": "Host PREVWORD"
     },
     {
-      "default": "pressed ESCAPE",
+      "default": "ESCAPE",
       "hostAction": "ATTN",
       "title": "ATTN"
     },
     {
-      "default": "shift pressed INSERT",
+      "default": "shift INSERT\nshift INSERT@numpad",
       "hostAction": "DUP_FIELD",
       "title": "Host DUP FIELD"
     },
@@ -666,27 +671,7 @@
       "title": "Host NEW LINE"
     }
   ],
-  "aliasRules": "Available while the primary action retains its default chord, unless reserved by a host/application/retired binding. Never overrides user bindings.",
-  "applicationAliases": {
-    "Copy selection / screen": [
-      "ctrl INSERT"
-    ],
-    "Fit host screen": [
-      "ctrl NUMPAD0"
-    ],
-    "Paste into fields": [
-      "ctrl shift INSERT",
-      "shift PAGE_DOWN"
-    ],
-    "Zoom in": [
-      "ctrl shift EQUALS",
-      "ctrl ADD"
-    ],
-    "Zoom out": [
-      "ctrl SUBTRACT"
-    ]
-  },
-  "catalogVersion": 1,
+  "catalogVersion": 2,
   "format": "Fish XML properties configuration",
   "freshWorkspaceProfile": {
     "authentication": "KERBEROS",
@@ -698,296 +683,19 @@
     "port": 23,
     "remember": false
   },
-  "hostDefaults": [
-    {
-      "action": "HELP",
-      "stroke": "alt pressed F1"
-    },
-    {
-      "action": "CLEAR",
-      "stroke": "ctrl pressed BACK_SPACE"
-    },
-    {
-      "action": "ERASE_EOF",
-      "stroke": "ctrl pressed END"
-    },
-    {
-      "action": "FIELD_EXIT",
-      "stroke": "ctrl pressed ENTER"
-    },
-    {
-      "action": "HELP",
-      "stroke": "ctrl pressed H"
-    },
-    {
-      "action": "ROLL_RIGHT",
-      "stroke": "ctrl pressed PAGE_DOWN"
-    },
-    {
-      "action": "ROLL_LEFT",
-      "stroke": "ctrl pressed PAGE_UP"
-    },
-    {
-      "action": "PRINT",
-      "stroke": "ctrl pressed PAUSE"
-    },
-    {
-      "action": "RESET",
-      "stroke": "ctrl pressed R"
-    },
-    {
-      "action": "FIELD_PLUS",
-      "stroke": "pressed ADD"
-    },
-    {
-      "action": "BACK_SPACE",
-      "stroke": "pressed BACK_SPACE"
-    },
-    {
-      "action": "DELETE",
-      "stroke": "pressed DELETE"
-    },
-    {
-      "action": "DOWN",
-      "stroke": "pressed DOWN"
-    },
-    {
-      "action": "END_OF_FIELD",
-      "stroke": "pressed END"
-    },
-    {
-      "action": "ENTER",
-      "stroke": "pressed ENTER"
-    },
-    {
-      "action": "ATTN",
-      "stroke": "pressed ESCAPE"
-    },
-    {
-      "action": "PF1",
-      "stroke": "pressed F1"
-    },
-    {
-      "action": "PF10",
-      "stroke": "pressed F10"
-    },
-    {
-      "action": "PF11",
-      "stroke": "pressed F11"
-    },
-    {
-      "action": "PF12",
-      "stroke": "pressed F12"
-    },
-    {
-      "action": "PF2",
-      "stroke": "pressed F2"
-    },
-    {
-      "action": "PF3",
-      "stroke": "pressed F3"
-    },
-    {
-      "action": "PF4",
-      "stroke": "pressed F4"
-    },
-    {
-      "action": "PF5",
-      "stroke": "pressed F5"
-    },
-    {
-      "action": "PF6",
-      "stroke": "pressed F6"
-    },
-    {
-      "action": "PF7",
-      "stroke": "pressed F7"
-    },
-    {
-      "action": "PF8",
-      "stroke": "pressed F8"
-    },
-    {
-      "action": "PF9",
-      "stroke": "pressed F9"
-    },
-    {
-      "action": "HOME",
-      "stroke": "pressed HOME"
-    },
-    {
-      "action": "INSERT",
-      "stroke": "pressed INSERT"
-    },
-    {
-      "action": "LEFT",
-      "stroke": "pressed LEFT"
-    },
-    {
-      "action": "PAGE_DOWN",
-      "stroke": "pressed PAGE_DOWN"
-    },
-    {
-      "action": "PAGE_UP",
-      "stroke": "pressed PAGE_UP"
-    },
-    {
-      "action": "CLEAR",
-      "stroke": "pressed PAUSE"
-    },
-    {
-      "action": "RIGHT",
-      "stroke": "pressed RIGHT"
-    },
-    {
-      "action": "FIELD_MINUS",
-      "stroke": "pressed SUBTRACT"
-    },
-    {
-      "action": "TAB",
-      "stroke": "pressed TAB"
-    },
-    {
-      "action": "UP",
-      "stroke": "pressed UP"
-    },
-    {
-      "action": "SYSREQ",
-      "stroke": "shift pressed ESCAPE"
-    },
-    {
-      "action": "PF13",
-      "stroke": "shift pressed F1"
-    },
-    {
-      "action": "PF22",
-      "stroke": "shift pressed F10"
-    },
-    {
-      "action": "PF23",
-      "stroke": "shift pressed F11"
-    },
-    {
-      "action": "PF24",
-      "stroke": "shift pressed F12"
-    },
-    {
-      "action": "PF14",
-      "stroke": "shift pressed F2"
-    },
-    {
-      "action": "PF15",
-      "stroke": "shift pressed F3"
-    },
-    {
-      "action": "PF16",
-      "stroke": "shift pressed F4"
-    },
-    {
-      "action": "PF17",
-      "stroke": "shift pressed F5"
-    },
-    {
-      "action": "PF18",
-      "stroke": "shift pressed F6"
-    },
-    {
-      "action": "PF19",
-      "stroke": "shift pressed F7"
-    },
-    {
-      "action": "PF20",
-      "stroke": "shift pressed F8"
-    },
-    {
-      "action": "PF21",
-      "stroke": "shift pressed F9"
-    },
-    {
-      "action": "DUP_FIELD",
-      "stroke": "shift pressed INSERT"
-    },
-    {
-      "action": "BACK_TAB",
-      "stroke": "shift pressed TAB"
-    }
-  ],
-  "hostOverridePrefix": "profile.{uuid}.key.{Swing pressed stroke}",
-  "hostOverrideRules": "Empty disables one stroke. Ctrl+Alt and OS chords are reserved. Equivalent duplicate strokes are rejected.",
-  "hostOverrideValues": [
-    "BACK_SPACE",
-    "BACK_TAB",
-    "UP",
-    "DOWN",
-    "LEFT",
-    "RIGHT",
-    "DELETE",
-    "TAB",
-    "END_OF_FIELD",
-    "ERASE_EOF",
-    "ERASE_FIELD",
-    "INSERT",
-    "HOME",
-    "KEYPAD0",
-    "KEYPAD1",
-    "KEYPAD2",
-    "KEYPAD3",
-    "KEYPAD4",
-    "KEYPAD5",
-    "KEYPAD6",
-    "KEYPAD7",
-    "KEYPAD8",
-    "KEYPAD9",
-    "KEYPAD_PERIOD",
-    "KEYPAD_COMMA",
-    "KEYPAD_MINUS",
-    "FIELD_EXIT",
-    "FIELD_PLUS",
-    "FIELD_MINUS",
-    "BEGIN_OF_FIELD",
-    "ENTER",
-    "PF1",
-    "PF2",
-    "PF3",
-    "PF4",
-    "PF5",
-    "PF6",
-    "PF7",
-    "PF8",
-    "PF9",
-    "PF10",
-    "PF11",
-    "PF12",
-    "PF13",
-    "PF14",
-    "PF15",
-    "PF16",
-    "PF17",
-    "PF18",
-    "PF19",
-    "PF20",
-    "PF21",
-    "PF22",
-    "PF23",
-    "PF24",
-    "CLEAR",
-    "HELP",
-    "PAGE_UP",
-    "PAGE_DOWN",
-    "ROLL_LEFT",
-    "ROLL_RIGHT",
-    "PRINT",
-    "PA1",
-    "PA2",
-    "PA3",
-    "SYSREQ",
-    "RESET",
-    "NEXTWORD",
-    "PREVWORD",
-    "ATTN",
-    "DUP_FIELD",
-    "NEW_LINE"
-  ],
+  "keyRules": "All bindings are application-wide. Custom keys replace their default owners; two explicit owners, duplicate equivalent keys, OS chords and unmodified typing keys for Fish actions are rejected. Host actions only dispatch in terminals; dialog text editing/IME are not intercepted. Unknown-location events use an explicit @unknown binding or standard fallback only.",
+  "keyUnbinding": {
+    "property": "binding.Unbound keys",
+    "value": "Newline-separated exact chords disabled only in terminals; empty removes these per-key suppressions."
+  },
+  "keyboardMigration": "Formats 1-11 migrate explicit app and unambiguous per-profile keys. Identical definitions deduplicate. Conflicting explicit definitions leave the exact key inactive in Unbound keys; all originals remain in keyboard.legacy.*. Legacy app Enter spans main/keypad; legacy profile plain Enter affected main only. New defaults give both Enter keys host Enter; Ctrl+Enter remains Field Exit. Profile key.* and shortcut.* entries are not accepted in format 12.",
+  "keyboardRecoveryFields": {
+    "profile.{uuid}.key.{old-Swing-stroke}": "Original host mnemonic or empty. Recovery only, never dispatched.",
+    "profile.{uuid}.name": "Original profile display name; independent of current/deleted profiles.",
+    "report": "Retained actionable conflict report; at most 100000 characters.",
+    "shortcut.{old-action-title}": "Original single Swing stroke or empty."
+  },
+  "keyboardRecoveryPrefix": "keyboard.legacy.",
   "layoutGrammar": {
     "leaf": "L|{pane-uuid}|{profile-uuid}",
     "ratio": "finite 0.05..0.95",
@@ -1013,7 +721,7 @@
   "profileFields": {
     "authentication": {
       "constraints": "Exact case-sensitive value.",
-      "default": "PASSWORD",
+      "default": "KERBEROS",
       "type": "enum",
       "values": [
         "PASSWORD",
@@ -1021,8 +729,8 @@
       ]
     },
     "auto": {
-      "constraints": "New PASSWORD-profile editor default: RFC 4777 plain automatic sign-on. Username required before connecting. Must be false for KERBEROS or linked profiles. Fresh workspace Kerberos profile uses false; existing choices unchanged.",
-      "default": true,
+      "constraints": "PASSWORD only: RFC 4777 plain automatic sign-on. Username required before connecting. Must be false for KERBEROS or linked profiles. Fresh and New profiles start with Kerberos/false; changing modes retains current choices. Existing choices unchanged.",
+      "default": false,
       "type": "boolean"
     },
     "codePage": {
@@ -1094,8 +802,8 @@
       "type": "integer"
     },
     "remember": {
-      "constraints": "New PASSWORD-profile editor default: OS password lookup/storage. Must be false for KERBEROS or linked profiles. Fresh Kerberos profile uses false. Configuration never touches OS credentials.",
-      "default": true,
+      "constraints": "PASSWORD only: OS password lookup/storage. Must be false for KERBEROS or linked profiles. Fresh and New profiles start with Kerberos/false; changing modes retains current choices. Configuration never touches OS credentials.",
+      "default": false,
       "type": "boolean"
     },
     "theme": {
@@ -1295,10 +1003,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "11",
+      "default": "12",
       "type": "enum",
       "values": [
-        "11"
+        "12"
       ]
     },
     "width": {
@@ -1308,8 +1016,8 @@
     }
   },
   "semantics": "Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Apply performs no connections/transactions/credential operations. Normal startup stays offline unless connectOnStartup is explicitly enabled.",
-  "shortcutPrefix": "shortcut.{exact-action-title}",
-  "shortcutValue": "Swing pressed stroke or empty to unbind. Explicit entries, even equal to current defaults, remain explicit.",
+  "shortcutPrefix": "binding.{exact-action-title}",
+  "shortcutValue": "Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.",
   "storage": "All values are XML strings; types below describe their logical values. Use export, edit, validate, apply.",
   "themeFields": {
     "ACTIVE_TINT": {
@@ -1620,5 +1328,5 @@
   },
   "themePrefix": "appearance.theme.{zero-based-index}.",
   "unknownKeys": "Rejected without writing. Future workspace versions are rejected, never downgraded.",
-  "workspaceVersion": "11"
+  "workspaceVersion": "12"
 }

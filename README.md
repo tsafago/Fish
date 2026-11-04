@@ -10,13 +10,33 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.7.1 maintenance preview
+## Fish 0.7.2 keyboard and Preferences preview
+
+**Edit > Preferences** (Ctrl+, by default) now indexes General, Appearance,
+Terminal/fonts, Panes, Keyboard and Updates in one draft-based settings dialog.
+Quick settings routes share these controls. Apply/Done validate together; Cancel
+keeps the last applied state. Profile setup shows essential mode-specific fields,
+with the optional Kerberos server DNS identity, port, device, code page, palette
+and effects under **Advanced**. Validation expands advanced corrective fields.
+
+The **application-wide** keyboard editor combines Fish and host actions, typed
+exact chords, multiple bindings and **Record and add**. Main `ENTER` and
+`ENTER@numpad` are independent; **both default to host Enter**, with Ctrl+Enter
+retained for Field Exit. Custom keys replace their defaults; conflicting custom
+owners are rejected. There are no live per-profile maps. Old explicit definitions
+migrate without choosing a winning profile: incompatible keys start inactive,
+and exact originals/conflicts remain recoverable in Keyboard > Migrated definitions
+and exported `keyboard.legacy.*` data.
+
+The native setup checkbox now paints its actual text/check/focus path with
+explicit colors, including disabled states and Windows high contrast. Never-shown
+native control checks cover 100/125/150/175/200%; no live installer was run.
 
 **Unsigned experimental prerelease**, now published at
 [tsafago/Fish](https://github.com/tsafago/Fish). Profiles have keyboard-accessible
 Up/Down/Delete controls. Order stays consistent across pane selectors and saved
 configuration; deletion preserves panes and blocks removal of a shared login source.
-**Appearance > More settings > Application settings** (also in Help) offers a
+**Preferences > General** offers a
 confirmed factory reset: save fresh first-run state, end sessions and exit.
 Windows saved passwords, actual font files and other workspaces are kept.
 
@@ -36,7 +56,8 @@ transaction and bundled runtime. Input notices have a physical-pixel border,
 an accessible X and a 2.8-second lifetime. Dismiss does not Reset input; recovery
 and **Host > Last pane notice** remain available.
 Read the [manual](MANUAL.md#checking-for-updates) for update/reset details.
-Configuration is now **format 11**: back up before upgrading.
+Configuration is now **format 12**: back up before upgrading, including from 0.7.1.
+Older binaries cannot read the new exact-key representation; do not relabel exports.
 
 ## Included Kerberos sign-in
 
@@ -62,7 +83,7 @@ Windows Credential Manager; plain TCP and the sign-on mechanism have the limits 
 target host using a stable reference, never a password copy.
 
 Ctrl+C/V now copy/paste, Ctrl+Tab cycles panes, Ctrl+N/W adds/closes a pane,
-Ctrl+0 and Ctrl+plus/minus fit/zoom, and Ctrl+comma opens Appearance.
+Ctrl+0 and Ctrl+plus/minus fit/zoom, and Ctrl+comma opens Preferences.
 Escape sends Attention; Shift+Escape remains System Request. Enter during a
 recoverable local input error performs **Reset only** with no host submission;
 the next normal Enter resumes usual behavior. Ctrl+R remains an explicit Reset.
@@ -93,8 +114,8 @@ Editable font, information, window/focus, shortcut and profile settings use
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-Immediate appearance selectors remain immediate, without redundant helper copy
-or a duplicate Flux entry in More settings. Its configurable Flux action remains.
+In 0.7.2, appearance selectors join draft-based Preferences; pane scale/layout
+actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
 cached per-channel LCD glyph coverage, changing only color; toggles do not reload
@@ -113,8 +134,8 @@ The known maximize/restore perimeter defect below is unchanged.
 Owned structural edges share one subtle divider color and a one-physical-pixel
 painter. Fractional-DPI painting now follows Swing's actual buffer-copy endpoints
 without expanding repaint clips, preventing missing edges and orphan menu lines.
-The whole-window outline is on by default. Change it under **View > Appearance > More settings > Window and
-focus**; active-pane outline and tint remain separate options there.
+The whole-window outline is on by default. Change it under **Preferences > Panes**;
+active-pane outline and tint remain separate options there.
 Version-5/6 workspaces get a documented one-time outline-on migration: those
 versions did not record whether off was intentional. Version-7 choices,
 including off, persist unchanged. Normal migrations are informational console
@@ -127,7 +148,7 @@ restoring. Real-monitor checks still fail for that path on both 1080p and 4K.
 This batch is not a complete border fix; native/ACS acceptance is not claimed.
 Flat square dialog/combo/popup perimeters replace compound bevels and shadows.
 Quick menus retain frequent actions; fonts, pane information, window details
-and the theme designer are behind **Appearance > More settings**.
+and the theme designer are indexed in **Edit > Preferences**.
 
 ## Included customization
 
@@ -151,25 +172,25 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.7.1-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.7.1](https://github.com/tsafago/Fish/releases/tag/v0.7.1), then run the
+Download `Fish-0.7.2-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.7.2](https://github.com/tsafago/Fish/releases/tag/v0.7.2), then run the
 installer for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract `Fish-0.7.1-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.7.2-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
 may warn or block them. Checksums accompany the package; do not bypass IT policy.
 
 **Back up before upgrading:** close Fish normally and copy its `workspace.xml`
-outside the application folder before first launching 0.7.1. The usual location
+outside the application folder before first launching 0.7.2. The usual location
 is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
 and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 11**, which older binaries cannot read. Keep a pre-upgrade backup
+to **version 12**, which older binaries cannot read. Keep a pre-upgrade backup
 for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
@@ -184,8 +205,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.1-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.7.1-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.7.2-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.7.2-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -196,10 +217,10 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.1**.
+The matching local package is **Fish 0.7.2**.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.1\Fish` to both Package and Installer.
-This local delivery is at `dist\Fish-0.7.1\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.2\Fish` to both Package and Installer.
+This local delivery is at `dist\Fish-0.7.2\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
@@ -368,7 +389,7 @@ New panes preselect the last used preset; restored panes retain their saved
 preset selection. Nothing auto-connects in normal mode.
 The active pane has a single subtle tinted surface across its header, terminal
 and footer, with an outer physical-pixel focus outline and no header underline.
-Open **View > Appearance > More settings > Window and focus** to change
+Open **Preferences > Panes** to change
 the active-pane outline and tint independently.
 Focus never changes the border's layout insets. OLED themes retain true-black surfaces.
 
@@ -390,9 +411,9 @@ and errors. X remains available to cancel a pending connection. When only one
 pane remains and it is disconnected, its X is hidden; other pane-close and
 disconnect behavior is unchanged.
 
-**Edit > Keyboard > Shortcuts** lists every registered application and host action, with
-record/unbind/default controls and conflict validation. The same list is linked
-from **Profiles > Keyboard**. Assign **Ctrl+Tab** to Next pane and
+**Preferences > Keyboard** (also Edit > Keyboard > Shortcuts) lists every registered
+application and host action, with typed multi-binding lists, exact recording,
+unbinding/default controls and conflict validation. Assign **Ctrl+Tab** to Next pane and
 **Ctrl+Shift+Tab** to Previous pane to use familiar cycling. Overrides are
 global within this Fish workspace, not OS-wide. Modal UI stays isolated from
 host input. Menus show effective bindings; conflicting host or reserved
@@ -483,7 +504,7 @@ actions retain **Ctrl+Alt**. Profile-specific host mappings cannot claim Ctrl+Al
 | Rectangular selection | Shift+arrows, or mouse drag |
 | Insert profile username / remembered password | Ctrl+Alt+U / Ctrl+Alt+Shift+P |
 | Host key chooser / application menu | Ctrl+Alt+F / Ctrl+Alt+M |
-| Appearance | Ctrl+comma |
+| Preferences | Ctrl+comma |
 | Dark window menu / standard Windows window menu | Ctrl+Alt+Space / Alt+Space |
 | Immediately close window and disconnect all | Alt+F4 |
 | Quit | Ctrl+Q |
@@ -491,7 +512,7 @@ actions retain **Ctrl+Alt**. Profile-specific host mappings cannot claim Ctrl+Al
 | Host action | Default key |
 |---|---|
 | F1-F12 / F13-F24 | F1-F12 / Shift+F1-F12 |
-| Enter / Field Exit | Enter / keypad Enter or Ctrl+Enter |
+| Enter / Field Exit | Main or keypad Enter / Ctrl+Enter |
 | Field Plus / Field Minus | Keypad + / - |
 | Reset / Attention / System Request | Ctrl+R / Escape / Shift+Escape |
 | Clear / Help | Pause or Ctrl+Backspace / Alt+F1 or Ctrl+H |
@@ -500,8 +521,8 @@ actions retain **Ctrl+Alt**. Profile-specific host mappings cannot claim Ctrl+Al
 | Next / previous field | Tab / Shift+Tab |
 | Insert, delete, home, end of field | Insert, Delete, Home, End |
 
-Use Profiles > Keyboard for per-profile overrides, e.g.
-`ctrl ENTER = FIELD_EXIT` or `shift F1 = PF13`. The Host menu exposes available
+Use Preferences > Keyboard for application-wide bindings, e.g. select Host F13 and
+enter `ENTER@numpad` and `ctrl F3` on separate lines. The Host menu exposes available
 host actions even on keyboards without Pause or a keypad. System Request
 prompts for an optional option; an empty option requests its menu.
 
@@ -526,7 +547,7 @@ dividers and text. Application themes are independent of workstation host
 palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid,
 Mint, Rose, OLED green and OLED amber. Host
 color/reverse/underline/blink/non-display distinctions remain intact.
-**View > Appearance > More settings > Theme designer** edits all 60 semantic RGB roles: surfaces, controls and
+**Preferences > Appearance > Theme designer** edits all 60 semantic RGB roles: surfaces, controls and
 states, chrome, menus/tooltips, header/footer/statuses, outline/tint/dividers,
 cursor/terminal selection, all sixteen host slots, six gradient stops, glow
 and logo colors. Preview is temporary; Cancel restores the applied theme.
@@ -542,14 +563,14 @@ including optional pane/window outlines. Version-5 custom themes keep their
 existing divider color; old separate LINE/OUTLINE colors are linked to it with
 an explicit migration notice.
 
-**Appearance > More settings > Fonts** discovers available regular monospaced families and accepts a
+**Preferences > Terminal** discovers available regular monospaced families and accepts a
 local TTF/OTF file. Apply checks printable fixed-cell widths and the current
 profiles' code-page glyphs. Missing/unsupported files are reported explicitly;
 startup uses an announced temporary Monospaced fallback without erasing the
 saved choice. Font files stay local and must remain available at the saved path.
 They are not bundled, uploaded or copied into releases.
 
-**Appearance > More settings > Pane information** independently controls each header/footer item and
+**Preferences > Panes** independently controls each header/footer item and
 both rows, with no space for empty rows. Outline and tint live in **Window and focus**.
 With a hidden/empty header, its independent close X overlays the upper-right
 corner without reserving a band; Reset remains a separate non-overlapping overlay.

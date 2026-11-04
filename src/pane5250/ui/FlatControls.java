@@ -54,8 +54,30 @@ public final class FlatControls {
     }
     public static final class MenuItem extends BasicMenuItemUI {
         public static ComponentUI createUI(JComponent c) { return new MenuItem(); }
-        @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); }
+        @Override public Dimension getPreferredSize(JComponent c) { return shortcutSize(c,super.getPreferredSize(c)); }
+        @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); paintShortcut(g,(JMenuItem)c); }
         @Override protected void paintText(Graphics g,JMenuItem item,Rectangle text,String value) { menuText(g,item,text,value); }
+    }
+    public static final class CheckMenuItem extends BasicCheckBoxMenuItemUI {
+        public static ComponentUI createUI(JComponent c) { return new CheckMenuItem(); }
+        @Override public Dimension getPreferredSize(JComponent c) { return shortcutSize(c,super.getPreferredSize(c)); }
+        @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); paintShortcut(g,(JMenuItem)c); }
+    }
+    private static String shortcut(JMenuItem item) {
+        return item.getAction() instanceof AppCommand action ? action.shortcut : "";
+    }
+    private static Dimension shortcutSize(JComponent c,Dimension size) {
+        String text=shortcut((JMenuItem)c);
+        if (!text.isEmpty()) size.width+=c.getFontMetrics(c.getFont()).stringWidth(text)+28;
+        return size;
+    }
+    private static void paintShortcut(Graphics g,JMenuItem item) {
+        String text=shortcut(item); if (text.isEmpty()) return;
+        g.setFont(item.getFont());
+        g.setColor(!item.isEnabled() ? Ui.color(ColorRole.DISABLED) : item.getModel().isArmed()
+                ? Ui.color(ColorRole.MENU_SELECTED_TEXT) : Ui.MUTED);
+        FontMetrics metrics=g.getFontMetrics();
+        g.drawString(text,item.getWidth()-metrics.stringWidth(text)-14,(item.getHeight()-metrics.getHeight())/2+metrics.getAscent());
     }
     private static void menuText(Graphics g,JMenuItem item,Rectangle text,String value) {
         boolean selected=item.getModel().isArmed() || item instanceof JMenu && item.getModel().isSelected();

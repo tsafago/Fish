@@ -108,7 +108,7 @@ final class TutorialDialog extends JDialog {
                 "Click Done to save without connecting. Apply saves and keeps editing; Cancel drops only unapplied changes.",
                 "Pick your profile in this pane, then Connect. For next time, Session > Connect panes on startup can reopen your sessions.",
                 "Open Panes > Add pane"+binding("Add pane")+". Each pane has its own connection. Next pane"+binding("Next pane")+" moves between them.",
-                "Drag headers to swap panes and dividers to resize. View > Fit host screen"+binding("Fit host screen")+" fits. Help has Check for updates, Application settings and this guide."
+                "Drag headers to swap panes and dividers to resize. View > Fit host screen"+binding("Fit host screen")+" fits. Edit > Preferences"+binding("Preferences...")+" indexes settings and exact key recording. Help has updates and this guide."
             };
             Component target=editor==null ? workspace.tutorialTarget(step) : editor.tutorialTarget(step);
             String message=instructions[step];

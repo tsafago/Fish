@@ -53,10 +53,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Setup resource compilation failed.' }
 $bootstrapper=Join-Path $output 'Fish-setup.exe'
 & $zig cc -O2 -Wall -Wextra -Werror -municode '-Wl,--subsystem,windows' -target x86_64-windows-gnu `
     ("-I"+$output) (Join-Path $root 'src\native\fish-setup.c') (Join-Path $output 'setup.res') `
-    -luser32 -lgdi32 -lshell32 -lole32 -luuid -lmsi -lversion -lbcrypt -ldwmapi -o $bootstrapper
+    -luser32 -lgdi32 -lshell32 -lole32 -luuid -lmsi -lversion -lbcrypt -ldwmapi -lcomctl32 -o $bootstrapper
 if ($LASTEXITCODE -ne 0) { throw 'Native setup compilation failed.' }
 $check=Start-Process -FilePath $bootstrapper -ArgumentList '--self-test' -Wait -PassThru
 if ($check.ExitCode -ne 0) { throw 'Native setup contract checks failed.' }
+$check=Start-Process -FilePath $bootstrapper -ArgumentList '--test-controls' -Wait -PassThru
+if ($check.ExitCode -ne 0) { throw 'Never-shown native checkbox paint/state/contrast checks failed.' }
 $destination=Join-Path $root "dist\Fish-$Version-setup.exe"
 Copy-Item -LiteralPath $bootstrapper -Destination $destination -Force
 $stream=[IO.File]::Open($destination,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::None)

@@ -48,6 +48,7 @@ public final class Workspace extends JFrame {
     private TutorialDialog tutorial;
     private boolean connectOnStartup, startupHandled;
     private UpdateSettings updateSettings;
+    private Map<String,String> keyboardRecovery;
     private final UpdateController updates;
     private Runnable afterClose = () -> {};
 
@@ -67,6 +68,7 @@ public final class Workspace extends JFrame {
         tutorialStatus=state.tutorial();
         connectOnStartup=state.connectOnStartup();
         updateSettings=state.updates();
+        keyboardRecovery=state.keyboardRecovery();
         Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         this.store = store;
         this.demonstration = demonstration;
@@ -196,12 +198,21 @@ public final class Workspace extends JFrame {
             TerminalFonts.validate(terminalFont,profileList());
             fontNotice="";
         } catch (java.io.IOException | IllegalArgumentException e) {
-            fontNotice="Terminal font unavailable: "+e.getMessage()+"\nUsing Java Monospaced temporarily; saved choice retained. Appearance > More settings > Fonts can repair it.";
+            fontNotice="Terminal font unavailable: "+e.getMessage()+"\nUsing Java Monospaced temporarily; saved choice retained. Preferences > Terminal can repair it.";
             System.err.println(fontNotice);
             terminalFont=new Font(Font.MONOSPACED,Font.PLAIN,16);
         }
     }
     public void showShortcuts() { shortcuts.show(); }
+    public void preferences(String category) { Ui.showDialog(preferencesDialog(category)); }
+    JDialog preferencesDialog(String category) { return new Preferences(this,category).dialog(); }
+    Map<String,String> keyboardRecovery() { return keyboardRecovery; }
+    void keyboardRecovery(Map<String,String> value) { KeyboardMigration.validateRecovery(value); keyboardRecovery=Map.copyOf(value); changed(); }
+    boolean connectOnStartup() { return connectOnStartup; }
+    void connectOnStartup(boolean value) {
+        connectOnStartup=value; command("Connect panes on startup").putValue(Action.SELECTED_KEY,value); changed();
+    }
+    void executeCommand(String title) { command(title).actionPerformed(new ActionEvent(this,ActionEvent.ACTION_PERFORMED,"preferences")); }
     @Override public void addNotify() {
         super.addNotify();
         if (chrome!=null) chrome.installNative();
@@ -220,6 +231,7 @@ public final class Workspace extends JFrame {
         changed();
     }
     public void validateProfile(Profile profile) {
+        if (!profile.keymap().isEmpty()) throw new IllegalArgumentException("Keyboard mappings are application-wide. Use Preferences > Keyboard, not per-profile keys.");
         List<Profile> candidates=new ArrayList<>(profileList());
         candidates.removeIf(p -> p.id().equals(profile.id())); candidates.add(profile);
         Profile existing=profiles.get(profile.id());
@@ -240,13 +252,7 @@ public final class Workspace extends JFrame {
     private AppCommand command(String name) { return commands.stream().filter(c -> c.title.equals(name)).findFirst().orElseThrow(); }
     public void refreshCommands() { commands.forEach(AppCommand::refresh); }
     private void refreshShortcutLabels() {
-        if (active==null || shortcuts==null) return;
-        Map<KeyStroke,KeyMnemonic> keys=active.keys().bindings();
-        for (AppCommand c:commands) if (c.hostKey!=null && !shortcuts.overrides().containsKey(c.title)) {
-            String stroke=keys.entrySet().stream().filter(e -> e.getValue()==c.hostKey).map(e -> e.getKey().toString())
-                    .min(Comparator.comparingInt(String::length).thenComparing(Comparator.naturalOrder())).orElse("");
-            c.setStroke(stroke);
-        }
+        if (shortcuts!=null) shortcuts.refreshLabels();
     }
     public void themeChanged() {
         setIconImages(FishIcon.images());
@@ -341,7 +347,7 @@ public final class Workspace extends JFrame {
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
     private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
-            shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings); }
+            shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings,keyboardRecovery); }
     public void saveAsync() {
         if (closing) return;
         StateStore.State snapshot = state();
@@ -523,7 +529,7 @@ public final class Workspace extends JFrame {
         active.focusTerminal();
     }
     public void appearance() {
-        Ui.present(this,"Appearance",appearancePanel(),"Done");
+        preferences("Appearance");
     }
     JPanel appearancePanel() {
         JPanel form=new JPanel(new GridLayout(0,2,12,12));
@@ -606,6 +612,8 @@ public final class Workspace extends JFrame {
         session.addSeparator();
         action(session,"Quit","ctrl alt Q",() -> close(false));
         JMenu edit=menu(bar,"Edit",KeyEvent.VK_E);
+        action(edit,"Preferences...","ctrl COMMA",() -> preferences("General"));
+        edit.addSeparator();
         action(edit,"Copy selection / screen","ctrl alt shift C",() -> active.view().copy());
         action(edit,"Paste into fields","ctrl alt shift V",() -> active.view().paste());
         action(edit,"RESET",null,() -> active.send(KeyMnemonic.RESET)).hostKey=KeyMnemonic.RESET;
@@ -678,8 +686,8 @@ public final class Workspace extends JFrame {
                 + "Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
                 + "Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
                 + "Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels\n"
-                + "Ctrl+comma: Appearance     Appearance > More settings: Fonts, Information, Window and focus, Theme designer\n"
-                + "Your saved custom bindings take precedence; Edit > Keyboard > Shortcuts shows current assignments.",
+                + "Ctrl+comma: Preferences     Edit > Preferences: General, Appearance, Terminal, Panes, Keyboard, Updates\n"
+                + "Your saved custom bindings take precedence; Preferences > Keyboard shows effective exact assignments.",
                 "Keyboard reference"));
         action(help,"Compatibility and connection safety",null,() -> Ui.message(this,
                 "TN5250J-based 5250 engine; only IBM-3477-FC.\nPlain TCP is not encrypted. Use only on a trusted network.\n"

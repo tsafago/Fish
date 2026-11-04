@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.7.1 - unsigned experimental maintenance/Kerberos prerelease.
+Fish 0.7.2 - unsigned experimental keyboard/Preferences/Kerberos prerelease.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -38,9 +38,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.7.1 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.1) includes Fish-0.7.1-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested.
+The public [v0.7.2 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.2) includes Fish-0.7.2-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
 
-Alternatively, extract Fish-0.7.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.7.2-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -54,15 +54,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.1-setup.exe, dist\Fish-0.7.1-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.1\Fish\Fish.exe. Close a running copy before rebuilding its directory.
+Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.2-setup.exe, dist\Fish-0.7.2-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.2\Fish\Fish.exe. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.1\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.1\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.2\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.2\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -72,14 +72,14 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish, or the retained
 legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
-The next save writes configuration version 11. Older binaries, including 0.7.0, cannot read it:
-keep the pre-upgrade backup for downgrade, not just a version-11 export.
+The next save writes configuration version 12. Older binaries, including 0.7.1, cannot read it:
+keep the pre-upgrade backup for downgrade, not just a version-12 export. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces migrate to version 11 on load, retaining profiles, order, themes, fonts, key overrides, outline/tint and information choices. Existing version-10 Kerberos metadata is preserved; pre-10 profiles remain Password / manual with their exact auto/remember choices. The Kerberos default is seeded only for absent/reset state. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults from before version 8 change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries retain their provenance. Unresolved conflicts fail clearly. Pre-version-8 tutorials start skipped; later tutorial/login choices remain unchanged. Startup connection starts off on pre-9 upgrade; explicit later choices remain unchanged. Format 11 adds startup update checks on, preview-patch channel and no hidden version. Malformed state is preserved, never replaced with defaults; do not relabel a new format to downgrade.
+Older Fish/Pane5250 workspaces migrate to version 12 on load, retaining profiles, order, themes, fonts, outline/tint and information choices. Existing version-10 Kerberos metadata is preserved; pre-10 profiles remain Password / manual with their exact auto/remember choices. The Kerberos seed is only for absent/reset state; New creates a Kerberos profile without changing old profiles. Version-7 explicit outline-off choices remain off; older 5/6 data retains its one-time outline-on migration. Pre-version-8 tutorials start skipped; later tutorial/login choices remain unchanged. Startup connection starts off on pre-9 upgrade; explicit later choices remain unchanged. Pre-11 update preferences receive startup checks on, preview-patch channel and no hidden version. Existing 11 update choices remain. Format 12 migrates old keys to the single exact application-wide map, retaining original definitions/reports as recovery data; see Older keyboard definitions below. Only actually saved overrides can be distinguished from absent defaults. Malformed state is preserved, never replaced with defaults.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -89,7 +89,7 @@ Help > Check for updates checks the public tsafago/Fish GitHub releases over HTT
 
 A nonblocking startup check is on by default. Offline/rate-limit failures stay quiet; manual checks show errors and Check again. The small startup notice offers Update, X and Hide version. X only dismisses this notice. Hide remembers that exact version; future eligible versions can notify again, and manual checks still show hidden versions.
 
-Help > Application settings (also Appearance > More settings > Application settings) controls startup checks and channel. Preview patches includes experimental releases within the same major/minor, such as 0.7.x. Stable releases excludes previews and permits newer stable minor versions within the same major. No channel silently upgrades to a different major or a newer experimental minor. Show hidden updates again clears the exact-version ignore choice.
+Preferences > Updates controls startup checks and channel (the existing Application settings action opens it too). Preview patches includes experimental releases within the same major/minor, such as 0.7.x, so 0.7.1 can select 0.7.2. Stable releases excludes previews and permits newer stable minor versions within the same major. No channel silently upgrades to a different major or a newer experimental minor. Show hidden updates again clears the exact-version ignore choice only on Apply/Done. Manual checks use the applied channel and include hidden versions.
 
 Update opens the version, release notes and repository link. One explicit confirmation authorizes download, saving and ending this window's sessions before setup. A download can be cancelled while Fish remains open. The handoff saves the workspace first; save/launch failure leaves Fish open with an error and retry. Setup waits for this Fish process to exit and refuses to replace an installation still in use; it never kills processes. Other Fish windows must be closed manually if they use that installation.
 
@@ -101,7 +101,7 @@ The native setup reports the actual Windows Installer result and verifies the in
 
 ## Factory defaults
 
-Open Application settings and choose Revert to factory defaults. Confirmation explains the removal and active-session shutdown; a single click never resets Fish. Cancel keeps everything.
+Open Preferences > General and choose Revert to factory defaults. Confirmation explains the removal and active-session shutdown; a single click never resets Fish. Cancel keeps everything.
 
 Confirming atomically replaces only this active workspace's Fish settings, then exits without an old-state autosave. The next launch has the selected Kerberos 10.1.2.3:23 profile, offline until Connect, default appearance/update choices and the first-run guide. Saved profiles/layouts, custom themes, font references, key choices and hidden update version are cleared. At least one pane remains.
 
@@ -130,7 +130,7 @@ Adding a pane, applying settings or replaying the guide never starts a connectio
 
 ## Focus and switching panes
 
-The selected pane has an optional physical-pixel outline. View > Appearance > More settings > Window and focus controls it independently of active tint and the whole-window outline. Disabling the pane outline removes its border/insets, not just its color. Activating a different pane does not change spacing. Its header, terminal and footer share one surface; keyboard focus and the terminal cursor remain available with both outline and tint off. OLED themes retain a true-black terminal background.
+The selected pane has an optional physical-pixel outline. Preferences > Panes controls it independently of active tint and the whole-window outline. Disabling the pane outline removes its border/insets, not just its color. Activating a different pane does not change spacing. Its header, terminal and footer share one surface; keyboard focus and the terminal cursor remain available with both outline and tint off. OLED themes retain a true-black terminal background.
 
 Panes > Navigation > Next pane and Previous pane cycle focus. The defaults are Ctrl+Tab and Ctrl+Shift+Tab, including when the terminal or offline preset selector has focus. Edit > Keyboard > Shortcuts can change them.
 
@@ -147,7 +147,7 @@ Drag any window edge or corner to resize. Double-click the blank title area to m
 Alt+Space opens the Windows system menu. The default Ctrl+Alt+Space opens Fish's themed window menu. Its keyboard Move and Size commands use arrow keys, Shift+arrows for single-unit adjustments, Enter to finish and Escape to cancel.
 
 The whole-window outline is on by default and is not required for resizing.
-View > Appearance > More settings > Window and focus can disable the complete square one-physical-pixel perimeter.
+Preferences > Panes can disable the complete square one-physical-pixel perimeter.
 The restored-window perimeter is verified before maximizing, but it can disappear after maximize/restore; this is a known unresolved native geometry/surface-inset defect.
 All owned structural borders, menu separators and the titlebar/content divider use Theme Designer's Structure > Divider color.
 Dialogs and popups have the same flat edge, without native shadows or rounded corners. Windows-owned system menus and installers remain OS-controlled.
@@ -156,13 +156,24 @@ Window changes scale the terminal rendering; only the host may switch between 24
 
 ## Saved profiles
 
-Session > Profiles manages saved workstations. New creates an offline preset; Duplicate copies settings but clears the requested device name and remembered-password flag to avoid collisions.
+Session > Profiles manages saved workstations. New creates an offline Kerberos preset; Duplicate copies settings but clears the requested device name and remembered-password flag to avoid collisions.
+
+The initial editor shows name, host, authentication and mode-required controls.
+Advanced expands optional port, device, code page, palette and text effect.
+The optional separate Kerberos server is also under Advanced, including for IP
+transport or a saved explicit identity. Validation expands it when corrective
+input is needed; its value is retained while collapsed.
+Password / manual mode exposes username/password/remember/automatic sign-in and
+eligible Use login from sources without requiring a second disclosure.
+Collapse/mode changes retain advanced values; switching to Kerberos clears the
+typed password, not a saved OS credential. Validation reveals hidden corrective
+fields. No real-domain Kerberos acceptance is implied by these defaults.
 
 Select a saved profile and use Up/Down, or Ctrl+Up/Ctrl+Down while the list has focus, to change its order. Pane selectors, switching and configuration exports use the same persistent order and stable IDs. Reorder applies immediately, independently of unapplied editor text.
 
 Delete (or Delete while the list has focus) asks for confirmation. Panes using that profile disconnect and select the first remaining profile; other live sessions stay untouched. Saved layouts/last selection are repaired without removing panes. Windows saved passwords are retained, not erased. A profile still supplying another profile's login cannot be deleted: first change those dependents to Independent login or another eligible source. Pending login work must finish/cancel first. Keep at least one profile; create a replacement before deleting the last. Deleted defaults are not recreated on every launch.
 
-A profile stores name, host, port, optional device name, username, authentication preferences, SBCS code page, host palette, text effect, zoom, host-key overrides and a saved layout. Application/custom themes, terminal font, global shortcuts, outline, tint, pane-information preferences and last-used preset belong to the workspace.
+A profile stores name, host, port, optional device name, username, authentication preferences, SBCS code page, host palette, text effect, zoom and a saved layout. Application/custom themes, terminal font, all keyboard bindings, outline, tint, pane-information preferences and last-used preset belong to the workspace.
 
 Use login from... appears when another independent profile has a username and Save password enabled. Explicitly choosing it authorizes that login for this profile's target host. It inherits username/sign-in preferences and looks up the source OS credential without copying the password. Name changes remain safe through stable IDs. Missing OS passwords prompt on Connect. Select Independent login to stop sharing; enter/save an independent password if desired. Duplicates become independent with remembering off. Chains/cycles/missing sources are rejected, and a source still referenced cannot be deleted or made ineligible. Login edits wait for pending credential/connection work and affect the next connection; saving/canceling a target never erases its source credential.
 
@@ -263,35 +274,35 @@ Attention and System Request have separate host meanings and may be appropriate 
 
 ## Host-function keyboard reference
 
-Defaults: F1-F12 send F1-F12; Shift+F1-F12 send F13-F24. Enter sends Enter. Keypad Enter or Ctrl+Enter sends Field Exit. Keypad + and - send Field+ and Field-.
+Defaults: F1-F12 send F1-F12; Shift+F1-F12 send F13-F24. Main Enter and keypad Enter both send Enter. Ctrl+Enter sends Field Exit. Keypad + and - send Field+ and Field-.
 
 Escape sends Attention; Shift+Escape sends System Request; Ctrl+R sends Reset. Pause or Ctrl+Backspace sends Clear; Alt+F1 or Ctrl+H sends Help. Shift+Insert sends Dup and Ctrl+Pause sends Host Print.
 
-The IBM Personal Communications 5250 default-key reference supports these Attention/System Request, Clear, Help, Dup, Host Print, F-key and keypad assignments: https://www.ibm.com/docs/en/personal-communications/15.0.0?topic=assignments-default-key-functions-5250-layout . This is not a claim that every regional ACS layout is identical. Fish deliberately retains normal Enter for Enter, keypad/Ctrl+Enter for Field Exit, End for end-of-field and Ctrl+End for Erase EOF. Ctrl+R avoids modifier-only Reset firing at the start of conventional Ctrl shortcuts. Unsupported IBM text-assist actions are not guessed.
+The IBM Personal Communications 5250 default-key reference supports these Attention/System Request, Clear, Help, Dup, Host Print, F-key and keypad assignments: https://www.ibm.com/docs/en/personal-communications/15.0.0?topic=assignments-default-key-functions-5250-layout . This is not a claim that every regional ACS layout is identical. Fish 0.7.2 deliberately uses both Enter keys for Enter, Ctrl+Enter for Field Exit, End for end-of-field and Ctrl+End for Erase EOF. Ctrl+R avoids modifier-only Reset firing at the start of conventional Ctrl shortcuts. Unsupported IBM text-assist actions are not guessed.
 
 Page Up/Down send roll keys. Ctrl+Page Up/Down send horizontal roll actions. Tab/Shift+Tab move fields. Arrows move the cursor. Home, End, Insert, Delete, Backspace and Ctrl+End retain the core's corresponding editing actions.
 
 Host > Send host key offers the complete supported action list. Edit > Keyboard > Shortcuts lists those host actions and the application actions. Disabled actions remain disabled; sending an unavailable action never creates a fake host response.
 
-## Global shortcut overrides
+## Preferences and application-wide keyboard bindings
 
-Edit > Keyboard > Shortcuts lists every registered Fish action, including window/menu commands, profile actions, pane focus, clipboard, appearance and all host actions. The same list is reachable from Profiles > Keyboard.
+Edit > Preferences (Ctrl+, by default) is the indexed settings dialog: General, Appearance, Terminal, Panes, Keyboard and Updates. Existing quick font/information/window/update settings routes open the same controls. Apply saves validated drafts and stays open; Done applies and closes; Cancel drops only edits since the last Apply. Invalid fonts or key conflicts prevent all draft changes from applying. Category navigation never applies changes. Font browsing stays inside the dialog. Theme designer is a separate editor with its own Apply/Cancel; apply or cancel preference drafts before opening it. Immediate pane-scale/layout actions and the separate profile/tutorial editors are labeled separately and are not undone by Preferences Cancel.
 
-Find an action, select its row and use Record shortcut. Press the desired keys and choose Use shortcut. Unbind clears its binding; Restore default restores the selected action. Apply persists the mapping and stays open; Done persists pending changes and closes. Cancel keeps the last applied mapping.
+Keyboard combines all Fish and host actions. Search/select a row. The table shows effective keys; the typed area contains its default list or your replacement, **one chord per line**. Use **Record and add**, press/release a chord and choose Use chord. Record only observes its explicit capture field, not passwords or other windows. Tab, Enter and Escape can be recorded; Alt+C cancels the recorder (type that chord manually if needed). Clear records again; Cancel leaves the draft unchanged. Record appends, so several shortcuts can invoke the same action. Remove line deletes one; Unbind action empties that action; Restore default removes its explicit override.
 
-Overrides apply throughout this Fish workspace, across all profiles and panes. They are not system-wide hotkeys. Ctrl+Tab is supported even when focus is on a terminal or offline selector because app dispatch precedes Swing focus traversal.
+Bindings are application-level within this workspace, the same in every profile/pane, not system-wide hotkeys. Host actions only act in a terminal; normal dialog text editing and IME input are not intercepted. Ctrl+Tab works in terminals and offline selectors. Ctrl+C/V retain field-aware terminal behavior and normal dialog text editing. A recoverable local error still makes the first plain Enter at either location Reset only, not a host submission.
 
-Conflicts are rejected with an actionable explanation. Windows-key combinations, Alt+Space and Alt+F4 remain owned by Windows. Unmodified typing letters/numbers are not application shortcuts. A global host-action override replaces that action's original profile/default host bindings; it does not leave a second hidden binding active.
+A chord is the key, modifiers and Java-reported action-key location. `ENTER` means main Enter; `ENTER@numpad` (also `NUMPAD_ENTER`) means keypad Enter. Examples: `ctrl ENTER`, `ctrl ENTER@numpad`, `shift F1`, `altGraph Q`. Optional suffixes are `@standard`, `@numpad`, `@left`, `@right`, `@unknown`. Modifier sides are not distinguished. No claim is made for physical distinctions Windows/Java does not report. Unlocated events use an explicit @unknown binding or standard fallback only. NumLock can change a keypad digit into a navigation code; record each needed variant. Java's KP arrow variants normalize to the corresponding numpad arrow.
 
-If a new app binding conflicts with a host action, first unbind/reassign that host action in the same list, or change the profile-specific override that caused the collision. Fish never silently steals a mapped host key. Modal dialogs and the manual keep their own text/navigation keys.
+An explicit custom list replaces all keys of that action. Its keys replace default owners, with the replacement count/details shown in the editor and effective table/menu labels updated. Two **custom** owners of one exact key are rejected; remove one assignment. **Unbound keys** disables listed exact chords in terminals, independently of action unbinding. Assigning a new action to such a key requires removing that suppression too. Windows keys, Ctrl+Escape, Alt+Space and Alt+F4 remain Windows controls. Unmodified typing keys cannot invoke Fish application commands.
 
-For manual entry, Swing stroke syntax is accepted, such as ctrl TAB, ctrl shift TAB or ctrl alt K. The displayed menu accelerators update to the effective bindings.
+Deleting a `binding.*` configuration entry restores defaults; an explicit list equal to defaults remains explicit. The generated catalog describes the complete representation and action names. Menu labels use these exact bindings, not coarse Swing accelerators.
 
-## Profile-specific host keyboard mappings
+### Older keyboard definitions
 
-Profiles > Keyboard retains per-profile host overrides in KEY = ACTION form, one per line. Examples are ctrl ENTER = FIELD_EXIT and shift F1 = PF13. Host action names come from the complete Host > Send host key list.
+There is no per-profile keyboard editor or current-format per-profile mapping. Formats 1–11 migrate unambiguous explicit definitions globally and deduplicate identical maps. Conflicting explicit profile/app definitions do **not** choose a winning profile: the affected keys start inactive in Unbound keys. Preferences > Keyboard > Migrated definitions reports exact conflicts, profile IDs and original definitions; all originals remain in exported `keyboard.legacy.*` recovery data, even after profile deletion. To resolve, choose the desired action/key and remove that key from Unbound keys. The recovery report describes the migration, not necessarily today's assignments.
 
-These are host mappings, not application commands. Ctrl+Alt remains reserved for app defaults in the profile parser; use the global Shortcuts list for application bindings or global host reassignment. Alt+Space and Alt+F4 are always window operations.
+Old application Enter strokes were broad and migrate to both locations. Old profile plain Enter overrides reached main Enter only; that is retained. The new default makes keypad Enter host Enter, not the old hard-coded Field Exit. Explicit action unbinding remains unbinding; Ctrl+Enter is still accessible Field Exit. Old format backups are needed for downgrade, not a new export relabeled as an old version.
 
 Profile-specific keys still apply unless their host action has been explicitly reassigned globally. Conflicting profile changes are rejected before saving. Global shortcuts are saved separately, so switching workstation profiles does not unexpectedly change pane navigation.
 
@@ -311,7 +322,7 @@ Tabs and newlines navigate without submitting Enter. Pasting never signs on or s
 
 The Commands window is removed. Session, Edit, Panes, View, Host and Help, the compact narrow-window menu, terminal context menu and configurable shortcuts reuse the same action handlers. Actions return focus to the intended pane and disabled actions remain disabled.
 
-Right-click a terminal for clipboard, Reset, connection and pane actions. Quick View contains Fit, Zoom and Appearance. Appearance starts with application theme, dependent host palette and text effect; these apply immediately and are saved. More settings groups Fonts, Pane information, Window and focus, Theme designer and preset/effect shortcuts. Panes groups occasional navigation/layout actions in submenus. Host keeps Reset/Attention/System Request close at hand, with field/screen actions and the complete Send host key list one level deeper. No old Commands shortcut is silently redirected to a host key.
+Right-click a terminal for clipboard, Reset, connection and pane actions. Quick View contains Fit, Zoom and Appearance; Appearance opens the matching Preferences category. Edit > Preferences indexes all application settings; profiles retain their own display details. Panes groups occasional navigation/layout actions in submenus. Host keeps Reset/Attention/System Request close at hand, with field/screen actions and the complete Send host key list one level deeper. No old Commands shortcut is silently redirected to a host key.
 
 ## Application themes, OLED and focus
 
@@ -319,13 +330,13 @@ View > Appearance changes the complete application theme: Charcoal, Graphite, Mi
 
 Application themes are independent of host palettes. OLED themes use true-black terminal and chrome surfaces. High-contrast choices favor explicit boundaries and strong foreground contrast; Windows' own accessibility settings may also affect system-owned menus and installers.
 
-Appearance > More settings > Window and focus controls whole-pane tint, active-pane outline and the separate default-on whole-window outline. Apply saves and stays open; Done saves pending edits and closes; Cancel retains the most recent Apply. All enabled outlines use the shared one-physical-pixel Divider color; shared dividers/titlebar edges are never duplicated by a pane outline. Focusing a pane never changes its layout insets. Pane close is independent of every header information choice: with no header content it becomes an upper-right overlay, without reserving space or overlapping Reset.
+Preferences > Panes controls whole-pane tint, active-pane outline and the separate default-on whole-window outline. Apply saves and stays open; Done saves pending edits and closes; Cancel retains the most recent Apply. All enabled outlines use the shared one-physical-pixel Divider color; shared dividers/titlebar edges are never duplicated by a pane outline. Focusing a pane never changes its layout insets. Pane close is independent of every header information choice: with no header content it becomes an upper-right overlay, without reserving space or overlapping Reset.
 
-Theme choices apply immediately; deeper editable settings use Apply/Done/Cancel. Neither reconnects sessions or alters host dimensions.
+Preference theme choices use Apply/Done/Cancel. Direct preset actions and the logo's Flux action remain immediate. Neither reconnects sessions or alters host dimensions.
 
 ## Theme designer and saved custom themes
 
-Open View > Appearance > More settings > Theme designer. Load a built-in preset or a saved custom theme, then enter a name and precise #RRGGBB values in the color table. Its 60 semantic roles cover every owned UI color: surfaces, text, disabled/hover/pressed/focus/selection states, chrome and inactive controls, menus/tooltips, header/footer/statuses, tint/shared Divider, cursor/terminal selection, all sixteen host slots, six effect-gradient stops, glow and the logo gradient. Structure > Divider owns all structural edges and optional outlines; legacy LINE/OUTLINE entries migrate to the existing Divider color with a notice instead of leaving conflicting controls.
+Open Preferences > Appearance > Theme designer (apply/cancel other preference drafts first). Load a built-in preset or a saved custom theme, then enter a name and precise #RRGGBB values in the color table. Its 60 semantic roles cover every owned UI color: surfaces, text, disabled/hover/pressed/focus/selection states, chrome and inactive controls, menus/tooltips, header/footer/statuses, tint/shared Divider, cursor/terminal selection, all sixteen host slots, six effect-gradient stops, glow and the logo gradient. Structure > Divider owns all structural edges and optional outlines; legacy LINE/OUTLINE entries migrate to the existing Divider color with a notice instead of leaving conflicting controls.
 
 Preview applies the draft to the real application without saving. Cancel, Escape or closing the designer restores the most recently applied theme. Save creates/updates a reusable custom theme; Apply also selects it and stays open. Done saves/applies pending edits and closes. Saving edits to the currently active named theme updates that active theme. Load it again to edit; choose a different name to save a copy. Names are case-insensitively unique, replacements require confirmation when values differ, and up to 32 custom themes are supported.
 
@@ -335,7 +346,7 @@ Selecting a built-in application theme preserves the saved custom-theme library.
 
 ## Terminal fonts and local custom fonts
 
-Open View > Appearance > More settings > Fonts. The family list discovers actually installed fonts with equal printable-ASCII advances, prioritizing Cascadia Mono/Code, Consolas, Lucida Console, Courier New and available DejaVu/Liberation Mono faces. Automatic picks an available fixed-width face. Proportional fonts are not advertised as reliable terminal choices.
+Open Preferences > Terminal. The family list discovers actually installed fonts with equal printable-ASCII advances, prioritizing Cascadia Mono/Code, Consolas, Lucida Console, Courier New and available DejaVu/Liberation Mono faces. Automatic picks an available fixed-width face. Proportional fonts are not advertised as reliable terminal choices.
 
 Choose a family, or browse to a local monospaced TTF/OTF file. A custom file takes precedence; clear the path to use the family again. Check / preview font shows the actual regular face. Apply validates glyph coverage and that printable glyphs fit a cell for all current profiles' SBCS code pages. Unsupported font formats, proportional faces, missing files and missing/wide required glyphs are reported rather than silently accepted. Some OpenType formats may not be supported by Java's local font parser.
 
@@ -345,7 +356,7 @@ Glyphs remain positioned at exact fixed physical-pixel cell origins. Font change
 
 ## Pane information and zero-space rows
 
-View > Appearance > More settings > Pane information groups header/footer visibility with their dependent items: profile name, connection state, host, requested device, status/input message, host dimensions, cursor row:column and insert indicator. Disabled rows disable their item controls while retaining the choices. Outline and tint live separately in Window and focus. These preferences belong to the workspace, not a profile. Apply saves and stays open; Done saves pending edits and closes; Cancel keeps the last Apply.
+Preferences > Panes groups header/footer visibility with their dependent items: profile name, connection state, host, requested device, status/input message, host dimensions, cursor row:column and insert indicator. Disabled rows disable their item controls while retaining the choices. Outline and tint are independent controls in the same category. These preferences belong to the workspace, not a profile. Apply saves and stays open; Done saves pending edits and closes; Cancel keeps the last Apply.
 
 A disabled row, or a row with no actual text, reserves zero vertical space. Close/connect/add/swap actions remain available through menus, shortcuts and the terminal context menu. The invisible pane-top strip and Alt+drag swap from a terminal when no header is shown.
 

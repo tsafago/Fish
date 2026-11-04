@@ -65,7 +65,10 @@ public record Profile(UUID id, String name, String host, int port, String device
                 "37", "Phosphor", "None", 1, Map.of(), "");
     }
     public static Profile kerberosDefault() {
-        return new Profile(UUID.randomUUID(),"Local IBM i","10.1.2.3",23,"","",false,false,
+        return createKerberos("Local IBM i");
+    }
+    public static Profile createKerberos(String name) {
+        return new Profile(UUID.randomUUID(),name,"10.1.2.3",23,"","",false,false,
                 "37","Phosphor","None",1,Map.of(),"",null,Authentication.KERBEROS,"");
     }
     public static String serverName(String value) {

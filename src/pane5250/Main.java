@@ -8,7 +8,7 @@ import pane5250.model.*;
 import pane5250.ui.*;
 
 public final class Main {
-    public static final String VERSION="0.7.1";
+    public static final String VERSION="0.7.2";
     private Main() {}
     public static void main(String[] args) {
         if (args.length>0 && args[0].equals("--config")) {

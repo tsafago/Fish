@@ -13,6 +13,8 @@
 #include <msi.h>
 #include <tlhelp32.h>
 #include <dwmapi.h>
+#include <commctrl.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "fish-setup-common.h"
@@ -27,8 +29,9 @@
 #define CANCEL 102
 #define CHANGE 103
 #define OPEN_APP 104
-static const COLORREF background=RGB(17,21,25),panel=RGB(25,31,37),text=RGB(229,234,240),
+static COLORREF background=RGB(17,21,25),panel=RGB(25,31,37),text=RGB(229,234,240),
     muted=RGB(154,167,180),accent=RGB(123,188,203),divider=RGB(53,66,79);
+static unsigned option_paints=0;
 typedef struct { char magic[16]; ULONGLONG length; BYTE hash[32]; } Footer;
 _Static_assert(sizeof(Footer)==56,"Payload footer layout");
 static HWND window,folder,change,install,cancel,open_app;
@@ -47,6 +50,50 @@ static ULONGLONG waiting_since;
 static int pulse=0;
 static int px(int value) { return MulDiv(value,(int)dpi,96); }
 
+static void colors(BOOL force_system) {
+    HIGHCONTRASTW high={0}; high.cbSize=sizeof(high);
+    BOOL system=force_system || (SystemParametersInfoW(SPI_GETHIGHCONTRAST,sizeof(high),&high,0) && (high.dwFlags&HCF_HIGHCONTRASTON));
+    background=system ? GetSysColor(COLOR_WINDOW) : RGB(17,21,25);
+    panel=system ? GetSysColor(COLOR_WINDOW) : RGB(25,31,37);
+    text=system ? GetSysColor(COLOR_WINDOWTEXT) : RGB(229,234,240);
+    muted=system ? text : RGB(154,167,180);
+    accent=system ? text : RGB(123,188,203);
+    divider=system ? text : RGB(53,66,79);
+    if (field_brush) DeleteObject(field_brush);
+    field_brush=CreateSolidBrush(panel);
+}
+static void paint_option(HWND control,HDC dc) {
+    RECT rect; GetClientRect(control,&rect);
+    BOOL enabled=IsWindowEnabled(control),checked=SendMessageW(control,BM_GETCHECK,0,0)==BST_CHECKED;
+    UINT state=(UINT)SendMessageW(control,BM_GETSTATE,0,0);
+    HBRUSH brush=CreateSolidBrush(background); FillRect(dc,&rect,brush); DeleteObject(brush);
+    RECT box={px(1),max(1,(rect.bottom-px(15))/2),px(16),max(1,(rect.bottom-px(15))/2)+px(15)};
+    brush=CreateSolidBrush(panel); FillRect(dc,&box,brush); DeleteObject(brush);
+    brush=CreateSolidBrush(enabled ? accent : muted); FrameRect(dc,&box,brush); DeleteObject(brush);
+    if (checked) {
+        HPEN pen=CreatePen(PS_SOLID,max(1,px(2)),enabled ? text : muted); HGDIOBJ old=SelectObject(dc,pen);
+        MoveToEx(dc,box.left+px(3),box.top+px(7),NULL);
+        LineTo(dc,box.left+px(6),box.top+px(10)); LineTo(dc,box.left+px(12),box.top+px(4));
+        SelectObject(dc,old); DeleteObject(pen);
+    }
+    WCHAR value[160]; GetWindowTextW(control,value,160);
+    RECT label=rect; label.left=px(25); label.right-=px(2);
+    SelectObject(dc,body_font); SetBkMode(dc,TRANSPARENT); SetTextColor(dc,enabled ? text : muted);
+    DrawTextW(dc,value,-1,&label,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    if ((state&BST_FOCUS) && !(SendMessageW(control,WM_QUERYUISTATE,0,0)&UISF_HIDEFOCUS)) DrawFocusRect(dc,&label);
+    option_paints++;
+}
+static LRESULT CALLBACK option_procedure(HWND control,UINT message,WPARAM wp,LPARAM lp,UINT_PTR id,DWORD_PTR data) {
+    (void)id; (void)data;
+    if (message==WM_PAINT) {
+        PAINTSTRUCT paint; HDC dc=BeginPaint(control,&paint); paint_option(control,dc); EndPaint(control,&paint); return 0;
+    }
+    if (message==WM_PRINTCLIENT) { paint_option(control,(HDC)wp); return 0; }
+    if (message==WM_ERASEBKGND) return 1;
+    if (message==WM_NCDESTROY) RemoveWindowSubclass(control,option_procedure,1);
+    /* The native BUTTON still owns check state, Space, mnemonics, focus and UI Automation. */
+    return DefSubclassProc(control,message,wp,lp);
+}
 static void label(HDC dc,const WCHAR *value,int x,int y,int width,int height,COLORREF color,HFONT font,UINT flags) {
     RECT rect={px(x),px(y),px(x+width),px(y+height)};
     SetTextColor(dc,color); SetBkMode(dc,TRANSPARENT); SelectObject(dc,font);
@@ -59,7 +106,7 @@ static void surface(HDC dc,int width,int height,BOOL preview) {
     label(dc,L"For your Windows account. No administrator access needed.",29,106,555,24,text,body_font,DT_LEFT|DT_SINGLELINE);
     label(dc,L"Install to",29,147,550,22,muted,body_font,DT_LEFT|DT_SINGLELINE);
     label(dc,L"Profiles, passwords and preferences stay as they are.",29,250,560,24,muted,body_font,DT_LEFT|DT_SINGLELINE);
-    label(dc,L"Back up workspace.xml before upgrading: older Fish cannot read format 11.",29,277,560,36,muted,body_font,DT_LEFT|DT_WORDBREAK);
+    label(dc,L"Back up workspace.xml before upgrading: older Fish cannot read format 12.",29,277,560,36,muted,body_font,DT_LEFT|DT_WORDBREAK);
     label(dc,status,29,321,560,45,text,body_font,DT_LEFT|DT_WORDBREAK);
     HPEN pen=CreatePen(PS_SOLID,1,divider); HGDIOBJ old=SelectObject(dc,pen);
     MoveToEx(dc,px(0),height-px(54),NULL); LineTo(dc,width,height-px(54)); SelectObject(dc,old); DeleteObject(pen);
@@ -74,7 +121,11 @@ static void surface(HDC dc,int width,int height,BOOL preview) {
         brush=CreateSolidBrush(panel); FillRect(dc,&input,brush); DeleteObject(brush);
         label(dc,L"%LOCALAPPDATA%\\Fish",38,181,440,22,text,body_font,DT_LEFT|DT_SINGLELINE);
         label(dc,L"Change...",501,181,90,25,accent,body_font,DT_CENTER|DT_SINGLELINE);
-        label(dc,L"[x]  Open Fish when setup finishes",29,221,520,24,text,body_font,DT_LEFT|DT_SINGLELINE);
+        if (open_app) {
+            POINT previous; SetViewportOrgEx(dc,px(29),px(217),&previous);
+            SendMessageW(open_app,WM_PRINTCLIENT,(WPARAM)dc,PRF_CLIENT);
+            SetViewportOrgEx(dc,previous.x,previous.y,NULL);
+        }
         label(dc,L"Cancel",392,382,95,24,text,body_font,DT_CENTER|DT_SINGLELINE);
         label(dc,L"Install",495,382,95,24,accent,body_font,DT_CENTER|DT_SINGLELINE);
     }
@@ -334,6 +385,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             folder=CreateWindowExW(0,L"EDIT",destination,WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL|ES_READONLY,0,0,0,0,hwnd,NULL,NULL,NULL);
             change=CreateWindowW(L"BUTTON",L"Change...",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,hwnd,(HMENU)CHANGE,NULL,NULL);
             open_app=CreateWindowW(L"BUTTON",L"Open Fish when setup finishes",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,0,0,0,0,hwnd,(HMENU)OPEN_APP,NULL,NULL);
+            if (!open_app || !SetWindowSubclass(open_app,option_procedure,1,0)) return -1;
             SendMessageW(open_app,BM_SETCHECK,BST_CHECKED,0);
             cancel=CreateWindowW(L"BUTTON",L"Cancel",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,hwnd,(HMENU)CANCEL,NULL,NULL);
             install=CreateWindowW(L"BUTTON",L"Install",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,hwnd,(HMENU)INSTALL,NULL,NULL);
@@ -341,6 +393,9 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
         }
         case WM_CTLCOLORSTATIC:
         case WM_CTLCOLOREDIT: SetTextColor((HDC)wp,text); SetBkColor((HDC)wp,panel); return (LRESULT)field_brush;
+        case WM_SETTINGCHANGE:
+        case WM_THEMECHANGED:
+            colors(FALSE); RedrawWindow(hwnd,NULL,NULL,RDW_INVALIDATE|RDW_ALLCHILDREN); return 0;
         case WM_DRAWITEM: {
             DRAWITEMSTRUCT *item=(DRAWITEMSTRUCT *)lp;
             BOOL focus=(item->itemState&ODS_FOCUS)!=0,disabled=(item->itemState&ODS_DISABLED)!=0;
@@ -411,7 +466,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
     return DefWindowProcW(hwnd,message,wp,lp);
 }
 static BOOL render(const WCHAR *path) {
-    dpi=96; fonts();
+    dpi=96; fonts(); position();
     BITMAPINFO info={0}; info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER); info.bmiHeader.biWidth=WIDTH; info.bmiHeader.biHeight=-HEIGHT;
     info.bmiHeader.biPlanes=1; info.bmiHeader.biBitCount=32; info.bmiHeader.biCompression=BI_RGB;
     void *pixels=NULL; HDC dc=CreateCompatibleDC(NULL); HBITMAP image=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,NULL,0);
@@ -430,6 +485,48 @@ static BOOL render(const WCHAR *path) {
     SelectObject(dc,old); DeleteObject(image); DeleteDC(dc); DeleteObject(body_font); DeleteObject(title_font);
     return result;
 }
+static double luminance(COLORREF color) {
+    double values[3]={GetRValue(color)/255.0,GetGValue(color)/255.0,GetBValue(color)/255.0};
+    for (int i=0;i<3;i++) values[i]=values[i]<=0.04045 ? values[i]/12.92 : pow((values[i]+0.055)/1.055,2.4);
+    return 0.2126*values[0]+0.7152*values[1]+0.0722*values[2];
+}
+static BOOL option_test_size(void) {
+    HDC dc=CreateCompatibleDC(NULL);
+    BITMAPINFO info={0}; info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth=px(540); info.bmiHeader.biHeight=-px(27); info.bmiHeader.biPlanes=1; info.bmiHeader.biBitCount=32;
+    void *pixels=NULL; HBITMAP image=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&pixels,NULL,0);
+    if (!dc || !image || !pixels) { if (image) DeleteObject(image); if (dc) DeleteDC(dc); return FALSE; }
+    HGDIOBJ previous=SelectObject(dc,image); BOOL valid=TRUE;
+    for (int system=0;system<2;system++) {
+        colors(system);
+        for (int enabled=0;enabled<2;enabled++) for (int checked=0;checked<2;checked++) {
+            EnableWindow(open_app,enabled); SendMessageW(open_app,BM_SETCHECK,checked ? BST_CHECKED : BST_UNCHECKED,0);
+            SendMessageW(open_app,WM_MOUSEMOVE,0,MAKELPARAM(px(8),px(8)));
+            SendMessageW(open_app,BM_SETSTATE,checked,0);
+            unsigned before=option_paints; SendMessageW(open_app,WM_PRINTCLIENT,(WPARAM)dc,PRF_CLIENT);
+            COLORREF foreground=enabled ? text : muted;
+            double first=luminance(foreground),second=luminance(background);
+            double ratio=(max(first,second)+0.05)/(min(first,second)+0.05);
+            int ink=0;
+            for (int y=0;y<px(27);y++) for (int x=px(25);x<px(500);x++) if (GetPixel(dc,x,y)==foreground) ink++;
+            valid=valid && option_paints==before+1 && ratio>=4.5 && ink>25
+                && SendMessageW(open_app,BM_GETCHECK,0,0)==(checked ? BST_CHECKED : BST_UNCHECKED);
+        }
+    }
+    SendMessageW(open_app,BM_SETSTATE,FALSE,0);
+    EnableWindow(open_app,TRUE); SendMessageW(open_app,BM_CLICK,0,0);
+    valid=valid && SendMessageW(open_app,BM_GETCHECK,0,0)==BST_UNCHECKED;
+    SelectObject(dc,previous); DeleteObject(image); DeleteDC(dc); colors(FALSE); return valid;
+}
+static BOOL option_test(void) {
+    UINT saved=dpi; BOOL valid=TRUE;
+    const UINT scales[]={96,120,144,168,192};
+    for (unsigned i=0;i<sizeof(scales)/sizeof(scales[0]);i++) {
+        dpi=scales[i]; fonts(); position();
+        valid=option_test_size() && valid;
+    }
+    dpi=saved; fonts(); position(); return valid;
+}
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show) {
     (void)previous; (void)command;
     int count=0; LPWSTR *args=CommandLineToArgvW(GetCommandLineW(),&count);
@@ -445,18 +542,22 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
         Footer footer; ULONGLONG offset; BOOL valid=file!=INVALID_HANDLE_VALUE && payload(file,&footer,&offset);
         if (file!=INVALID_HANDLE_VALUE) CloseHandle(file); LocalFree(args); return valid ? 0 : 1;
     }
-    if (count==3 && !wcscmp(args[1],L"--render-preview")) { BOOL valid=render(args[2]); LocalFree(args); return valid ? 0 : 1; }
+    BOOL preview=count==3 && !wcscmp(args[1],L"--render-preview");
+    BOOL controls=count==2 && !wcscmp(args[1],L"--test-controls");
+    WCHAR preview_path[32768]=L"";
+    if (preview) { if (wcslen(args[2])>=32768) { LocalFree(args); return 2; } wcscpy(preview_path,args[2]); }
     if (count==5 && !wcscmp(args[1],L"--update-pid") && !wcscmp(args[3],L"--data-dir")) {
         WCHAR *end=NULL; unsigned long pid=wcstoul(args[2],&end,10);
         if (!pid || *end || !*args[4] || wcslen(args[4])>=32700) { LocalFree(args); return 2; }
         parent_pid=(DWORD)pid; wcscpy(data_directory,args[4]); updating=TRUE;
-    } else if (count!=1) { LocalFree(args); return 2; }
+    } else if (count!=1 && !preview && !controls) { LocalFree(args); return 2; }
     LocalFree(args); CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
-    installed_location();
+    if (!preview && !controls) installed_location();
+    else wcscpy(destination,L"%LOCALAPPDATA%\\Fish");
     if (!*destination) { CoUninitialize(); return 3; }
     WNDCLASSEXW klass={0}; klass.cbSize=sizeof(klass); klass.lpfnWndProc=procedure; klass.hInstance=instance;
     klass.lpszClassName=L"FishSetup"; klass.hCursor=LoadCursorW(NULL,IDC_ARROW); klass.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(1));
-    RegisterClassExW(&klass); field_brush=CreateSolidBrush(panel);
+    RegisterClassExW(&klass); colors(FALSE);
     DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX;
     window=CreateWindowExW(0,klass.lpszClassName,L"Fish setup",style,CW_USEDEFAULT,CW_USEDEFAULT,WIDTH,HEIGHT,NULL,NULL,instance,NULL);
     if (!window) { DeleteObject(field_brush); CoUninitialize(); return 4; }
@@ -464,6 +565,13 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     RECT rect={0,0,px(WIDTH),px(HEIGHT)}; AdjustWindowRectExForDpi(&rect,style,FALSE,0,dpi);
     SetWindowPos(window,NULL,0,0,rect.right-rect.left,rect.bottom-rect.top,SWP_NOMOVE|SWP_NOZORDER);
     BOOL dark=TRUE; DwmSetWindowAttribute(window,20,&dark,sizeof(dark)); position();
+    if (preview || controls) {
+        BOOL valid=controls ? option_test() : render(preview_path);
+        DestroyWindow(window);
+        if (field_brush) DeleteObject(field_brush);
+        if (controls) { DeleteObject(body_font); DeleteObject(title_font); }
+        CoUninitialize(); return valid ? 0 : 1;
+    }
     if (updating) {
         parent_process=OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,parent_pid);
         if (parent_process) {

@@ -179,7 +179,7 @@ public final class SessionPane extends JPanel {
     public Profile profile() { return profile; }
     public Screen5250 screen() { return core == null ? null : core.getScreen(); }
     public Keymap keys() { return keys; }
-    public void refreshKeys() { keys=new Keymap(profile.keymap(),workspace.reassignedHostActions()); }
+    public void refreshKeys() { keys=Keymap.global(workspace.shortcutOverrides()); }
     public TerminalView view() { return view; }
     public Font workspaceFont() { return workspace.terminalFont(); }
     public boolean connected() { return network != null && network.isConnected(); }

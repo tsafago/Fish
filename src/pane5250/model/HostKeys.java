@@ -38,8 +38,6 @@ public class HostKeys {
     public static Map<KeyStroke,KeyMnemonic> defaultBindings() { return DEFAULTS; }
     public Map<KeyStroke,KeyMnemonic> bindings() { return Map.copyOf(bindings); }
     public KeyMnemonic lookup(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.VK_ENTER && event.getKeyLocation() == KeyEvent.KEY_LOCATION_NUMPAD
-                && event.getModifiersEx() == 0) return globallyReassigned.contains(KeyMnemonic.FIELD_EXIT) ? null : KeyMnemonic.FIELD_EXIT;
         return bindings.get(KeyStroke.getKeyStrokeForEvent(event));
     }
     public static Map<String, String> parse(String text) {
@@ -61,7 +59,7 @@ public class HostKeys {
     }
     public static String describeDefaults() {
         return "F1-F12: F1-F12     Shift+F1-F12: F13-F24\n"
-                + "Enter: Enter     Keypad Enter / Ctrl+Enter: Field Exit\n"
+                + "Enter / Keypad Enter: Enter     Ctrl+Enter: Field Exit\n"
                 + "Keypad +/-: Field +/-     Escape: Attention\n"
                 + "Ctrl+R: Reset     Enter during a local input error: Reset only\n"
                 + "Shift+Escape: System Request     Pause: Clear\n"
@@ -70,10 +68,14 @@ public class HostKeys {
                 + "Page Up/Down: Roll     Tab/Shift+Tab: Next/previous field\n"
                 + "Ctrl+C/V: Copy/paste     Ctrl+Tab / Ctrl+Shift+Tab: Next/previous pane\n"
                 + "Ctrl+N/W: Add/close pane     Ctrl+0 and Ctrl+plus/minus: Fit/zoom\n"
-                + "Edit > Keyboard > Shortcuts changes application or host actions.\n\n"
-                + "Overrides use Swing strokes and host action names, for example:\n"
-                + "ctrl ENTER = FIELD_EXIT\nshift F1 = PF13\nF12 = PF12\n"
-                + "Use a blank action to disable a host binding: ctrl C =";
+                + "Ctrl+,: Edit > Preferences. Keyboard combines all Fish/host actions.\n\n"
+                + "Select an action; type one chord per line or Record and add.\n"
+                + "ENTER is main; ENTER@numpad is keypad (NUMPAD_ENTER also works).\n"
+                + "Examples: ctrl ENTER, shift F1, ctrl ENTER@numpad.\n"
+                + "Unbind action removes its keys. Unbound keys disables individual chords.\n"
+                + "Custom assignments replace default owners; two custom owners are an error.\n"
+                + "Location is the action key's Java-reported location, not modifier sides.\n"
+                + "NumLock may change the reported action code; record each needed variant.";
     }
     private static Map<KeyStroke, KeyMnemonic> defaults() {
         Map<KeyStroke, KeyMnemonic> map = new HashMap<>();

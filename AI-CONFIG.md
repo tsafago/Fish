@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.1 exposes its complete local configuration without an AI service, network
+Fish 0.7.2 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -74,10 +74,10 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 11 with informational migration
+An exported legacy workspace is migrated to version 12 with recoverable keyboard migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries (including 0.7.0) cannot read version 11: restore a backup for a downgrade.
-Do not manually relabel old/future data as version 11. Version-8/9 hosts, sign-in
+save. Older binaries (including 0.7.1) cannot read version 12: restore a pre-upgrade backup for a downgrade.
+Do not manually relabel old/future data as version 12. Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
 is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles
 remain PASSWORD, never silently Kerberos. No existing profile is replaced by a seed.
@@ -104,8 +104,9 @@ The catalog lists exact field types/defaults/limits and all dynamic prefixes:
 |---|---|
 | Workspace | version, ordered profiles, current layout, lastProfile, width, height, appTheme, highlightActive, connectOnStartup |
 | Profiles | `profile.{uuid}.` name, host, port, device, authentication, kerberosServer, username, auto, remember, loginSource, codePage, theme, effect, zoom, layout |
-| Per-profile keys | `profile.{uuid}.key.{Swing stroke}` to a supported host mnemonic or empty to disable |
-| Global shortcuts | `shortcut.{exact action title}` to a Swing pressed stroke or empty to unbind |
+| Application-wide keys | `binding.{exact action title}` to newline-separated exact chords, or empty to unbind that action |
+| Per-key unbinding | `binding.Unbound keys` to newline-separated exact chords disabled in terminals |
+| Keyboard recovery | `keyboard.legacy.` report, shortcut.{old title}, profile.{uuid}.name and profile.{uuid}.key.{old stroke}; retained definitions, never dispatched |
 | Information | `info.` header, footer, profile, connection, host, device, status, dimensions, cursor, insert |
 | Fonts | font.family and font.file; exact installed fixed-width family or local TTF/OTF reference |
 | Themes | appearance.selected, appearance.themes and `appearance.theme.{index}.` name plus **every** ColorRole |
@@ -123,7 +124,8 @@ catalog rather than hardcoding a different release's definitions.
 Fresh workspaces seed/select a KERBEROS profile at `10.1.2.3:23` with auto/remember
 false, loginSource empty, kerberosServer empty, connectOnStartup false. The
 user explicitly chose **wait for Connect**. It is not reseeded into existing data.
-The New button still creates a PASSWORD profile at `10.1.2.3` with auto/remember true.
+The New button now creates the same offline KERBEROS defaults. Switching its
+mode to PASSWORD retains auto/remember false until the user changes them.
 These are creation defaults, not migration replacements. Preserve existing
 hosts (including blank) and explicit off choices unless asked to change them.
 Host may be empty: an unconfigured profile. Device and username may be empty;
@@ -218,19 +220,37 @@ WriteRaw; only that exact fixed declaration belongs there.
 Set a custom shortcut explicitly:
 
 ```xml
-<entry key="shortcut.Next pane">ctrl TAB</entry>
-<entry key="shortcut.Previous pane">ctrl shift TAB</entry>
+<entry key="binding.Next pane">ctrl TAB</entry>
+<entry key="binding.Previous pane">ctrl shift TAB</entry>
+<entry key="binding.Host F13">ENTER@numpad
+ctrl F3</entry>
 ```
 
-Removing a shortcut entry restores that release's default. An explicit entry equal
-to the default remains explicit across later migrations. Empty means unbound.
-Conflicting primary bindings fail clearly; they are never silently dropped.
-Application aliases (Ctrl+Insert copy, Ctrl+Shift+Insert/Shift+PageDown paste,
-Ctrl+plus/keypad zoom) are available only when their action retains its default
-and no custom host/application/reserved binding needs that chord.
-Ctrl+Alt is reserved for application shortcuts. F1-F24 remain host functions.
-Ctrl+C/V are default clipboard actions; legacy explicit conflicting host mappings
-are preserved with a migration notice and the old app chord.
+Removing a binding entry restores that release's default list (including aliases).
+An explicit list equal to defaults stays explicit. Empty unbinds that action;
+`binding.Unbound keys` suppresses individual chords in terminals. Lists replace
+the whole action, not just its first key. Custom assignments replace default
+owners; two custom owners of the same exact chord are rejected. The example
+changes keypad Enter to F13 while main Enter remains Enter, and adds Ctrl+F3.
+
+Use Java key names and ctrl/shift/alt/altGraph modifiers. `ENTER` is main,
+`ENTER@numpad` (alias NUMPAD_ENTER) is keypad. The action-key location suffix can
+be @standard, @numpad, @left, @right or @unknown. Modifier sides are not recorded.
+Only distinctions actually reported by Windows/Java work. NumLock variants may
+need separate entries; KP arrows normalize to numpad arrows. Unknown-location
+events use explicit @unknown or standard fallback. OS chords remain reserved.
+Unmodified typing keys cannot invoke Fish actions. Host keys are terminal-only;
+dialog editing/IME are not intercepted. Ctrl+Alt is no longer a host/app namespace
+boundary: the one validated global map resolves ownership.
+
+Formats 1–11 migrate explicit app/unambiguous profile definitions globally.
+Identical definitions deduplicate. Conflicting explicit definitions leave those
+keys inactive in Unbound keys, with exact conflicts/originals in keyboard.legacy.*
+and Preferences > Keyboard > Migrated definitions. Archive entries are recovery
+only, not live per-profile overrides; deletion of a profile keeps them. Old broad
+app Enter spans both locations; old profile plain Enter affected main only.
+Both Enter keys now default to Enter; Ctrl+Enter remains Field Exit. New format
+12 rejects shortcut.* and profile.*.key.* instead of silently ignoring them.
 
 To add a named custom theme, increment appearance.themes, add a new contiguous
 index and copy **all** color-role entries from an existing complete theme/catalog.
@@ -300,8 +320,9 @@ kerberosServer set to the provided DNS name or left empty for discovery.
 Preserve all other entries, validate the full export, then apply while closed.
 Do not add IBMTICKET/password/realm/SSPI flags: such settings are not supported.
 Tickets are transient binary buffers, never configuration or export content.
-The catalog's freshWorkspaceProfile describes first-install defaults separately
-from the New password-profile editor's field defaults.
+The catalog's freshWorkspaceProfile and profileFields defaults describe the
+fresh/New Kerberos profile. Old password-profile choices are never replaced by
+these defaults during migration.
 
 Windows logon credentials, an IBM i krbsvr400 SPN/keytab, NAS/EIM and remote-sign-on
 policy must already be configured. Fish does not fall back to NTLM/password,

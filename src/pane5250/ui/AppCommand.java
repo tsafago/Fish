@@ -7,6 +7,7 @@ import java.util.*;
 import java.util.function.BooleanSupplier;
 import javax.swing.*;
 import org.tn5250j.keyboard.KeyMnemonic;
+import pane5250.model.KeyChord;
 
 public final class AppCommand extends AbstractAction {
     private final Runnable run;
@@ -25,16 +26,14 @@ public final class AppCommand extends AbstractAction {
         refresh();
     }
     public void setStroke(String stroke) {
-        KeyStroke key=stroke==null || stroke.isBlank() ? null : KeyStroke.getKeyStroke(stroke);
         shortcut=describeStroke(stroke);
-        putValue(ACCELERATOR_KEY,key);
+        // Swing accelerators discard key location; dispatch and labels use the same exact map instead.
+        putValue(ACCELERATOR_KEY,null);
+        putValue("Fish.shortcut",shortcut);
         putValue(SHORT_DESCRIPTION,description+(shortcut.isEmpty() ? "" : " ("+shortcut+")"));
     }
     public static String describeStroke(String stroke) {
-        KeyStroke key=stroke==null || stroke.isBlank() ? null : KeyStroke.getKeyStroke(stroke);
-        if (key==null) return "";
-        String modifiers=InputEvent.getModifiersExText(key.getModifiers());
-        return (modifiers.isEmpty() ? "" : modifiers+"+")+KeyEvent.getKeyText(key.getKeyCode());
+        return stroke==null || stroke.isBlank() ? "" : String.join(" / ",KeyChord.list(stroke).stream().map(KeyChord::label).toList());
     }
     public void refresh() { setEnabled(available.getAsBoolean()); }
     public boolean matches(String query) {

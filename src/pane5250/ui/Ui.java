@@ -87,7 +87,7 @@ public final class Ui {
         UIManager.put("MenuBarUI","javax.swing.plaf.basic.BasicMenuBarUI");
         UIManager.put("MenuUI",FlatControls.Menu.class.getName());
         UIManager.put("MenuItemUI",FlatControls.MenuItem.class.getName());
-        UIManager.put("CheckBoxMenuItemUI","javax.swing.plaf.basic.BasicCheckBoxMenuItemUI");
+        UIManager.put("CheckBoxMenuItemUI",FlatControls.CheckMenuItem.class.getName());
         UIManager.put("RadioButtonMenuItemUI","javax.swing.plaf.basic.BasicRadioButtonMenuItemUI");
         UIManager.put("CheckBoxUI",FlatControls.Check.class.getName());
         UIManager.put("MenuBar.gradient",null);
@@ -296,6 +296,7 @@ public final class Ui {
         return dialog;
     }
     static void observeEdits(Component component,Runnable changed) {
+        component.addPropertyChangeListener("preferences.draft",e -> changed.run());
         if (component instanceof javax.swing.text.JTextComponent text)
             text.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
                 @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { changed.run(); }

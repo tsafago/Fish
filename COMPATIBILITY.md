@@ -5,9 +5,27 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.7.1 maintenance prerelease
+## Fish 0.7.2 keyboard and Preferences prerelease
 
-Adds persistent profile ordering and dependency-safe deletion, atomic active-workspace
+Adds a single exact-location, multi-binding application keyboard map/recorder,
+draft-based indexed Preferences, compact mode-aware profiles with Advanced, and
+actual native checkbox text/check/focus contrast painting. Both Enter locations
+default to Enter. Formats 1–11 migrate keys globally; conflicting explicit
+definitions are retained and inactive, not resolved by picking a profile. Format
+12 requires a pre-upgrade backup for downgrade, including from 0.7.1.
+
+Focused checks cover typed/captured location roundtrips, independent keypad Enter
+overrides, multiple bindings, conflicts/unbinding/recovery, legacy defaults,
+configuration rejection/persistence, real Preferences navigation/apply/cancel and
+profile collapse/mode-specific fields. Native BUTTON controls remain native for
+state/keyboard/accessibility; only painting is subclassed. Never-shown control
+render checks exercise enabled/disabled/checked/hover/pressed states and explicit
+system/high-contrast colors at 100/125/150/175/200%. This is not live installer UI,
+physical keyboard/IME-layout acceptance or assistive-technology acceptance.
+
+### Retained 0.7.1 maintenance behavior
+
+Retains persistent profile ordering and dependency-safe deletion, atomic active-workspace
 factory reset, bounded public-GitHub update checks/download integrity, native
 per-user setup and dismissible bordered notices. Format 11 retains existing
 version-10 Kerberos profiles; older binaries require a pre-upgrade backup.

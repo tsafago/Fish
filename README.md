@@ -10,14 +10,28 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.7.2 keyboard and Preferences preview
+## Fish 0.7.3 settings and tutorials preview
 
-**Edit > Preferences** (Ctrl+, by default) now indexes General, Appearance,
-Terminal/fonts, Panes, Keyboard and Updates in one draft-based settings dialog.
-Quick settings routes share these controls. Apply/Done validate together; Cancel
-keeps the last applied state. Profile setup shows essential mode-specific fields,
-with the optional Kerberos server DNS identity, port, device, code page, palette
-and effects under **Advanced**. Validation expands advanced corrective fields.
+**Settings** in the top chrome is the single settings entry; Ctrl+, opens that
+same modeless dialog. Its flat index is **Appearance, Profiles, Keyboard Shortcuts,
+General, Updates**. Appearance contains application theme and selected-profile
+text palette/effect together, followed by font, header/footer information, outlines
+and tint. Profiles and the unified keyboard editor are actual inline controls,
+not launchers. Apply saves and stays; Done applies and closes; Cancel keeps the
+last applied state. Optional profile port/device/code page/Kerberos identity stay
+under Advanced, with validation exposing the corrective field.
+
+Edit contains clipboard actions. **Inserts** groups username/password helpers,
+common field/host keys and the complete host-key chooser. Panes is flat; View
+keeps runtime fit/zoom; Host keeps Reset/Attention/System Request. Menus show one
+primary key chord, while Keyboard Shortcuts exposes every binding. Updates renders
+the manual's safe Markdown subset: no remote images, HTML execution or commands.
+
+**Help > Tutorials** has five replayable, real-control guides: Getting started;
+Appearance, colors and pane info; Non-Kerberos profile; Keyboard shortcuts; Pane
+tips and tricks. They progress on actual actions, highlight production controls,
+stay usable with editors open, and always offer Next/Back/Skip step/Skip tutorial.
+They never supply credentials, create/save profiles or connect on your behalf.
 
 The **application-wide** keyboard editor combines Fish and host actions, typed
 exact chords, multiple bindings and **Record and add**. Main `ENTER` and
@@ -25,7 +39,7 @@ exact chords, multiple bindings and **Record and add**. Main `ENTER` and
 retained for Field Exit. Custom keys replace their defaults; conflicting custom
 owners are rejected. There are no live per-profile maps. Old explicit definitions
 migrate without choosing a winning profile: incompatible keys start inactive,
-and exact originals/conflicts remain recoverable in Keyboard > Migrated definitions
+and exact originals/conflicts remain recoverable in Settings > Keyboard Shortcuts > Migrated definitions
 and exported `keyboard.legacy.*` data.
 
 The native setup checkbox now paints its actual text/check/focus path with
@@ -36,11 +50,11 @@ native control checks cover 100/125/150/175/200%; no live installer was run.
 [tsafago/Fish](https://github.com/tsafago/Fish). Profiles have keyboard-accessible
 Up/Down/Delete controls. Order stays consistent across pane selectors and saved
 configuration; deletion preserves panes and blocks removal of a shared login source.
-**Preferences > General** offers a
+**Settings > General** offers a
 confirmed factory reset: save fresh first-run state, end sessions and exit.
 Windows saved passwords, actual font files and other workspaces are kept.
 
-**Help > Check for updates** checks public GitHub releases asynchronously, with
+**Settings > Updates** checks public GitHub releases asynchronously, with
 no account/token/gh dependency. A quiet startup check offers Update, X or
 Hide version; hiding applies only to that version. Default preview updates stay
 within 0.7.x. The optional stable channel accepts stable releases within the same
@@ -56,14 +70,19 @@ transaction and bundled runtime. Input notices have a physical-pixel border,
 an accessible X and a 2.8-second lifetime. Dismiss does not Reset input; recovery
 and **Host > Last pane notice** remain available.
 Read the [manual](MANUAL.md#checking-for-updates) for update/reset details.
-Configuration is now **format 12**: back up before upgrading, including from 0.7.1.
-Older binaries cannot read the new exact-key representation; do not relabel exports.
+Configuration is now **format 13**: back up before upgrading, including from 0.7.2.
+Old settings action bindings merge into `Settings...`; their original exact lists
+remain in `keyboard.legacy.binding.*`. Existing exact host keys, profiles, fonts,
+themes and update settings remain. Older binaries cannot read format 13; do not
+relabel exports.
 
 ## Included Kerberos sign-in
 
 **Fish 0.7.0** adds Windows Kerberos sign-on using RFC 4777 binary `IBMTICKET`
 and the Windows **Kerberos-only** SSPI provider. A fresh workspace starts with
-**Local IBM i**, **10.1.2.3:23**, Kerberos selected, and stays **offline until Connect**.
+**Local IBM i**, **10.1.2.3:23**, Kerberos selected. New/factory workspaces now have
+**connect restored panes on startup ON**, as requested; existing saved OFF choices
+and older formats without that preference remain OFF.
 There is no NTLM or password fallback. Existing profiles/settings are not replaced.
 Windows domain credentials, the administrator-registered `krbsvr400/{server DNS}`
 service/keytab, IBM i NAS/EIM and remote-sign-on policy must already be configured.
@@ -73,9 +92,8 @@ No realm is guessed and no ticket cache/registry changes are required.
 See [Windows sign-in in the manual](MANUAL.md#windows-sign-in-kerberos).
 Actual Windows-domain/IBM i SSO and ACS parity remain **unverified**.
 
-The short, moving tutorial hints remain anchored to the real menus,
-profile fields and pane controls. Next/Back/Skip stay usable while editing a
-profile. Replay through Help; upgrades do not force the guide over existing work.
+Short, moving tutorial hints anchor to the real controls. Replay through
+Help > Tutorials; upgrades do not force the guide over existing work.
 New password profiles start at **10.1.2.3** with automatic sign-in and Save password checked.
 Existing saved hosts and sign-in choices stay unchanged. Passwords remain in
 Windows Credential Manager; plain TCP and the sign-on mechanism have the limits below.
@@ -83,7 +101,7 @@ Windows Credential Manager; plain TCP and the sign-on mechanism have the limits 
 target host using a stable reference, never a password copy.
 
 Ctrl+C/V now copy/paste, Ctrl+Tab cycles panes, Ctrl+N/W adds/closes a pane,
-Ctrl+0 and Ctrl+plus/minus fit/zoom, and Ctrl+comma opens Preferences.
+Ctrl+0 and Ctrl+plus/minus fit/zoom, and Ctrl+comma opens Settings.
 Escape sends Attention; Shift+Escape remains System Request. Enter during a
 recoverable local input error performs **Reset only** with no host submission;
 the next normal Enter resumes usual behavior. Ctrl+R remains an explicit Reset.
@@ -94,9 +112,10 @@ every setting, enum, color role, action and layout constraint. The shipped
 `Fish-config.cmd` supports complete offline export, dry-run validation and atomic,
 revision/lock-checked apply. The in-app guide now renders code, tables, lists and
 emphasis rather than literal Markdown. No embedded AI or secret export.
-**Session > Connect panes on startup** optionally reconnects restored panes once
-per launch; it starts off. Missing login details/passwords leave an actionable
-pane notice without password prompts. Adding a pane still never connects it.
+**Settings > General > Connect restored panes on startup** reconnects restored
+panes once per launch. New/factory workspaces default ON; saved preferences are
+preserved. Missing logins leave actionable guidance without password prompts or
+first-start alarm flashes. Adding a pane still never connects it.
 Configuration apply itself never connects or touches credentials.
 This build is an **unsigned experimental prerelease**, not a production release. The native
 maximize/restore perimeter defect, intermittent flicker observation and real
@@ -114,7 +133,7 @@ Editable font, information, window/focus, shortcut and profile settings use
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-In 0.7.2, appearance selectors join draft-based Preferences; pane scale/layout
+In 0.7.3, appearance selectors share the single indexed Settings dialog; pane scale/layout
 actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
@@ -134,7 +153,7 @@ The known maximize/restore perimeter defect below is unchanged.
 Owned structural edges share one subtle divider color and a one-physical-pixel
 painter. Fractional-DPI painting now follows Swing's actual buffer-copy endpoints
 without expanding repaint clips, preventing missing edges and orphan menu lines.
-The whole-window outline is on by default. Change it under **Preferences > Panes**;
+The whole-window outline is on by default. Change it under **Settings > Appearance**;
 active-pane outline and tint remain separate options there.
 Version-5/6 workspaces get a documented one-time outline-on migration: those
 versions did not record whether off was intentional. Version-7 choices,
@@ -148,7 +167,7 @@ restoring. Real-monitor checks still fail for that path on both 1080p and 4K.
 This batch is not a complete border fix; native/ACS acceptance is not claimed.
 Flat square dialog/combo/popup perimeters replace compound bevels and shadows.
 Quick menus retain frequent actions; fonts, pane information, window details
-and the theme designer are indexed in **Edit > Preferences**.
+and the theme designer are together in **Settings > Appearance**.
 
 ## Included customization
 
@@ -172,25 +191,25 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.7.2-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.7.2](https://github.com/tsafago/Fish/releases/tag/v0.7.2), then run the
+Download `Fish-0.7.3-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.7.3](https://github.com/tsafago/Fish/releases/tag/v0.7.3), then run the
 installer for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract `Fish-0.7.2-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.7.3-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
 may warn or block them. Checksums accompany the package; do not bypass IT policy.
 
 **Back up before upgrading:** close Fish normally and copy its `workspace.xml`
-outside the application folder before first launching 0.7.2. The usual location
+outside the application folder before first launching 0.7.3. The usual location
 is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
 and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 12**, which older binaries cannot read. Keep a pre-upgrade backup
+to **version 13**, which older binaries cannot read. Keep a pre-upgrade backup
 for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
@@ -205,8 +224,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.2-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.7.2-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.7.3-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.7.3-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -217,10 +236,10 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.2**.
+The matching local package is **Fish 0.7.3**.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.2\Fish` to both Package and Installer.
-This local delivery is at `dist\Fish-0.7.2\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.3\Fish` to both Package and Installer.
+This local delivery is at `dist\Fish-0.7.3\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
@@ -237,7 +256,8 @@ independent connections. F5 requests a 27x132 screen; F6 requests 24x80; Enter
 sends edited fields to that server. It is not a simulated IBM i sign-on or
 evidence of ACS parity.
 
-Normal mode starts offline unless **Session > Connect panes on startup** is enabled.
+Normal startup follows **Settings > General > Connect panes on startup**: ON for
+new/factory workspaces; existing saved OFF choices and legacy absence remain OFF.
 Fresh installs can select **Connect** for the preselected Kerberos profile.
 To change authentication or DNS identity, press **Ctrl+Alt+P**, enter the IBM i hostname or
 IP address, leave port **23** unless configured otherwise, and choose
@@ -386,10 +406,10 @@ one pane. Headers show preset names, never A1/A2 identifiers.
 Offline content contains only a centered preset selector and adjacent arrow Connect
 icon button. The collapsed selector does not paint its value as selected text.
 New panes preselect the last used preset; restored panes retain their saved
-preset selection. Nothing auto-connects in normal mode.
+preset selection. Adding panes never connects; normal startup follows the saved startup preference.
 The active pane has a single subtle tinted surface across its header, terminal
 and footer, with an outer physical-pixel focus outline and no header underline.
-Open **Preferences > Panes** to change
+Open **Settings > Appearance** to change
 the active-pane outline and tint independently.
 Focus never changes the border's layout insets. OLED themes retain true-black surfaces.
 
@@ -411,7 +431,7 @@ and errors. X remains available to cancel a pending connection. When only one
 pane remains and it is disconnected, its X is hidden; other pane-close and
 disconnect behavior is unchanged.
 
-**Preferences > Keyboard** (also Edit > Keyboard > Shortcuts) lists every registered
+**Settings > Keyboard Shortcuts** lists every canonical registered
 application and host action, with typed multi-binding lists, exact recording,
 unbinding/default controls and conflict validation. Assign **Ctrl+Tab** to Next pane and
 **Ctrl+Shift+Tab** to Previous pane to use familiar cycling. Overrides are
@@ -436,10 +456,10 @@ and inhibition; newlines/tabs navigate without submitting Enter. Clipboard
 failures are reported in the pane status and actions return focus to the terminal.
 
 Profiles store host, port, optional device name, username, manual/automatic
-sign-on preferences, SBCS code page, host key overrides, palette, effect,
+sign-on preferences, SBCS code page, palette, effect,
 zoom and a saved layout. New and Duplicate are in the compact profile manager.
-Duplication deliberately clears the device name and remembered-password flag
-to prevent workstation/credential collisions.
+Duplication preserves sign-in preference flags but clears device/layout/login
+reference and uses an independent credential ID. It never copies a stored password.
 
 Manual sign-on leaves the host's own login screen in control. Insert a saved
 username/password explicitly or type into its fields; no login-field positions
@@ -470,9 +490,10 @@ New workspace state is atomically saved to `%APPDATA%\Fish\workspace.xml`.
 If `%APPDATA%\Pane5250\workspace.xml` already exists, Fish uses that same
 legacy directory and lock instead, preserving existing profiles and passwords.
 The legacy `Pane5250/` credential target above is intentionally unchanged.
-The last pane layout and window size are restored **offline** next launch.
+The last pane layout and window size are restored next launch; connections follow
+the saved startup preference (new/factory ON, existing explicit OFF preserved).
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-8 state, including tutorial progress and explicit login references.
+preset are saved with version-13 state, including tutorial progress and explicit login references.
 Version-1/2/3 profiles and credentials are retained. Old freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. A legacy layout over eight panes is rejected explicitly
@@ -487,7 +508,7 @@ removes it on normal exit.
 ## Keyboard
 
 Common application actions use conventional Ctrl chords; less common terminal/workspace
-actions retain **Ctrl+Alt**. Profile-specific host mappings cannot claim Ctrl+Alt.
+actions retain **Ctrl+Alt**. All custom app/host bindings use one validated global map.
 **Alt+Space** and **Alt+F4** are also reserved for standard window operations.
 
 | Action | Shortcut |
@@ -504,7 +525,7 @@ actions retain **Ctrl+Alt**. Profile-specific host mappings cannot claim Ctrl+Al
 | Rectangular selection | Shift+arrows, or mouse drag |
 | Insert profile username / remembered password | Ctrl+Alt+U / Ctrl+Alt+Shift+P |
 | Host key chooser / application menu | Ctrl+Alt+F / Ctrl+Alt+M |
-| Preferences | Ctrl+comma |
+| Settings | Ctrl+comma |
 | Dark window menu / standard Windows window menu | Ctrl+Alt+Space / Alt+Space |
 | Immediately close window and disconnect all | Alt+F4 |
 | Quit | Ctrl+Q |
@@ -521,8 +542,8 @@ actions retain **Ctrl+Alt**. Profile-specific host mappings cannot claim Ctrl+Al
 | Next / previous field | Tab / Shift+Tab |
 | Insert, delete, home, end of field | Insert, Delete, Home, End |
 
-Use Preferences > Keyboard for application-wide bindings, e.g. select Host F13 and
-enter `ENTER@numpad` and `ctrl F3` on separate lines. The Host menu exposes available
+Use Settings > Keyboard Shortcuts for application-wide bindings, e.g. select Host F13 and
+enter `ENTER@numpad` and `ctrl F3` on separate lines. Inserts > Send host key exposes available
 host actions even on keyboards without Pause or a keypad. System Request
 prompts for an optional option; an empty option requests its menu.
 
@@ -547,7 +568,7 @@ dividers and text. Application themes are independent of workstation host
 palettes: Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid,
 Mint, Rose, OLED green and OLED amber. Host
 color/reverse/underline/blink/non-display distinctions remain intact.
-**Preferences > Appearance > Theme designer** edits all 60 semantic RGB roles: surfaces, controls and
+**Settings > Appearance > Theme designer** edits all 60 semantic RGB roles: surfaces, controls and
 states, chrome, menus/tooltips, header/footer/statuses, outline/tint/dividers,
 cursor/terminal selection, all sixteen host slots, six gradient stops, glow
 and logo colors. Preview is temporary; Cancel restores the applied theme.
@@ -563,15 +584,16 @@ including optional pane/window outlines. Version-5 custom themes keep their
 existing divider color; old separate LINE/OUTLINE colors are linked to it with
 an explicit migration notice.
 
-**Preferences > Terminal** discovers available regular monospaced families and accepts a
+**Settings > Appearance > Terminal font** discovers available regular monospaced families and accepts a
 local TTF/OTF file. Apply checks printable fixed-cell widths and the current
 profiles' code-page glyphs. Missing/unsupported files are reported explicitly;
 startup uses an announced temporary Monospaced fallback without erasing the
 saved choice. Font files stay local and must remain available at the saved path.
 They are not bundled, uploaded or copied into releases.
 
-**Preferences > Panes** independently controls each header/footer item and
-both rows, with no space for empty rows. Outline and tint live in **Window and focus**.
+**Settings > Appearance > Pane information** independently controls each header/footer
+item and both rows, with no space for empty rows. Outline and tint are just below
+in the same page's **Window and focus** section.
 With a hidden/empty header, its independent close X overlays the upper-right
 corner without reserving a band; Reset remains a separate non-overlapping overlay.
 Drag the invisible top strip at X height to swap, or use the terminal context
@@ -580,7 +602,7 @@ Workspace appearance settings apply across profiles; effects remain
 profile-specific.
 
 Optional Soft glow, column-gradient Prism and **Flux (animated)**
-effects are disabled by default. Choose **View > Appearance > Text effect >
+effects are disabled by default. Choose **Settings > Appearance > Text effect >
 Flux (animated)**, or toggle the fish logo, for smoothly
 flowing multicolor gradients. The effect is saved with the preset. Neutral host
 text carries the full color flow; chromatic text varies within its host hue

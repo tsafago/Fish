@@ -2,21 +2,31 @@ package pane5250.ui;
 
 import java.awt.*;
 import java.awt.event.*;
+import java.util.List;
 import javax.swing.*;
 import javax.swing.event.ChangeListener;
 import pane5250.model.StateStore;
 
-/** Hints follow the real controls; only the user edits profiles or starts connections. */
+/** Pass-through highlights and explicit production-action events; never performs a host or credential operation. */
 final class TutorialDialog extends JDialog {
+    enum Guide {
+        GETTING_STARTED("Getting started"),APPEARANCE("Appearance, colors and pane info"),
+        PASSWORD_PROFILE("Non-Kerberos profile"),KEYBOARD("Keyboard shortcuts"),PANES("Pane tips and tricks");
+        final String title;
+        Guide(String title) { this.title=title; }
+    }
+    private record Step(String title,String text,String surface,String control,String event) {}
     private final Workspace workspace;
     private final boolean firstRun;
-    private final JLabel title=new JLabel(), progress=new JLabel();
+    private final Guide guide;
+    private final List<Step> steps;
+    private final JLabel title=new JLabel(),progress=new JLabel();
     private final JTextArea text=new JTextArea();
     private final JButton back,next,tryIt;
     private final Highlight highlight=new Highlight();
-    private ProfilesDialog editor;
-    private int step, paneCount;
-    private boolean ended, menuShown, refreshing, queued;
+    private ProfilesEditor editor;
+    private int step;
+    private boolean ended,refreshing,queued;
     private Component anchor;
     private Window targetWindow;
     private final ComponentAdapter bounds=new ComponentAdapter() {
@@ -30,117 +40,144 @@ final class TutorialDialog extends JDialog {
         @Override public void ancestorResized(HierarchyEvent e) { refreshTarget(); }
     };
     private final HierarchyListener showing=e -> refreshTarget();
-    private final ChangeListener menus=e -> refreshTarget();
+    private final ChangeListener menus=e -> menuChanged();
 
-    TutorialDialog(Workspace workspace,boolean firstRun) {
-        super(workspace,"Getting started",false);
-        this.workspace=workspace; this.firstRun=firstRun;
-        // The guide stays usable while the real, modal profile editor is open.
-        setModalExclusionType(Dialog.ModalExclusionType.APPLICATION_EXCLUDE);
-        setAutoRequestFocus(false);
+    TutorialDialog(Workspace workspace,boolean firstRun) { this(workspace,Guide.GETTING_STARTED,firstRun); }
+    TutorialDialog(Workspace workspace,Guide guide,boolean firstRun) {
+        super(workspace,guide.title,false);
+        this.workspace=workspace; this.firstRun=firstRun; this.guide=guide; steps=steps(guide);
+        setModalExclusionType(Dialog.ModalExclusionType.APPLICATION_EXCLUDE); setAutoRequestFocus(false);
         if (firstRun) workspace.tutorialStatus(StateStore.Tutorial.IN_PROGRESS);
         JPanel body=new JPanel(new BorderLayout(0,12)); body.setBorder(Ui.padding(12));
         JPanel heading=new JPanel(new BorderLayout(12,0)); heading.add(title,BorderLayout.CENTER); heading.add(progress,BorderLayout.EAST);
         Ui.role(progress,"muted");
-        text.setEditable(false); text.setLineWrap(true); text.setWrapStyleWord(true);
-        text.setOpaque(false); text.setBorder(BorderFactory.createEmptyBorder());
-        text.getAccessibleContext().setAccessibleName("Tutorial step instructions");
+        text.setEditable(false); text.setLineWrap(true); text.setWrapStyleWord(true); text.setOpaque(false);
+        text.setBorder(BorderFactory.createEmptyBorder()); text.getAccessibleContext().setAccessibleName("Tutorial step instructions");
         JPanel actions=new JPanel(new BorderLayout(0,8));
-        tryIt=Ui.button("Show menu",KeyEvent.VK_M,this::showMenu);
-        JPanel contextual=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); contextual.add(tryIt);
+        tryIt=Ui.button("Show control",KeyEvent.VK_M,this::showControl);
+        JPanel contextual=new JPanel(new BorderLayout(8,0)); contextual.add(tryIt,BorderLayout.WEST);
+        contextual.add(Ui.button("Skip tutorial",KeyEvent.VK_S,() -> finish(false)),BorderLayout.EAST);
         actions.add(contextual,BorderLayout.NORTH);
         JPanel navigation=new JPanel(new FlowLayout(FlowLayout.RIGHT,6,0));
-        navigation.add(Ui.button("Skip",KeyEvent.VK_S,() -> finish(false)));
         back=Ui.button("Back",KeyEvent.VK_B,() -> go(step-1));
-        next=Ui.button("Next",KeyEvent.VK_N,() -> {
-            if (step==6) finish(true);
-            else if (step==0 && editor==null && !menuShown) showMenu();
-            else go(step==0 && editor==null ? 4 : step+1);
-        });
-        navigation.add(back); navigation.add(next); actions.add(navigation,BorderLayout.SOUTH);
-        JScrollPane reading=new JScrollPane(text);
-        reading.setBorder(BorderFactory.createEmptyBorder()); reading.setOpaque(false); reading.getViewport().setOpaque(false);
+        next=Ui.button("Next",KeyEvent.VK_N,this::advance);
+        navigation.add(back); navigation.add(Ui.button("Skip step",KeyEvent.VK_K,this::advance)); navigation.add(next);
+        actions.add(navigation,BorderLayout.SOUTH);
+        JScrollPane reading=new JScrollPane(text); reading.setBorder(BorderFactory.createEmptyBorder());
+        reading.setOpaque(false); reading.getViewport().setOpaque(false);
         reading.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         body.add(heading,BorderLayout.NORTH); body.add(reading,BorderLayout.CENTER); body.add(actions,BorderLayout.SOUTH);
         setContentPane(body); Ui.decorate(this,() -> finish(false)); getRootPane().setDefaultButton(next);
-        setMinimumSize(new Dimension(320,220)); setSize(350,240);
-        workspace.addComponentListener(bounds);
-        MenuSelectionManager.defaultManager().addChangeListener(menus);
-        go(0);
+        setMinimumSize(new Dimension(340,245)); setSize(400,275);
+        workspace.addComponentListener(bounds); MenuSelectionManager.defaultManager().addChangeListener(menus); go(0);
     }
-    void profileOpened(ProfilesDialog dialog) {
-        editor=dialog;
-        go(1);
-    }
-    void profileClosed(ProfilesDialog dialog) {
-        if (editor!=dialog) return;
-        editor=null;
-        go(4);
-    }
-    void go(int value) {
-        int nextStep=Math.max(0,Math.min(6,value));
-        if (nextStep==5 && step!=5) paneCount=workspace.sessionPanes().size();
-        step=nextStep;
+    private void menuChanged() {
+        if (guide==Guide.GETTING_STARTED && step==steps.size()-1)
+            for (MenuElement element:MenuSelectionManager.defaultManager().getSelectedPath())
+                if (element instanceof JMenu menu && menu.getText().equals("Tutorials") && menu.isPopupMenuVisible()) {
+                    finish(true); return;
+                }
         refreshTarget();
     }
-    void focusGuide() {
-        if (isShowing()) { requestFocus(); next.requestFocusInWindow(); }
-    }
-    private String binding(String action) {
-        String key=workspace.shortcutLabel(action);
-        return key.isEmpty() ? "" : " ("+key+")";
-    }
-    private void showMenu() {
-        if (editor!=null) return;
-        menuShown=true;
-        workspace.showTutorialMenu(step==5 ? "Panes" : "Session");
+    void go(int value) { step=Math.max(0,Math.min(steps.size()-1,value)); refreshTarget(); }
+    private void advance() { if (step==steps.size()-1) finish(true); else go(step+1); }
+    void action(String event) { if (!ended) { if (steps.get(step).event().equals(event)) advance(); else refreshTarget(); } }
+    void focusGuide() { if (isShowing()) { requestFocus(); next.requestFocusInWindow(); } }
+    private void showControl() {
+        Step current=steps.get(step);
+        switch(current.surface()) {
+            case "Appearance","Profiles","Keyboard Shortcuts","General" -> workspace.preferences(current.surface());
+            case "Help","Panes","View","Session" -> workspace.showTutorialMenu(current.surface());
+            default -> { if (workspace.isShowing()) workspace.toFront(); }
+        }
         refreshTarget();
+    }
+    private static Step s(String title,String text,String surface,String control,String event) {
+        return new Step(title,text,surface,control,event);
+    }
+    private static List<Step> steps(Guide guide) {
+        return switch(guide) {
+            case GETTING_STARTED -> List.of(
+                    s("Connect when you're ready","The default Kerberos profile uses Windows sign-in. Your IBM i/domain administrator must enable Kerberos and account mapping. Click Connect when you want to try; you can skip this step.","connect","","Connect / disconnect"),
+                    s("Add a pane","Click + Pane. Each pane has an independent connection; adding one never sends a host transaction.","add","","Add pane"),
+                    s("Close just one pane","Click X to remove a pane. The last pane is kept offline. With hidden headers, X is at the pane's upper-right edge.","close","","Close pane"),
+                    s("Find your settings","Click Settings. Appearance brings application colors, terminal colors, fonts and pane information together. The left index goes straight to other controls.","settings","","settings-Appearance"),
+                    s("Explore more guides","Open Help > Tutorials for appearance, profiles, keyboard shortcuts and pane tips. Every guide has Back, Next, Skip step and Skip tutorial.","Help","Tutorials",""));
+            case APPEARANCE -> List.of(
+                    s("Open Appearance","Click Settings, then Appearance. Common appearance controls are all on this page; scroll to the sections below.","Appearance","theme","settings-Appearance"),
+                    s("Choose application colors","Choose Application theme. This is a draft until Apply or Done. Custom theme editing is optional.","Appearance","theme","appearance-theme"),
+                    s("Choose terminal colors","Check Terminal profile, then choose Text palette. Only that profile and its panes change. Text effect is optional and off by default.","Appearance","palette","appearance-palette"),
+                    s("Choose your font","Choose a monospaced family. A local custom font file is optional; Check font verifies alignment and characters before Apply.","Appearance","font","appearance-font"),
+                    s("Set header information","Scroll to Pane information. Show header controls visibility; the checkboxes below select its information.","Appearance","header","appearance-header"),
+                    s("Set footer information","Show footer controls status information. Its checkboxes select dimensions, cursor and insert state. Window and focus outlines are just below.","Appearance","footer","appearance-footer"),
+                    s("Apply your appearance","Apply saves drafts and keeps Settings open. Done applies and closes. Cancel discards changes made since your last Apply.","Appearance","apply","settings-applied"));
+            case PASSWORD_PROFILE -> List.of(
+                    s("Open Profiles","Open Settings > Profiles. The actual workstation editor is here; Session > Profiles remains an operational workflow.","Profiles","list","settings-Profiles"),
+                    s("Start a profile","Choose New, or select a saved profile and use Next. New starts a draft; the guide never creates or saves one for you.","Profiles","new","profile-new"),
+                    s("Choose password sign-in","Set Sign in with to Password / manual. Username and password controls appear; no Kerberos ticket is requested.","Profiles","authentication","profile-password-mode"),
+                    s("Enter the host","Enter your IBM i host and a recognizable profile name. This is configuration only, not a connection.","Profiles","host","profile-address"),
+                    s("Enter your username","Enter your username, or choose an existing saved login when available. The guide never reads, records or supplies a password.","Profiles","username","profile-username"),
+                    s("Review sign-in preferences","New password profiles have automatic sign-in and Save password on. Keep or adjust them. A blank password keeps an existing saved password; none is invented.","Profiles","remember","profile-login-options"),
+                    s("Optional advanced fields","Advanced contains port, requested device and code page. The optional Kerberos DNS identity is here in Kerberos mode. Leave defaults unless your administrator specifies otherwise.","Profiles","advanced","profile-advanced"),
+                    s("Save only if you want","Apply saves without connecting; Done saves and closes. A password you explicitly enter is saved in Windows only with Save password enabled. Cancel drops the unapplied draft.","Profiles","apply","profile-saved"));
+            case KEYBOARD -> List.of(
+                    s("Open Keyboard Shortcuts","Open Settings > Keyboard Shortcuts. Fish commands and host keys share this editor; host keys still act only in the terminal.","Keyboard Shortcuts","keyboard-search","settings-Keyboard Shortcuts"),
+                    s("Find an action","Type part of an action or key in Find action. The table shows every effective binding, not just the one displayed in a menu.","Keyboard Shortcuts","keyboard-search","keyboard-search"),
+                    s("Select the action","Select the action row. Its complete binding list appears below.","Keyboard Shortcuts","keyboard-table","keyboard-action"),
+                    s("Edit or record a binding","Type one exact chord per line, or use Record and add. ENTER is the main key; ENTER@numpad is the keypad. Two custom owners conflict and cannot be applied.","Keyboard Shortcuts","keyboard-keys","keyboard-binding"),
+                    s("Apply valid bindings","Apply requires a valid, conflict-free list. Done applies and closes; Cancel keeps the last applied list. Menus show the first available chord.","Keyboard Shortcuts","apply","settings-applied"));
+            case PANES -> List.of(
+                    s("Add an independent pane","Click + Pane. At most eight panes fit the bounded layout; adding one does not connect it.","add","","Add pane"),
+                    s("Resize side by side","Drag the highlighted divider horizontally. Panes > Decrease / Increase divider are keyboard equivalents. Pane size scales text, not host dimensions.","divider-horizontal","","divider-horizontal"),
+                    s("Add a second row","Add another pane for vertical resizing. The bounded layout avoids arbitrarily narrow nested strips.","add","","Add pane"),
+                    s("Resize vertically","Drag the row divider vertically. If there is none, add at least three panes or skip this step.","divider-vertical","","divider-vertical"),
+                    s("Swap positions","Drag a header onto another pane, or use Panes > Swap panes. With hidden headers, use the upper edge. Progress requires a real swap, not opening or canceling its dialog.","Panes","Swap panes...","panes-swapped"),
+                    s("Choose startup connections","Settings > General controls Connect restored panes on startup. New/factory workspaces start on; your saved choice is kept. This does not connect existing panes now.","General","startup","startup-changed"),
+                    s("Fit and navigate","View > Fit host screen fits the active pane. Ctrl+Tab moves between panes by default; X closes one and keeps the last offline. Settings lists your complete custom bindings.","View","Fit host screen","Fit host screen"));
+        };
+    }
+    private Component target(Step current) {
+        Preferences settings=workspace.tutorialPreferences();
+        return switch(current.surface()) {
+            case "connect" -> workspace.active().tutorialConnectionTarget(); case "add" -> workspace.tutorialAddTarget();
+            case "close" -> workspace.active().tutorialCloseTarget(); case "settings" -> workspace.tutorialSettingsTarget();
+            case "divider-horizontal","divider-vertical" -> {
+                Component divider=workspace.tutorialDivider(current.surface().equals("divider-horizontal"));
+                yield divider==null ? workspace.tutorialAddTarget() : divider;
+            }
+            case "Appearance","Keyboard Shortcuts","General" -> settings!=null && settings.category().equals(current.surface())
+                    ? settings.tutorialTarget(current.control()) : workspace.tutorialSettingsTarget();
+            case "Profiles" -> current.control().equals("apply") && settings!=null && settings.category().equals("Profiles")
+                    ? settings.tutorialTarget("apply") : editor!=null ? editor.tutorialTarget(current.control()) : workspace.tutorialSettingsTarget();
+            default -> workspace.tutorialMenuTarget(current.surface(),current.control());
+        };
     }
     void refreshTarget() {
         if (ended || refreshing) return;
         refreshing=true;
         try {
-            String[] titles={"Start with Session","Set up your connection","Sign in once","Save your profile","Connect your pane","Add another pane","Make room"};
-            String[] instructions={
-                "Open Session > Profiles. Edit Local IBM i or choose New. Up/Down changes the order; Delete removes a saved profile.",
-                "Check the host address, then enter your username. Give the profile a name you'll recognize. Device is optional.",
-                "Leave both recommended options on to skip typing your login next time. Enter your password below. Windows saves it; plain TCP is unencrypted.",
-                "Click Done to save without connecting. Apply saves and keeps editing; Cancel drops only unapplied changes.",
-                "Pick your profile in this pane, then Connect. For next time, Session > Connect panes on startup can reopen your sessions.",
-                "Open Panes > Add pane"+binding("Add pane")+". Each pane has its own connection. Next pane"+binding("Next pane")+" moves between them.",
-                "Drag headers to swap panes and dividers to resize. View > Fit host screen"+binding("Fit host screen")+" fits. Edit > Preferences"+binding("Preferences...")+" indexes settings and exact key recording. Help has updates and this guide."
-            };
-            Component target=editor==null ? workspace.tutorialTarget(step) : editor.tutorialTarget(step);
-            String message=instructions[step];
-            if (editor!=null && step==1) message=editor.tutorialConnectionText();
-            if (editor!=null && step==2) message=editor.tutorialSignInText();
-            if (editor!=null && editor.kerberos() && step==2) titles[2]="Use Windows sign-in";
-            if (editor==null && step>=1 && step<=3) message="Open Session > Profiles to try this step. You can also keep going without changing a profile.";
-            if (editor!=null && (step==0 || step>=4)) message="Finish with Done, or Cancel to return to your panes. You can leave this guide open while you edit.";
-            if (editor==null && step==4 && workspace.active()!=null && workspace.active().busy())
-                message="This pane is already connected or connecting. Copy"+binding("Copy selection / screen")+"; paste"+binding("Paste into fields")+". Enter submits. Host > ATTN"+binding("ATTN")+" sends Attention.";
-            if (editor==null && step==5 && (workspace.sessionPanes().size()>paneCount || workspace.sessionPanes().size()==8)) {
-                titles[5]="Close just one pane";
-                message="The X closes this pane, not the whole window. Close pane"+binding("Close pane")+" does the same. Next pane"+binding("Next pane")+" moves between panes.";
-                target=workspace.active().tutorialCloseTarget();
+            editor=workspace.tutorialProfileEditor(); Step current=steps.get(step);
+            Component target=target(current); String message=current.text();
+            if (guide==Guide.GETTING_STARTED && step==0 && workspace.active().busy())
+                message="This pane is already connected or connecting. Use X to close/cancel, or Next to continue without another connection.";
+            if (guide==Guide.APPEARANCE && current.control().equals("palette") && workspace.tutorialPreferences()!=null
+                    && workspace.tutorialPreferences().category().equals("Appearance") && workspace.tutorialPreferences().customPalette()) {
+                message+=" This custom theme owns host colors. Choose a built-in application theme to enable a profile palette, or skip.";
+                target=workspace.tutorialPreferences().tutorialTarget("theme");
             }
-            if (editor==null && step==0 && target instanceof JMenuItem && !(target instanceof JMenu)) {
-                titles[0]="Choose Profiles";
-                message="Click Profiles here to set up a workstation. These are the real menus, so you can use them normally.";
-            }
-            title.setText(titles[step]); progress.setText((step+1)+" of 7");
+            if (current.surface().startsWith("divider-") && workspace.tutorialDivider(current.surface().equals("divider-horizontal"))==null)
+                message+=" There is no matching divider yet. Use + Pane if you want one, or skip.";
+            if (current.surface().equals("add") && workspace.sessionPanes().size()==8)
+                message+=" All eight slots are occupied. Close a pane first or skip.";
+            if (current.surface().equals("close") && workspace.sessionPanes().size()==1 && !workspace.active().busy())
+                message="Only the last offline pane remains; there is nothing to close. Use Next or Skip step.";
+            title.setText(current.title()); progress.setText((step+1)+" of "+steps.size());
             if (!text.getText().equals(message)) { text.setText(message); text.setCaretPosition(0); }
-            back.setEnabled(step>0); next.setText(step==6 ? "Done" : step==0 && menuShown && editor==null ? "Skip setup" : "Next");
-            next.setMnemonic(step==6 ? KeyEvent.VK_D : KeyEvent.VK_N);
-            tryIt.setVisible(editor==null && (step==0 || step==4 || step==5));
+            back.setEnabled(step>0); next.setText(step==steps.size()-1 ? "Done" : "Next");
             if (anchor!=target) {
-                if (anchor!=null) {
-                    anchor.removeComponentListener(bounds); anchor.removeHierarchyBoundsListener(ancestors); anchor.removeHierarchyListener(showing);
-                }
+                if (anchor!=null) { anchor.removeComponentListener(bounds); anchor.removeHierarchyBoundsListener(ancestors); anchor.removeHierarchyListener(showing); }
                 anchor=target;
-                if (anchor!=null) {
-                    anchor.addComponentListener(bounds); anchor.addHierarchyBoundsListener(ancestors); anchor.addHierarchyListener(showing);
-                }
+                if (anchor!=null) { anchor.addComponentListener(bounds); anchor.addHierarchyBoundsListener(ancestors); anchor.addHierarchyListener(showing); }
             }
             Window window=anchor==null ? workspace : SwingUtilities.getWindowAncestor(anchor);
             if (window==null) window=workspace;
@@ -148,24 +185,20 @@ final class TutorialDialog extends JDialog {
                 if (targetWindow!=null && targetWindow!=workspace) targetWindow.removeComponentListener(bounds);
                 targetWindow=window;
                 if (targetWindow!=workspace) targetWindow.addComponentListener(bounds);
-                Container old=highlight.getParent();
-                if (old!=null) { old.remove(highlight); old.repaint(); }
+                Container old=highlight.getParent(); if (old!=null) { old.remove(highlight); old.repaint(); }
                 if (window instanceof RootPaneContainer root) root.getLayeredPane().add(highlight,JLayeredPane.DRAG_LAYER);
             }
             if (highlight.getParent() instanceof JLayeredPane layer) {
                 highlight.setBounds(0,0,layer.getWidth(),layer.getHeight());
-                highlight.target=anchor==null || anchor.getParent()==null || anchor instanceof javax.swing.plaf.basic.BasicSplitPaneDivider ? null
+                highlight.target=anchor==null || anchor.getParent()==null ? null
                         : SwingUtilities.convertRectangle(anchor.getParent(),anchor.getBounds(),layer);
                 highlight.repaint();
             }
             position();
         } finally { refreshing=false; }
         if (!queued) {
-            queued=true;
-            SwingUtilities.invokeLater(() -> {
-                queued=false;
-                if (ended) return;
-                // Layout, popup peers and modal visibility settle after their originating event.
+            queued=true; SwingUtilities.invokeLater(() -> {
+                queued=false; if (ended) return;
                 refreshing=true;
                 try { position(); if (editor!=null && editor.isShowing() && isShowing()) toFront(); }
                 finally { refreshing=false; }
@@ -186,8 +219,7 @@ final class TutorialDialog extends JDialog {
             int x=Math.max(usable.x,Math.min(choice.x,usable.x+usable.width-getWidth()));
             int y=Math.max(usable.y,Math.min(choice.y,usable.y+usable.height-getHeight()));
             Rectangle overlap=box.intersection(new Rectangle(x,y,getWidth(),getHeight()));
-            long cost=(overlap.isEmpty() ? 0 : (long)overlap.width*overlap.height*1000)
-                    +Math.abs(x-choice.x)+Math.abs(y-choice.y);
+            long cost=(overlap.isEmpty() ? 0 : (long)overlap.width*overlap.height*1000)+Math.abs(x-choice.x)+Math.abs(y-choice.y);
             if (cost<score) { score=cost; best=new Point(x,y); }
         }
         if (best!=null && !getLocation().equals(best)) setLocation(best);
@@ -200,14 +232,10 @@ final class TutorialDialog extends JDialog {
     boolean ended() { return ended; }
     @Override public void dispose() {
         if (!ended) {
-            ended=true; workspace.removeComponentListener(bounds);
-            MenuSelectionManager.defaultManager().removeChangeListener(menus);
+            ended=true; workspace.removeComponentListener(bounds); MenuSelectionManager.defaultManager().removeChangeListener(menus);
             if (targetWindow!=null && targetWindow!=workspace) targetWindow.removeComponentListener(bounds);
-            if (anchor!=null) {
-                anchor.removeComponentListener(bounds); anchor.removeHierarchyBoundsListener(ancestors); anchor.removeHierarchyListener(showing); anchor=null;
-            }
-            Container parent=highlight.getParent();
-            if (parent!=null) { parent.remove(highlight); parent.repaint(); }
+            if (anchor!=null) { anchor.removeComponentListener(bounds); anchor.removeHierarchyBoundsListener(ancestors); anchor.removeHierarchyListener(showing); anchor=null; }
+            Container parent=highlight.getParent(); if (parent!=null) { parent.remove(highlight); parent.repaint(); }
         }
         super.dispose();
     }
@@ -216,8 +244,7 @@ final class TutorialDialog extends JDialog {
         Highlight() { setOpaque(false); setFocusable(false); }
         @Override public boolean contains(int x,int y) { return false; }
         @Override protected void paintComponent(Graphics g) {
-            if (target!=null && target.width>0 && target.height>0)
-                Hairline.highlight(g,target.x,target.y,target.width,target.height);
+            if (target!=null && target.width>0 && target.height>0) Hairline.highlight(g,target.x,target.y,target.width,target.height);
         }
     }
 }

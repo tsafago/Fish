@@ -58,7 +58,7 @@ public final class KeyboardMigration {
         if (!unbound.isEmpty()) overrides.put(KeyBindings.UNBOUND,KeyChord.text(unbound));
         if (!conflicts.isEmpty()) archive.put("report",
                 "Some old keyboard definitions disagreed during migration. These keys were left inactive, not assigned to a winning profile.\n"
-                +"Assign them in Preferences > Keyboard, then remove them from Unbound keys. Original definitions remain below.\n\n"
+                +"Assign them in Settings > Keyboard Shortcuts, then remove them from Unbound keys. Original definitions remain below.\n\n"
                 +String.join("\n\n",conflicts));
         KeyBindings.effective(overrides);
         return new Result(profiles.stream().map(p -> p.withKeys(Map.of())).toList(),Map.copyOf(overrides),Map.copyOf(archive));
@@ -67,10 +67,34 @@ public final class KeyboardMigration {
         targets.computeIfAbsent(chord,k -> new LinkedHashSet<>()).add(action);
         sources.computeIfAbsent(chord,k -> new ArrayList<>()).add(source);
     }
+    public record SettingsResult(Map<String,String> bindings,Map<String,String> recovery) {}
+    public static SettingsResult settings(Map<String,String> bindings,Map<String,String> recovery) {
+        Map<String,String> next=new LinkedHashMap<>(bindings),archive=new TreeMap<>(recovery);
+        boolean aliases=bindings.keySet().stream().anyMatch(Shortcuts.SETTINGS_ALIASES::contains);
+        if (!aliases) return new SettingsResult(Map.copyOf(next),Map.copyOf(archive));
+        LinkedHashSet<KeyChord> keys=new LinkedHashSet<>();
+        String primary=bindings.getOrDefault(Shortcuts.SETTINGS,bindings.getOrDefault("Preferences...","ctrl COMMA"));
+        keys.addAll(KeyChord.list(primary));
+        Shortcuts.SETTINGS_ALIASES.stream().sorted().forEach(alias -> {
+            if (next.containsKey(alias)) {
+                String value=next.remove(alias); archive.put("binding."+alias,value); keys.addAll(KeyChord.list(value));
+            }
+        });
+        Set<KeyChord> other=new HashSet<>();
+        next.forEach((action,value) -> { if (!action.equals(Shortcuts.SETTINGS)) other.addAll(KeyChord.list(value)); });
+        keys.removeIf(other::contains);
+        next.put(Shortcuts.SETTINGS,KeyChord.text(keys));
+        KeyBindings.effective(next);
+        return new SettingsResult(Map.copyOf(next),Map.copyOf(archive));
+    }
     public static void validateRecovery(Map<String,String> values) {
         values.forEach((key,value) -> {
             if (key.equals("report")) {
                 if (value.length()>100_000) throw new IllegalArgumentException("Keyboard recovery report is too large.");
+            } else if (key.startsWith("binding.")) {
+                if (!Shortcuts.SETTINGS_ALIASES.contains(key.substring(8)))
+                    throw new IllegalArgumentException("Unknown retained settings action: "+key);
+                KeyChord.list(value);
             } else if (key.startsWith("shortcut.")) {
                 KeyBindings.command(key.substring(9)); KeyChord.legacy(value);
             } else if (key.startsWith("profile.") && key.length()>45) {

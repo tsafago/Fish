@@ -82,7 +82,7 @@ public record Profile(UUID id, String name, String host, int port, String device
 
     public Profile duplicate() {
         return new Profile(UUID.randomUUID(), name.substring(0, Math.min(75, name.length())) + " copy", host, port, "", username,
-                automaticSignOn, false, codePage, theme, effect, zoom, keymap, "",null,authentication,kerberosServer);
+                automaticSignOn, rememberPassword, codePage, theme, effect, zoom, keymap, "",null,authentication,kerberosServer);
     }
 
     public Profile withLayout(String layout) {

@@ -34,10 +34,13 @@ public final class FlatControls {
             Hairline.horizontal(g,ink.x,ink.y+ink.height,Math.max(8,ink.width));
         }
         @Override protected void paintText(Graphics g,AbstractButton b,Rectangle text,String value) {
-            g.setColor(b.isEnabled() ? b.getForeground() : Ui.color(ColorRole.DISABLED));
-            BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,Ui.mnemonicsVisible() ? b.getDisplayedMnemonicIndex() : -1,text.x,
-                    text.y+g.getFontMetrics().getAscent());
+            buttonText(g,b,text,value);
         }
+    }
+    private static void buttonText(Graphics g,AbstractButton b,Rectangle text,String value) {
+        g.setColor(b.isEnabled() ? b.getForeground() : Ui.color(ColorRole.DISABLED));
+        BasicGraphicsUtils.drawStringUnderlineCharAt(g,value,Ui.mnemonicsVisible() ? b.getDisplayedMnemonicIndex() : -1,text.x,
+                text.y+g.getFontMetrics().getAscent());
     }
     public static final class Label extends BasicLabelUI {
         public static ComponentUI createUI(JComponent c) { return new Label(); }
@@ -90,6 +93,9 @@ public final class FlatControls {
     public static final class Check extends BasicCheckBoxUI {
         public static ComponentUI createUI(JComponent c) { return new Check(); }
         @Override public void paint(Graphics g,JComponent c) { Ui.quality(g); super.paint(g,c); }
+        @Override protected void paintText(Graphics g,AbstractButton b,Rectangle text,String value) {
+            buttonText(g,b,text,value);
+        }
         @Override protected void paintFocus(Graphics g,Rectangle text,Dimension size) {
             Hairline.horizontal(g,text.x,text.y+text.height,text.width);
         }

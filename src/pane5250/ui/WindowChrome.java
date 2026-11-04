@@ -113,7 +113,7 @@ final class WindowChrome extends JPanel {
             compact=narrow; menus.setVisible(!narrow); menuButton.setVisible(narrow);
             for (Component component:tools.getComponents()) if (component instanceof JButton b) {
                 if (b.getClientProperty("fullLabel")==null) b.putClientProperty("fullLabel",b.getText());
-                b.setText(narrow ? "" : (String)b.getClientProperty("fullLabel"));
+                b.setText(narrow && b.getIcon()!=null ? "" : (String)b.getClientProperty("fullLabel"));
             }
         }
         super.doLayout(); left.doLayout(); actions.doLayout(); controls.doLayout();
@@ -175,8 +175,10 @@ final class WindowChrome extends JPanel {
             copy.setEnabled(original.isEnabled()); copy.setAccelerator(original.getAccelerator());
             copy.addActionListener(e -> { original.doClick(0); after.run(); }); return copy;
         }
-        if (original.getAction()!=null) return original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getAction())
-                : new JMenuItem(original.getAction());
+        if (original.getAction()!=null) {
+            JMenuItem copy=original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getAction()) : new JMenuItem(original.getAction());
+            copy.setText(original.getText()); copy.setMnemonic(original.getMnemonic()); return copy;
+        }
         JMenuItem copy=original instanceof JCheckBoxMenuItem ? new JCheckBoxMenuItem(original.getText(),original.isSelected())
                 : new JMenuItem(original.getText());
         copy.addActionListener(e -> original.doClick(0)); return copy;

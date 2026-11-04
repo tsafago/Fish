@@ -7,6 +7,9 @@ import org.tn5250j.keyboard.KeyMnemonic;
 
 /** Shared data/validation for the UI, workspace migration and offline configuration. */
 public final class Shortcuts {
+    public static final String SETTINGS="Settings...";
+    public static final Set<String> SETTINGS_ALIASES=Set.of("Preferences...","Appearance...","Fonts...","Pane information...",
+            "Window and focus...","Application settings...","Shortcuts...","Check for updates...","Theme designer...");
     public record Command(String title,String stroke,KeyMnemonic host) {}
     public record Migration(List<Profile> profiles,Map<String,String> overrides,List<String> notices) {}
     private Shortcuts() {}
@@ -30,9 +33,10 @@ public final class Shortcuts {
             {"Decrease divider","ctrl alt OPEN_BRACKET"},{"Increase divider","ctrl alt CLOSE_BRACKET"},
             {"Save layout to profile","ctrl alt S"},{"Restore profile layout","ctrl alt L"},
             {"Fit host screen","ctrl 0"},{"Zoom in","ctrl EQUALS"},{"Zoom out","ctrl MINUS"},{"Appearance...",""},
-            {"Preferences...","ctrl COMMA"},
+            {"Preferences...",""},{"Settings...","ctrl COMMA"},
             {"Fonts...",""},{"Pane information...",""},{"Window and focus...",""},{"Theme designer...",""},{"Flux animated text",""},
             {"Full manual / Getting Started",""},{"Getting started tutorial",""},{"Configuration for external tools",""},
+            {"Tutorial: Appearance",""},{"Tutorial: Non-Kerberos profile",""},{"Tutorial: Keyboard shortcuts",""},{"Tutorial: Pane tips",""},
             {"Keyboard reference",""},{"Compatibility and connection safety",""},{"Connect panes on startup",""},
             {"Application settings...",""},{"Check for updates...",""},{"Last pane notice...",""},
             {"Open menus","ctrl alt M"},{"Window menu","ctrl alt SPACE"},{"Maximize / restore window",""},{"Minimize window",""},
@@ -96,7 +100,7 @@ public final class Shortcuts {
         Map<UUID,Map<KeyStroke,KeyMnemonic>> hostBindings=new HashMap<>();
         for (Profile profile:profiles) hostBindings.put(profile.id(),new HostKeys(profile.keymap(),reassigned).bindings());
         for (Command command:commands()) {
-            if (command.title.equals("Preferences...")) continue;
+            if (command.title.equals("Preferences...") || command.title.equals(SETTINGS)) continue;
             if (command.host!=null && !values.containsKey(command.title)) continue;
             KeyStroke key=stroke(values.getOrDefault(command.title,command.stroke));
             if (key==null) continue;

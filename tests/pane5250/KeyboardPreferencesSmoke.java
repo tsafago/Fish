@@ -27,6 +27,7 @@ public final class KeyboardPreferencesSmoke {
         throw new AssertionError(message);
     }
     private static Object field(Object owner,String name) throws Exception {
+        if (owner instanceof ProfilesDialog profiles) owner=profiles.editor;
         Field f=owner.getClass().getDeclaredField(name); f.setAccessible(true); return f.get(owner);
     }
     private static <T> T edt(Callable<T> work) throws Exception {
@@ -70,7 +71,7 @@ public final class KeyboardPreferencesSmoke {
         Map<KeyChord,String> defaults=KeyBindings.effective(Map.of());
         check(defaults.get(KeyChord.parse("ENTER")).equals("ENTER") && defaults.get(KeyChord.parse("ENTER@numpad")).equals("ENTER"),"Both physical Enter locations default to host Enter");
         check(defaults.get(KeyChord.parse("ctrl ENTER")).equals("FIELD EXIT"),"Explicit accessible Field Exit remains");
-        check(defaults.get(KeyChord.parse("ctrl COMMA")).equals("Preferences..."),"Conventional Preferences shortcut");
+        check(defaults.get(KeyChord.parse("ctrl COMMA")).equals(Shortcuts.SETTINGS),"Conventional canonical Settings shortcut");
         check(defaults.get(KeyChord.parse("ESCAPE")).equals("ATTN") && defaults.get(KeyChord.parse("shift ESCAPE")).equals("SYSREQ"),"Attention/System Request defaults");
         Keymap custom=Keymap.global(Map.of("Host F13","ENTER@numpad\nctrl F3"));
         check(custom.lookup(key(source,KeyEvent.KEY_PRESSED,KeyEvent.VK_ENTER,4,0))==KeyMnemonic.PF13,"Custom keypad Enter wins over default");
@@ -101,7 +102,7 @@ public final class KeyboardPreferencesSmoke {
             check(effective.get(KeyChord.parse("ctrl F1")).equals("Host F20"),"Identical definitions deduplicate");
             check(effective.get(KeyChord.parse("ENTER")).equals("Host F21") && effective.get(KeyChord.parse("ENTER@numpad")).equals("ENTER"),"Legacy profile plain Enter was main-only");
             check(effective.get(KeyChord.parse("ctrl K")).equals("Copy selection / screen"),"Application override preserved");
-            check(effective.get(KeyChord.parse("ctrl COMMA")).equals("Appearance..."),"Explicit old Ctrl+Comma still wins over new Preferences default");
+            check(effective.get(KeyChord.parse("ctrl COMMA")).equals(Shortcuts.SETTINGS),"Explicit old settings binding migrates to the canonical action");
             check(state.keyboardRecovery().get("report").contains("PF13") && state.keyboardRecovery().get("report").contains("PF14"),"Exact conflicting definitions retained in one report");
             check(KeyboardMigration.report(state.keyboardRecovery()).contains(first.id().toString()),"Original stable IDs recoverable");
             store.save(state); check(store.load().equals(state),"Format-12 exact lists and complete migration archive roundtrip");
@@ -144,7 +145,7 @@ public final class KeyboardPreferencesSmoke {
         JDialog dialog=preferences.dialog();
         check(!dialog.isShowing(),"Preferences production window never shown");
         @SuppressWarnings("unchecked") JList<String> navigation=(JList<String>)field(preferences,"navigation");
-        check(navigation.getModel().getSize()==6 && navigation.getSelectedValue().equals("Keyboard"),"Indexed categories and direct keyboard route");
+        check(navigation.getModel().getSize()==5 && navigation.getSelectedValue().equals("Keyboard Shortcuts"),"Flat indexed categories and inline keyboard editor");
         KeyboardEditor editor=(KeyboardEditor)field(preferences,"keyboard");
         JTable actions=(JTable)field(editor,"table"); JTextArea keys=(JTextArea)field(editor,"keys");
         int selected=-1;
@@ -154,7 +155,7 @@ public final class KeyboardPreferencesSmoke {
         keys.setText("ENTER@numpad\nctrl F4");
         JCheckBox window=(JCheckBox)field(preferences,"window"); boolean before=workspace.appearanceSettings().windowOutline();
         window.setSelected(!before);
-        navigation.setSelectedValue("Panes",true);
+        navigation.setSelectedValue("Appearance",true);
         check(workspace.appearanceSettings().windowOutline()==before,"Category navigation keeps edits draft-only");
         button(dialog,"Apply").doClick(0);
         check(workspace.appearanceSettings().windowOutline()!=before && workspace.shortcutOverrides().get("Host F13").contains("ctrl F4"),"Preferences atomically applies actual panes and keyboard controls");
@@ -162,16 +163,17 @@ public final class KeyboardPreferencesSmoke {
         check(workspace.appearanceSettings().windowOutline()!=before,"Cancel discards edits after last Apply");
         Preferences invalid=new Preferences(workspace,"Terminal");
         JTextField path=(JTextField)field(invalid,"fontPath"); path.setText(root.resolve("missing.ttf").toString());
-        ((JCheckBox)field(invalid,"startup")).setSelected(true);
+        boolean startupBefore=workspace.connectOnStartup();
+        ((JCheckBox)field(invalid,"startup")).setSelected(!startupBefore);
         button(invalid.dialog(),"Apply").doClick(0);
-        check(!workspace.connectOnStartup() && ((JLabel)field(invalid,"error")).getText().toLowerCase(Locale.ROOT).contains("font"),"Invalid font blocks all unrelated settings writes");
+        check(workspace.connectOnStartup()==startupBefore && ((JLabel)field(invalid,"error")).getText().toLowerCase(Locale.ROOT).contains("font"),"Invalid font blocks all unrelated settings writes");
         invalid.dialog().dispose();
         Preferences hidden=new Preferences(workspace,"Updates");
-        check(button(hidden.dialog(),"Show hidden updates again")!=null,"Update preferences indexed as real controls");
-        button(hidden.dialog(),"Show hidden updates again").doClick(0); hidden.dialog().dispose();
+        check(button(hidden.dialog(),"Show hidden updates")!=null,"Update preferences indexed as real controls");
+        button(hidden.dialog(),"Show hidden updates").doClick(0); hidden.dialog().dispose();
         workspace.updateSettings(workspace.updateSettings().ignore("0.7.3"));
         Preferences ignored=new Preferences(workspace,"Updates");
-        button(ignored.dialog(),"Show hidden updates again").doClick(0);
+        button(ignored.dialog(),"Show hidden updates").doClick(0);
         check(button(ignored.dialog(),"Apply").isEnabled() && workspace.updateSettings().ignoredVersion().equals("0.7.3"),"Clearing hidden version is a genuine draft edit");
         button(ignored.dialog(),"Apply").doClick(0);
         check(workspace.updateSettings().ignoredVersion().isEmpty(),"Apply commits hidden-version draft"); ignored.dialog().dispose();
@@ -320,6 +322,6 @@ public final class KeyboardPreferencesSmoke {
                 for (Path path:paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(path);
             }
         }
-        System.out.println("Exact keys/migration/recorder/unified Preferences/profile checks passed: "+checks);
+        System.out.println("Exact keys/migration/recorder/inline Settings/profile checks passed: "+checks);
     }
 }

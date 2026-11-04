@@ -16,6 +16,7 @@ public final class AppCommand extends AbstractAction {
     public String shortcut;
     public KeyMnemonic hostKey;
     private final String keywords;
+    private java.util.function.Consumer<String> performed=title -> {};
     public AppCommand(String title,String description,String stroke,Runnable run,BooleanSupplier available,String... aliases) {
         super(title);
         this.title=title; this.description=description; this.run=run; this.available=available;
@@ -29,18 +30,20 @@ public final class AppCommand extends AbstractAction {
         shortcut=describeStroke(stroke);
         // Swing accelerators discard key location; dispatch and labels use the same exact map instead.
         putValue(ACCELERATOR_KEY,null);
-        putValue("Fish.shortcut",shortcut);
-        putValue(SHORT_DESCRIPTION,description+(shortcut.isEmpty() ? "" : " ("+shortcut+")"));
+        String primary=stroke==null || stroke.isBlank() ? "" : KeyChord.list(stroke).getFirst().label();
+        putValue("Fish.shortcut",primary);
+        putValue(SHORT_DESCRIPTION,description+(primary.isEmpty() ? "" : " ("+primary+")"));
     }
     public static String describeStroke(String stroke) {
         return stroke==null || stroke.isBlank() ? "" : String.join(" / ",KeyChord.list(stroke).stream().map(KeyChord::label).toList());
     }
     public void refresh() { setEnabled(available.getAsBoolean()); }
+    void performed(java.util.function.Consumer<String> listener) { performed=listener; }
     public boolean matches(String query) {
         return Arrays.stream(query.toLowerCase(Locale.ROOT).strip().split("\\s+")).allMatch(keywords::contains);
     }
     @Override public void actionPerformed(ActionEvent e) {
         refresh();
-        if (isEnabled()) run.run();
+        if (isEnabled()) { run.run(); performed.accept(title); }
     }
 }

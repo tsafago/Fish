@@ -7,7 +7,7 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="12";
+    public static final String VERSION="13";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
     public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
@@ -51,8 +51,8 @@ public final class StateStore implements AutoCloseable {
             Objects.requireNonNull(layout);
             if (width<330 || width>10000 || height<260 || height>10000)
                 throw new IllegalArgumentException("Window width must be 330-10000 and height 260-10000.");
-            shortcuts=Map.copyOf(shortcuts);
-            keyboardRecovery=Map.copyOf(keyboardRecovery);
+            KeyboardMigration.SettingsResult canonical=KeyboardMigration.settings(shortcuts,keyboardRecovery);
+            shortcuts=canonical.bindings(); keyboardRecovery=canonical.recovery();
             KeyboardMigration.validateRecovery(keyboardRecovery);
             KeyBindings.effective(shortcuts);
             profiles = List.copyOf(profiles);
@@ -130,7 +130,8 @@ public final class StateStore implements AutoCloseable {
     }
     public static State freshState() {
         Profile profile=Profile.kerberosDefault();
-        return new State(List.of(profile),new Layout.Leaf(UUID.randomUUID(),profile.id()),1360,850).withTutorial(Tutorial.NEW);
+        return new State(List.of(profile),new Layout.Leaf(UUID.randomUUID(),profile.id()),1360,850,AppTheme.Charcoal,profile.id(),
+                Map.of(),true,Appearance.defaults(),Tutorial.NEW,true);
     }
     public synchronized void factoryReset() throws IOException {
         save(freshState());
@@ -160,14 +161,17 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             boolean usability=Integer.parseInt(version)>=8;
             boolean kerberos=Integer.parseInt(version)>=10;
-            boolean exact=VERSION.equals(version);
+            boolean exact=Integer.parseInt(version)>=12;
             if (Integer.parseInt(version)<11 && properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith("updates.")))
                 throw new IllegalArgumentException("Update preferences require workspace version 11 or later; do not relabel or downgrade it.");
             if (!exact && properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith("binding.") || key.startsWith("keyboard.")))
                 throw new IllegalArgumentException("Exact keyboard mappings require workspace version 12; do not relabel or downgrade it.");
+            if (!VERSION.equals(version) && properties.stringPropertyNames().stream().anyMatch(key ->
+                    key.equals("binding."+Shortcuts.SETTINGS) || key.startsWith("binding.Tutorial:") || key.startsWith("keyboard.legacy.binding.")))
+                throw new IllegalArgumentException("Canonical settings/tutorial bindings require workspace version 13; do not relabel or downgrade it.");
             Map<String,String> recovery=new TreeMap<>();
             for (String property:properties.stringPropertyNames())
                 if (property.startsWith("keyboard.legacy.")) recovery.put(property.substring(16),properties.getProperty(property));
@@ -215,10 +219,12 @@ public final class StateStore implements AutoCloseable {
             for (String property:properties.stringPropertyNames())
                 if (property.startsWith(exact ? "binding." : "shortcut."))
                     shortcuts.put(property.substring(exact ? 8 : 9),properties.getProperty(property));
+            if (VERSION.equals(version) && shortcuts.keySet().stream().anyMatch(Shortcuts.SETTINGS_ALIASES::contains))
+                throw new IllegalArgumentException("Use binding.Settings... in format 13. Old settings actions belong in migration recovery, not live bindings.");
             Appearance appearance=Integer.parseInt(version)>=5 ? readAppearance(properties,version) : Appearance.defaults();
             if ("5".equals(version)) notice("Structural borders use the saved divider color; other appearance choices retained.");
             if (Set.of("5","6").contains(version))
-                notice("Window outline enabled once on upgrade. Earlier state did not distinguish an explicit off choice from the old default; Preferences > Panes can turn it off permanently.");
+                notice("Window outline enabled once on upgrade. Earlier state did not distinguish an explicit off choice from the old default; Settings > Appearance can turn it off permanently.");
             if (shortcuts.containsKey("Search commands...")) {
                 Set<String> retired=new HashSet<>(appearance.retiredShortcuts());
                 String old=shortcuts.remove("Search commands...");
@@ -236,6 +242,10 @@ public final class StateStore implements AutoCloseable {
                 KeyboardMigration.Result migration=KeyboardMigration.migrate(profiles,shortcuts);
                 profiles=new ArrayList<>(migration.profiles()); shortcuts=new LinkedHashMap<>(migration.bindings());
                 recovery=new TreeMap<>(migration.recovery());
+            }
+            if (!VERSION.equals(version)) {
+                KeyboardMigration.SettingsResult migration=KeyboardMigration.settings(shortcuts,recovery);
+                shortcuts=new LinkedHashMap<>(migration.bindings()); recovery=new TreeMap<>(migration.recovery());
             }
             State result=new State(profiles, bounded,
                     Math.max(330, Math.min(10000, Integer.parseInt(required(properties, "width")))),
@@ -255,6 +265,8 @@ public final class StateStore implements AutoCloseable {
                 if (key.startsWith("shortcut.")) known.setProperty(key,"");
                 for (Profile profile:profiles) if (key.startsWith("profile."+profile.id()+".key.")) known.setProperty(key,"");
             }
+            if (exact && !VERSION.equals(version))
+                for (String alias:Shortcuts.SETTINGS_ALIASES) known.setProperty("binding."+alias,"");
             if (Set.of("5","6").contains(version)) for (int i=0;i<appearance.themes().size();i++) {
                 for (String role:List.of("LINE","OUTLINE")) {
                     String old="appearance.theme."+i+"."+role;

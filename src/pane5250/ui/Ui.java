@@ -141,6 +141,7 @@ public final class Ui {
         if (component instanceof TerminalView v) v.themeChanged();
         if (component instanceof WindowChrome c) c.themeChanged();
         if (component instanceof ManualDialog manual) manual.themeChanged();
+        if (component instanceof MarkdownView markdown) markdown.themeChanged();
         if (component instanceof Container parent)
             for (Component child : parent.getComponents()) refresh(child);
     }
@@ -297,6 +298,7 @@ public final class Ui {
     }
     static void observeEdits(Component component,Runnable changed) {
         component.addPropertyChangeListener("preferences.draft",e -> changed.run());
+        component.addPropertyChangeListener("settings.draft",e -> changed.run());
         if (component instanceof javax.swing.text.JTextComponent text)
             text.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
                 @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { changed.run(); }

@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.2 exposes its complete local configuration without an AI service, network
+Fish 0.7.3 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -50,7 +50,7 @@ status. From sources, the identical interface is:
 4. Validate the complete candidate. This is a dry run: no workspace writes,
    connections, transactions or credential operations.
 5. Apply only after successful validation. Open Fish normally to use the result.
-   Startup stays offline unless the user enabled `connectOnStartup`. Do not change
+   Startup follows the saved `connectOnStartup` preference. Do not change
    that preference unless requested. Apply itself never connects.
 
 All three commands acquire the normal exclusive `workspace.lock`. A running Fish
@@ -74,10 +74,10 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 12 with recoverable keyboard migration
+An exported legacy workspace is migrated to version 13 with recoverable keyboard migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries (including 0.7.1) cannot read version 12: restore a pre-upgrade backup for a downgrade.
-Do not manually relabel old/future data as version 12. Version-8/9 hosts, sign-in
+save. Older binaries (including 0.7.2) cannot read version 13: restore a pre-upgrade backup for a downgrade.
+Do not manually relabel old/future data as version 13. Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
 is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles
 remain PASSWORD, never silently Kerberos. No existing profile is replaced by a seed.
@@ -122,10 +122,11 @@ layout grammar and constraints. Use `schema` for the running binary's authoritat
 catalog rather than hardcoding a different release's definitions.
 
 Fresh workspaces seed/select a KERBEROS profile at `10.1.2.3:23` with auto/remember
-false, loginSource empty, kerberosServer empty, connectOnStartup false. The
-user explicitly chose **wait for Connect**. It is not reseeded into existing data.
-The New button now creates the same offline KERBEROS defaults. Switching its
-mode to PASSWORD retains auto/remember false until the user changes them.
+false, loginSource empty, kerberosServer empty, connectOnStartup true.
+The user explicitly changed new/factory startup connections to **ON** in 0.7.3.
+This is not reseeded into existing data. New starts a Kerberos draft; its first
+switch to PASSWORD initializes auto/remember true, then retains user changes.
+Existing saved PASSWORD false choices remain false. No password is created.
 These are creation defaults, not migration replacements. Preserve existing
 hosts (including blank) and explicit off choices unless asked to change them.
 Host may be empty: an unconfigured profile. Device and username may be empty;
@@ -150,8 +151,8 @@ fixed public tsafago/Fish, not configurable; no executable/download URL hook exi
 Export contains no tokens, download state or installation commands.
 
 Factory reset is an explicitly confirmed in-app maintenance action, not an
-executable configuration setting. It replaces this workspace with fresh format-11
-state and exits; next launch is offline first-run. It retains actual font files,
+executable configuration setting. It replaces this workspace with fresh format-13
+state and exits; next launch is first-run with startup connections ON. It retains actual font files,
 Windows credentials and other workspaces. Do not invoke reset to repair a failed
 edit or silently discard user data.
 
@@ -246,11 +247,15 @@ boundary: the one validated global map resolves ownership.
 Formats 1–11 migrate explicit app/unambiguous profile definitions globally.
 Identical definitions deduplicate. Conflicting explicit definitions leave those
 keys inactive in Unbound keys, with exact conflicts/originals in keyboard.legacy.*
-and Preferences > Keyboard > Migrated definitions. Archive entries are recovery
+and Settings > Keyboard Shortcuts > Migrated definitions. Archive entries are recovery
 only, not live per-profile overrides; deletion of a profile keeps them. Old broad
 app Enter spans both locations; old profile plain Enter affected main only.
 Both Enter keys now default to Enter; Ctrl+Enter remains Field Exit. New format
-12 rejects shortcut.* and profile.*.key.* instead of silently ignoring them.
+13 rejects shortcut.* and profile.*.key.* instead of silently ignoring them.
+Format 12 settings bindings migrate to `binding.Settings...`, preserving exact
+locations and all multiline chords. Original lists remain under
+`keyboard.legacy.binding.{old-title}`. Explicit old Settings unbinding and other
+custom key ownership remain intact; these recovery entries never dispatch.
 
 To add a named custom theme, increment appearance.themes, add a new contiguous
 index and copy **all** color-role entries from an existing complete theme/catalog.
@@ -334,11 +339,14 @@ commands. See the manual for diagnostics and the unverified real-host gate.
 Fresh workspaces start NEW and show the modeless guide once. Opening records
 IN_PROGRESS; user Done/Skip records COMPLETED/SKIPPED. Interrupting the app midway
 does not force the guide over the next session. Legacy upgrades use SKIPPED.
-Help can replay it without modifying profiles/sockets or resetting the status.
+Help > Tutorials replays any of five real-control guides without modifying
+profiles/sockets or resetting saved introduction status. Next/Back/Skip step/Skip
+tutorial remain available; Show control only navigates to real controls.
 Set NEW only when the user explicitly wants the first-run behavior again.
 
-`connectOnStartup=false` is the fresh/upgrade default. The Session menu can enable
-it, or set that exact boolean in an exported snapshot when requested. A normal
+`connectOnStartup=true` is the new/factory default. Existing explicit OFF choices
+and formats before this setting remain OFF. Settings > General edits it, or set
+that exact boolean in an exported snapshot when requested. A normal
 launch then attempts each restored pane once, using its own selected profile.
 Manual sign-in profiles connect to the host sign-on screen; PASSWORD automatic sign-in
 requires a saved OS password. Incomplete profiles, remembering disabled or missing

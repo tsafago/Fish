@@ -120,7 +120,7 @@ public final class MaintenanceSmoke {
             var fresh=store.load(); Profile profile=fresh.profiles().getFirst();
             check(fresh.profiles().size()==1 && !profile.id().equals(deleted),"Fresh default gets a new identity");
             check(profile.authentication()==Profile.Authentication.KERBEROS && profile.host().equals("10.1.2.3") && profile.port()==23,"Factory Kerberos endpoint");
-            check(fresh.tutorial()==StateStore.Tutorial.NEW && !fresh.connectOnStartup(),"Next startup is first-run and offline");
+            check(fresh.tutorial()==StateStore.Tutorial.NEW && fresh.connectOnStartup(),"New/factory startup uses the user-approved connection default");
             check(fresh.appearance().equals(Appearance.defaults()) && fresh.updates().equals(UpdateSettings.defaults()),"Reset clears custom appearance and hidden update choices");
             check(Main.defaultDirectory(directory).equals(active),"Legacy state cannot resurrect through fallback");
             String revision=store.revision(); Files.writeString(store.file(),"\n",StandardOpenOption.APPEND);
@@ -205,6 +205,6 @@ public final class MaintenanceSmoke {
         Path root=Files.createTempDirectory("Fish-071-fixtures-");
         try { versions(); state(root); downloads(root); }
         finally { remove(root); }
-        System.out.println("Fish 0.7.2 noninteractive maintenance/update checks passed: "+checks);
+        System.out.println("Fish 0.7.3 noninteractive maintenance/update checks passed: "+checks);
     }
 }

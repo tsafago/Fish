@@ -196,7 +196,9 @@ public final class Tests {
     private static void models() throws Exception {
         Profile first = Profile.create("A");
         Profile second = first.duplicate();
-        check(!first.id().equals(second.id()) && second.device().isEmpty() && !second.rememberPassword(),"Duplicate gets independent identity and no credential/device collision.");
+        check(!first.id().equals(second.id()) && second.device().isEmpty() && second.loginSource()==null
+                && second.rememberPassword()==first.rememberPassword() && second.automaticSignOn()==first.automaticSignOn(),
+                "Duplicate preserves preference flags with independent credential identity and no device collision.");
         Layout.Leaf a = new Layout.Leaf(UUID.randomUUID(),first.id()), b = new Layout.Leaf(UUID.randomUUID(),second.id());
         Layout.Leaf c = new Layout.Leaf(UUID.randomUUID(),first.id());
         Layout original = new Layout.Split(true,.43,a,new Layout.Split(false,.6,b,c));

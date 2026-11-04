@@ -144,7 +144,7 @@ public final class SessionPane extends JPanel {
         presets.addFocusListener(new FocusAdapter() {
             @Override public void focusGained(FocusEvent e) { activate(); }
         });
-        connectButton=Ui.iconButton("Connect to selected preset","connect",() -> { activate(); connect(); });
+        connectButton=Ui.iconButton("Connect to selected preset","connect",() -> { activate(); connect(); workspace.tutorialAction("Connect / disconnect"); });
         connectButton.setPreferredSize(new Dimension(32,30)); connectButton.setContentAreaFilled(true);
         choices.add(presets,BorderLayout.CENTER); choices.add(connectButton,BorderLayout.EAST);
         empty.setLayout(new BoxLayout(empty,BoxLayout.X_AXIS));
@@ -279,11 +279,11 @@ public final class SessionPane extends JPanel {
         Profile connectionProfile=workspace.connectionProfile(profile);
         if (profile.host().isEmpty() || connectionProfile.automaticSignOn() && connectionProfile.username().isEmpty()) {
             if (interactive) workspace.profiles();
-            else problem("Startup: finish this profile in Session > Profiles, then Connect.");
+            else startupGuidance("Finish this profile in Settings > Profiles, then Connect.");
             return;
         }
         if (!interactive && connectionProfile.automaticSignOn() && !connectionProfile.rememberPassword()) {
-            problem("Startup: Connect to enter a password, or enable Save password in Profiles.");
+            startupGuidance("Connect to enter a password, or enable Save password in Settings > Profiles.");
             return;
         }
         if (interactive) workspace.rememberProfile(profile);
@@ -308,7 +308,7 @@ public final class SessionPane extends JPanel {
                     if (saved.isPresent()) password = saved.get();
                     else {
                         if (!interactive) {
-                            problem("Startup: no saved password. Connect to sign in.");
+                            startupGuidance("No saved password. Connect to sign in.");
                             disconnectNetwork();
                             return;
                         }
@@ -336,7 +336,7 @@ public final class SessionPane extends JPanel {
         credentialOperations++;
         notice="Getting a Windows Kerberos ticket - no password or NTLM fallback";
         updateHeader();
-        kerberosDeadline=new javax.swing.Timer(20000,e -> kerberosTimedOut(token));
+        kerberosDeadline=new javax.swing.Timer(20000,e -> kerberosTimedOut(token,interactive));
         kerberosDeadline.setRepeats(false); kerberosDeadline.start();
         new SwingWorker<byte[],Void>() {
             @Override protected byte[] doInBackground() throws IOException {
@@ -352,7 +352,11 @@ public final class SessionPane extends JPanel {
                         throw new IOException("Windows returned an invalid or oversized Kerberos token (TN5250 limit: 16384 bytes).");
                     begin(new char[0],token,connectionProfile,interactive,ticket);
                 } catch (Exception e) {
-                    if (token==generation && !disposed) { disconnectNetwork(); problem("Kerberos sign-in failed: "+message(e)); }
+                    if (token==generation && !disposed) {
+                        disconnectNetwork();
+                        String failure="Kerberos sign-in failed: "+message(e);
+                        if (interactive) problem(failure); else startupGuidance(failure);
+                    }
                     else System.err.println("Canceled Kerberos sign-in failed: "+message(e));
                 } finally {
                     if (ticket!=null) Arrays.fill(ticket,(byte)0);
@@ -363,10 +367,14 @@ public final class SessionPane extends JPanel {
         }.execute();
     }
     private void kerberosTimedOut(long token) {
+        kerberosTimedOut(token,true);
+    }
+    private void kerberosTimedOut(long token,boolean interactive) {
         if (token!=generation || disposed) return;
         generation++;
         disconnectNetwork();
-        problem("Kerberos timed out. Check domain/VPN connectivity and the server DNS name. Windows may still be finishing its lookup; no connection or fallback will follow.");
+        String failure="Kerberos timed out. Check domain/VPN connectivity and the server DNS name. Windows may still be finishing its lookup; no connection or fallback will follow.";
+        if (interactive) problem(failure); else startupGuidance(failure);
     }
 
     private void rememberAndBegin(char[] password,long token,Profile target,Profile connectionProfile,boolean interactive) {
@@ -521,6 +529,12 @@ public final class SessionPane extends JPanel {
             noticeOverlay.showMessage(message,true); stage.doLayout();
         }
     }
+    private void startupGuidance(String message) {
+        notice=message; lastProblem=message; updateOia();
+        if (!footer.isVisible() || !workspace.appearanceSettings().info().status()) {
+            noticeOverlay.showMessage(message,false); stage.doLayout();
+        }
+    }
     public void showLastNotice() {
         Ui.message(workspace,lastProblem.isEmpty() ? "No input or connection notices in this pane." : lastProblem,"Last pane notice");
     }
@@ -669,7 +683,7 @@ public final class SessionPane extends JPanel {
         }.execute();
     }
 
-    Component tutorialConnectionTarget() { return presets.isVisible() && !busy() ? presets : this; }
+    Component tutorialConnectionTarget() { return connectButton.isVisible() && !busy() ? connectButton : close.isVisible() ? close : this; }
     Component tutorialCloseTarget() { return close.isVisible() ? close : this; }
     boolean connecting() { return connecting || credentialOperations>0; }
     Component tutorialDragTarget() { return header.isVisible() ? header : dragZone.isVisible() ? dragZone : this; }

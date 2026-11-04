@@ -42,9 +42,7 @@ final class AppShortcuts implements KeyEventDispatcher {
     void validate(Map<String,String> values,List<Profile> profiles) { KeyBindings.effective(values); }
     void apply(Map<String,String> values,List<Profile> profiles) {
         Map<KeyChord,String> next=KeyBindings.effective(values);
-        for (AppCommand command:commands) command.setStroke(KeyChord.text(next.entrySet().stream()
-                .filter(e -> e.getValue().equals(command.title)).map(Map.Entry::getKey)
-                .sorted(Comparator.comparing(KeyChord::toString)).toList()));
+        for (AppCommand command:commands) command.setStroke(strokes(command,next,values));
         overrides=KeyBindings.normalize(values); bindings=next;
         unbound=Set.copyOf(KeyChord.list(overrides.getOrDefault(KeyBindings.UNBOUND,"")));
         claimed.clear(); suppressTyped=false;
@@ -87,9 +85,12 @@ final class AppShortcuts implements KeyEventDispatcher {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().removeKeyEventDispatcher(this); claimed.clear();
     }
     void refreshLabels() {
-        for (AppCommand command:commands) command.setStroke(KeyChord.text(bindings.entrySet().stream()
-                .filter(e -> e.getValue().equals(command.title)).map(Map.Entry::getKey)
-                .sorted(Comparator.comparing(KeyChord::toString)).toList()));
+        for (AppCommand command:commands) command.setStroke(strokes(command,bindings,overrides));
+    }
+    private static String strokes(AppCommand command,Map<KeyChord,String> effective,Map<String,String> overrides) {
+        List<KeyChord> order=overrides.containsKey(command.title) ? KeyChord.list(overrides.get(command.title))
+                : KeyBindings.defaultsByAction().getOrDefault(command.title,List.of());
+        return KeyChord.text(order.stream().filter(key -> command.title.equals(effective.get(key))).toList());
     }
     void show() { workspace.preferences("Keyboard"); }
     JDialog dialog() { return workspace.preferencesDialog("Keyboard"); }

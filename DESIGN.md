@@ -189,8 +189,16 @@ overlay opposite the editing cursor. Hidden status errors use temporary notices.
 Host-busy/disconnected states never receive a false unlock. Alt+drag/context
 menus and keyboard actions remain available when headers are hidden.
 Enter is never remapped to recovery.
-Profile editing is a compact modal list and three-tab form; labels and mnemonics
-accompany controls. Owned forms, confirmations, errors and System Request
+Settings is one visible action beside + Pane and Ctrl+Comma, with persistent,
+direct category navigation: Appearance, Profiles, Keyboard Shortcuts, General,
+Updates. The modeless dialog shows actual editable controls, not launcher cards.
+Appearance orders workspace theme, selected-profile palette/effect, workspace
+font, pane information and window/focus controls. Its selected-profile scope is
+explicit and never silently switches a pane or changes every saved profile.
+One shared profile list/form is embedded in Settings and reused by the operational
+Profiles dialog; only genuinely optional host/device/code-page/Kerberos identity
+fields live under Advanced. Username/password controls appear only in the proper
+mode. Labels and mnemonics accompany controls. Owned forms, confirmations, errors and System Request
 prompts share custom draggable chrome, Escape dismissal and icon-free content.
 Editable settings have Cancel/Apply/Done in reading/tab order: Apply stays open
 and updates the baseline, Done accepts pending changes and closes, dismissal
@@ -203,10 +211,25 @@ menus and shortcuts; disabled actions remain disabled and modal focus isolates
 host input. Former Commands chords are retired no-ops until explicitly reassigned.
 Every app/host action is
 listed in the global shortcut editor, with recording, unbind/default controls,
-atomic conflict rejection and version-7 persistence. Window-scoped dispatch
+atomic conflict rejection and format-13 exact, multiline persistence. Window-scoped dispatch
 precedes Swing traversal/host input, so Ctrl+Tab works without taking keys in
-owned dialogs. Profile-specific host bindings are preserved unless the user
-explicitly reassigns that host action globally.
+owned dialogs. Older per-profile definitions migrate globally with exact
+conflict archives; retired Settings routes migrate to the canonical action,
+preserving original lists. Menu labels show one primary available chord; the
+inline editor shows all bindings, exact-location recording and recoverable conflicts.
+Edit contains clipboard operations; Inserts groups sign-on helpers, field/screen
+host inserts and the complete chooser. Pane actions have no one-child cascades.
+Help > Tutorials contains five event-driven, modeless real-control guides.
+Highlights follow their production controls/windows without intercepting input.
+Next, Back and both skip controls remain available; opening/replaying a guide
+never connects, creates a profile or saves credentials.
+Updates embeds the shared safe offline Markdown renderer, with explicit safe
+links and no automatic image/resource/code loading.
+
+This task-based topology follows recognition-over-recall and conventional direct
+settings navigation rather than progressive disclosure of everyday controls:
+https://www.nngroup.com/articles/ten-usability-heuristics/ and
+https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings .
 Shared native-font antialiasing applies to control labels, menus and buttons;
 mnemonic underlines appear on Alt/menu activation rather than persistently.
 The offline full manual uses a full-text topic index; Getting Started is first.

@@ -68,7 +68,7 @@ public class HostKeys {
                 + "Page Up/Down: Roll     Tab/Shift+Tab: Next/previous field\n"
                 + "Ctrl+C/V: Copy/paste     Ctrl+Tab / Ctrl+Shift+Tab: Next/previous pane\n"
                 + "Ctrl+N/W: Add/close pane     Ctrl+0 and Ctrl+plus/minus: Fit/zoom\n"
-                + "Ctrl+,: Edit > Preferences. Keyboard combines all Fish/host actions.\n\n"
+                + "Ctrl+,: Settings. Keyboard Shortcuts combines all Fish/host actions.\n\n"
                 + "Select an action; type one chord per line or Record and add.\n"
                 + "ENTER is main; ENTER@numpad is keypad (NUMPAD_ENTER also works).\n"
                 + "Examples: ctrl ENTER, shift F1, ctrl ENTER@numpad.\n"

@@ -230,6 +230,7 @@ public final class Tests {
             check(!xml.contains("IBMSUBSPW") && !xml.contains("password</"),"Workspace persistence contains no password property.");
             Properties legacy=new Properties(); legacy.loadFromXML(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
             legacy.setProperty("version","1"); legacy.remove("appTheme");
+            legacy.keySet().removeIf(key -> key.toString().startsWith("updates."));
             try (OutputStream migrated=Files.newOutputStream(store.file())) { legacy.storeToXML(migrated,"Legacy fixture"); }
             check(store.load().appTheme()==AppTheme.Charcoal && store.load().profiles().getFirst().equals(saved),
                     "Existing version-1 profiles/layouts migrate with the original application theme.");

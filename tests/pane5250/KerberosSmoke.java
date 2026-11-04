@@ -150,6 +150,7 @@ public final class KerberosSmoke {
             Properties bad=StateStore.properties(state); bad.setProperty("profile."+fresh.id()+".remember","true");
             fails(() -> store.decode(bad),"not saved passwords");
             Properties downgraded=StateStore.properties(state); downgraded.setProperty("version","9");
+            downgraded.keySet().removeIf(key -> key.toString().startsWith("updates."));
             fails(() -> store.decode(downgraded),"do not relabel");
         }
         Path candidate=root.resolve("kerberos-config.xml"),directory=root.resolve("roundtrip");
@@ -171,6 +172,7 @@ public final class KerberosSmoke {
                 AppTheme.Charcoal,old.id(),Map.of(),false,Appearance.defaults(),StateStore.Tutorial.COMPLETED,true);
         for (String version:List.of("8","9")) {
             Properties p=StateStore.properties(existing); p.setProperty("version",version);
+            p.keySet().removeIf(key -> key.toString().startsWith("updates."));
             p.remove("profile."+old.id()+".authentication"); p.remove("profile."+old.id()+".kerberosServer");
             if (version.equals("8")) p.remove("connectOnStartup");
             try (StateStore store=new StateStore(root.resolve("legacy-"+version))) {

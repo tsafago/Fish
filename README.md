@@ -10,7 +10,35 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Kerberos preview
+## Fish 0.7.1 maintenance preview
+
+**Unsigned experimental prerelease**, now published at
+[tsafago/Fish](https://github.com/tsafago/Fish). Profiles have keyboard-accessible
+Up/Down/Delete controls. Order stays consistent across pane selectors and saved
+configuration; deletion preserves panes and blocks removal of a shared login source.
+**Appearance > More settings > Application settings** (also in Help) offers a
+confirmed factory reset: save fresh first-run state, end sessions and exit.
+Windows saved passwords, actual font files and other workspaces are kept.
+
+**Help > Check for updates** checks public GitHub releases asynchronously, with
+no account/token/gh dependency. A quiet startup check offers Update, X or
+Hide version; hiding applies only to that version. Default preview updates stay
+within 0.7.x. The optional stable channel accepts stable releases within the same
+major version; neither channel silently enters a newer experimental minor/major.
+Download/install needs explicit consent. Size, SHA-256, GitHub origin and Windows
+signature policy are checked before setup starts. Checksums are **not signing**.
+The installed app updates in place; portable mode installs/opens a per-user copy
+with the same workspace and leaves the portable directory untouched.
+Fish 0.7.0 and earlier need a manual first upgrade.
+
+The new compact, dark native setup wraps the same per-user Windows Installer
+transaction and bundled runtime. Input notices have a physical-pixel border,
+an accessible X and a 2.8-second lifetime. Dismiss does not Reset input; recovery
+and **Host > Last pane notice** remain available.
+Read the [manual](MANUAL.md#checking-for-updates) for update/reset details.
+Configuration is now **format 11**: back up before upgrading.
+
+## Included Kerberos sign-in
 
 **Fish 0.7.0** adds Windows Kerberos sign-on using RFC 4777 binary `IBMTICKET`
 and the Windows **Kerberos-only** SSPI provider. A fresh workspace starts with
@@ -115,7 +143,7 @@ to None. The titlebar-only fish is smaller, mouse clicks no longer leave a
 focus box, and keyboard focus uses a subtle underline. Its approved geometry,
 Flux/None toggle, click target, 31px chrome and native monitor handling remain.
 UI text uses Windows' desktop font hints without bitmap scaling.
-Downloads are available from the private repository's **v0.5.3 preview release**; older releases remain intact.
+Downloads are available from the public [releases page](https://github.com/tsafago/Fish/releases); older previews remain intact.
 It is not a claim that the real IBM i/ACS acceptance gate has been passed.
 The [full manual](MANUAL.md) begins with **Getting Started** and is also
 available offline from **Help > Full manual / Getting Started**, with a
@@ -123,25 +151,25 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.7.0-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.7.0](https://github.com/HornadyIBM/Fish/releases/tag/v0.7.0), then run the
+Download `Fish-0.7.1-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.7.1](https://github.com/tsafago/Fish/releases/tag/v0.7.1), then run the
 installer for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
-require access to this private repository.
+are public and require no GitHub account.
 
-For a portable copy, extract `Fish-0.7.0-windows-x64.zip` and open
+For a portable copy, extract `Fish-0.7.1-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
 may warn or block them. Checksums accompany the package; do not bypass IT policy.
 
 **Back up before upgrading:** close Fish normally and copy its `workspace.xml`
-outside the application folder before first launching 0.7.0. The usual location
+outside the application folder before first launching 0.7.1. The usual location
 is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
 and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 10**, which older binaries cannot read. Keep a pre-upgrade backup
+to **version 11**, which older binaries cannot read. Keep a pre-upgrade backup
 for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
@@ -156,8 +184,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.0-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.7.0-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.7.1-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.7.1-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -168,10 +196,10 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.0**.
+The matching local package is **Fish 0.7.1**.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.0\Fish` to both Package and Installer.
-This local delivery is at `dist\Fish-0.7.0\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.1\Fish` to both Package and Installer.
+This local delivery is at `dist\Fish-0.7.1\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
@@ -209,6 +237,7 @@ git submodule update --init --recursive
 # Prefer Setup-Fish.cmd above, or prepare the pinned portable SDK:
 .\scripts\bootstrap.ps1
 .\build.ps1 Build
+.\build.ps1 Maintenance # isolated maintenance/update/notice checks; never-shown windows
 .\build.ps1 Smoke     # quick Fish checks; hidden windows, no physical input
 .\build.ps1 Check     # fixtures only; no foreground input or credential access
 .\build.ps1 Test
@@ -223,6 +252,16 @@ alternatively pass `-Jdk 'C:\path\to\jdk-21'` to `build.ps1`.
 Native compilation uses checksum-pinned portable Zig; installer generation
 uses portable WiX 3.14.1. Neither compiler nor WiX is installed system-wide.
 Only the resulting small Fish-owned DLL is needed at runtime.
+The branded setup is compiled from `src\native\fish-setup.c` and embeds the
+matching MSI plus a verified size/hash footer; no external setup runtime is added.
+
+`Maintenance` checks actual profile controls/selectors, first-run reset, version
+and release parsing, channel/hide/error/retry/cancellation/handoff paths with
+injected HTTP/consent/installer, and offscreen borders at 100/125/150/175/200%.
+It never shows a window, accesses the shared clipboard, acquires credentials or
+runs an installer. Installer builds also run safe self-test, payload verification
+and offscreen design-rendering modes. These do not establish live setup interaction
+or a successful installed upgrade; those acceptance gates remain unverified.
 
 `Build` creates `dist\Fish.jar`. `Package` uses `jpackage` to create the
 standalone directory `dist\Fish` and complete corresponding source archive

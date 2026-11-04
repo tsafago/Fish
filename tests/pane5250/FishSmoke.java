@@ -437,6 +437,7 @@ public final class FishSmoke {
             Properties xml=new Properties();
             try (var in=Files.newInputStream(store.file())) { xml.loadFromXML(in); }
             xml.setProperty("version","2"); xml.remove("lastProfile"); xml.setProperty("layout","E");
+            xml.keySet().removeIf(key -> key.toString().startsWith("updates."));
             try (var out=Files.newOutputStream(store.file())) { xml.storeToXML(out,"legacy fixture"); }
             StateStore.State restored=store.load();
             check(restored.layout().leaves().size()==1 && !store.loadNotice().isBlank(),"Legacy empty state migrates explicitly to one pane.");
@@ -448,6 +449,7 @@ public final class FishSmoke {
             try { store.load(); } catch (java.io.IOException expected) { rejected=true; }
             check(rejected && Arrays.equals(original,Files.readAllBytes(store.file())),"Corrupt state is rejected and preserved.");
             xml.setProperty("version","2");
+            xml.keySet().removeIf(key -> key.toString().startsWith("updates."));
             List<Layout.Leaf> excess=new ArrayList<>();
             for (int i=0;i<9;i++) excess.add(new Layout.Leaf(UUID.randomUUID(),one.id()));
             Layout large=excess.getFirst();

@@ -7,11 +7,16 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="10";
+    public static final String VERSION="11";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
     public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
-                        Map<String,String> shortcuts, boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup) {
+                        Map<String,String> shortcuts, boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                        UpdateSettings updates) {
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,UpdateSettings.defaults());
+        }
         public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
                      Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial) {
             this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,false);
@@ -37,6 +42,7 @@ public final class StateStore implements AutoCloseable {
             Objects.requireNonNull(appTheme);
             Objects.requireNonNull(appearance);
             Objects.requireNonNull(tutorial);
+            Objects.requireNonNull(updates);
             Objects.requireNonNull(layout);
             if (width<330 || width>10000 || height<260 || height>10000)
                 throw new IllegalArgumentException("Window width must be 330-10000 and height 260-10000.");
@@ -59,7 +65,7 @@ public final class StateStore implements AutoCloseable {
             if (!ids.contains(lastProfile)) throw new IllegalArgumentException("Last used preset is missing.");
         }
         public State withTutorial(Tutorial value) {
-            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,value,connectOnStartup);
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,value,connectOnStartup,updates);
         }
     }
     private final Path directory;
@@ -67,6 +73,7 @@ public final class StateStore implements AutoCloseable {
     private final FileLock lock;
     private String loadNotice="";
     private String revision;
+    private boolean reset;
     public String loadNotice() { return loadNotice; }
 
     public StateStore(Path directory) throws IOException {
@@ -106,13 +113,20 @@ public final class StateStore implements AutoCloseable {
         loadNotice="";
         if (Files.notExists(file())) {
             if (!revision.equals("absent")) throw new IOException("Workspace was removed while open; no default state was substituted.");
-            Profile profile = Profile.kerberosDefault();
-            return new State(List.of(profile), new Layout.Leaf(UUID.randomUUID(), profile.id()), 1360, 850).withTutorial(Tutorial.NEW);
+            return freshState();
         }
         byte[] data=readBytes(file());
         State result=decode(readProperties(data));
         revision=digest(data);
         return result;
+    }
+    public static State freshState() {
+        Profile profile=Profile.kerberosDefault();
+        return new State(List.of(profile),new Layout.Leaf(UUID.randomUUID(),profile.id()),1360,850).withTutorial(Tutorial.NEW);
+    }
+    public synchronized void factoryReset() throws IOException {
+        save(freshState());
+        reset=true;
     }
     private static byte[] readBytes(Path file) throws IOException {
         try (InputStream in=Files.newInputStream(file)) {
@@ -138,15 +152,18 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             boolean usability=Integer.parseInt(version)>=8;
+            boolean kerberos=Integer.parseInt(version)>=10;
+            if (!VERSION.equals(version) && properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith("updates.")))
+                throw new IllegalArgumentException("Update preferences require workspace version "+VERSION+"; do not relabel or downgrade it.");
             List<Profile> profiles = new ArrayList<>();
             for (String idText : required(properties, "profiles").split(",",-1)) {
                 UUID id = UUID.fromString(idText);
                 String key = "profile." + id + ".";
-                if (!VERSION.equals(version) && (!properties.getProperty(key+"authentication","PASSWORD").equals("PASSWORD")
+                if (!kerberos && (!properties.getProperty(key+"authentication","PASSWORD").equals("PASSWORD")
                         || !properties.getProperty(key+"kerberosServer","").isEmpty()))
-                    throw new IllegalArgumentException("Kerberos metadata requires workspace version "+VERSION+"; do not relabel or downgrade it.");
+                    throw new IllegalArgumentException("Kerberos metadata requires workspace version 10 or later; do not relabel or downgrade it.");
                 Map<String, String> keys = new LinkedHashMap<>();
                 for (String property : properties.stringPropertyNames()) {
                     if (property.startsWith(key + "key."))
@@ -164,10 +181,10 @@ public final class StateStore implements AutoCloseable {
                         keys, required(properties, key + "layout"),
                         usability && !required(properties,key+"loginSource").isEmpty()
                                 ? UUID.fromString(required(properties,key+"loginSource")) : null,
-                        VERSION.equals(version) ? Profile.Authentication.valueOf(required(properties,key+"authentication")) : Profile.Authentication.PASSWORD,
-                        VERSION.equals(version) ? required(properties,key+"kerberosServer") : ""));
+                        kerberos ? Profile.Authentication.valueOf(required(properties,key+"authentication")) : Profile.Authentication.PASSWORD,
+                        kerberos ? required(properties,key+"kerberosServer") : ""));
             }
-            UUID last=Set.of("3","4","5","6","7","8","9",VERSION).contains(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
+            UUID last=Set.of("3","4","5","6","7","8","9","10",VERSION).contains(version) ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
             Layout layout=Layout.decode(required(properties,"layout"));
             if (Set.of("1","2").contains(version) && !layout.leaves().isEmpty()) last=layout.leaves().getFirst().profile();
             if (layout instanceof Layout.Empty) {
@@ -182,7 +199,7 @@ public final class StateStore implements AutoCloseable {
             Map<String,String> shortcuts=new LinkedHashMap<>();
             for (String property:properties.stringPropertyNames())
                 if (property.startsWith("shortcut.")) shortcuts.put(property.substring(9),properties.getProperty(property));
-            Appearance appearance=Set.of("5","6","7","8","9",VERSION).contains(version) ? readAppearance(properties,version) : Appearance.defaults();
+            Appearance appearance=Set.of("5","6","7","8","9","10",VERSION).contains(version) ? readAppearance(properties,version) : Appearance.defaults();
             if ("5".equals(version)) notice("Structural borders use the saved divider color; other appearance choices retained.");
             if (Set.of("5","6").contains(version))
                 notice("Window outline enabled once on upgrade. Earlier state did not distinguish an explicit off choice from the old default; Window and focus can turn it off permanently.");
@@ -203,9 +220,12 @@ public final class StateStore implements AutoCloseable {
                     Math.max(330, Math.min(10000, Integer.parseInt(required(properties, "width")))),
                     Math.max(260, Math.min(10000, Integer.parseInt(required(properties, "height")))),
                     "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")),last,
-                    shortcuts,!Set.of("4","5","6","7","8","9",VERSION).contains(version) || bool(properties,"highlightActive"),appearance,
+                    shortcuts,!Set.of("4","5","6","7","8","9","10",VERSION).contains(version) || bool(properties,"highlightActive"),appearance,
                     usability ? Tutorial.valueOf(required(properties,"tutorial.status")) : Tutorial.SKIPPED,
-                    Integer.parseInt(version)>=9 && bool(properties,"connectOnStartup"));
+                    Integer.parseInt(version)>=9 && bool(properties,"connectOnStartup"),
+                    VERSION.equals(version) ? new UpdateSettings(bool(properties,"updates.startup"),
+                            UpdateSettings.Channel.valueOf(required(properties,"updates.channel")),required(properties,"updates.ignoredVersion"))
+                            : UpdateSettings.defaults());
             if (usability && (result.width()!=Integer.parseInt(required(properties,"width"))
                     || result.height()!=Integer.parseInt(required(properties,"height"))))
                 throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
@@ -242,7 +262,7 @@ public final class StateStore implements AutoCloseable {
             Set<String> retired=new HashSet<>();
             for (String value:required(p,"appearance.retired").split("\n")) if (!value.isBlank()) retired.add(value);
             boolean windowOutline=!"5".equals(version) && bool(p,"appearance.windowOutline");
-            return new Appearance(bool(p,"appearance.outline"),!Set.of("7","8","9",VERSION).contains(version) || windowOutline,info,
+            return new Appearance(bool(p,"appearance.outline"),!Set.of("7","8","9","10",VERSION).contains(version) || windowOutline,info,
                     new Appearance.FontChoice(required(p,"font.family"),required(p,"font.file")),
                     required(p,"appearance.selected"),themes,retired);
     }
@@ -263,6 +283,9 @@ public final class StateStore implements AutoCloseable {
         properties.setProperty("version", VERSION);
         properties.setProperty("tutorial.status",state.tutorial.name());
         properties.setProperty("connectOnStartup",Boolean.toString(state.connectOnStartup));
+        properties.setProperty("updates.startup",Boolean.toString(state.updates.startup()));
+        properties.setProperty("updates.channel",state.updates.channel().name());
+        properties.setProperty("updates.ignoredVersion",state.updates.ignoredVersion());
         properties.setProperty("highlightActive",Boolean.toString(state.highlightActive));
         state.shortcuts.forEach((action,stroke) -> properties.setProperty("shortcut."+action,stroke));
         properties.setProperty("lastProfile",state.lastProfile.toString());
@@ -310,6 +333,7 @@ public final class StateStore implements AutoCloseable {
         return properties;
     }
     public synchronized void save(State state) throws IOException {
+        if (reset) throw new IOException("Workspace was reset to factory defaults. Reopen Fish before saving.");
         requireRevision(revision);
         Properties values=properties(state);
         ByteArrayOutputStream data=new ByteArrayOutputStream();

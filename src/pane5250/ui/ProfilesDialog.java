@@ -29,7 +29,7 @@ public final class ProfilesDialog extends JDialog {
     private final JComboBox<String> effect = new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
     private final JTextArea keymap = new JTextArea(8,32);
     private final JLabel error = new JLabel(" ");
-    private final JButton save, done, use, cancel, add, duplicate;
+    private final JButton save, done, use, cancel, add, duplicate, up, down, delete;
     private Profile selected;
     private java.util.List<Object> baseline;
     private boolean loading, dirty, saving;
@@ -44,10 +44,26 @@ public final class ProfilesDialog extends JDialog {
         JPanel sidebar = new JPanel(new BorderLayout(0,8));
         sidebar.setPreferredSize(new Dimension(180,300));
         sidebar.add(new JScrollPane(list),BorderLayout.CENTER);
-        JPanel listActions = new JPanel(new GridLayout(1,2,6,0));
+        JPanel listActions = new JPanel(new GridLayout(0,1,0,6));
+        JPanel createActions=new JPanel(new GridLayout(1,2,6,0));
         add = Ui.button("New",KeyEvent.VK_N,() -> addProfile(false));
         duplicate = Ui.button("Duplicate",KeyEvent.VK_D,() -> addProfile(true));
-        listActions.add(add); listActions.add(duplicate);
+        createActions.add(add); createActions.add(duplicate); listActions.add(createActions);
+        JPanel manageActions=new JPanel(new GridLayout(1,3,4,0));
+        up=Ui.button("Up",0,() -> move(-1));
+        down=Ui.button("Down",0,() -> move(1));
+        delete=Ui.button("Delete",0,this::delete);
+        up.setToolTipText("Move profile up (Ctrl+Up in the list); order applies immediately");
+        down.setToolTipText("Move profile down (Ctrl+Down in the list); order applies immediately");
+        up.getAccessibleContext().setAccessibleName("Move profile up");
+        down.getAccessibleContext().setAccessibleName("Move profile down");
+        manageActions.add(up); manageActions.add(down); manageActions.add(delete); listActions.add(manageActions);
+        list.getInputMap().put(KeyStroke.getKeyStroke("ctrl UP"),"move-up");
+        list.getInputMap().put(KeyStroke.getKeyStroke("ctrl DOWN"),"move-down");
+        list.getInputMap().put(KeyStroke.getKeyStroke("DELETE"),"delete-profile");
+        list.getActionMap().put("move-up",new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { up.doClick(); } });
+        list.getActionMap().put("move-down",new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { down.doClick(); } });
+        list.getActionMap().put("delete-profile",new AbstractAction() { @Override public void actionPerformed(ActionEvent e) { delete.doClick(); } });
         sidebar.add(listActions,BorderLayout.SOUTH);
         JPanel connection = new JPanel(new GridBagLayout());
         connection.setBorder(Ui.padding(12));
@@ -227,6 +243,10 @@ public final class ProfilesDialog extends JDialog {
     private void updateDirty() {
         dirty=baseline==null || !baseline.equals(fields()) || workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()));
         save.setEnabled(dirty && !saving);
+        boolean saved=workspace.profileList().stream().anyMatch(p -> p.id().equals(selected.id()));
+        up.setEnabled(!saving && saved && list.getSelectedIndex()>0);
+        down.setEnabled(!saving && saved && list.getSelectedIndex()<workspace.profileList().size()-1);
+        delete.setEnabled(!saving && saved);
     }
     private boolean discardChanges() {
         return !dirty || Ui.confirm(this,"Discard unsaved profile edits?","Unsaved edits");
@@ -239,6 +259,29 @@ public final class ProfilesDialog extends JDialog {
         Profile profile = copy ? workspace.connectionProfile(selected).duplicate() : Profile.create("New workstation");
         loading = true; model.addElement(profile); list.setSelectedValue(profile,true); loading = false;
         load(profile); updateDirty(); name.requestFocusInWindow(); name.selectAll();
+    }
+    private void refreshList(Profile profile) {
+        loading=true; model.clear(); workspace.profileList().forEach(model::addElement);
+        list.setSelectedValue(profile,true); loading=false; load(profile);
+    }
+    private void move(int direction) {
+        if (saving) return;
+        try {
+            workspace.moveProfile(selected.id(),direction);
+            loading=true; model.clear(); workspace.profileList().forEach(model::addElement);
+            list.setSelectedValue(selected,true); loading=false; updateDirty();
+            list.requestFocusInWindow();
+        } catch (IllegalArgumentException e) { error.setText(e.getMessage()); error.setToolTipText(e.getMessage()); }
+    }
+    private void delete() {
+        if (saving || !discardChanges()) return;
+        try {
+            workspace.validateDeleteProfile(selected.id());
+            if (!Ui.confirm(this,"Delete \""+selected.name()+"\"?\nPanes using it will disconnect and select the first remaining profile. Saved layouts will be updated.\n"
+                    +"Windows saved passwords are kept; this never deletes another profile's login.","Delete profile")) return;
+            workspace.deleteProfile(selected.id());
+            refreshList(workspace.profileList().getFirst()); list.requestFocusInWindow();
+        } catch (IllegalArgumentException e) { error.setText(e.getMessage()); error.setToolTipText(e.getMessage()); }
     }
     private void save(boolean connect,boolean finish) {
         Profile updated;
@@ -298,7 +341,7 @@ public final class ProfilesDialog extends JDialog {
     }
     private void setSaving(boolean value) {
         saving = value;
-        for (JButton button : java.util.List.of(save,done,use,cancel,add,duplicate)) button.setEnabled(!value);
+        for (JButton button : java.util.List.of(save,done,use,cancel,add,duplicate,up,down,delete)) button.setEnabled(!value);
         for (JComponent input:java.util.List.of(name,host,port,device,username,password,keymap,codePage,theme,effect,automatic,remember,loginFrom,authentication,kerberosServer))
             input.setEnabled(!value);
         updateLoginControls();

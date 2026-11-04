@@ -52,6 +52,7 @@ public final class CustomizationSmoke {
             store.save(saved);
             Properties xml=new Properties(); try (var in=Files.newInputStream(store.file())) { xml.loadFromXML(in); }
             xml.setProperty("version","4"); xml.setProperty("profile."+p.id()+".effect","Neon");
+            xml.keySet().removeIf(key -> key.toString().startsWith("updates."));
             xml.setProperty("shortcut.Search commands...","ctrl F8");
             try (var out=Files.newOutputStream(store.file())) { xml.storeToXML(out,"legacy fixture"); }
             StateStore.State loaded=store.load();

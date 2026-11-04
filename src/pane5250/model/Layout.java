@@ -60,6 +60,14 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
         return new Split(split.horizontal, split.ratio, split.first.mapLeaf(pane, update), split.second.mapLeaf(pane, update));
     }
 
+    default Layout replaceProfile(UUID removed,UUID replacement) {
+        if (this instanceof Empty) return this;
+        if (this instanceof Leaf leaf) return leaf.profile.equals(removed) ? new Leaf(leaf.pane,replacement) : leaf;
+        Split split=(Split)this;
+        return new Split(split.horizontal,split.ratio,split.first.replaceProfile(removed,replacement),
+                split.second.replaceProfile(removed,replacement));
+    }
+
     default Layout remove(UUID pane) {
         if (this instanceof Empty) return this;
         if (this instanceof Leaf leaf) return leaf.pane.equals(pane) ? null : leaf;

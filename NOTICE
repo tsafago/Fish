@@ -29,7 +29,9 @@ https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.12.1%2B1
 https://github.com/openjdk/jdk21u
 Use an appropriately maintained JDK 21 build for deployment and retain its notices.
 
-src/native/fish-window.c is Fish's own Windows frame integration source.
+src/native contains Fish's own Windows frame, Kerberos, update verification
+and compact native setup sources. The setup embeds a jpackage/WiX-generated
+per-user MSI; it adds no downloaded runtime or third-party visual assets.
 Portable Zig and WiX are build tools retrieved from their official distributions
 using checksums in tools.psd1; they are not application runtime dependencies.
 Windows' user32 library and the bundled JDK's JAWT provide its runtime platform APIs.

@@ -47,9 +47,18 @@ public final class Workspace extends JFrame {
     private StateStore.Tutorial tutorialStatus;
     private TutorialDialog tutorial;
     private boolean connectOnStartup, startupHandled;
+    private UpdateSettings updateSettings;
+    private final UpdateController updates;
     private Runnable afterClose = () -> {};
 
     public Workspace(StateStore store, StateStore.State state, Path credentialHelper, boolean demonstration) {
+        this(store,state,credentialHelper,demonstration,new pane5250.update.Updates());
+    }
+    Workspace(StateStore store,StateStore.State state,Path credentialHelper,boolean demonstration,pane5250.update.Updates updateService) {
+        this(store,state,credentialHelper,demonstration,updateService,(owner,message) -> Ui.confirm(owner,message,"Update Fish"));
+    }
+    Workspace(StateStore store,StateStore.State state,Path credentialHelper,boolean demonstration,pane5250.update.Updates updateService,
+              java.util.function.BiPredicate<Component,String> confirmUpdate) {
         super("Fish" + (demonstration ? " - local synthetic host" : ""));
         setUndecorated(true);
         setIconImages(FishIcon.images());
@@ -57,6 +66,7 @@ public final class Workspace extends JFrame {
         appearance=state.appearance();
         tutorialStatus=state.tutorial();
         connectOnStartup=state.connectOnStartup();
+        updateSettings=state.updates();
         Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         this.store = store;
         this.demonstration = demonstration;
@@ -96,6 +106,7 @@ public final class Workspace extends JFrame {
         shell.add(chrome,BorderLayout.NORTH);
         shell.add(content,BorderLayout.CENTER);
         shortcuts=new AppShortcuts(this,commands,state.shortcuts());
+        updates=new UpdateController(this,updateService,confirmUpdate);
         buildTree();
         if (!fontNotice.isEmpty()) SwingUtilities.invokeLater(() -> {
             if (!closing) { active.problem(fontNotice); Ui.error(this,fontNotice); }
@@ -123,7 +134,12 @@ public final class Workspace extends JFrame {
         startupHandled=true;
         if (connectOnStartup) sessionPanes().forEach(SessionPane::connectOnStartup);
         startTutorialIfNeeded();
+        if (updateSettings.startup()) updates.startup();
     }
+    boolean closing() { return closing; }
+    public UpdateSettings updateSettings() { return updateSettings; }
+    public void updateSettings(UpdateSettings value) { updateSettings=Objects.requireNonNull(value); changed(); }
+    Path dataDirectory() { return store.file().getParent(); }
     public void showTutorial() { openTutorial(false); }
     private void openTutorial(boolean firstRun) {
         if (tutorial!=null && !tutorial.ended()) {
@@ -325,7 +341,7 @@ public final class Workspace extends JFrame {
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
     private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
-            shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup); }
+            shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings); }
     public void saveAsync() {
         if (closing) return;
         StateStore.State snapshot = state();
@@ -401,6 +417,27 @@ public final class Workspace extends JFrame {
     }
 
     public void profiles() { new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true); }
+    public void moveProfile(UUID id,int direction) {
+        List<Profile> order=ProfileManagement.move(profileList(),id,direction);
+        profiles.clear(); order.forEach(p -> profiles.put(p.id(),p));
+        panes.values().forEach(SessionPane::refreshPresets); changed();
+    }
+    public void validateDeleteProfile(UUID id) {
+        ProfileManagement.delete(state(),id);
+        if (panes.values().stream().anyMatch(p -> p.profile().id().equals(id) && p.connecting()))
+            throw new IllegalArgumentException("This profile has a pending login operation. Cancel it or wait for it to finish before deleting.");
+    }
+    public void deleteProfile(UUID id) {
+        validateDeleteProfile(id);
+        StateStore.State next=ProfileManagement.delete(state(),id);
+        for (SessionPane pane:panes.values()) if (pane.profile().id().equals(id)) pane.disconnect();
+        profiles.clear(); next.profiles().forEach(p -> profiles.put(p.id(),p));
+        lastProfile=next.lastProfile(); layout=next.layout();
+        Map<UUID,UUID> references=new HashMap<>();
+        layout.leaves().forEach(leaf -> references.put(leaf.pane(),leaf.profile()));
+        for (SessionPane pane:panes.values()) pane.updateProfile(profiles.get(references.get(pane.id())));
+        refreshShortcutLabels(); changed();
+    }
     private static boolean connectionChanged(Profile a, Profile b) {
         return !a.host().equals(b.host()) || a.port() != b.port() || !a.device().equals(b.device())
                 || !a.username().equals(b.username()) || a.automaticSignOn() != b.automaticSignOn() || !a.codePage().equals(b.codePage())
@@ -599,6 +636,7 @@ public final class Workspace extends JFrame {
         action(appearanceDetails,"Fonts...",null,() -> AppearanceDialogs.fonts(this));
         action(appearanceDetails,"Pane information...",null,() -> AppearanceDialogs.paneInfo(this));
         action(appearanceDetails,"Window and focus...",null,() -> AppearanceDialogs.windowFocus(this));
+        action(appearanceDetails,"Application settings...",null,() -> updates.settings());
         appearanceDetails.addSeparator();
         action(appearanceDetails,"Theme designer...",null,() -> new ThemeDesigner(this).setVisible(true));
         JMenu themeMenu=new JMenu("Application presets"); appearanceDetails.add(themeMenu);
@@ -619,12 +657,15 @@ public final class Workspace extends JFrame {
         }
         host.addSeparator();
         action(host,"Send host key...","ctrl alt F",this::hostKeys);
+        action(host,"Last pane notice...",null,() -> active.showLastNotice());
         JMenu editing=new JMenu("Field and screen actions"); host.add(editing);
         for (KeyMnemonic key : List.of(KeyMnemonic.ENTER,KeyMnemonic.FIELD_EXIT,KeyMnemonic.FIELD_PLUS,KeyMnemonic.FIELD_MINUS,
                 KeyMnemonic.CLEAR,KeyMnemonic.HELP,KeyMnemonic.PAGE_UP,KeyMnemonic.PAGE_DOWN))
             action(editing,key.name().replace('_',' '),null,() -> active.send(key)).hostKey=key;
         JMenu help = menu(bar,"Help",KeyEvent.VK_L);
         action(help,"Getting started tutorial",null,this::showTutorial);
+        action(help,"Check for updates...",null,() -> updates.manual());
+        help.add(new JMenuItem(command("Application settings...")));
         action(help,"Full manual / Getting Started",null,() -> {
             try { new ManualDialog(this).setVisible(true); }
             catch (java.io.IOException e) { Ui.error(this,"The manual could not be opened: "+e.getMessage()); }
@@ -695,7 +736,7 @@ public final class Workspace extends JFrame {
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
             if (List.of("Profiles...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
                     "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started",
-                    "Getting started tutorial","Configuration for external tools").contains(text)) return true;
+                    "Getting started tutorial","Configuration for external tools","Application settings...","Check for updates...","Last pane notice...").contains(text)) return true;
             if (active==null) return false;
             if (text.startsWith("Insert ") && connectionProfile(active.profile()).authentication()==Profile.Authentication.KERBEROS)
                 return false;
@@ -737,10 +778,7 @@ public final class Workspace extends JFrame {
         saveTimer.stop();
         StateStore.State snapshot = state();
         closing = true;
-        if (tutorial!=null) tutorial.dispose();
-        shortcuts.dispose();
-        panes.values().forEach(SessionPane::dispose);
-        dispose();
+        disposeWorkspace();
         persistence.submit(() -> {
             try {
                 store.save(snapshot);
@@ -753,5 +791,48 @@ public final class Workspace extends JFrame {
                 SwingUtilities.invokeLater(afterClose);
             }
         });
+    }
+    private void disposeWorkspace() {
+        updates.close();
+        if (tutorial!=null) tutorial.dispose();
+        shortcuts.dispose();
+        panes.values().forEach(SessionPane::dispose);
+        dispose();
+    }
+    @FunctionalInterface interface Maintenance { void run() throws java.io.IOException; }
+    boolean updateAndExit(Maintenance launch,java.util.function.Consumer<String> failed) {
+        StateStore.State snapshot=state();
+        return maintenance(() -> { store.save(snapshot); launch.run(); },failed);
+    }
+    void factoryDefaults() {
+        if (!Ui.confirm(this,"Remove all profiles, layouts, themes, font choices and preferences, then close Fish?\n"
+                +"Active sessions will end. Next launch starts the getting-started guide with the default Kerberos profile.\n"
+                +"Windows saved passwords, font files and other workspaces are kept. No backup is created.","Factory defaults")) return;
+        maintenance(store::factoryReset,message -> Ui.error(this,"Factory defaults could not be saved: "+message));
+    }
+    private boolean maintenance(Maintenance action,java.util.function.Consumer<String> failed) {
+        if (closing) return false;
+        if (panes.values().stream().anyMatch(SessionPane::connecting)) {
+            Ui.error(this,"A login/password operation is still pending. Cancel it or wait for it to finish, then try again."); return false;
+        }
+        saveTimer.stop(); closing=true; setEnabled(false);
+        persistence.submit(() -> {
+            try { action.run(); }
+            catch (java.io.IOException | RuntimeException e) {
+                SwingUtilities.invokeLater(() -> {
+                    closing=false; setEnabled(true); failed.accept(e.getMessage());
+                });
+                return;
+            }
+            SwingUtilities.invokeLater(() -> {
+                disposeWorkspace();
+                persistence.submit(() -> {
+                    try { store.close(); }
+                    catch (java.io.IOException e) { System.err.println("Workspace lock release failed: "+e.getMessage()); }
+                    finally { persistence.shutdown(); SwingUtilities.invokeLater(afterClose); }
+                });
+            });
+        });
+        return true;
     }
 }

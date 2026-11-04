@@ -171,6 +171,21 @@
       "title": "Connect panes on startup"
     },
     {
+      "default": "",
+      "hostAction": null,
+      "title": "Application settings..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Check for updates..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Last pane notice..."
+    },
+    {
       "default": "ctrl alt M",
       "hostAction": null,
       "title": "Open menus"
@@ -1259,12 +1274,31 @@
         "SKIPPED"
       ]
     },
-    "version": {
+    "updates.channel": {
       "constraints": "Exact case-sensitive value.",
-      "default": "10",
+      "default": "PREVIEW_PATCHES",
       "type": "enum",
       "values": [
-        "10"
+        "PREVIEW_PATCHES",
+        "STABLE"
+      ]
+    },
+    "updates.ignoredVersion": {
+      "constraints": "Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES permits this installed major/minor only; STABLE permits non-prereleases in this installed major. Neither channel installs a new major.",
+      "default": "",
+      "type": "numeric-version-or-empty"
+    },
+    "updates.startup": {
+      "constraints": "Bounded nonblocking public GitHub release check. Errors stay quiet on startup. Download/install always requires explicit consent.",
+      "default": true,
+      "type": "boolean"
+    },
+    "version": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "11",
+      "type": "enum",
+      "values": [
+        "11"
       ]
     },
     "width": {
@@ -1586,5 +1620,5 @@
   },
   "themePrefix": "appearance.theme.{zero-based-index}.",
   "unknownKeys": "Rejected without writing. Future workspace versions are rejected, never downgraded.",
-  "workspaceVersion": "10"
+  "workspaceVersion": "11"
 }

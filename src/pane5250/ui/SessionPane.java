@@ -52,6 +52,7 @@ public final class SessionPane extends JPanel {
                 Dimension size=reset.getPreferredSize();
                 boolean bottom=screen()==null || screen().getCurrentRow()<screen().getRows()/2;
                 int top=close.getParent()==this && close.isVisible() ? close.getHeight()+4 : 10;
+                if (noticeOverlay.isVisible()) top=Math.max(top,noticeOverlay.getPreferredSize().height+14);
                 reset.setBounds(Math.max(4,getWidth()-size.width-10),bottom ? Math.max(4,getHeight()-size.height-10) : top,
                         Math.min(size.width,Math.max(0,getWidth()-8)),size.height);
             }
@@ -60,8 +61,7 @@ public final class SessionPane extends JPanel {
             noticeOverlay.setBounds(8,8,Math.max(0,Math.min(size.width,getWidth()-16-reserved)),size.height);
         }
     };
-    private final JLabel noticeOverlay=new JLabel();
-    private final javax.swing.Timer noticeClock=new javax.swing.Timer(6500,e -> noticeOverlay.setVisible(false));
+    private final TransientNotice noticeOverlay=new TransientNotice(this::focusTerminal);
     private final ConnectionSpinner spinner=new ConnectionSpinner();
     private final JComboBox<Profile> presets=new JComboBox<>();
     private final JButton connectButton;
@@ -76,6 +76,7 @@ public final class SessionPane extends JPanel {
     private long generation;
     private Layout.Dock preview;
     private String notice = "Disconnected";
+    private String lastProblem="";
     private String shownCard="";
 
     public SessionPane(Workspace workspace, UUID id, Profile profile) {
@@ -168,9 +169,7 @@ public final class SessionPane extends JPanel {
         dragZone.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
         dragZone.setToolTipText("Drag onto another pane to swap");
         stage.add(dragZone,JLayeredPane.DRAG_LAYER);
-        noticeOverlay.setOpaque(true); noticeOverlay.setBorder(Ui.padding(6)); noticeOverlay.setVisible(false);
         stage.add(noticeOverlay,JLayeredPane.PALETTE_LAYER); add(stage,BorderLayout.CENTER);
-        noticeClock.setRepeats(false);
         view.setFit(profile.zoom() == 1);
         installDrag();
         themeChanged();
@@ -450,7 +449,7 @@ public final class SessionPane extends JPanel {
         view.screenChanged();
     }
     public void reconnect() { disconnect(); connect(); }
-    public void dispose() { disposed = true; noticeClock.stop(); spinner.updateAnimation(); disconnect(); view.dispose(); }
+    public void dispose() { disposed = true; noticeOverlay.dispose(); spinner.updateAnimation(); disconnect(); view.dispose(); }
 
     private final class ConnectionSpinner extends JComponent {
         private double angle;
@@ -514,13 +513,16 @@ public final class SessionPane extends JPanel {
     public void problem(String message) {
         if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(() -> problem(message)); return; }
         notice = message;
+        lastProblem=message;
         updateOia();
         oia.setToolTipText(message);
         oia.setForeground(Ui.color(ColorRole.STATUS_ERROR));
         if (!footer.isVisible() || !workspace.appearanceSettings().info().status()) {
-            noticeOverlay.setText(message); noticeOverlay.setToolTipText(message);
-            noticeOverlay.setVisible(true); stage.doLayout(); noticeClock.restart();
+            noticeOverlay.showMessage(message,true); stage.doLayout();
         }
+    }
+    public void showLastNotice() {
+        Ui.message(workspace,lastProblem.isEmpty() ? "No input or connection notices in this pane." : lastProblem,"Last pane notice");
     }
     private void updateOia() {
         if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(this::updateOia); return; }

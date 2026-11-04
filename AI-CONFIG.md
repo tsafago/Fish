@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.0 exposes its complete local configuration without an AI service, network
+Fish 0.7.1 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -74,13 +74,15 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 10 with informational migration
+An exported legacy workspace is migrated to version 11 with informational migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries cannot read version 10: restore a backup for a downgrade.
-Do not manually relabel old/future data as version 10. Version-8/9 hosts, sign-in
+save. Older binaries (including 0.7.0) cannot read version 11: restore a backup for a downgrade.
+Do not manually relabel old/future data as version 11. Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
 is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles
 remain PASSWORD, never silently Kerberos. No existing profile is replaced by a seed.
+Version-10 Kerberos/server metadata is retained. Pre-11 update preferences default
+to startup checks on, PREVIEW_PATCHES and an empty ignored version.
 
 ## Format and complete coverage
 
@@ -110,6 +112,7 @@ The catalog lists exact field types/defaults/limits and all dynamic prefixes:
 | Window/focus | appearance.outline, appearance.windowOutline, independent highlightActive |
 | Reserved legacy keys | appearance.retired, newline-separated valid shortcut strokes |
 | Tutorial | tutorial.status: NEW, IN_PROGRESS, COMPLETED, SKIPPED |
+| Updates | updates.startup, updates.channel, updates.ignoredVersion |
 | Export only | config.format=1 and config.baseRevision; never copied into workspace.xml by apply |
 
 `CONFIG-SCHEMA.json` contains the exact action titles, host actions/defaults,
@@ -130,6 +133,25 @@ Fixed-width fonts are checked against the configured code pages, with explicit
 errors rather than silent replacement during config validation.
 font.file takes precedence over font.family; clear font.file to choose a family.
 Font bytes are never embedded or exported.
+
+The comma-separated `profiles` UUID list is the persistent selector order. Reorder
+IDs without renaming them; do not remove a referenced ID without repairing current/
+saved layouts, lastProfile and loginSource dependents. At least one profile remains.
+The in-app Up/Down/Delete controls perform those repairs and block login-source
+deletion. Deletion never deletes a source's OS credential.
+
+`updates.startup` is a boolean, default true. `updates.channel` is PREVIEW_PATCHES
+(numeric same-major/minor, including previews) or STABLE (non-preview same-major).
+`updates.ignoredVersion` is empty or exact numeric X.Y.Z, no leading v. It suppresses
+only that startup notice, not manual checks or future versions. The endpoint is
+fixed public tsafago/Fish, not configurable; no executable/download URL hook exists.
+Export contains no tokens, download state or installation commands.
+
+Factory reset is an explicitly confirmed in-app maintenance action, not an
+executable configuration setting. It replaces this workspace with fresh format-11
+state and exits; next launch is offline first-run. It retains actual font files,
+Windows credentials and other workspaces. Do not invoke reset to repair a failed
+edit or silently discard user data.
 
 ## Examples using an exported snapshot
 

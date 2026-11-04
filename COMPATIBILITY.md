@@ -5,7 +5,33 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.7.0 Kerberos prerelease
+## Fish 0.7.1 maintenance prerelease
+
+Adds persistent profile ordering and dependency-safe deletion, atomic active-workspace
+factory reset, bounded public-GitHub update checks/download integrity, native
+per-user setup and dismissible bordered notices. Format 11 retains existing
+version-10 Kerberos profiles; older binaries require a pre-upgrade backup.
+The default remains selected Kerberos 10.1.2.3:23 and offline until Connect.
+No protocol capabilities are expanded or ACS gaps closed by this update.
+
+Focused checks use isolated workspaces, injected HTTP/security-policy/installer
+providers and never-shown production UI. They exercise consent, exact ignore,
+retry, cancellation, failure/handoff persistence, profile references and real
+local input recovery versus notice dismissal. Offscreen borders cover
+100/125/150/175/200%. Native setup self-test/payload/version/MSI checks and an
+offscreen design image are not live installer or installed-upgrade acceptance.
+No foreground desktop, shared clipboard, actual installer/update, real-host auth
+or ticket acquisition was used for this revision.
+
+Portable self-update installs/opens a per-user copy with the same workspace; it
+does not replace the portable directory. Binaries remain unsigned and Windows
+policy is not bypassed. Real setup interaction, OS reputation prompts,
+installed upgrade/rollback/relaunch and network-specific proxy policy remain
+unverified acceptance paths. Main-app maximize/restore perimeter loss,
+intermittent flicker, WEA/enhanced WTD/structured-field gaps, cryptographic
+password substitution and real Kerberos/IBM i/ACS acceptance remain open.
+
+## Included Fish 0.7.0 Kerberos support
 
 Implements RFC 4777 section 6 binary IBMTICKET using the current Windows logon's
 explicit Kerberos SSPI provider (never Negotiate/NTLM/password fallback).

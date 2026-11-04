@@ -1,12 +1,12 @@
 param(
-    [ValidateSet('Build', 'Smoke', 'Check', 'Test', 'Package', 'Installer', 'Run', 'Demo')]
+    [ValidateSet('Build', 'Maintenance', 'Smoke', 'Check', 'Test', 'Package', 'Installer', 'Run', 'Demo')]
     [string]$Task = 'Build',
     [string]$Jdk = $env:JAVA_HOME,
     [string]$ImageDirectory = 'dist\Fish'
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.7.0'
+$version = '0.7.1'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
 if (-not $Jdk) {
@@ -23,18 +23,7 @@ if ($Task -eq 'Installer') {
     if ((Get-Item -LiteralPath $executable).VersionInfo.ProductVersion -ne $version) {
         throw "Application image is not Fish $version. Package first, or select its matching -ImageDirectory."
     }
-    & "$PSScriptRoot\scripts\prepare-tools.ps1" -Kind Installer
-    $manifest = Import-PowerShellDataFile .\tools.psd1
-    $env:PATH = (Join-Path $PSScriptRoot ('.tools\' + $manifest.Installer.Directory)) + ';' + $env:PATH
-    $installerOutput = Join-Path $PSScriptRoot ('build\installer-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
-    New-Item -ItemType Directory -Path $installerOutput | Out-Null
-    # WiX 3 needs jpackage's short OS temporary path when source lives in a deep directory.
-    & "$Jdk\bin\jpackage.exe" --type exe --name Fish --app-version $version --app-image $image `
-        --dest $installerOutput --vendor Fish --win-per-user-install --install-dir Fish `
-        --win-dir-chooser --win-menu --win-shortcut --win-menu-group Fish `
-        --win-upgrade-uuid '55b0674d-e226-46cb-852f-6beddd35a74b'
-    if ($LASTEXITCODE -ne 0) { throw 'User-wide installer generation failed.' }
-    Copy-Item (Join-Path $installerOutput "Fish-$version.exe") "dist\Fish-$version-setup.exe" -Force
+    & "$PSScriptRoot\scripts\build-installer.ps1" -Jdk $Jdk -Image $image -Version $version
     Compress-Archive -Path $image -DestinationPath "dist\Fish-$version-windows-x64.zip" -Force
     $checksums = foreach ($file in @("dist\Fish-$version-setup.exe","dist\Fish-$version-windows-x64.zip",'dist\Fish-source.zip')) {
         (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($file)
@@ -75,12 +64,23 @@ if ($LASTEXITCODE -ne 0) { throw 'JAR creation failed.' }
 Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item build\fish-window.dll dist\fish-window.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
-if ($Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Smoke') { Get-Item tests\pane5250\Tests.java,tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java,tests\pane5250\RefinementSmoke.java,tests\pane5250\UsabilitySmoke.java,tests\pane5250\KerberosSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
+if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
+    $testFiles = if ($Task -eq 'Maintenance') { Get-Item tests\pane5250\Tests.java,tests\pane5250\MaintenanceSmoke.java,tests\pane5250\MaintenanceUiSmoke.java,tests\pane5250\NoticeSmoke.java,tests\pane5250\NativeUpdateSmoke.java }
+        elseif ($Task -eq 'Smoke') { Get-Item tests\pane5250\Tests.java,tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java,tests\pane5250\RefinementSmoke.java,tests\pane5250\UsabilitySmoke.java,tests\pane5250\KerberosSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -cp build\classes -d build\test-classes '@build\tests.txt'
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
+    if ($Task -eq 'Maintenance') {
+        foreach ($fixture in @('pane5250.Tests','pane5250.update.MaintenanceSmoke','pane5250.ui.NoticeSmoke','pane5250.ui.MaintenanceUiSmoke')) {
+            $fixtureArgs=@()
+            if ($fixture -eq 'pane5250.Tests') { $fixtureArgs+='--protocol-only' }
+            & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' $fixture @fixtureArgs
+            if ($LASTEXITCODE -ne 0) { throw "Noninteractive maintenance fixture failed: $fixture" }
+        }
+        Write-Host 'Maintenance checks complete; no visible windows, clipboard, credentials, real-host connections or installer execution.'
+        return
+    }
     if ($Task -ne 'Smoke') {
         $testArgs=@()
         if ($Task -eq 'Check') { $testArgs+='--core-only' }
@@ -121,7 +121,7 @@ if ($Task -eq 'Package') {
     & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version $version --icon build\Fish.ico `
         --input build\package-input --main-jar Fish.jar --main-class pane5250.Main `
         --dest (Split-Path -Parent $image) --vendor Fish --java-options '-Xmx192m' `
-        --add-modules java.base,java.desktop,java.xml,java.logging,jdk.charsets
+        --add-modules java.base,java.desktop,java.xml,java.logging,java.net.http,jdk.crypto.ec,jdk.charsets
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed.' }
     Copy-Item scripts\Fish-config.cmd (Join-Path $image 'Fish-config.cmd')
     $source = Join-Path $image 'app\source'

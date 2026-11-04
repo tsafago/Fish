@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.7.0 - unsigned experimental Kerberos prerelease.
+Fish 0.7.1 - unsigned experimental maintenance/Kerberos prerelease.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -9,7 +9,7 @@ Open Help > Full manual / Getting Started for the searchable topic index.
 
 ## Getting Started
 
-You need the IBM i's hostname or IP address, a valid IBM i username and password, and permission to use its Telnet service. Ask your IBM i administrator for these if you do not already have them.
+You need the IBM i's address and permission to use its Telnet service. Windows sign-in needs configured Kerberos/NAS/EIM; password sign-in needs an IBM i account. Your administrator supplies the deployment details.
 
 1. Run Fish.exe. Keep the complete Fish folder together if using the portable download.
 2. Open Session > Profiles. Select Local IBM i, or choose New.
@@ -38,9 +38,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The [v0.7.0 prerelease](https://github.com/HornadyIBM/Fish/releases/tag/v0.7.0) includes Fish-0.7.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt in the private HornadyIBM/Fish repository. Keep one release's assets/checksums together; do not mix earlier previews. The installer targets the current Windows user, not all users, and creates a Start menu entry and desktop shortcut. Its default location is your local application-data Fish directory; the installer allows another location. It should not request administrator installation.
+The public [v0.7.1 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.1) includes Fish-0.7.1-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested.
 
-Alternatively, extract Fish-0.7.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract Fish-0.7.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -54,15 +54,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.0-setup.exe, dist\Fish-0.7.0-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.0\Fish\Fish.exe. Close a running copy before rebuilding its directory.
+Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.1-setup.exe, dist\Fish-0.7.1-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.1\Fish\Fish.exe. Close a running copy before rebuilding its directory.
 
-To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, Setup-Fish.ps1 accepts -Install and build.ps1 accepts Build, Smoke, Check, Test, Package, Installer, Run and Demo. The Test task uses the physical desktop; do not run it while someone is working.
+To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.0\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.0\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.1\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.1\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -72,16 +72,40 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish, or the retained
 legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
-The next save writes configuration version 10. Older binaries cannot read it:
-keep the pre-upgrade backup for downgrade, not just a version-10 export.
+The next save writes configuration version 11. Older binaries, including 0.7.0, cannot read it:
+keep the pre-upgrade backup for downgrade, not just a version-11 export.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older Fish/Pane5250 workspaces migrate to version 10 on load, retaining profiles, themes, fonts, key overrides, outline/tint and information choices. Existing profiles remain Password / manual with their exact auto/remember choices; the Kerberos default is seeded only when no workspace exists. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults from before version 8 change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries retain their provenance. Unresolved conflicts fail clearly. Pre-version-8 tutorials start skipped; version-8/9 tutorial/login choices remain unchanged. Startup connection starts off on pre-9 upgrade; version-9 explicit startup choices remain unchanged. Older builds cannot read version 10: use a backup/separate directory for downgrade. Malformed state is preserved, never replaced with defaults.
+Older Fish/Pane5250 workspaces migrate to version 11 on load, retaining profiles, order, themes, fonts, key overrides, outline/tint and information choices. Existing version-10 Kerberos metadata is preserved; pre-10 profiles remain Password / manual with their exact auto/remember choices. The Kerberos default is seeded only for absent/reset state. Version-7 explicit outline-off choices remain off; older 5/6 data retains its documented one-time outline-on migration. Absent built-in key defaults from before version 8 change to the new conventional/IBM-style assignments. Explicit saved overrides are preserved; conflicts retain older app chords or disable only a conflicting newly introduced host default, with informational notes. An old format could not distinguish a manually selected default from an absent entry; only saved explicit entries can be retained as such. New explicit-default entries retain their provenance. Unresolved conflicts fail clearly. Pre-version-8 tutorials start skipped; later tutorial/login choices remain unchanged. Startup connection starts off on pre-9 upgrade; explicit later choices remain unchanged. Format 11 adds startup update checks on, preview-patch channel and no hidden version. Malformed state is preserved, never replaced with defaults; do not relabel a new format to downgrade.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
+
+## Checking for updates
+
+Help > Check for updates checks the public tsafago/Fish GitHub releases over HTTPS without gh, a token or GitHub login. The lookup is asynchronous and bounded to the 30 most recent releases. It compares numeric versions, rejects drafts/malformed metadata/wrong-platform artifacts and never reinstalls or downgrades.
+
+A nonblocking startup check is on by default. Offline/rate-limit failures stay quiet; manual checks show errors and Check again. The small startup notice offers Update, X and Hide version. X only dismisses this notice. Hide remembers that exact version; future eligible versions can notify again, and manual checks still show hidden versions.
+
+Help > Application settings (also Appearance > More settings > Application settings) controls startup checks and channel. Preview patches includes experimental releases within the same major/minor, such as 0.7.x. Stable releases excludes previews and permits newer stable minor versions within the same major. No channel silently upgrades to a different major or a newer experimental minor. Show hidden updates again clears the exact-version ignore choice.
+
+Update opens the version, release notes and repository link. One explicit confirmation authorizes download, saving and ending this window's sessions before setup. A download can be cancelled while Fish remains open. The handoff saves the workspace first; save/launch failure leaves Fish open with an error and retry. Setup waits for this Fish process to exit and refuses to replace an installation still in use; it never kills processes. Other Fish windows must be closed manually if they use that installation.
+
+Only the exact release's Windows x64 installer and SHA256SUMS are downloaded. Fixed repository/CDN origins, HTTPS, size limits, published GitHub SHA-256 digests and checksum agreement are required. Windows validates any present Authenticode signature and the staged file retains its Internet-origin mark. Current builds are unsigned: hashes provide integrity, not a trusted publisher. Windows/IT policy may block setup; Fish does not bypass it. No workspace data, tickets or credentials are sent.
+
+Installed mode updates the existing registered per-user installation. Portable mode deliberately does not replace portable files: setup installs/updates a per-user copy and opens that installed copy using the same workspace directory. The old portable directory remains unchanged. Source/java launches cannot use the packaged self-update launcher; use the downloaded installer manually. Fish 0.7.0 and earlier require a manual first upgrade.
+
+The native setup reports the actual Windows Installer result and verifies the installed version before offering Open Fish. A required reboot is reported instead of relaunching. Failure is not reported as an update. The verified downloaded setup may remain in the OS temporary directory for recovery; it contains no user state. Live setup/upgrade/relaunch acceptance is not established by synthetic checks.
+
+## Factory defaults
+
+Open Application settings and choose Revert to factory defaults. Confirmation explains the removal and active-session shutdown; a single click never resets Fish. Cancel keeps everything.
+
+Confirming atomically replaces only this active workspace's Fish settings, then exits without an old-state autosave. The next launch has the selected Kerberos 10.1.2.3:23 profile, offline until Connect, default appearance/update choices and the first-run guide. Saved profiles/layouts, custom themes, font references, key choices and hidden update version are cleared. At least one pane remains.
+
+Windows saved passwords, font files, installation files, unknown files and other/custom workspaces are retained. Removed profile IDs are not reused, so their retained OS passwords are not automatically inherited by new profiles. Remove obsolete Fish credential targets separately through Windows Credential Manager if desired. No backup is silently made: export/copy workspace.xml first if you need recovery. A fresh workspace.xml remains even in a legacy Pane5250 directory, preventing stale fallback settings from returning.
 
 ## Workspace and panes
 
@@ -133,6 +157,10 @@ Window changes scale the terminal rendering; only the host may switch between 24
 ## Saved profiles
 
 Session > Profiles manages saved workstations. New creates an offline preset; Duplicate copies settings but clears the requested device name and remembered-password flag to avoid collisions.
+
+Select a saved profile and use Up/Down, or Ctrl+Up/Ctrl+Down while the list has focus, to change its order. Pane selectors, switching and configuration exports use the same persistent order and stable IDs. Reorder applies immediately, independently of unapplied editor text.
+
+Delete (or Delete while the list has focus) asks for confirmation. Panes using that profile disconnect and select the first remaining profile; other live sessions stay untouched. Saved layouts/last selection are repaired without removing panes. Windows saved passwords are retained, not erased. A profile still supplying another profile's login cannot be deleted: first change those dependents to Independent login or another eligible source. Pending login work must finish/cancel first. Keep at least one profile; create a replacement before deleting the last. Deleted defaults are not recreated on every launch.
 
 A profile stores name, host, port, optional device name, username, authentication preferences, SBCS code page, host palette, text effect, zoom, host-key overrides and a saved layout. Application/custom themes, terminal font, global shortcuts, outline, tint, pane-information preferences and last-used preset belong to the workspace.
 
@@ -378,6 +406,8 @@ No connection: check Host/Port, network/VPN/firewall, IBM i Telnet service and p
 Named device fails: retry with Device blank to isolate device allocation. Check the requested name and host-side device policy; retain the exact reported allocation rejection for your administrator. Fish must not silently substitute another name.
 
 Input appears stuck: inspect the footer. Use Reset only for a recoverable local error, wait for host busy, or diagnose a disconnected network. Repeated Enter is not a reset strategy.
+
+Transient input notices have a thin border and Dismiss X and clear after 2.8 seconds. Dismiss never resets/unlocks/submits or closes a pane. A recoverable error retains the small Reset control; Host > Last pane notice retains its explanation. Connection status remains in the footer.
 
 Clipboard unavailable: another program may own the clipboard temporarily; retry. Protected/numeric fields or code-page rejection require correcting the input, not bypassing validation.
 

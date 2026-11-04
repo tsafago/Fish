@@ -33,6 +33,9 @@ public final class ConfigSchema {
         fields.put("appTheme",enumeration("Charcoal",Arrays.stream(AppTheme.values()).map(Enum::name).toList()));
         fields.put("highlightActive",field("boolean",true,"true or false; independent active-pane tint."));
         fields.put("connectOnStartup",field("boolean",false,"Connect each restored pane once on normal startup; KERBEROS requests Windows credentials only when enabled. Fresh installs wait for Connect. Incomplete PASSWORD logins or missing saved passwords stay offline without prompts. Adding a pane never auto-connects."));
+        fields.put("updates.startup",field("boolean",true,"Bounded nonblocking public GitHub release check. Errors stay quiet on startup. Download/install always requires explicit consent."));
+        fields.put("updates.channel",enumeration("PREVIEW_PATCHES",Arrays.stream(UpdateSettings.Channel.values()).map(Enum::name).toList()));
+        fields.put("updates.ignoredVersion",field("numeric-version-or-empty","","Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES permits this installed major/minor only; STABLE permits non-prereleases in this installed major. Neither channel installs a new major."));
         fields.put("appearance.outline",field("boolean",true,"Active-pane outline; shared internal edges have one owner."));
         fields.put("appearance.windowOutline",field("boolean",true,"Whole-window outline; known maximize/restore defect remains."));
         fields.put("appearance.selected",field("text","","Empty for builtin appTheme, otherwise exact custom theme name."));

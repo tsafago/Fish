@@ -33,6 +33,7 @@ public final class Shortcuts {
             {"Fonts...",""},{"Pane information...",""},{"Window and focus...",""},{"Theme designer...",""},{"Flux animated text",""},
             {"Full manual / Getting Started",""},{"Getting started tutorial",""},{"Configuration for external tools",""},
             {"Keyboard reference",""},{"Compatibility and connection safety",""},{"Connect panes on startup",""},
+            {"Application settings...",""},{"Check for updates...",""},{"Last pane notice...",""},
             {"Open menus","ctrl alt M"},{"Window menu","ctrl alt SPACE"},{"Maximize / restore window",""},{"Minimize window",""},
             {"Send host key...","ctrl alt F"}
         };

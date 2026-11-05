@@ -8,7 +8,7 @@ import pane5250.model.*;
 import pane5250.ui.*;
 
 public final class Main {
-    public static final String VERSION="0.7.3";
+    public static final String VERSION="0.7.4";
     private Main() {}
     public static void main(String[] args) {
         if (args.length>0 && args[0].equals("--config")) {
@@ -31,11 +31,26 @@ public final class Main {
             }
         }
         try {
-            Ui.install();
-            DemoHost host = demonstration ? new DemoHost() : null;
             Path directory = supplied != null ? supplied : demonstration ? Files.createTempDirectory("Fish-demo-")
                     : defaultDirectory(Path.of(Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home"))));
-            StateStore store = new StateStore(directory);
+            java.util.concurrent.atomic.AtomicReference<ApplicationWindows> running=new java.util.concurrent.atomic.AtomicReference<>();
+            LaunchBroker.Claim claim=LaunchBroker.claim(directory,VERSION+(demonstration ? ":demo" : ":normal"),() -> {
+                var accepted=new java.util.concurrent.atomic.AtomicBoolean();
+                try {
+                    SwingUtilities.invokeAndWait(() -> {
+                        ApplicationWindows app=running.get();
+                        accepted.set(app!=null && app.newWindow());
+                    });
+                } catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
+                catch (java.lang.reflect.InvocationTargetException e) {
+                    System.getLogger(Main.class.getName()).log(System.Logger.Level.ERROR,"New Fish window failed",e.getCause());
+                }
+                return accepted.get();
+            });
+            if (claim.forwarded()) return;
+            StateStore store=claim.store();
+            Ui.install();
+            DemoHost host = demonstration ? new DemoHost() : null;
             StateStore.State state = demonstration ? demoState(Objects.requireNonNull(host).port()) : store.load();
             Path location = Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             Path helper = (Files.isDirectory(location) ? Path.of("scripts") : location.getParent()).resolve("credential-store.ps1").toAbsolutePath();
@@ -43,8 +58,11 @@ public final class Main {
             boolean temporary = supplied == null && demonstration;
             SwingUtilities.invokeLater(() -> {
                 try {
-                    Workspace window = new Workspace(store,state,helper,demo);
-                window.onClosed(() -> {
+                    ApplicationWindows application=new ApplicationWindows(store,helper,demo);
+                application.onClosed(() -> {
+                    running.set(null);
+                    try { claim.broker().close(); }
+                    catch (java.io.IOException e) { System.err.println("Could not remove Fish launch metadata: "+e.getMessage()); }
                     if (host != null) host.close();
                     if (temporary) {
                         try {
@@ -57,12 +75,13 @@ public final class Main {
                         }
                     }
                 });
-                window.setVisible(true);
+                application.restore(state);
+                running.set(application);
                 if (!store.loadNotice().isEmpty())
                     System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
-                if (demo) SwingUtilities.invokeLater(window::connectAll);
-                else SwingUtilities.invokeLater(window::startup);
                 } catch (RuntimeException e) {
+                    try { claim.broker().close(); }
+                    catch (java.io.IOException closeError) { e.addSuppressed(closeError); }
                     if (host != null) host.close();
                     try { store.close(); }
                     catch (java.io.IOException closeError) { e.addSuppressed(closeError); }

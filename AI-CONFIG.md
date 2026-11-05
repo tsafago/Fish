@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.3 exposes its complete local configuration without an AI service, network
+Fish 0.7.4 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -53,8 +53,8 @@ status. From sources, the identical interface is:
    Startup follows the saved `connectOnStartup` preference. Do not change
    that preference unless requested. Apply itself never connects.
 
-All three commands acquire the normal exclusive `workspace.lock`. A running Fish
-instance or another cooperating editor causes clean rejection, not live reload.
+All three commands acquire the normal exclusive `workspace.lock`. Any open Fish
+window or another cooperating editor causes clean rejection, not live reload.
 The lock file may remain after exit; its **OS lock**, not its existence, matters.
 Never delete it to defeat a lock. A SHA-256 `config.baseRevision` also rejects stale
 exports or non-cooperating file edits. Export again and reapply only the intended
@@ -150,9 +150,21 @@ only that startup notice, not manual checks or future versions. The endpoint is
 fixed public tsafago/Fish, not configurable; no executable/download URL hook exists.
 Export contains no tokens, download state or installation commands.
 
+Format 14 adds `windows` (the additional-window count) and complete
+`window.{zero-based-index}.layout/width/height/lastProfile` entries. The primary
+window still uses the original unprefixed keys. Preserve every window in a full
+snapshot; each has 1-8 bounded panes. Profiles, themes, fonts, shortcuts and other
+settings are shared, not copied per window. `info.footerDevice` controls actual
+allocated device display, independently of optional requested-device header info.
+Only the exact prior built-in information defaults migrate; custom/hidden flags
+remain unchanged. Back up with all Fish windows closed before upgrading. Older
+versions cannot read format 14; downgrade by restoring the backup, never relabeling.
+All Settings routes now start at Edit > Settings... (Ctrl+,).
+
 Factory reset is an explicitly confirmed in-app maintenance action, not an
-executable configuration setting. It replaces this workspace with fresh format-13
-state and exits; next launch is first-run with startup connections ON. It retains actual font files,
+executable configuration setting. It saves fresh workspace state and closes
+ALL its Fish windows; next launch is format-14 first-run with startup
+connections ON. It retains actual font files,
 Windows credentials and other workspaces. Do not invoke reset to repair a failed
 edit or silently discard user data.
 

@@ -189,7 +189,7 @@ overlay opposite the editing cursor. Hidden status errors use temporary notices.
 Host-busy/disconnected states never receive a false unlock. Alt+drag/context
 menus and keyboard actions remain available when headers are hidden.
 Enter is never remapped to recovery.
-Settings is one visible action beside + Pane and Ctrl+Comma, with persistent,
+Settings is one visible Edit > Settings action and Ctrl+Comma, with persistent,
 direct category navigation: Appearance, Profiles, Keyboard Shortcuts, General,
 Updates. The modeless dialog shows actual editable controls, not launcher cards.
 Appearance orders workspace theme, selected-profile palette/effect, workspace
@@ -211,7 +211,7 @@ menus and shortcuts; disabled actions remain disabled and modal focus isolates
 host input. Former Commands chords are retired no-ops until explicitly reassigned.
 Every app/host action is
 listed in the global shortcut editor, with recording, unbind/default controls,
-atomic conflict rejection and format-13 exact, multiline persistence. Window-scoped dispatch
+atomic conflict rejection and format-14 exact, multiline persistence. Window-scoped dispatch
 precedes Swing traversal/host input, so Ctrl+Tab works without taking keys in
 owned dialogs. Older per-profile definitions migrate globally with exact
 conflict archives; retired Settings routes migrate to the canonical action,

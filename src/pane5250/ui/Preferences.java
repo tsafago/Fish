@@ -35,6 +35,12 @@ final class Preferences {
     private final JButton designer,applyButton,doneButton,cancelButton;
     private final JDialog dialog;
     private Draft saved;
+    private Shared baseline;
+    private record Shared(Appearance appearance,AppTheme theme,boolean tint,boolean startup,UpdateSettings updates,Map<String,String> keys) {}
+    private Shared currentShared() {
+        return new Shared(workspace.appearanceSettings(),Ui.theme(),workspace.highlightActive(),workspace.connectOnStartup(),
+                workspace.updateSettings(),workspace.shortcutOverrides());
+    }
     private record Display(String palette,String effect) {}
     private record Draft(boolean startup,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,
                          Appearance.PaneInfo info,UpdateSettings updates,Map<String,String> keys,Map<UUID,Display> displays) {
@@ -77,8 +83,8 @@ final class Preferences {
         family.addActionListener(e -> workspace.tutorialAction("appearance-font"));
         Appearance.PaneInfo i=a.info();
         String[] names={"Show header","Profile name","Connection state","Host","Requested device name",
-                "Show footer","Status / input message","Host dimensions","Cursor row:column","Insert indicator"};
-        boolean[] flags={i.header(),i.profile(),i.connection(),i.host(),i.device(),i.footer(),i.status(),i.dimensions(),i.cursor(),i.insert()};
+                "Show footer","Connection / input status","Screen size","Cursor row:column","Insert indicator","Device name"};
+        boolean[] flags={i.header(),i.profile(),i.connection(),i.host(),i.device(),i.footer(),i.status(),i.dimensions(),i.cursor(),i.insert(),i.footerDevice()};
         for (int n=0;n<names.length;n++) info.add(new JCheckBox(names[n],flags[n]));
         info.get(0).addActionListener(e -> workspace.tutorialAction("appearance-header"));
         info.get(5).addActionListener(e -> workspace.tutorialAction("appearance-footer"));
@@ -114,7 +120,7 @@ final class Preferences {
         dialog.addWindowListener(new WindowAdapter() {
             @Override public void windowOpened(WindowEvent e) { navigation.requestFocusInWindow(); workspace.tutorialChanged(); }
         });
-        saved=draft(); Ui.observeEdits(content,this::refresh);
+        saved=draft(); baseline=currentShared(); Ui.observeEdits(content,this::refresh);
         profiles.addPropertyChangeListener("settings.draft",e -> { syncProfiles(); refresh(); });
         select(category); paletteEnabled(); refresh();
     }
@@ -179,7 +185,7 @@ final class Preferences {
     private void designTheme() {
         if (dirty()) return;
         workspace.executeCommand("Theme designer...");
-        loadThemes(); saved=draft(); paletteEnabled(); refresh(); designer.requestFocusInWindow();
+        loadThemes(); saved=draft(); baseline=currentShared(); paletteEnabled(); refresh(); designer.requestFocusInWindow();
     }
     private void addPage(String name,JComponent body,boolean scroll) {
         JPanel page=new JPanel(new BorderLayout(0,14));
@@ -226,7 +232,11 @@ final class Preferences {
         for (int group=0;group<2;group++) {
             JPanel part=column(); int start=group*5;
             for (int n=start;n<start+5;n++) part.add(info.get(n));
-            Runnable dependencies=() -> { for (int n=start+1;n<start+5;n++) info.get(n).setEnabled(info.get(start).isSelected()); };
+            if (group==1) part.add(info.get(10));
+            Runnable dependencies=() -> {
+                for (int n=start+1;n<start+5;n++) info.get(n).setEnabled(info.get(start).isSelected());
+                if (start==5) info.get(10).setEnabled(info.get(5).isSelected());
+            };
             info.get(start).addActionListener(e -> dependencies.run()); dependencies.run(); columns.add(part);
         }
         targets.put("header",info.get(0)); targets.put("footer",info.get(5)); body.add(columns);
@@ -286,7 +296,7 @@ final class Preferences {
     private Draft draft() {
         return new Draft(startup.isSelected(),theme.getSelectedItem(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),
                 new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
-                        info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected()),
+                        info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                 new UpdateSettings(checkUpdates.isSelected(),(UpdateSettings.Channel)channel.getSelectedItem(),ignored),keyboard.draft(),Map.copyOf(displays));
     }
     private boolean dirty() { try { return profiles.dirty() || !draft().equals(saved); } catch (IllegalArgumentException e) { return true; } }
@@ -303,7 +313,15 @@ final class Preferences {
     private boolean apply(boolean finish) {
         ProfilesEditor.Pending pending=null;
         try {
+            if (!Objects.equals(baseline,currentShared()))
+                throw new IllegalArgumentException("Application settings changed while this draft was open. Cancel and reopen Settings to review them; no draft was applied.");
             Draft next=draft();
+            for (Profile profile:workspace.profileList()) {
+                Display desired=next.displays().get(profile.id()),previous=saved.displays().get(profile.id());
+                Display live=new Display(profile.theme(),profile.effect());
+                if (!Objects.equals(desired,previous) && !Objects.equals(live,previous) && !Objects.equals(live,desired))
+                    throw new IllegalArgumentException("Terminal colors/effect changed for "+profile.name()+" while this draft was open. Cancel and reopen Settings; no draft was applied.");
+            }
             if (profiles.dirty()) {
                 pending=profiles.prepare(false);
                 if (pending==null) { select("Profiles"); throw new IllegalArgumentException(profiles.error()); }
@@ -331,7 +349,7 @@ final class Preferences {
                     workspace.putProfile(profile.withDisplay(entry.getValue().palette(),entry.getValue().effect()));
                 }
                 originalDisplays.clear(); originalDisplays.putAll(next.displays());
-                saved=next; saving=false; syncProfiles(); saved=draft(); dialog.setEnabled(true);
+                saved=next; saving=false; syncProfiles(); saved=draft(); baseline=currentShared(); dialog.setEnabled(true);
                 error.setText(" "); error.setToolTipText(null); refresh(); workspace.tutorialAction("settings-applied");
                 if (finish) dialog.dispose();
             };

@@ -18,7 +18,7 @@ import org.tn5250j.keyboard.KeyMnemonic;
 import pane5250.model.*;
 import static org.tn5250j.TN5250jConstants.*;
 
-public final class TerminalView extends JComponent implements Scrollable {
+public class TerminalView extends JComponent implements Scrollable {
     private final SessionPane pane;
     private Font face;
     private static final FontRenderContext TEXT_CONTEXT = new FontRenderContext(null,
@@ -51,6 +51,9 @@ public final class TerminalView extends JComponent implements Scrollable {
     private boolean fit = true;
     private final Timer blink;
     private boolean phase = true;
+    private final Timer cursorBlink;
+    private boolean cursorPhase=true;
+    private Rectangle lastCursor;
     private boolean disposed;
     private java.util.function.Supplier<Clipboard> clipboardSource=() -> Toolkit.getDefaultToolkit().getSystemClipboard();
     private double fluxPhase,paintedFluxPhase=Double.NaN;
@@ -60,6 +63,7 @@ public final class TerminalView extends JComponent implements Scrollable {
     private int fluxWidth;
     private Frame animationWindow;
     private final WindowStateListener animationState=e -> updateAnimation();
+    private final java.beans.PropertyChangeListener animationEnabled=e -> updateAnimation();
     private static final float[] FLUX_STOPS={0,.2f,.4f,.6f,.8f,1};
     private static final java.util.Set<TerminalView> ANIMATED=new java.util.HashSet<>();
     private static final Timer ANIMATION=new Timer(50,event -> {
@@ -83,8 +87,8 @@ public final class TerminalView extends JComponent implements Scrollable {
         getAccessibleContext().setAccessibleName("5250 terminal");
         getAccessibleContext().setAccessibleDescription("Field-aware host terminal. Ctrl Alt M opens application menus.");
         addFocusListener(new FocusAdapter() {
-            @Override public void focusGained(FocusEvent e) { pane.activate(); repaint(); }
-            @Override public void focusLost(FocusEvent e) { repaint(); }
+            @Override public void focusGained(FocusEvent e) { pane.activate(); restartCursor(); }
+            @Override public void focusLost(FocusEvent e) { repaintCursor(); updateAnimation(); }
         });
         addKeyListener(new KeyAdapter() {
             private boolean suppressTyped;
@@ -102,6 +106,7 @@ public final class TerminalView extends JComponent implements Scrollable {
                 }
                 if (event.isShiftDown() && event.getKeyCode() >= KeyEvent.VK_LEFT
                         && event.getKeyCode() <= KeyEvent.VK_DOWN) {
+                    restartCursor();
                     selectByKey(event.getKeyCode());
                     event.consume();
                     return;
@@ -129,6 +134,7 @@ public final class TerminalView extends JComponent implements Scrollable {
                 if (popup(event)) return;
                 if (!SwingUtilities.isLeftMouseButton(event)) return;
                 requestFocusInWindow();
+                restartCursor();
                 paneDrag=event.isAltDown();
                 if (paneDrag) return;
                 anchor = end = position(event.getPoint());
@@ -146,8 +152,10 @@ public final class TerminalView extends JComponent implements Scrollable {
                 if (!SwingUtilities.isLeftMouseButton(event)) return;
                 if (paneDrag) { paneDrag=false; return; }
                 if (!dragging && pane.screen() != null && pane.connected()) {
+                    repaintCursor();
                     pane.screen().moveCursor(end);
                     anchor = end = -1;
+                    restartCursor();
                 }
                 repaint();
             }
@@ -163,13 +171,8 @@ public final class TerminalView extends JComponent implements Scrollable {
             phase = !phase;
             if (!isShowing()) return;
             if (rendered != null && rendered.blinking) repaint();
-            else if (hasFocus() && pane.screen() != null) {
-                int pos = pane.screen().getCurrentPos() - 1;
-                repaint((int)(originX + pos % pane.screen().getColumns() * cellWidth) - 2,
-                        (int)(originY + pos / pane.screen().getColumns() * cellHeight) - 2,
-                        (int)Math.ceil(cellWidth) + 5,(int)Math.ceil(cellHeight) + 5);
-            }
         });
+        cursorBlink=new Timer(550,e -> { cursorPhase=!cursorPhase; repaintCursor(); });
         addHierarchyListener(event -> {
             if ((event.getChangeFlags()&HierarchyEvent.SHOWING_CHANGED)!=0) updateAnimation();
         });
@@ -179,27 +182,65 @@ public final class TerminalView extends JComponent implements Scrollable {
     }
 
     @Override public void addNotify() {
-        super.addNotify(); blink.start();
+        super.addNotify();
         if (SwingUtilities.getWindowAncestor(this) instanceof Frame frame) {
             animationWindow=frame; frame.addWindowStateListener(animationState);
+            frame.addPropertyChangeListener("enabled",animationEnabled);
         }
         updateAnimation();
     }
     @Override public void removeNotify() {
-        stopAnimation(); blink.stop();
-        if (animationWindow!=null) animationWindow.removeWindowStateListener(animationState);
+        stopAnimation(); blink.stop(); cursorBlink.stop();
+        if (animationWindow!=null) {
+            animationWindow.removeWindowStateListener(animationState);
+            animationWindow.removePropertyChangeListener("enabled",animationEnabled);
+        }
         animationWindow=null;
         super.removeNotify();
     }
-    public void dispose() { disposed=true; blink.stop(); stopAnimation(); glyphMasks.clear(); sharedInk=null; }
+    public void dispose() { disposed=true; blink.stop(); cursorBlink.stop(); stopAnimation(); glyphMasks.clear(); sharedInk=null; }
+    @Override public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        if (cursorBlink!=null) updateAnimation();
+    }
+    public void restartCursor() {
+        if (disposed) return;
+        cursorPhase=true;
+        repaintCursor();
+        if (cursorReady()) cursorBlink.restart();
+        else cursorBlink.stop();
+    }
+    private boolean cursorReady() {
+        return animationAvailable() && hasFocus() && pane.connected() && pane.screen()!=null && pane.screen().isCursorActive();
+    }
+    private boolean animationAvailable() {
+        return !disposed && isEnabled() && isShowing()
+                && (animationWindow==null || animationWindow.isEnabled() && (animationWindow.getExtendedState()&Frame.ICONIFIED)==0);
+    }
+    private Rectangle cursorBounds() {
+        Screen5250 screen=pane.screen();
+        if (screen==null) return null;
+        int pos=Math.max(0,Math.min(screen.getCurrentPos()-1,screen.getScreenLength()-1));
+        return new Rectangle((int)Math.floor(originX+pos%screen.getColumns()*cellWidth)-2,
+                (int)Math.floor(originY+pos/screen.getColumns()*cellHeight)-2,
+                (int)Math.ceil(cellWidth)+5,(int)Math.ceil(cellHeight)+5);
+    }
+    private void repaintCursor() {
+        Rectangle next=cursorBounds();
+        if (lastCursor!=null) repaint(lastCursor);
+        if (next!=null) repaint(next);
+        lastCursor=next;
+    }
     private boolean canAnimate() {
-        return !disposed && isShowing() && pane.connected() && pane.profile().effect().equals(Profile.FLUX)
-                && (animationWindow==null || (animationWindow.getExtendedState()&Frame.ICONIFIED)==0);
+        return animationAvailable() && pane.connected() && pane.profile().effect().equals(Profile.FLUX);
     }
     private static double fluxTime() {
         return Math.floorMod(System.nanoTime(),8_000_000_000L)/8_000_000_000.0;
     }
     private void updateAnimation() {
+        boolean showing=animationAvailable();
+        if (showing && pane.connected()) { if (!blink.isRunning()) blink.start(); } else blink.stop();
+        if (cursorReady()) { if (!cursorBlink.isRunning()) restartCursor(); } else cursorBlink.stop();
         if (canAnimate()) {
             if (ANIMATED.add(this)) fluxPhase=fluxTime();
             if (!ANIMATION.isRunning()) ANIMATION.start();
@@ -392,11 +433,19 @@ public final class TerminalView extends JComponent implements Scrollable {
                         if (clip==null || clip.intersects(tile.bounds)) cells.drawImage(tile.image,tile.placement,null);
                 }
             } finally { cells.dispose(); }
-            if (hasFocus() && pane.connected() && screen.isCursorActive() && phase) {
+            if (hasFocus() && pane.connected() && screen.isCursorActive() && cursorPhase) {
                 int pos = Math.min(screen.getCurrentPos() - 1, rows * cols - 1);
-                g.setColor(Ui.color(ColorRole.CURSOR));
-                g.draw(new Rectangle2D.Double(originX + pos % cols * cellWidth,
-                        originY + pos / cols * cellHeight, Math.max(1, cellWidth - 1), Math.max(1, cellHeight - 1)));
+                Graphics2D cursor=(Graphics2D)g.create();
+                try {
+                    cursor.scale(1/dpiX,1/dpiY);
+                    cursor.setColor(Ui.color(ColorRole.CURSOR));
+                    int x=(int)Math.round((originX+pos%cols*cellWidth)*dpiX);
+                    int y=(int)Math.round((originY+pos/cols*cellHeight)*dpiY);
+                    int width=Math.max(1,(int)Math.round(cellWidth*dpiX)-1),height=Math.max(1,(int)Math.round(cellHeight*dpiY)-1);
+                    int weight=screen.getOIA().isInsertMode() ? Math.min(2,Math.max(1,Math.min(width,height)/3)) : 1;
+                    cursor.fillRect(x,y,width,weight); cursor.fillRect(x,y+height-weight,width,weight);
+                    cursor.fillRect(x,y,weight,height); cursor.fillRect(x+width-weight,y,weight,height);
+                } finally { cursor.dispose(); }
             }
         } finally { g.dispose(); }
     }

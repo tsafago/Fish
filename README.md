@@ -10,9 +10,9 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.7.3 settings and tutorials preview
+## Fish 0.7.4 window and cursor refinement
 
-**Settings** in the top chrome is the single settings entry; Ctrl+, opens that
+**Edit > Settings...** is the single settings entry; Ctrl+, opens that
 same modeless dialog. Its flat index is **Appearance, Profiles, Keyboard Shortcuts,
 General, Updates**. Appearance contains application theme and selected-profile
 text palette/effect together, followed by font, header/footer information, outlines
@@ -21,11 +21,31 @@ not launchers. Apply saves and stays; Done applies and closes; Cancel keeps the
 last applied state. Optional profile port/device/code page/Kerberos identity stay
 under Advanced, with validation exposing the corrective field.
 
-Edit contains clipboard actions. **Inserts** groups username/password helpers,
+Settings references below mean that same Edit menu dialog. **+ Pane** is the last
+action after all menus, before the blank drag region and native window controls.
+Edit also contains clipboard actions. **Inserts** groups username/password helpers,
 common field/host keys and the complete host-key chooser. Panes is flat; View
 keeps runtime fit/zoom; Host keeps Reset/Attention/System Request. Menus show one
 primary key chord, while Keyboard Shortcuts exposes every binding. Updates renders
 the manual's safe Markdown subset: no remote images, HTML execution or commands.
+
+Launch Fish.exe again, or use **Session > New window (Ctrl+Shift+N)**, for another
+normal independent taskbar/Alt+Tab window. Each window has its own layout, focus
+and up to eight independent sessions; a new window starts one fresh pane with the
+last-used profile, following the saved startup connection preference. Profiles,
+settings and shortcuts are shared live. X closes only that window's sessions.
+Session > Quit saves the whole open collection for restoration; closing one X
+removes it from that collection. The final window's X retains its own layout.
+Only one process writes configuration; subsequent launches use a private,
+authenticated loopback new-window rendezvous. No workspace cloning is needed.
+
+Terminal typing, field navigation, mouse placement, focus and pane/window switches
+restart the cursor visibly for a complete blink interval. Insert uses a heavier
+physical-pixel cursor outline, not bold terminal text. Default headers show only
+the profile; footers show concise connection/input status, actual allocated device
+when known, cursor position and screen size. Authentication details remain under
+**Host > Last pane notice** rather than in the everyday footer. “Connected” is not
+a claim of verified IBM i sign-on.
 
 **Help > Tutorials** has five replayable, real-control guides: Getting started;
 Appearance, colors and pane info; Non-Kerberos profile; Keyboard shortcuts; Pane
@@ -70,11 +90,14 @@ transaction and bundled runtime. Input notices have a physical-pixel border,
 an accessible X and a 2.8-second lifetime. Dismiss does not Reset input; recovery
 and **Host > Last pane notice** remain available.
 Read the [manual](MANUAL.md#checking-for-updates) for update/reset details.
-Configuration is now **format 13**: back up before upgrading, including from 0.7.2.
+Configuration is now **format 14**: close ALL windows and back up before upgrading,
+including from 0.7.3. Additional window layouts and footer device visibility are new.
 Old settings action bindings merge into `Settings...`; their original exact lists
 remain in `keyboard.legacy.binding.*`. Existing exact host keys, profiles, fonts,
-themes and update settings remain. Older binaries cannot read format 13; do not
-relabel exports.
+themes and update settings remain. Only the exact prior built-in information
+defaults migrate to the concise defaults; custom and hidden rows stay unchanged.
+Older binaries cannot read format 14; close all windows and restore the pre-upgrade
+backup to downgrade, never relabel exports.
 
 ## Included Kerberos sign-in
 
@@ -199,17 +222,21 @@ administrator installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract `Fish-0.7.3-windows-x64.zip` and open
+The 0.7.4 revision is packaged locally and pushed as source; no 0.7.4 GitHub
+release is published as part of this revision. The link above is the previous
+published milestone, not a 0.7.4 download.
+
+For a portable copy, extract the matching `Fish-0.7.4-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
 may warn or block them. Checksums accompany the package; do not bypass IT policy.
 
-**Back up before upgrading:** close Fish normally and copy its `workspace.xml`
-outside the application folder before first launching 0.7.3. The usual location
+**Back up before upgrading:** close ALL Fish windows normally and copy `workspace.xml`
+outside the application folder before first launching 0.7.4. The usual location
 is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
 and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 13**, which older binaries cannot read. Keep a pre-upgrade backup
+to **version 14**, which older binaries cannot read. Keep a pre-upgrade backup
 for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
@@ -224,8 +251,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.3-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.7.3-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.7.4-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.7.4-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -236,10 +263,10 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.3**.
+The matching local package is **Fish 0.7.4**.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.3\Fish` to both Package and Installer.
-This local delivery is at `dist\Fish-0.7.3\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.4\Fish` to both Package and Installer.
+This local delivery is at `dist\Fish-0.7.4\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
@@ -386,9 +413,10 @@ maximize/restore and close. Drag any window edge/corner to resize.
 **Alt+Space** keeps the standard Windows window menu; **Ctrl+Alt+Space**
 opens the application's dark window menu (also available by right-clicking
 the title area). Its Move/Size commands use arrows in 10px steps, Shift+arrows
-for 1px, Enter to commit and Escape to cancel. Window close disconnects all
-sessions and closes immediately, without a confirmation. Saving and releasing
-the workspace lock finish in the background; save failures are reported to stderr.
+for 1px, Enter to commit and Escape to cancel. Window close disconnects only that
+window's sessions and closes immediately, without a confirmation. Other Fish
+windows stay alive; the owner releases the workspace lock after the final window
+closes. Save failures are reported explicitly.
 
 The **+ Pane** icon/label control adds the next slot, up to **eight panes in two rows/four columns**.
 The sequence is one full pane; two side-by-side; left full-height/right two

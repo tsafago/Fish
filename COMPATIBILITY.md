@@ -5,6 +5,31 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Fish 0.7.4 windows and cursor refinement
+
+The single Settings action is under Edit; + Pane follows all menus. Repeated
+launches and Session > New window create independent top-level frames with 1-8
+sessions each, using one locked configuration owner and restricted authenticated
+loopback rendezvous. Shared settings/profiles stay coherent; closing one frame
+disconnects only its sessions. Quit/update/reset account for the full collection.
+Format 14 adds window snapshots and actual-device footer visibility; back up with
+all windows closed before upgrade. Older versions require that backup to downgrade.
+
+Focused checks cover two four-pane loopback windows, independent screens/sockets,
+shared keys/profiles and stale-draft rejection, deletion, isolated close,
+all-window update failure/success/reset, persistence and offline CLI locks.
+Separate JVMs cover simultaneous launch election, bad tokens, idempotent retry,
+version isolation and crash/stale-metadata recovery. Cursor checks exercise real
+restart timing, old/new rectangle repaint requests, accepted/rejected input,
+host-output independence, hidden/disposed timer cleanup and measurable heavier
+Insert paint. A bounded never-shown 100%/150% batch covers the production chrome,
+default header/footer and cursor rendering.
+
+No shared desktop, actual clipboard, tickets, real host or installer execution was
+used. Offscreen checks do not establish native taskbar/Alt+Tab, physical keyboard,
+mixed-monitor or assistive-technology acceptance. The known maximize-perimeter,
+intermittent flicker, emulation and real SSO/ACS limits below remain unchanged.
+
 ## Fish 0.7.2 keyboard and Preferences prerelease
 
 Adds a single exact-location, multi-binding application keyboard map/recorder,

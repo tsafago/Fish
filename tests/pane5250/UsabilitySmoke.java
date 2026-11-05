@@ -157,6 +157,7 @@ public final class UsabilitySmoke {
         Path legacy=root.resolve("legacy"); Files.createDirectory(legacy);
         Properties old=StateStore.properties(state);
         old.setProperty("version","7"); old.remove("tutorial.status");
+        old.remove("windows"); old.remove("info.footerDevice");
         old.keySet().removeIf(key -> key.toString().startsWith("updates."));
         old.remove("connectOnStartup");
         old.remove("profile."+login.id()+".loginSource"); old.remove("profile."+target.id()+".loginSource");
@@ -165,6 +166,7 @@ public final class UsabilitySmoke {
             check(store.load().tutorial()==StateStore.Tutorial.SKIPPED,"Upgrade does not force a tutorial over an experienced session.");
         }
         Properties v8=StateStore.properties(state); v8.setProperty("version","8"); v8.remove("connectOnStartup");
+        v8.remove("windows"); v8.remove("info.footerDevice");
         v8.keySet().removeIf(key -> key.toString().startsWith("updates."));
         try (StateStore store=new StateStore(root.resolve("migration-8"))) {
             StateStore.State migrated=store.decode(v8);

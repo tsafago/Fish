@@ -172,6 +172,7 @@ public final class KerberosSmoke {
                 AppTheme.Charcoal,old.id(),Map.of(),false,Appearance.defaults(),StateStore.Tutorial.COMPLETED,true);
         for (String version:List.of("8","9")) {
             Properties p=StateStore.properties(existing); p.setProperty("version",version);
+            p.remove("windows"); p.remove("info.footerDevice");
             p.keySet().removeIf(key -> key.toString().startsWith("updates."));
             p.remove("profile."+old.id()+".authentication"); p.remove("profile."+old.id()+".kerberosServer");
             if (version.equals("8")) p.remove("connectOnStartup");

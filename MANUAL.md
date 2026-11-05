@@ -1,6 +1,10 @@
 # Fish manual
 
-Fish 0.7.3 - unsigned experimental settings/tutorials/Kerberos prerelease.
+Fish 0.7.4 - unsigned experimental multi-window/cursor refinement.
+
+Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
+“Settings” paths below refer to that same flat indexed dialog. **+ Pane** is the
+last action after the menus, before the drag area and native window controls.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -18,14 +22,14 @@ You need the IBM i's address and permission to use its Telnet service. Windows s
 5. Choose Save & connect. A TCP connection is not the same as a successful IBM i sign-on.
 6. If using manual sign-in, type in the IBM i's own sign-on fields and press Enter. The host controls their actual order. Password characters normally remain invisible. Automatic sign-in requires host support for RFC 4777 plain sign-on; a saved password or TCP connection is not proof of sign-on.
 7. Work with the displayed IBM i application. Enter submits to the host. F1-F12 are host function keys; Shift+F1-F12 sends F13-F24.
-8. Use the pane's X to close that connection. The final pane stays as an empty tile. Closing Fish disconnects everything immediately, without confirmation.
+8. Use the pane's X to close that connection. The final pane stays as an empty tile. A window's X disconnects only its sessions; other Fish windows remain open. Session > Quit ends all windows immediately, without confirmation.
 
 Plain TCP is not encrypted. Use a trusted network approved by your administrator. Fish has not yet been accepted against a real IBM i or ACS session; see Compatibility before production use.
 
 If connection fails, check the hostname, port, VPN/network and IBM i Telnet service first. A blank Device is the recommended starting point. Do not enter your password in a visible application field.
 
 Fresh workspaces show a short modeless introduction: Connect when ready, + Pane,
-X, Settings, and Help > Tutorials. Startup connections are a separate saved
+X, Edit > Settings, and Help > Tutorials. Startup connections are a separate saved
 preference, now ON only for new/factory workspaces; the guide never initiates them.
 Show control opens/selects actual controls without editing, saving or connecting.
 Next, Back, Skip step and Skip tutorial remain available while using Settings or
@@ -42,7 +46,9 @@ Fish targets Windows 10/11 x64. No separate Java installation is required.
 
 The public [v0.7.3 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.3) includes Fish-0.7.3-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
 
-Alternatively, extract Fish-0.7.3-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Version 0.7.4 is a local package/source revision; no new GitHub release is published with it. The public link above is the previous milestone.
+
+Alternatively, extract the matching Fish-0.7.4-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -56,15 +62,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.3-setup.exe, dist\Fish-0.7.3-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.3\Fish\Fish.exe. Close a running copy before rebuilding its directory.
+Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.4-setup.exe, dist\Fish-0.7.4-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.4\Fish\Fish.exe. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.3\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.3\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.4\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.4\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -81,7 +87,7 @@ or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older workspaces migrate to version 13, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint/info and update choices. Format 12 settings-action lists merge into Settings... with original multiline lists retained in keyboard.legacy.binding.*; old explicit Ctrl+, unbinding and other custom key ownership are preserved. Formats 1-11 retain their original keyboard conflict recovery. The new startup ON default applies only to absent/factory state: pre-9 startup remains off and explicit later OFF remains off. Existing PASSWORD auto/remember choices stay unchanged. A new Kerberos draft initializes both password preferences ON only on its first switch to PASSWORD, then retains changes. Kerberos keeps its required false password flags. Older outline/tutorial/update migrations remain as documented; malformed state is preserved, never reset.
+Older workspaces migrate to version 14, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint and update choices. Format 14 adds additional-window snapshots and footer device visibility. Only the exact prior built-in pane information defaults migrate to the concise defaults; custom and hidden choices remain. Close ALL windows and back up workspace.xml before upgrading, including from 0.7.3. Older Fish cannot read format 14; close all windows and restore that backup to downgrade, never relabel XML. Format 12 settings-action lists merge into Settings... with original multiline lists retained in keyboard.legacy.binding.*; old explicit Ctrl+, unbinding and other custom key ownership are preserved. Formats 1-11 retain their original keyboard conflict recovery. The startup ON default applies only to absent/factory state: pre-9 startup remains off and explicit later OFF remains off. Existing PASSWORD auto/remember choices stay unchanged. A new Kerberos draft initializes both password preferences ON only on its first switch to PASSWORD, then retains changes. Kerberos keeps its required false password flags. Malformed state is preserved, never reset.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -93,7 +99,7 @@ A nonblocking startup check is on by default. Offline/rate-limit failures stay q
 
 Settings > Updates has the actual check/download controls and safely rendered release Markdown; there is no second update-settings launcher in Help. Preview patches stays in 0.7.x, so installed 0.7.2 can select 0.7.3; Stable excludes previews and accepts stable minors within this major. No channel silently enters another major or experimental minor. Show hidden updates clears the ignore choice on Apply/Done. Checks use the displayed channel and include hidden versions; downloading requires applied, clean settings and a check matching that channel.
 
-Update opens the version, release notes and repository link. One explicit confirmation authorizes download, saving and ending this window's sessions before setup. A download can be cancelled while Fish remains open. The handoff saves the workspace first; save/launch failure leaves Fish open with an error and retry. Setup waits for this Fish process to exit and refuses to replace an installation still in use; it never kills processes. Other Fish windows must be closed manually if they use that installation.
+Update opens the version, release notes and repository link. One explicit confirmation authorizes download, saving every window and ending ALL this workspace's sessions before setup. A check alone never closes any window. A download can be cancelled while Fish remains open. Save/launch failure leaves every window open and re-enabled, with an error and retry. Setup waits for the owning Fish process to exit and refuses to replace an installation still in use; it never kills processes. Independent owners using another data directory must still close their own installation files.
 
 Only the exact release's Windows x64 installer and SHA256SUMS are downloaded. Fixed repository/CDN origins, HTTPS, size limits, published GitHub SHA-256 digests and checksum agreement are required. Windows validates any present Authenticode signature and the staged file retains its Internet-origin mark. Current builds are unsigned: hashes provide integrity, not a trusted publisher. Windows/IT policy may block setup; Fish does not bypass it. No workspace data, tickets or credentials are sent.
 
@@ -111,7 +117,7 @@ Windows saved passwords, font files, installation files, unknown files and other
 
 ## Workspace and panes
 
-Fish supports one to eight independent sessions. Each connected pane has its own TCP socket, host screen and input state. Focus changes, pane moves and window resizing do not reconnect sessions or change host dimensions.
+Fish supports one to eight independent sessions per window. Each connected pane has its own TCP socket, host screen and input state. Focus changes, pane moves and window resizing do not reconnect sessions or change host dimensions.
 
 The compact + Pane control adds the next tile. Layouts are deterministic: one full pane; two side-by-side; a full-height left pane and two stacked right panes; four quadrants; then top/bottom rows of 3/2, 3/3, 4/3 and 4/4. Adding is disabled at eight.
 
@@ -295,7 +301,7 @@ Inserts > Send host key offers the complete supported action list. Settings > Ke
 
 ## Settings and application-wide keyboard bindings
 
-The single Settings button beside + Pane (Ctrl+, by default) opens one indexed,
+The single Edit > Settings... action (Ctrl+, by default) opens one indexed,
 modeless dialog: Appearance, Profiles, Keyboard Shortcuts, General and Updates.
 Each category contains editable controls, not another navigation popup.
 Appearance combines the workspace app theme, clearly scoped selected-profile
@@ -358,7 +364,7 @@ Send host key chooser. Helpers are unavailable for inappropriate modes/fields an
 never submit Enter. Host keeps Reset, Attention, System Request and Last pane
 notice together. View contains runtime Fit/Zoom, while Panes contains pane
 creation, close, swap, focus, divider and saved-layout actions without cascades.
-Settings is the only visible settings entry; Ctrl+, invokes that same action.
+Edit > Settings... is the only visible settings entry; Ctrl+, invokes that same action.
 
 ## Application themes, OLED and focus
 
@@ -392,7 +398,14 @@ Glyphs remain positioned at exact fixed physical-pixel cell origins. Font change
 
 ## Pane information and zero-space rows
 
-Settings > Appearance > Pane information groups header/footer visibility with their dependent items: profile name, connection state, host, requested device, status/input message, host dimensions, cursor row:column and insert indicator. Disabled rows disable their item controls while retaining the choices. Outline and tint are independent controls just below in the same category. These preferences belong to the workspace, not a profile. Apply saves and stays open; Done saves pending edits and closes; Cancel keeps the last Apply.
+Settings > Appearance > Pane information groups header/footer visibility with their dependent items. The default header shows only profile name. The default footer shows concise connection/input status, actual host-allocated device when known, cursor row:column and screen size. Optional header connection/host/requested device and footer Insert indicator remain available. Disabled rows disable their item controls while retaining the choices; hidden/empty rows reserve zero height. Authentication/protocol details are retained in Host > Last pane notice, not the routine footer. Connected means a TCP/presentation connection, not verified sign-on. Outline and tint remain separate controls. These settings are shared across windows. Apply saves and stays; Done applies and closes; Cancel keeps the last Apply.
+
+Typing (including rejected input), field/arrow navigation, mouse cursor placement,
+terminal focus, switching panes/windows, Reset and Insert restart the cursor
+visibly for a full 550 ms on interval. Normal blinking resumes afterward. Insert
+draws a heavier two-physical-pixel outline rather than changing terminal font
+weight. Host blink attributes and Flux keep independent timing. Hidden/minimized
+or disposed terminals stop unnecessary animation timers.
 
 A disabled row, or a row with no actual text, reserves zero vertical space. Close/connect/add/swap actions remain available through menus, shortcuts and the terminal context menu. The invisible pane-top strip and Alt+drag swap from a terminal when no header is shown.
 
@@ -424,13 +437,15 @@ Glyphs are generated at final physical pixel resolution with fixed-cell position
 
 At very small pane sizes, the screen must be small to fit. Increase the window, use fewer panes or use manual zoom if readability is more important than seeing the entire host screen.
 
-## Layout persistence and multiple instances
+## Layout persistence and multiple windows
 
-Closing Fish saves window size, pane arrangement, profile selections, last-used preset, application/custom themes, font reference, shortcuts, outline/tint, pane-information and startup connection preferences. Next launch follows Connect panes on startup (new/factory ON, existing OFF preserved); saved layouts alone never imply auto-connect.
+Launch Fish.exe again or use Session > New window (Ctrl+Shift+N). Each is an independent normal top-level/taskbar/Alt+Tab window with its own focus, size, last-used profile and up to eight panes. New window starts one fresh pane with the source window's last profile; it never copies live sockets or transactions. Startup follows the saved connection preference. Explicit device names are not silently changed to avoid host collisions.
+
+Profiles, credentials references, themes/fonts, shortcuts, updates and information settings are shared live across windows. Settings reuses one app-wide editor; conflicting global changes reject stale drafts instead of overwriting them. A pane/profile deletion or connection edit reaches affected windows without replacing their layouts. Closing a window's X disconnects only its sessions and removes that window from the saved collection. The final X saves that window. Session > Quit saves the entire currently open collection, which is restored on the next launch with distinct new sessions. Window size is persisted independently; windows open with a small cascade. Saved layouts never imply auto-connect without the preference.
 
 Panes > Save layout to profile and Restore profile layout preserve a profile-specific arrangement. The flat Panes menu also holds divider adjustment. Restoring/replacing a layout can close sessions removed from it. Old arbitrary layouts are normalized into bounded slots with a notice. Layouts over eight panes are rejected rather than silently truncated.
 
-The workspace is locked against concurrent writers. Another independent instance needs another directory: Fish.exe --data-dir "C:\Users\you\Fish-workspace-two". Do not point two copies at the same workspace file.
+One owning process retains the exclusive workspace lock and writes a coherent all-window snapshot. Subsequent launches use an owner-only per-user/data-directory rendezvous and authenticated, bounded IPv4 loopback new-window requests; they cannot transmit commands, files, hosts or credentials. Startup races retry the OS lock, stale crash metadata cannot elect an owner, and incompatible versions/demo modes do not forward into one another. Offline configuration still refuses while ANY window is open. --data-dir remains an optional advanced separate workspace, not a requirement for multiple windows.
 
 New state is normally %APPDATA%\Fish\workspace.xml. If legacy %APPDATA%\Pane5250\workspace.xml exists, Fish keeps using that directory and its lock so profiles and legacy credential targets survive the rename.
 

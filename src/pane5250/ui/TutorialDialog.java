@@ -87,6 +87,7 @@ final class TutorialDialog extends JDialog {
         Step current=steps.get(step);
         switch(current.surface()) {
             case "Appearance","Profiles","Keyboard Shortcuts","General" -> workspace.preferences(current.surface());
+            case "settings" -> workspace.showTutorialSettings();
             case "Help","Panes","View","Session" -> workspace.showTutorialMenu(current.surface());
             default -> { if (workspace.isShowing()) workspace.toFront(); }
         }
@@ -101,15 +102,15 @@ final class TutorialDialog extends JDialog {
                     s("Connect when you're ready","The default Kerberos profile uses Windows sign-in. Your IBM i/domain administrator must enable Kerberos and account mapping. Click Connect when you want to try; you can skip this step.","connect","","Connect / disconnect"),
                     s("Add a pane","Click + Pane. Each pane has an independent connection; adding one never sends a host transaction.","add","","Add pane"),
                     s("Close just one pane","Click X to remove a pane. The last pane is kept offline. With hidden headers, X is at the pane's upper-right edge.","close","","Close pane"),
-                    s("Find your settings","Click Settings. Appearance brings application colors, terminal colors, fonts and pane information together. The left index goes straight to other controls.","settings","","settings-Appearance"),
+                    s("Find your settings","Open Edit > Settings. Appearance brings application colors, terminal colors, fonts and pane information together. The left index goes straight to other controls.","settings","","settings-Appearance"),
                     s("Explore more guides","Open Help > Tutorials for appearance, profiles, keyboard shortcuts and pane tips. Every guide has Back, Next, Skip step and Skip tutorial.","Help","Tutorials",""));
             case APPEARANCE -> List.of(
-                    s("Open Appearance","Click Settings, then Appearance. Common appearance controls are all on this page; scroll to the sections below.","Appearance","theme","settings-Appearance"),
+                    s("Open Appearance","Open Edit > Settings, then Appearance. Common appearance controls are all on this page; scroll to the sections below.","Appearance","theme","settings-Appearance"),
                     s("Choose application colors","Choose Application theme. This is a draft until Apply or Done. Custom theme editing is optional.","Appearance","theme","appearance-theme"),
                     s("Choose terminal colors","Check Terminal profile, then choose Text palette. Only that profile and its panes change. Text effect is optional and off by default.","Appearance","palette","appearance-palette"),
                     s("Choose your font","Choose a monospaced family. A local custom font file is optional; Check font verifies alignment and characters before Apply.","Appearance","font","appearance-font"),
                     s("Set header information","Scroll to Pane information. Show header controls visibility; the checkboxes below select its information.","Appearance","header","appearance-header"),
-                    s("Set footer information","Show footer controls status information. Its checkboxes select dimensions, cursor and insert state. Window and focus outlines are just below.","Appearance","footer","appearance-footer"),
+                    s("Set footer information","Show footer controls connection status, device name, screen size and cursor location. Extra information is optional. Window and focus outlines are just below.","Appearance","footer","appearance-footer"),
                     s("Apply your appearance","Apply saves drafts and keeps Settings open. Done applies and closes. Cancel discards changes made since your last Apply.","Appearance","apply","settings-applied"));
             case PASSWORD_PROFILE -> List.of(
                     s("Open Profiles","Open Settings > Profiles. The actual workstation editor is here; Session > Profiles remains an operational workflow.","Profiles","list","settings-Profiles"),

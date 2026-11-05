@@ -77,6 +77,7 @@ public final class SessionPane extends JPanel {
     private Layout.Dock preview;
     private String notice = "Disconnected";
     private String lastProblem="";
+    private String connectionDetails="";
     private String shownCard="";
 
     public SessionPane(Workspace workspace, UUID id, Profile profile) {
@@ -187,6 +188,7 @@ public final class SessionPane extends JPanel {
     public void activate() { workspace.activate(this); }
     public JPopupMenu clipboardMenu() { return workspace.clipboardMenu(this); }
     public void focusTerminal() {
+        view.restartCursor();
         if (connecting && close.isShowing()) close.requestFocusInWindow();
         else if (core==null) presets.requestFocusInWindow();
         else view.requestFocusInWindow();
@@ -223,7 +225,7 @@ public final class SessionPane extends JPanel {
         view.setBackground(terminalSurface);
         if (view.getParent() instanceof JViewport viewport) viewport.setBackground(terminalSurface);
         java.util.List<String> parts=new ArrayList<>();
-        if (info.connection()) parts.add(connecting ? "Connecting" : connected() ? "TCP" : "Offline");
+        if (info.connection()) parts.add(connecting ? "Connecting" : connected() ? "Connected" : "Disconnected");
         if (info.host()) parts.add(profile.host());
         if (info.device() && !profile.device().isEmpty()) parts.add(profile.device());
         connection.setText(String.join("  ",parts));
@@ -413,6 +415,7 @@ public final class SessionPane extends JPanel {
             }, text -> SwingUtilities.invokeLater(() -> {
                 if (generation == token && !disposed) {
                     notice = text;
+                    if (text.startsWith("Connected") && network!=null) connectionDetails=network.connectionDetails();
                     if (text.startsWith("Connected") || text.startsWith("Disconnected")) connecting = false;
                     if (text.startsWith("Disconnected")) { generation++; disconnectNetwork(); }
                     updateHeader();
@@ -536,7 +539,9 @@ public final class SessionPane extends JPanel {
         }
     }
     public void showLastNotice() {
-        Ui.message(workspace,lastProblem.isEmpty() ? "No input or connection notices in this pane." : lastProblem,"Last pane notice");
+        String details=(lastProblem.isEmpty() ? "No input or connection errors in this pane." : lastProblem)
+                +(connectionDetails.isEmpty() ? "" : "\n\nConnection diagnostics: "+connectionDetails);
+        Ui.message(workspace,details,"Last pane notice");
     }
     private void updateOia() {
         if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(this::updateOia); return; }
@@ -550,6 +555,7 @@ public final class SessionPane extends JPanel {
         if (screen != null && screen.getOIA().getInhibitedText() != null && screen.getOIA().isKeyBoardLocked())
             state += "  " + screen.getOIA().getInhibitedText();
         String text=(info.status() ? state : "")+dimensions
+                +(info.footerDevice() && network!=null && !network.allocatedDevice().isEmpty() ? "  "+network.allocatedDevice() : "")
                 +(screen!=null && info.insert() && screen.getOIA().isInsertMode() ? "  INS" : "");
         oia.setText(text.strip());
         boolean wasVisible=footer.isVisible();
@@ -571,6 +577,7 @@ public final class SessionPane extends JPanel {
     }
 
     public boolean send(KeyMnemonic key) {
+        view.restartCursor();
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
         if (key==KeyMnemonic.ENTER && recoverableInputError()) key=KeyMnemonic.RESET;
         if (key==KeyMnemonic.RESET && screen().getOIA().isKeyBoardLocked() && !recoverableInputError()) {
@@ -584,13 +591,14 @@ public final class SessionPane extends JPanel {
         }
         try {
             screen().sendKeys(key);
-            notice = "Connected - IBM-3477-FC";
+            notice = "Connected";
             updateOia();
-            view.screenChanged();
+            view.screenChanged(); view.restartCursor();
             return true;
         } catch (RuntimeException e) { problem("Host key failed: " + e.getMessage()); return false; }
     }
     public boolean type(char character) {
+        view.restartCursor();
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
         if (screen().getOIA().isKeyBoardLocked()) {
             problem("Input inhibited. No characters were queued.");
@@ -603,12 +611,13 @@ public final class SessionPane extends JPanel {
         String text = character == '[' ? "[[" : character == ']' ? "]]" : String.valueOf(character);
         try {
             screen().sendKeys(text);
-            notice = "Connected - IBM-3477-FC";
-            updateOia(); view.screenChanged();
+            notice = "Connected";
+            updateOia(); view.screenChanged(); view.restartCursor();
             return !screen().getOIA().isKeyBoardLocked();
         } catch (RuntimeException e) { problem("Input failed: " + e.getMessage()); return false; }
     }
     public boolean paste(String text) {
+        view.restartCursor();
         if (text.length() > 32768) { problem("Paste exceeds the 32768-character safety limit; nothing pasted."); return false; }
         text = text.replace("\r\n","\n").replace('\r','\n');
         var encoder = profile.charset().newEncoder();

@@ -15,6 +15,7 @@ public final class NetworkSession implements AutoCloseable {
     private final Consumer<String> status;
     private volatile boolean closed;
     private volatile boolean connected;
+    private volatile String allocatedDevice="",connectionDetails="";
     private Thread reader, writer;
     private byte[] pendingTicket;
     private final OutputStream queued = new OutputStream() {
@@ -48,6 +49,8 @@ public final class NetworkSession implements AutoCloseable {
 
     public OutputStream output() { return queued; }
     public boolean isConnected() { return connected && !closed; }
+    public String allocatedDevice() { return allocatedDevice; }
+    public String connectionDetails() { return connectionDetails; }
 
     public void connect(String host, int port, Map<String, String> environment) {
         connect(host,port,environment,null);
@@ -69,7 +72,12 @@ public final class NetworkSession implements AutoCloseable {
                 TelnetCodec prepared;
                 synchronized (NetworkSession.this) {
                     if (closed) return;
-                    prepared=new TelnetCodec(socket.getInputStream(),queued,copy,status,pendingTicket);
+                    prepared=new TelnetCodec(socket.getInputStream(),queued,copy,message -> {
+                        String detail=connectionDetails+(connectionDetails.isEmpty() ? "" : "\n")+message;
+                        connectionDetails=detail.substring(Math.max(0,detail.length()-4096));
+                        System.getLogger(NetworkSession.class.getName()).log(System.Logger.Level.DEBUG,message);
+                        if (!message.startsWith("Host startup I902")) status.accept(message);
+                    },pendingTicket);
                     wipeTicket();
                 }
                 try (TelnetCodec codec = prepared) {
@@ -84,8 +92,10 @@ public final class NetworkSession implements AutoCloseable {
                         if (first) {
                             socket.setSoTimeout(0);
                             connected = true;
-                            status.accept("Connected - IBM-3477-FC"+(codec.allocatedDevice().isEmpty() ? "" : " - device "+codec.allocatedDevice())
-                                    +codec.authenticationStatus());
+                            allocatedDevice=codec.allocatedDevice();
+                            connectionDetails+=(connectionDetails.isEmpty() ? "" : "\n")+"IBM-3477-FC"
+                                    +(allocatedDevice.isEmpty() ? "" : " - device "+allocatedDevice)+codec.authenticationStatus();
+                            status.accept("Connected");
                             first = false;
                         }
                     }

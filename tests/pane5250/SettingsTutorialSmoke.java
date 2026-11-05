@@ -66,7 +66,7 @@ public final class SettingsTutorialSmoke {
         final AtomicInteger checks=new AtomicInteger(),downloads=new AtomicInteger();
         final byte[] metadata;
         Http() {
-            Map<String,Object> release=MaintenanceSmoke.release("0.7.4",true);
+            Map<String,Object> release=MaintenanceSmoke.release("0.7.5",true);
             release.put("body","## Readable release notes\n\n**Bold**, *emphasis*, and `code`.\n\n- First change\n- Second change\n\n"
                     +"```text\nnot an executable command\n```\n\n[Project](https://github.com/tsafago/Fish)\n\n"
                     +"<script>alert('untrusted')</script>\n\n![No remote image](https://example.invalid/private.png)");
@@ -110,6 +110,7 @@ public final class SettingsTutorialSmoke {
         StateStore.State base=StateStore.freshState();
         try (StateStore store=new StateStore(Files.createDirectory(root.resolve("format")))) {
             Properties old=StateStore.properties(base); old.setProperty("version","12"); old.setProperty("connectOnStartup","false");
+            old.remove("windows"); old.remove("info.footerDevice");
             old.setProperty("binding.Preferences...","ctrl COMMA\nctrl F1@numpad");
             old.setProperty("binding.Fonts...","ctrl shift F2@right"); old.setProperty("binding.Shortcuts...","ctrl shift F3");
             old.setProperty("binding.Host F13","ENTER@numpad\nctrl F4");
@@ -125,8 +126,10 @@ public final class SettingsTutorialSmoke {
             check(migrated.shortcuts().get("Host F13").equals(old.getProperty("binding.Host F13")),"Host multiline identities untouched");
             store.save(migrated); check(store.load().equals(migrated),"Format 13 full roundtrip");
             Properties off=StateStore.properties(base); off.setProperty("version","12"); off.setProperty("binding.Preferences...","");
+            off.remove("windows"); off.remove("info.footerDevice");
             check(!KeyBindings.effective(store.decode(off).shortcuts()).containsKey(KeyChord.parse("ctrl COMMA")),"Explicit settings unbinding does not resurrect");
             Properties claimed=StateStore.properties(base); claimed.setProperty("version","12"); claimed.setProperty("binding.Copy selection / screen","ctrl COMMA");
+            claimed.remove("windows"); claimed.remove("info.footerDevice");
             check(KeyBindings.effective(store.decode(claimed).shortcuts()).get(KeyChord.parse("ctrl COMMA")).equals("Copy selection / screen"),"Other custom owner remains intact");
             Properties relabeled=StateStore.properties(migrated); relabeled.setProperty("version","12");
             rejects(store,relabeled,"Format 13 cannot be relabeled as 12");
@@ -145,13 +148,22 @@ public final class SettingsTutorialSmoke {
             for (Component entry:menu.getMenuComponents()) if (entry instanceof JMenu nested)
                 check(menu.getText().equals("Help") && nested.getText().equals("Tutorials") && nested.getItemCount()==5,"Only meaningful Tutorials submenu remains");
             for (Component entry:menu.getMenuComponents()) if (entry instanceof JMenuItem item && item.getAction() instanceof AppCommand action)
-                check(!Shortcuts.SETTINGS_ALIASES.contains(action.title) && !action.title.equals(Shortcuts.SETTINGS),"No redundant menu settings launcher");
+                check(!Shortcuts.SETTINGS_ALIASES.contains(action.title)
+                        && (!action.title.equals(Shortcuts.SETTINGS) || menu.getText().equals("Edit")),"Settings is only under Edit");
         }
         for (Component entry:w.paneMenu(w.active()).getComponents()) if (entry instanceof JMenuItem item)
             check(!(item.getAction() instanceof AppCommand command) || !Shortcuts.SETTINGS_ALIASES.contains(command.title),"No context appearance launcher");
         long visible=children(w.getContentPane()).stream().filter(JButton.class::isInstance).map(JButton.class::cast)
                 .filter(b -> b.getAction() instanceof AppCommand command && command.title.equals(Shortcuts.SETTINGS)).count();
-        check(visible==1,"Exactly one visible Settings entry");
+        check(visible==0,"No top-level Settings button");
+        WindowChrome chrome=(WindowChrome)field(w,"chrome");
+        JPanel actions=(JPanel)field(chrome,"actions");
+        Component tools=actions.getComponent(actions.getComponentCount()-1);
+        check(tools instanceof JPanel panel && panel.getComponentCount()==1
+                && ((JButton)panel.getComponent(0)).getAction() instanceof AppCommand command && command.title.equals("Add pane"),
+                "Only + Pane follows all menus before reserved drag space and window controls");
+        check(Arrays.stream(menus.getMenu(1).getMenuComponents()).filter(JMenuItem.class::isInstance).map(JMenuItem.class::cast)
+                .filter(item -> item.getAction() instanceof AppCommand action && action.title.equals(Shortcuts.SETTINGS)).count()==1,"Exactly one Edit Settings entry");
         AppCommand settings=w.commands().stream().filter(c -> c.title.equals(Shortcuts.SETTINGS)).findFirst().orElseThrow();
         settings.actionPerformed(new ActionEvent(w,0,"fixture"));
         Preferences p=w.tutorialPreferences(); check(p!=null && p.category().equals("Appearance"),"Actual Settings action opens Appearance controls");

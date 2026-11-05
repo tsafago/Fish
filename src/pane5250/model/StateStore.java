@@ -7,12 +7,24 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="13";
+    public static final String VERSION="14";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
+    public record WindowState(Layout layout,int width,int height,UUID lastProfile) {
+        public WindowState {
+            Objects.requireNonNull(layout); Objects.requireNonNull(lastProfile);
+            if (width<330 || width>10000 || height<260 || height>10000)
+                throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
+        }
+    }
     public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
                         Map<String,String> shortcuts, boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
-                        UpdateSettings updates,Map<String,String> keyboardRecovery) {
+                        UpdateSettings updates,Map<String,String> keyboardRecovery,List<WindowState> windows) {
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                     UpdateSettings updates,Map<String,String> keyboardRecovery) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,List.of());
+        }
         public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
                      Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
                      UpdateSettings updates) {
@@ -56,6 +68,8 @@ public final class StateStore implements AutoCloseable {
             KeyboardMigration.validateRecovery(keyboardRecovery);
             KeyBindings.effective(shortcuts);
             profiles = List.copyOf(profiles);
+            windows=List.copyOf(windows);
+            if (windows.size()>MAX_BYTES/100) throw new IllegalArgumentException("Too many saved windows.");
             if (profiles.isEmpty()) throw new IllegalArgumentException("A workspace needs at least one saved profile.");
             Set<UUID> ids = new HashSet<>();
             for (Profile p : profiles) {
@@ -71,9 +85,25 @@ public final class StateStore implements AutoCloseable {
                 if (!paneIds.add(leaf.pane())) throw new IllegalArgumentException("Duplicate pane ID.");
             }
             if (!ids.contains(lastProfile)) throw new IllegalArgumentException("Last used preset is missing.");
+            for (WindowState window:windows) {
+                if (window.layout().leaves().isEmpty() || window.layout().leaves().size()>Layout.MAX_PANES)
+                    throw new IllegalArgumentException("Each window needs 1-8 panes.");
+                if (!ids.contains(window.lastProfile())) throw new IllegalArgumentException("Window's last profile is missing.");
+                if (!Layout.normalize(window.layout()).equals(window.layout())) throw new IllegalArgumentException("Window layout must use bounded pane slots.");
+                Set<UUID> local=new HashSet<>();
+                for (Layout.Leaf leaf:window.layout().leaves()) {
+                    if (!ids.contains(leaf.profile()) || !local.add(leaf.pane())) throw new IllegalArgumentException("Invalid window pane/profile reference.");
+                }
+            }
         }
         public State withTutorial(Tutorial value) {
-            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,value,connectOnStartup,updates,keyboardRecovery);
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,value,connectOnStartup,updates,keyboardRecovery,windows);
+        }
+        public State withWindows(List<WindowState> value) {
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,value);
+        }
+        public State forWindow(WindowState window) {
+            return new State(profiles,window.layout(),window.width(),window.height(),appTheme,window.lastProfile(),shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery);
         }
     }
     private final Path directory;
@@ -83,6 +113,9 @@ public final class StateStore implements AutoCloseable {
     private String revision;
     private boolean reset;
     public String loadNotice() { return loadNotice; }
+    public static final class InUseException extends IOException {
+        public InUseException() { super("Fish is running. Close all Fish windows before using offline configuration or another Fish version."); }
+    }
 
     public StateStore(Path directory) throws IOException {
         this.directory = directory.toAbsolutePath().normalize();
@@ -94,7 +127,7 @@ public final class StateStore implements AutoCloseable {
         catch (IOException e) { lockChannel.close(); throw e; }
         if (acquired == null) {
             lockChannel.close();
-            throw new IOException("This workspace is already open. Use a different --data-dir for another instance.");
+            throw new InUseException();
         }
         lock = acquired;
         try { revision=diskRevision(); }
@@ -161,7 +194,7 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             boolean usability=Integer.parseInt(version)>=8;
             boolean kerberos=Integer.parseInt(version)>=10;
             boolean exact=Integer.parseInt(version)>=12;
@@ -169,9 +202,12 @@ public final class StateStore implements AutoCloseable {
                 throw new IllegalArgumentException("Update preferences require workspace version 11 or later; do not relabel or downgrade it.");
             if (!exact && properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith("binding.") || key.startsWith("keyboard.")))
                 throw new IllegalArgumentException("Exact keyboard mappings require workspace version 12; do not relabel or downgrade it.");
-            if (!VERSION.equals(version) && properties.stringPropertyNames().stream().anyMatch(key ->
+            if (Integer.parseInt(version)<13 && properties.stringPropertyNames().stream().anyMatch(key ->
                     key.equals("binding."+Shortcuts.SETTINGS) || key.startsWith("binding.Tutorial:") || key.startsWith("keyboard.legacy.binding.")))
                 throw new IllegalArgumentException("Canonical settings/tutorial bindings require workspace version 13; do not relabel or downgrade it.");
+            if (Integer.parseInt(version)<14 && properties.stringPropertyNames().stream().anyMatch(key ->
+                    key.startsWith("window.") || key.equals("windows") || key.equals("info.footerDevice") || key.equals("binding.New window")))
+                throw new IllegalArgumentException("Multiple windows and footer device require workspace version 14; do not relabel it.");
             Map<String,String> recovery=new TreeMap<>();
             for (String property:properties.stringPropertyNames())
                 if (property.startsWith("keyboard.legacy.")) recovery.put(property.substring(16),properties.getProperty(property));
@@ -219,8 +255,8 @@ public final class StateStore implements AutoCloseable {
             for (String property:properties.stringPropertyNames())
                 if (property.startsWith(exact ? "binding." : "shortcut."))
                     shortcuts.put(property.substring(exact ? 8 : 9),properties.getProperty(property));
-            if (VERSION.equals(version) && shortcuts.keySet().stream().anyMatch(Shortcuts.SETTINGS_ALIASES::contains))
-                throw new IllegalArgumentException("Use binding.Settings... in format 13. Old settings actions belong in migration recovery, not live bindings.");
+            if (Integer.parseInt(version)>=13 && shortcuts.keySet().stream().anyMatch(Shortcuts.SETTINGS_ALIASES::contains))
+                throw new IllegalArgumentException("Use binding.Settings... in format 13 or later. Old settings actions belong in migration recovery, not live bindings.");
             Appearance appearance=Integer.parseInt(version)>=5 ? readAppearance(properties,version) : Appearance.defaults();
             if ("5".equals(version)) notice("Structural borders use the saved divider color; other appearance choices retained.");
             if (Set.of("5","6").contains(version))
@@ -247,6 +283,17 @@ public final class StateStore implements AutoCloseable {
                 KeyboardMigration.SettingsResult migration=KeyboardMigration.settings(shortcuts,recovery);
                 shortcuts=new LinkedHashMap<>(migration.bindings()); recovery=new TreeMap<>(migration.recovery());
             }
+            List<WindowState> windows=new ArrayList<>();
+            if (Integer.parseInt(version)>=14) {
+                int count=Integer.parseInt(required(properties,"windows"));
+                if (count<0 || count>MAX_BYTES/100) throw new IllegalArgumentException("Invalid saved window count.");
+                for (int i=0;i<count;i++) {
+                    String key="window."+i+".";
+                    windows.add(new WindowState(Layout.decode(required(properties,key+"layout")),
+                            Integer.parseInt(required(properties,key+"width")),Integer.parseInt(required(properties,key+"height")),
+                            UUID.fromString(required(properties,key+"lastProfile"))));
+                }
+            }
             State result=new State(profiles, bounded,
                     Math.max(330, Math.min(10000, Integer.parseInt(required(properties, "width")))),
                     Math.max(260, Math.min(10000, Integer.parseInt(required(properties, "height")))),
@@ -256,7 +303,7 @@ public final class StateStore implements AutoCloseable {
                     Integer.parseInt(version)>=9 && bool(properties,"connectOnStartup"),
                     Integer.parseInt(version)>=11 ? new UpdateSettings(bool(properties,"updates.startup"),
                             UpdateSettings.Channel.valueOf(required(properties,"updates.channel")),required(properties,"updates.ignoredVersion"))
-                            : UpdateSettings.defaults(),recovery);
+                            : UpdateSettings.defaults(),recovery,windows);
             if (usability && (result.width()!=Integer.parseInt(required(properties,"width"))
                     || result.height()!=Integer.parseInt(required(properties,"height"))))
                 throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
@@ -265,7 +312,7 @@ public final class StateStore implements AutoCloseable {
                 if (key.startsWith("shortcut.")) known.setProperty(key,"");
                 for (Profile profile:profiles) if (key.startsWith("profile."+profile.id()+".key.")) known.setProperty(key,"");
             }
-            if (exact && !VERSION.equals(version))
+            if (exact && Integer.parseInt(version)<13)
                 for (String alias:Shortcuts.SETTINGS_ALIASES) known.setProperty("binding."+alias,"");
             if (Set.of("5","6").contains(version)) for (int i=0;i<appearance.themes().size();i++) {
                 for (String role:List.of("LINE","OUTLINE")) {
@@ -283,7 +330,7 @@ public final class StateStore implements AutoCloseable {
         }
     }
     private void notice(String text) { loadNotice+=(loadNotice.isEmpty() ? "" : "\n")+text; }
-    private static Appearance readAppearance(Properties p,String version) {
+    private Appearance readAppearance(Properties p,String version) {
             List<ColorTheme> themes=new ArrayList<>();
             int count=Integer.parseInt(required(p,"appearance.themes"));
             if (count<0 || count>32) throw new IllegalArgumentException("Custom theme count must be 0-32.");
@@ -295,7 +342,12 @@ public final class StateStore implements AutoCloseable {
             }
             Appearance.PaneInfo info=new Appearance.PaneInfo(bool(p,"info.header"),bool(p,"info.footer"),
                     bool(p,"info.profile"),bool(p,"info.connection"),bool(p,"info.host"),bool(p,"info.device"),
-                    bool(p,"info.status"),bool(p,"info.dimensions"),bool(p,"info.cursor"),bool(p,"info.insert"));
+                    bool(p,"info.status"),bool(p,"info.dimensions"),bool(p,"info.cursor"),bool(p,"info.insert"),
+                    Integer.parseInt(version)>=14 && bool(p,"info.footerDevice"));
+            if (Integer.parseInt(version)<14 && info.equals(new Appearance.PaneInfo(true,true,true,true,true,false,true,true,true,true))) {
+                info=Appearance.PaneInfo.defaults();
+                notice("Previous built-in pane information defaults updated: profile header; connection, device, cursor and size footer. Custom/hidden choices retained.");
+            }
             Set<String> retired=new HashSet<>();
             for (String value:required(p,"appearance.retired").split("\n")) if (!value.isBlank()) retired.add(value);
             boolean windowOutline=!"5".equals(version) && bool(p,"appearance.windowOutline");
@@ -332,6 +384,14 @@ public final class StateStore implements AutoCloseable {
         properties.setProperty("layout", state.layout.encode());
         properties.setProperty("width", Integer.toString(state.width));
         properties.setProperty("height", Integer.toString(state.height));
+        properties.setProperty("windows",Integer.toString(state.windows.size()));
+        for (int i=0;i<state.windows.size();i++) {
+            WindowState window=state.windows.get(i); String key="window."+i+".";
+            properties.setProperty(key+"layout",window.layout().encode());
+            properties.setProperty(key+"width",Integer.toString(window.width()));
+            properties.setProperty(key+"height",Integer.toString(window.height()));
+            properties.setProperty(key+"lastProfile",window.lastProfile().toString());
+        }
         Appearance a=state.appearance;
         properties.setProperty("appearance.outline",Boolean.toString(a.outline()));
         properties.setProperty("appearance.windowOutline",Boolean.toString(a.windowOutline()));
@@ -346,8 +406,8 @@ public final class StateStore implements AutoCloseable {
         }
         Appearance.PaneInfo info=a.info();
         boolean[] flags={info.header(),info.footer(),info.profile(),info.connection(),info.host(),info.device(),
-                info.status(),info.dimensions(),info.cursor(),info.insert()};
-        String[] names={"header","footer","profile","connection","host","device","status","dimensions","cursor","insert"};
+                info.status(),info.dimensions(),info.cursor(),info.insert(),info.footerDevice()};
+        String[] names={"header","footer","profile","connection","host","device","status","dimensions","cursor","insert","footerDevice"};
         for (int i=0;i<names.length;i++) properties.setProperty("info."+names[i],Boolean.toString(flags[i]));
         for (Profile p : state.profiles) {
             String key = "profile." + p.id() + ".";

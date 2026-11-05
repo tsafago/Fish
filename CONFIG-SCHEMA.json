@@ -11,6 +11,11 @@
       "title": "Reconnect"
     },
     {
+      "default": "shift ctrl N",
+      "hostAction": null,
+      "title": "New window"
+    },
+    {
       "default": "ctrl alt P",
       "hostAction": null,
       "title": "Profiles..."
@@ -651,7 +656,7 @@
       "title": "Host NEW LINE"
     }
   ],
-  "catalogVersion": 3,
+  "catalogVersion": 4,
   "format": "Fish XML properties configuration",
   "freshWorkspaceProfile": {
     "authentication": "KERBEROS",
@@ -668,7 +673,7 @@
     "property": "binding.Unbound keys",
     "value": "Newline-separated exact chords disabled only in terminals; empty removes these per-key suppressions."
   },
-  "keyboardMigration": "Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in format 13. Back up workspace.xml before upgrading; older Fish cannot read format 13.",
+  "keyboardMigration": "Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-14.",
   "keyboardRecoveryFields": {
     "binding.{old-settings-action-title}": "Original format-12 exact multiline list or empty; recovery only, never dispatched.",
     "profile.{uuid}.key.{old-Swing-stroke}": "Original host mnemonic or empty. Recovery only, never dispatched.",
@@ -894,7 +899,7 @@
     },
     "info.connection": {
       "constraints": "true or false; hidden/empty information rows reserve no band.",
-      "default": true,
+      "default": false,
       "type": "boolean"
     },
     "info.cursor": {
@@ -917,6 +922,11 @@
       "default": true,
       "type": "boolean"
     },
+    "info.footerDevice": {
+      "constraints": "true or false; hidden/empty information rows reserve no band.",
+      "default": true,
+      "type": "boolean"
+    },
     "info.header": {
       "constraints": "true or false; hidden/empty information rows reserve no band.",
       "default": true,
@@ -924,12 +934,12 @@
     },
     "info.host": {
       "constraints": "true or false; hidden/empty information rows reserve no band.",
-      "default": true,
+      "default": false,
       "type": "boolean"
     },
     "info.insert": {
       "constraints": "true or false; hidden/empty information rows reserve no band.",
-      "default": true,
+      "default": false,
       "type": "boolean"
     },
     "info.profile": {
@@ -989,15 +999,20 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "13",
+      "default": "14",
       "type": "enum",
       "values": [
-        "13"
+        "14"
       ]
     },
     "width": {
       "constraints": "330..10000 logical pixels.",
       "default": 1360,
+      "type": "integer"
+    },
+    "windows": {
+      "constraints": "Additional independent windows; 0..20000. Total configuration remains at most 2 MB. Primary window uses layout/width/height/lastProfile.",
+      "default": 0,
       "type": "integer"
     }
   },
@@ -1314,5 +1329,29 @@
   },
   "themePrefix": "appearance.theme.{zero-based-index}.",
   "unknownKeys": "Rejected without writing. Future workspace versions are rejected, never downgraded.",
-  "workspaceVersion": "13"
+  "windowFields": {
+    "height": {
+      "constraints": "260..10000 logical pixels.",
+      "default": 850,
+      "type": "integer"
+    },
+    "lastProfile": {
+      "constraints": "Must be a listed profile ID.",
+      "default": null,
+      "type": "uuid"
+    },
+    "layout": {
+      "constraints": "1-8 unique pane IDs referencing listed profiles; bounded Fish shape. See layoutGrammar.",
+      "default": null,
+      "type": "layout"
+    },
+    "width": {
+      "constraints": "330..10000 logical pixels.",
+      "default": 1360,
+      "type": "integer"
+    }
+  },
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before upgrading. Format 14 adds independent window snapshots and info.footerDevice. Previous formats become one window; only the exact old built-in information defaults migrate to concise defaults, preserving custom/hidden flags. Older Fish cannot read format 14; to downgrade, close all windows and restore your backup, never relabel version.",
+  "windowPrefix": "window.{zero-based-index}.",
+  "workspaceVersion": "14"
 }

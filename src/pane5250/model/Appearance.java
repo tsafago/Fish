@@ -6,8 +6,12 @@ import java.util.*;
 public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
                          Set<String> retiredShortcuts) {
     public record PaneInfo(boolean header,boolean footer,boolean profile,boolean connection,
-                           boolean host,boolean device,boolean status,boolean dimensions,boolean cursor,boolean insert) {
-        public static PaneInfo defaults() { return new PaneInfo(true,true,true,true,true,false,true,true,true,true); }
+                           boolean host,boolean device,boolean status,boolean dimensions,boolean cursor,boolean insert,boolean footerDevice) {
+        public PaneInfo(boolean header,boolean footer,boolean profile,boolean connection,boolean host,boolean device,
+                        boolean status,boolean dimensions,boolean cursor,boolean insert) {
+            this(header,footer,profile,connection,host,device,status,dimensions,cursor,insert,false);
+        }
+        public static PaneInfo defaults() { return new PaneInfo(true,true,true,false,false,false,true,true,true,false,true); }
     }
     public record FontChoice(String family,String file) {
         public FontChoice { Objects.requireNonNull(family); Objects.requireNonNull(file); }

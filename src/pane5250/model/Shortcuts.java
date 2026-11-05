@@ -25,7 +25,7 @@ public final class Shortcuts {
     private static List<Command> buildCommands() {
         List<Command> result=new ArrayList<>();
         String[][] app={
-            {"Connect / disconnect","ctrl alt R"},{"Reconnect","ctrl alt shift R"},{"Profiles...","ctrl alt P"},
+            {"Connect / disconnect","ctrl alt R"},{"Reconnect","ctrl alt shift R"},{"New window","ctrl shift N"},{"Profiles...","ctrl alt P"},
             {"Switch profile...","ctrl O"},{"Insert profile username","ctrl alt U"},{"Insert remembered password","ctrl alt shift P"},
             {"Quit","ctrl Q"},{"Copy selection / screen","ctrl C"},{"Paste into fields","ctrl V"},{"Shortcuts...",""},
             {"Add pane","ctrl N"},{"Swap panes...","ctrl alt D"},{"Close pane","ctrl W"},

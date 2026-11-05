@@ -176,7 +176,7 @@ final class UpdateController implements AutoCloseable {
             Updates.Release release=offered;
             if (release==null || busy || dirty.getAsBoolean() || offeredChannel!=channel.get()
                     || !confirm.test(window,"Download Fish "+release.version()+" and install it for this Windows user?\n"
-                    +"After verification, your workspace will be saved and all sessions in this window will end.\n"
+                    +"After verification, your layouts will be saved and ALL Fish windows and sessions will close.\n"
                     +"The installer waits for Fish to exit, reports the outcome and opens the installed copy on success.\n"
                     +"Portable files are kept. The installer is unsigned; Windows and your IT policy may block it.")) return;
             Updates.Cancel cancel=new Updates.Cancel(); dialogCancel=cancel;
@@ -203,7 +203,7 @@ final class UpdateController implements AutoCloseable {
                         return;
                     }
                     if (closed || dialog!=window || dialogCancel!=cancel) { cleanup(result); return; }
-                    download=result; status.setText("Verified. Starting setup; this window closes only after setup starts.");
+                    download=result; status.setText("Verified. Starting setup; all Fish windows close only after setup starts.");
                     close.setEnabled(false);
                     boolean starting=workspace.updateAndExit(() -> {
                         cancel.check();

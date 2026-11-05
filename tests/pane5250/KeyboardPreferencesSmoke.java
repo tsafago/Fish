@@ -86,6 +86,7 @@ public final class KeyboardPreferencesSmoke {
         Profile first=Profile.createKerberos("First"),second=Profile.createKerberos("Second");
         StateStore.State base=new StateStore.State(List.of(first,second),new Layout.Leaf(UUID.randomUUID(),first.id()),1000,700);
         Properties legacy=StateStore.properties(base); legacy.setProperty("version","11");
+        legacy.remove("windows"); legacy.remove("info.footerDevice");
         legacy.setProperty("profile."+first.id()+".key.F2","PF13");
         legacy.setProperty("profile."+second.id()+".key.F2","PF14");
         legacy.setProperty("profile."+first.id()+".key.ctrl F1","PF20");

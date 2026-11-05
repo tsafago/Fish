@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",3); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",4); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -31,6 +31,7 @@ public final class ConfigSchema {
         fields.put("lastProfile",field("uuid",null,"Must be a listed profile ID."));
         fields.put("width",field("integer",1360,"330..10000 logical pixels."));
         fields.put("height",field("integer",850,"260..10000 logical pixels."));
+        fields.put("windows",field("integer",0,"Additional independent windows; 0..20000. Total configuration remains at most 2 MB. Primary window uses layout/width/height/lastProfile."));
         fields.put("appTheme",enumeration("Charcoal",Arrays.stream(AppTheme.values()).map(Enum::name).toList()));
         fields.put("highlightActive",field("boolean",true,"true or false; independent active-pane tint."));
         fields.put("connectOnStartup",field("boolean",true,"New/factory default. Existing saved off choices and older formats without this preference stay off. Connect each restored pane once on startup; incomplete PASSWORD logins stay offline without prompts. Adding a pane never auto-connects. Kerberos still requires configured IBM i/domain services."));
@@ -45,9 +46,9 @@ public final class ConfigSchema {
         fields.put("font.family",field("text","Automatic","Automatic or an installed fixed-width family. Local file takes precedence."));
         fields.put("font.file",field("local-font-path","","Empty or a local TTF/OTF path readable on this machine; only its path, never font bytes, is exported."));
         fields.put("tutorial.status",enumeration("NEW",Arrays.stream(StateStore.Tutorial.values()).map(Enum::name).toList()));
-        String[] flags={"header","footer","profile","connection","host","device","status","dimensions","cursor","insert"};
+        String[] flags={"header","footer","profile","connection","host","device","status","dimensions","cursor","insert","footerDevice"};
         Appearance.PaneInfo info=Appearance.PaneInfo.defaults();
-        boolean[] defaults={info.header(),info.footer(),info.profile(),info.connection(),info.host(),info.device(),info.status(),info.dimensions(),info.cursor(),info.insert()};
+        boolean[] defaults={info.header(),info.footer(),info.profile(),info.connection(),info.host(),info.device(),info.status(),info.dimensions(),info.cursor(),info.insert(),info.footerDevice()};
         for (int i=0;i<flags.length;i++) fields.put("info."+flags[i],field("boolean",defaults[i],"true or false; hidden/empty information rows reserve no band."));
         profile.put("name",field("text","Local IBM i","1..80 characters; display name, not identity."));
         profile.put("host",field("hostname-or-ip","10.1.2.3","0..253 characters, no whitespace/control characters. Empty is offline/unconfigured. New-profile default only; existing hosts are unchanged."));
@@ -70,6 +71,8 @@ public final class ConfigSchema {
             theme.put(role.name(),field("rgb",String.format("#%06X",colors.rgb(role)),"Exactly six RGB hex digits, optionally prefixed #. Complete theme required."));
         root.put("properties",fields); root.put("profilePrefix","profile.{uuid}."); root.put("profileFields",profile);
         root.put("themePrefix","appearance.theme.{zero-based-index}."); root.put("themeFields",theme);
+        root.put("windowPrefix","window.{zero-based-index}.");
+        root.put("windowFields",Map.of("layout",fields.get("layout"),"width",fields.get("width"),"height",fields.get("height"),"lastProfile",fields.get("lastProfile")));
         root.put("shortcutPrefix","binding.{exact-action-title}");
         root.put("shortcutValue","Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.");
         root.put("actions",Shortcuts.commands().stream().filter(c -> !Shortcuts.SETTINGS_ALIASES.contains(c.title())).map(c -> {
@@ -84,7 +87,8 @@ public final class ConfigSchema {
                 "shortcut.{old-action-title}","Original single Swing stroke or empty.",
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
-        root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in format 13. Back up workspace.xml before upgrading; older Fish cannot read format 13.");
+        root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-14.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before upgrading. Format 14 adds independent window snapshots and info.footerDevice. Previous formats become one window; only the exact old built-in information defaults migrate to concise defaults, preserving custom/hidden flags. Older Fish cannot read format 14; to downgrade, close all windows and restore your backup, never relabel version.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",
                 "ratio","finite 0.05..0.95","shape","1 full; 2 horizontal; 3 large left with vertically stacked right; 4-8 two rows, ceil(count/2) above. Each row is a right-nested horizontal chain."));
         root.put("semantics","Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Configuration apply performs no connections/transactions/credential operations. Normal startup follows the saved startup preference; only new/factory workspaces default on.");

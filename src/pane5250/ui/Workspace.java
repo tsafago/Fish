@@ -41,7 +41,8 @@ public final class Workspace extends JFrame {
     private String fontNotice="";
     private final AppShortcuts shortcuts;
     private final WindowChrome chrome;
-    private JButton addPane,settingsButton;
+    private JButton addPane;
+    private ApplicationWindows application;
     private Preferences preferences;
     private ProfilesEditor profileEditor;
     private JMenuBar menuBar;
@@ -61,6 +62,10 @@ public final class Workspace extends JFrame {
     }
     Workspace(StateStore store,StateStore.State state,Path credentialHelper,boolean demonstration,pane5250.update.Updates updateService,
               java.util.function.BiPredicate<Component,String> confirmUpdate) {
+        this(store,state,credentialHelper,demonstration,updateService,confirmUpdate,true);
+    }
+    Workspace(StateStore store,StateStore.State state,Path credentialHelper,boolean demonstration,pane5250.update.Updates updateService,
+              java.util.function.BiPredicate<Component,String> confirmUpdate,boolean initializeTheme) {
         super("Fish" + (demonstration ? " - local synthetic host" : ""));
         setUndecorated(true);
         setIconImages(FishIcon.images());
@@ -70,7 +75,7 @@ public final class Workspace extends JFrame {
         connectOnStartup=state.connectOnStartup();
         updateSettings=state.updates();
         keyboardRecovery=state.keyboardRecovery();
-        Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
+        if (initializeTheme) Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         this.store = store;
         this.demonstration = demonstration;
         credentials = new CredentialStore(credentialHelper);
@@ -98,9 +103,7 @@ public final class Workspace extends JFrame {
         addPane.setText("Pane"); addPane.setIcon(Ui.symbol("plus"));
         addPane.setToolTipText("Add the next pane (maximum 8)");
         addPane.getAccessibleContext().setAccessibleName("Add pane");
-        settingsButton=new JButton(command(Shortcuts.SETTINGS)); settingsButton.setText("Settings");
-        settingsButton.getAccessibleContext().setAccessibleName("Settings");
-        for (JButton b : List.of(addPane,settingsButton)) {
+        for (JButton b : List.of(addPane)) {
             b.setBorder(BorderFactory.createEmptyBorder(6,9,6,9));
             b.setContentAreaFilled(false);
             b.setIconTextGap(5);
@@ -120,11 +123,15 @@ public final class Workspace extends JFrame {
         addWindowListener(new WindowAdapter() {
             @Override public void windowClosing(WindowEvent e) { close(false); }
         });
+        addWindowFocusListener(new WindowAdapter() {
+            @Override public void windowGainedFocus(WindowEvent e) { if (active!=null) active.view().restartCursor(); }
+        });
         addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) { changed(); }
         });
     }
     public SessionPane active() { return active; }
+    void application(ApplicationWindows value) { application=value; saveTimer.stop(); }
     public CredentialStore credentials() { return credentials; }
     public List<Profile> profileList() { return List.copyOf(profiles.values()); }
     public Profile lastProfile() { return profiles.get(lastProfile); }
@@ -140,9 +147,9 @@ public final class Workspace extends JFrame {
         startupHandled=true;
         if (connectOnStartup) sessionPanes().forEach(SessionPane::connectOnStartup);
         startTutorialIfNeeded();
-        if (updateSettings.startup()) updates.startup();
+        if (updateSettings.startup() && (application==null || application.checkStartupUpdates(this))) updates.startup();
     }
-    boolean closing() { return closing; }
+    boolean closing() { return closing || application!=null && application.closing(); }
     public UpdateSettings updateSettings() { return updateSettings; }
     public void updateSettings(UpdateSettings value) { updateSettings=Objects.requireNonNull(value); changed(); }
     Path dataDirectory() { return store.file().getParent(); }
@@ -165,7 +172,8 @@ public final class Workspace extends JFrame {
     }
     Preferences tutorialPreferences() { return preferences!=null && !preferences.ended() ? preferences : null; }
     Component tutorialAddTarget() { return addPane; }
-    Component tutorialSettingsTarget() { return settingsButton; }
+    Component tutorialSettingsTarget() { return tutorialMenuTarget("Edit","Settings..."); }
+    void showTutorialSettings() { showTutorialMenu("Edit"); }
     Component tutorialDivider(boolean horizontal) { return dividerTarget(tree,horizontal); }
     private Component dividerTarget(Component node,boolean horizontal) {
         if (!(node instanceof JSplitPane split)) return null;
@@ -225,20 +233,29 @@ public final class Workspace extends JFrame {
     }
     public void showShortcuts() { preferences("Keyboard Shortcuts"); }
     public void preferences(String category) {
+        if (application!=null) {
+            Workspace owner=application.settingsOwner(this);
+            if (owner!=this) { owner.preferences(category); return; }
+        }
         JDialog dialog=preferencesDialog(category);
         if (isShowing()) { dialog.setVisible(true); dialog.toFront(); preferences.focus(); }
         tutorialAction("settings-"+preferences.category());
         tutorialChanged();
     }
     JDialog preferencesDialog(String category) {
+        if (application!=null) {
+            Workspace owner=application.settingsOwner(this);
+            if (owner!=this) return owner.preferencesDialog(category);
+        }
         if (preferences==null || preferences.ended()) preferences=new Preferences(this,category);
         else preferences.select(category);
         return preferences.dialog();
     }
     void preferencesClosed(Preferences value) { if (preferences==value) preferences=null; tutorialChanged(); }
     UpdateController updateController() { return updates; }
-    boolean settingsSaving() { return preferences!=null && preferences.saving() || profileEditor!=null && profileEditor.saving(); }
-    void refreshActions() { refreshCommands(); }
+    boolean localSettingsSaving() { return preferences!=null && preferences.saving() || profileEditor!=null && profileEditor.saving(); }
+    boolean settingsSaving() { return localSettingsSaving() || application!=null && application.saving(); }
+    void refreshActions() { if (application==null) refreshCommands(); else application.refreshActions(); }
     Map<String,String> keyboardRecovery() { return keyboardRecovery; }
     void keyboardRecovery(Map<String,String> value) { KeyboardMigration.validateRecovery(value); keyboardRecovery=Map.copyOf(value); changed(); }
     boolean connectOnStartup() { return connectOnStartup; }
@@ -269,7 +286,7 @@ public final class Workspace extends JFrame {
         candidates.removeIf(p -> p.id().equals(profile.id())); candidates.add(profile);
         Profile existing=profiles.get(profile.id());
         if (existing!=null && (connectionChanged(existing,profile) || existing.rememberPassword()!=profile.rememberPassword())
-                && panes.values().stream().anyMatch(p -> p.connecting()
+                && allPanes().stream().anyMatch(p -> p.connecting()
                         && (p.profile().id().equals(profile.id()) || profile.id().equals(p.profile().loginSource()))))
             throw new IllegalArgumentException("This login has a pending connection/password operation. Wait for it to finish before changing its login.");
         for (Profile candidate:candidates) Profile.login(candidate,candidates);
@@ -311,6 +328,7 @@ public final class Workspace extends JFrame {
         return index<top ? "Top row, column "+(index+1) : "Bottom row, column "+(index-top+1);
     }
     public void activate(SessionPane pane) {
+        pane.view().restartCursor();
         if (active==pane) { refreshCommands(); return; }
         active = pane;
         tutorialChanged();
@@ -320,7 +338,11 @@ public final class Workspace extends JFrame {
     }
     public void onClosed(Runnable action) { afterClose = action; }
     public void connectAll() { sessionPanes().forEach(SessionPane::connect); }
-    public void changed() { if (!closing) saveTimer.restart(); }
+    public void changed() {
+        if (closing) return;
+        if (application!=null) application.changed(this); else saveTimer.restart();
+    }
+    private List<SessionPane> allPanes() { return application==null ? sessionPanes() : application.panes(); }
 
     private void buildTree() {
         Set<UUID> live = new HashSet<>();
@@ -386,9 +408,10 @@ public final class Workspace extends JFrame {
                 Math.max(.05,Math.min(.95,ratio)),capture(split.getLeftComponent()),capture(split.getRightComponent()));
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
-    private StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
+    StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
             shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings,keyboardRecovery); }
     public void saveAsync() {
+        if (application!=null) { application.saveAsync(); return; }
         if (closing) return;
         StateStore.State snapshot = state();
         persistence.submit(() -> {
@@ -476,7 +499,7 @@ public final class Workspace extends JFrame {
     }
     public void validateDeleteProfile(UUID id) {
         ProfileManagement.delete(state(),id);
-        if (panes.values().stream().anyMatch(p -> p.profile().id().equals(id) && p.connecting()))
+        if (allPanes().stream().anyMatch(p -> p.profile().id().equals(id) && p.connecting()))
             throw new IllegalArgumentException("This profile has a pending login operation. Cancel it or wait for it to finish before deleting.");
     }
     public void deleteProfile(UUID id) {
@@ -589,6 +612,10 @@ public final class Workspace extends JFrame {
         JMenu session = menu(bar,"Session",KeyEvent.VK_S);
         action(session,"Connect / disconnect","ctrl alt R",() -> active.connect());
         action(session,"Reconnect","ctrl alt shift R",() -> active.reconnect());
+        action(session,"New window","ctrl shift N",() -> {
+            if (application==null) active.problem("New window is available when Fish is launched normally.");
+            else if (!application.newWindow(this)) active.problem("Finish the pending save before opening a window.");
+        });
         AppCommand startup=new AppCommand("Connect panes on startup","Reconnect restored panes using saved logins; missing passwords wait for Connect",null,
                 () -> {
                     connectOnStartup=!connectOnStartup;
@@ -601,11 +628,12 @@ public final class Workspace extends JFrame {
         action(session,"Profiles...","ctrl alt P",this::profiles);
         action(session,"Switch profile...","ctrl alt O",this::quickSwitch);
         session.addSeparator();
-        action(session,"Quit","ctrl alt Q",() -> close(false));
+        action(session,"Quit","ctrl alt Q",() -> { if (application==null) close(false); else application.quit(); });
         JMenu edit=menu(bar,"Edit",KeyEvent.VK_E);
         action(edit,"Copy selection / screen","ctrl alt shift C",() -> active.view().copy());
         action(edit,"Paste into fields","ctrl alt shift V",() -> active.view().paste());
-        action(null,Shortcuts.SETTINGS,"ctrl COMMA",() -> preferences("Appearance"));
+        edit.addSeparator();
+        action(edit,Shortcuts.SETTINGS,"ctrl COMMA",() -> preferences("Appearance"));
         for (String alias:Shortcuts.SETTINGS_ALIASES.stream().sorted().toList())
             action(null,alias,null,() -> preferences("Appearance"));
         JMenu inserts=menu(bar,"Inserts",KeyEvent.VK_I);
@@ -727,7 +755,7 @@ public final class Workspace extends JFrame {
         AppCommand action=new AppCommand(text,(menu==null ? "Fish" : menu.getText())+" / "+text,Shortcuts.defaultStroke(text),command,() -> {
             if (closing || settingsSaving()) return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
-            if (List.of("Profiles...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
+            if (List.of("Profiles...","New window","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
                     "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started",
                     "Getting started tutorial","Configuration for external tools","Application settings...","Check for updates...","Last pane notice...",Shortcuts.SETTINGS).contains(text)
                     || text.startsWith("Tutorial:")) return true;
@@ -782,6 +810,7 @@ public final class Workspace extends JFrame {
         return menu;
     }
     public void close(boolean force) {
+        if (application!=null) { application.closeWindow(this); return; }
         if (closing) return;
         if (settingsSaving()) { Ui.error(this,"Wait for the profile save to finish before closing Fish."); return; }
         saveTimer.stop();
@@ -806,18 +835,49 @@ public final class Workspace extends JFrame {
         if (tutorial!=null) tutorial.dispose();
         shortcuts.dispose();
         panes.values().forEach(SessionPane::dispose);
+        for (Window child:getOwnedWindows()) child.dispose();
         dispose();
+    }
+    void pauseSaving() { saveTimer.stop(); }
+    void finishWindow() { closing=true; saveTimer.stop(); disposeWorkspace(); persistence.shutdown(); afterClose.run(); }
+    void receiveShared(StateStore.State value) {
+        List<Profile> incoming=value.profiles();
+        UUID replacement=incoming.getFirst().id();
+        Set<UUID> ids=new HashSet<>(); incoming.forEach(p -> ids.add(p.id()));
+        for (SessionPane pane:panes.values()) {
+            Profile next=incoming.stream().filter(p -> p.id().equals(pane.profile().id())).findFirst().orElse(incoming.getFirst());
+            if (!next.id().equals(pane.profile().id()) || connectionChanged(pane.profile(),next)) pane.disconnect();
+        }
+        profiles.clear(); incoming.forEach(p -> profiles.put(p.id(),p));
+        for (Layout.Leaf leaf:layout.leaves()) if (!ids.contains(leaf.profile())) layout=layout.replaceProfile(leaf.profile(),replacement);
+        if (!ids.contains(lastProfile)) lastProfile=replacement;
+        Appearance previous=appearance;
+        appearance=value.appearance(); highlightActive=value.highlightActive();
+        connectOnStartup=value.connectOnStartup(); updateSettings=value.updates(); tutorialStatus=value.tutorial(); keyboardRecovery=value.keyboardRecovery();
+        shortcuts.apply(value.shortcuts(),profileList());
+        if (!previous.font().equals(appearance.font())) resolveFont();
+        for (SessionPane pane:panes.values()) {
+            Profile next=profiles.getOrDefault(pane.profile().id(),incoming.getFirst());
+            pane.updateProfile(next); pane.refreshKeys();
+            if (!previous.font().equals(appearance.font())) pane.view().fontChanged();
+        }
+        updateWindowOutline(); refreshShortcutLabels(); refreshCommands();
+        if (preferences!=null) preferences.syncProfiles();
     }
     @FunctionalInterface interface Maintenance { void run() throws java.io.IOException; }
     boolean updateAndExit(Maintenance launch,java.util.function.Consumer<String> failed) {
+        if (application!=null) return application.maintenance(this,launch,false,failed);
         StateStore.State snapshot=state();
         return maintenance(() -> { store.save(snapshot); launch.run(); },failed);
     }
     void factoryDefaults() {
-        if (!Ui.confirm(this,"Remove all profiles, layouts, themes, font choices and preferences, then close Fish?\n"
-                +"Active sessions will end. Next launch starts the getting-started guide with the default Kerberos profile.\n"
+        if (!Ui.confirm(this,"Remove all profiles, layouts, themes, font choices and preferences, then close ALL Fish windows?\n"
+                +"Active sessions in every Fish window will end. Next launch starts the getting-started guide with the default Kerberos profile.\n"
                 +"Windows saved passwords, font files and other workspaces are kept. No backup is created.","Factory defaults")) return;
-        maintenance(store::factoryReset,message -> Ui.error(this,"Factory defaults could not be saved: "+message));
+        if (application!=null) {
+            if (!application.maintenance(this,() -> {},true,message -> Ui.error(this,"Factory defaults could not be saved: "+message)))
+                Ui.error(this,"Finish pending profile saves/login operations in all Fish windows before resetting.");
+        } else maintenance(store::factoryReset,message -> Ui.error(this,"Factory defaults could not be saved: "+message));
     }
     private boolean maintenance(Maintenance action,java.util.function.Consumer<String> failed) {
         if (closing) return false;

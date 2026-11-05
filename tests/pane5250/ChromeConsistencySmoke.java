@@ -131,6 +131,7 @@ public final class ChromeConsistencySmoke {
             Properties p=new Properties();
             try (var in=Files.newInputStream(store.file())) { p.loadFromXML(in); }
             p.setProperty("version","5"); p.remove("appearance.windowOutline");
+            p.remove("windows"); p.remove("info.footerDevice");
             p.keySet().removeIf(key -> key.toString().startsWith("updates."));
             p.setProperty("profile."+fresh.profiles().getFirst().id()+".authentication","PASSWORD");
             p.setProperty("appearance.theme.0.LINE","#EEDDCC"); p.setProperty("appearance.theme.0.OUTLINE","#FF0011");
@@ -150,6 +151,7 @@ public final class ChromeConsistencySmoke {
             for (boolean legacy:List.of(false,true)) {
                 try (var in=Files.newInputStream(store.file())) { p.loadFromXML(in); }
                 p.setProperty("version","6"); p.setProperty("appearance.windowOutline",Boolean.toString(legacy));
+                p.remove("windows"); p.remove("info.footerDevice");
                 p.keySet().removeIf(key -> key.toString().startsWith("updates."));
                 try (var out=Files.newOutputStream(store.file())) { p.storeToXML(out,"Ambiguous version-6 setting"); }
                 StateStore.State migrated=store.load();

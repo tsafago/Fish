@@ -106,7 +106,7 @@ static void surface(HDC dc,int width,int height,BOOL preview) {
     label(dc,L"For your Windows account. No administrator access needed.",29,106,555,24,text,body_font,DT_LEFT|DT_SINGLELINE);
     label(dc,L"Install to",29,147,550,22,muted,body_font,DT_LEFT|DT_SINGLELINE);
     label(dc,L"Profiles, passwords and preferences stay as they are.",29,250,560,24,muted,body_font,DT_LEFT|DT_SINGLELINE);
-    label(dc,L"Close all Fish windows and back up workspace.xml: older Fish cannot read format 14.",29,277,560,36,muted,body_font,DT_LEFT|DT_WORDBREAK);
+    label(dc,L"Close all Fish windows and back up workspace.xml: older Fish cannot read format 15.",29,277,560,36,muted,body_font,DT_LEFT|DT_WORDBREAK);
     label(dc,status,29,321,560,45,text,body_font,DT_LEFT|DT_WORDBREAK);
     HPEN pen=CreatePen(PS_SOLID,1,divider); HGDIOBJ old=SelectObject(dc,pen);
     MoveToEx(dc,px(0),height-px(54),NULL); LineTo(dc,width,height-px(54)); SelectObject(dc,old); DeleteObject(pen);

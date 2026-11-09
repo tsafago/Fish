@@ -6,14 +6,15 @@
 /* Load the delivered private JVM/DLL, without a desktop window or credential acquisition. */
 int wmain(int argc,wchar_t **argv) {
     BOOL updates=argc==4 && !wcscmp(argv[2],L"--updates");
-    if (argc!=2 && !updates) { fputs("Expected complete Fish image directory [--updates TEST_CLASSES].\n",stderr); return 1; }
+    BOOL layouts=argc==4 && !wcscmp(argv[2],L"--layouts");
+    if (argc!=2 && !updates && !layouts) { fputs("Expected complete Fish image directory [--updates|--layouts TEST_CLASSES].\n",stderr); return 1; }
     wchar_t image[32768],bin[32768],library[32768],jar[32768];
     DWORD length=GetFullPathNameW(argv[1],32768,image,NULL);
     if (!length || length>32000) return 1;
     swprintf(bin,32768,L"%ls\\runtime\\bin",image);
     swprintf(library,32768,L"%ls\\server\\jvm.dll",bin);
     swprintf(jar,32768,L"%ls\\app\\Fish.jar",image);
-    if (updates) {
+    if (updates || layouts) {
         wchar_t classes[32768];
         DWORD size=GetFullPathNameW(argv[3],32768,classes,NULL);
         if (!size || size>32000 || wcslen(jar)+size+2>=32768) return 1;
@@ -37,8 +38,8 @@ int wmain(int argc,wchar_t **argv) {
     JNIEnv *env=NULL;
     if (create(&vm,(void **)&env,&args)!=JNI_OK) { fputs("Private JVM startup failed.\n",stderr); return 1; }
     int result=1;
-    if (updates) {
-        jclass type=(*env)->FindClass(env,"pane5250/update/PackagedUpdateSmoke");
+    if (updates || layouts) {
+        jclass type=(*env)->FindClass(env,layouts ? "pane5250/PackagedLayoutSmoke" : "pane5250/update/PackagedUpdateSmoke");
         jmethodID method=type ? (*env)->GetStaticMethodID(env,type,"main","([Ljava/lang/String;)V") : NULL;
         if (method) {
             jobjectArray empty=(*env)->NewObjectArray(env,0,(*env)->FindClass(env,"java/lang/String"),NULL);

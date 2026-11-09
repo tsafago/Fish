@@ -49,6 +49,7 @@ public class TerminalView extends JComponent implements Scrollable {
     private int anchor = -1, end = -1;
     private boolean dragging;
     private boolean fit = true;
+    private Double savedZoom;
     private final Timer blink;
     private boolean phase = true;
     private final Timer cursorBlink;
@@ -252,6 +253,11 @@ public class TerminalView extends JComponent implements Scrollable {
     }
     public void setFit(boolean value) { fit = value; revalidate(); repaint(); revealCursor(); }
     public boolean isFit() { return fit; }
+    public double zoomValue() { return savedZoom==null ? pane.profile().zoom() : savedZoom; }
+    public void restoreDisplay(SavedLayout.Display display) {
+        savedZoom=display.zoom(); geometryWidth=-1; setFit(display.fit());
+    }
+    public void clearSavedZoom() { savedZoom=null; geometryWidth=-1; }
     public void screenChanged() {
         rendered=null; glyphMasks.clear(); sharedInk=null; geometryWidth=-1;
         litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); repaint();
@@ -346,7 +352,7 @@ public class TerminalView extends JComponent implements Scrollable {
         return row * cols + col;
     }
     private void ensureGeometry() {
-        if (geometryWidth!=getWidth() || geometryHeight!=getHeight() || geometryFit!=fit || geometryZoom!=pane.profile().zoom())
+        if (geometryWidth!=getWidth() || geometryHeight!=getHeight() || geometryFit!=fit || geometryZoom!=zoomValue())
             geometry(geometryDpiX,geometryDpiY);
     }
     private void revealCursor() {
@@ -367,7 +373,7 @@ public class TerminalView extends JComponent implements Scrollable {
         Screen5250 screen=pane.screen();
         int rows=screen==null ? 24 : screen.getRows(),cols=screen==null ? 80 : screen.getColumns();
         double scale=fit ? Math.max(3.0/16,Math.min(28.0/16,
-                Math.min((getWidth()-24)/(cols*nominalWidth),(getHeight()-20)/(rows*nominalHeight)))) : pane.profile().zoom();
+                Math.min((getWidth()-24)/(cols*nominalWidth),(getHeight()-20)/(rows*nominalHeight)))) : zoomValue();
         int pixels=Math.max(1,(int)Math.floor(16*scale*dpiY));
         InkMetrics target=metrics(pixels);
         while (fit && pixels>1 && (cols*target.width>(getWidth()-24)*dpiX || rows*target.height>(getHeight()-20)*dpiY))
@@ -376,7 +382,7 @@ public class TerminalView extends JComponent implements Scrollable {
         cellWidth=baseWidth/dpiX; cellHeight=baseHeight/dpiY;
         originX=Math.rint(Math.max(12,(getWidth()-cols*cellWidth)/2)*dpiX)/dpiX;
         originY=Math.rint(Math.max(10,(getHeight()-rows*cellHeight)/2)*dpiY)/dpiY;
-        geometryWidth=getWidth(); geometryHeight=getHeight(); geometryFit=fit; geometryZoom=pane.profile().zoom();
+        geometryWidth=getWidth(); geometryHeight=getHeight(); geometryFit=fit; geometryZoom=zoomValue();
         geometryDpiX=dpiX; geometryDpiY=dpiY;
     }
 
@@ -752,7 +758,7 @@ public class TerminalView extends JComponent implements Scrollable {
         int cols = screen == null ? 80 : screen.getColumns(), rows = screen == null ? 24 : screen.getRows();
         if (fit) return new Dimension(240,140);
         AffineTransform display=getGraphicsConfiguration()==null ? new AffineTransform() : getGraphicsConfiguration().getDefaultTransform();
-        InkMetrics ink=metrics(Math.max(1,(int)Math.floor(16*pane.profile().zoom()*display.getScaleY())));
+        InkMetrics ink=metrics(Math.max(1,(int)Math.floor(16*zoomValue()*display.getScaleY())));
         return new Dimension((int)Math.ceil(cols*ink.width/display.getScaleX())+24,
                 (int)Math.ceil(rows*ink.height/display.getScaleY())+20);
     }

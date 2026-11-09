@@ -104,6 +104,8 @@ final class WindowChrome extends JPanel {
             fullTools+=metrics.stringWidth(full)-metrics.stringWidth(text);
             if (text.isEmpty() && !full.isEmpty() && b.getIcon()!=null) fullTools+=b.getIconTextGap();
         }
+        for (Component component:tools.getComponents()) if (component instanceof JComboBox<?> combo)
+            fullTools+=160-combo.getPreferredSize().width;
         Insets insets=getInsets();
         int fullWidth=caption.getPreferredSize().width+menus.getPreferredSize().width+fullTools
                 +controls.getPreferredSize().width+2*((BorderLayout)getLayout()).getHgap()
@@ -114,6 +116,13 @@ final class WindowChrome extends JPanel {
             for (Component component:tools.getComponents()) if (component instanceof JButton b) {
                 if (b.getClientProperty("fullLabel")==null) b.putClientProperty("fullLabel",b.getText());
                 b.setText(narrow && b.getIcon()!=null ? "" : (String)b.getClientProperty("fullLabel"));
+            }
+            for (Component component:tools.getComponents()) if (component instanceof JComboBox<?> combo) {
+                int fixed=caption.getPreferredSize().width+(narrow ? menuButton.getPreferredSize().width : menus.getPreferredSize().width)
+                        +controls.getPreferredSize().width+insets.left+insets.right+32
+                        +2*((BorderLayout)getLayout()).getHgap();
+                for (Component other:tools.getComponents()) if (other!=combo) fixed+=other.getPreferredSize().width;
+                combo.setPreferredSize(new Dimension(Math.max(45,Math.min(160,getWidth()-fixed)),27));
             }
         }
         super.doLayout(); left.doLayout(); actions.doLayout(); controls.doLayout();

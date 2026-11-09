@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.7.4'
+$version = '0.7.5'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
 if (-not $Jdk) {
@@ -65,14 +65,14 @@ Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item build\fish-window.dll dist\fish-window.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
 if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Maintenance') { Get-Item tests\pane5250\Tests.java,tests\pane5250\MaintenanceSmoke.java,tests\pane5250\MaintenanceUiSmoke.java,tests\pane5250\NoticeSmoke.java,tests\pane5250\NativeUpdateSmoke.java,tests\pane5250\KeyboardPreferencesSmoke.java,tests\pane5250\SettingsTutorialSmoke.java,tests\pane5250\LaunchBrokerSmoke.java,tests\pane5250\WindowRevisionSmoke.java }
+    $testFiles = if ($Task -eq 'Maintenance') { Get-Item tests\pane5250\Tests.java,tests\pane5250\MaintenanceSmoke.java,tests\pane5250\MaintenanceUiSmoke.java,tests\pane5250\NoticeSmoke.java,tests\pane5250\NativeUpdateSmoke.java,tests\pane5250\KeyboardPreferencesSmoke.java,tests\pane5250\SettingsTutorialSmoke.java,tests\pane5250\LaunchBrokerSmoke.java,tests\pane5250\WindowRevisionSmoke.java,tests\pane5250\LayoutFeatureSmoke.java }
         elseif ($Task -eq 'Smoke') { Get-Item tests\pane5250\Tests.java,tests\pane5250\FishSmoke.java,tests\pane5250\StreamliningSmoke.java,tests\pane5250\CustomizationSmoke.java,tests\pane5250\ChromeConsistencySmoke.java,tests\pane5250\RefinementSmoke.java,tests\pane5250\UsabilitySmoke.java,tests\pane5250\KerberosSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 21 -encoding UTF-8 -cp build\classes -d build\test-classes '@build\tests.txt'
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     if ($Task -eq 'Maintenance') {
-        foreach ($fixture in @('pane5250.Tests','pane5250.update.MaintenanceSmoke','pane5250.ui.NoticeSmoke','pane5250.ui.MaintenanceUiSmoke','pane5250.ui.KeyboardPreferencesSmoke','pane5250.ui.SettingsTutorialSmoke','pane5250.LaunchBrokerSmoke','pane5250.ui.WindowRevisionSmoke')) {
+        foreach ($fixture in @('pane5250.Tests','pane5250.update.MaintenanceSmoke','pane5250.ui.NoticeSmoke','pane5250.ui.MaintenanceUiSmoke','pane5250.ui.KeyboardPreferencesSmoke','pane5250.ui.SettingsTutorialSmoke','pane5250.LaunchBrokerSmoke','pane5250.ui.WindowRevisionSmoke','pane5250.ui.LayoutFeatureSmoke')) {
             $fixtureArgs=@()
             if ($fixture -eq 'pane5250.Tests') { $fixtureArgs+='--protocol-only' }
             & "$Jdk\bin\java.exe" -ea -cp 'build\classes;build\test-classes' $fixture @fixtureArgs
@@ -123,6 +123,7 @@ if ($Task -eq 'Package') {
         --dest (Split-Path -Parent $image) --vendor Fish --java-options '-Xmx192m' `
         --add-modules java.base,java.desktop,java.xml,java.logging,java.net.http,jdk.crypto.ec,jdk.charsets
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed.' }
+    & "$PSScriptRoot\scripts\set-launcher-encoding.ps1" -Executable (Join-Path $image 'Fish.exe')
     Copy-Item scripts\Fish-config.cmd (Join-Path $image 'Fish-config.cmd')
     $source = Join-Path $image 'app\source'
     New-Item -ItemType Directory -Force $source | Out-Null

@@ -16,7 +16,10 @@ public final class DemoHost implements AutoCloseable {
     private volatile int connections;
     private final java.util.concurrent.atomic.AtomicInteger requests=new java.util.concurrent.atomic.AtomicInteger();
     public DemoHost() throws IOException {
-        server = new ServerSocket(0,16,InetAddress.getByName("127.0.0.1"));
+        this(0);
+    }
+    public DemoHost(int port) throws IOException {
+        server = new ServerSocket(port,16,InetAddress.getByName("127.0.0.1"));
         Thread.ofPlatform().daemon().name("synthetic-host").start(() -> {
             while (!closed) {
                 try {

@@ -69,6 +69,7 @@ public final class SessionPane extends JPanel {
     private NetworkSession network;
     private Session5250 core;
     private boolean connecting, disposed;
+    private boolean attempted;
     private int credentialOperations;
     private Kerberos.Provider kerberosProvider=Kerberos::ticket;
     private Kerberos.Resolver kerberosResolver=Kerberos::resolve;
@@ -135,7 +136,7 @@ public final class SessionPane extends JPanel {
         choices.setOpaque(false);
         choices.setMinimumSize(new Dimension(40,30));
         presets.setMinimumSize(new Dimension(25,30));
-        presets.getAccessibleContext().setAccessibleName("Preset");
+        presets.getAccessibleContext().setAccessibleName("Reconnect profile");
         presets.setToolTipText("Workstation preset");
         presets.addActionListener(e -> {
             if (!updatingPresets && !busy() && presets.getSelectedItem() instanceof Profile selected) {
@@ -145,7 +146,7 @@ public final class SessionPane extends JPanel {
         presets.addFocusListener(new FocusAdapter() {
             @Override public void focusGained(FocusEvent e) { activate(); }
         });
-        connectButton=Ui.iconButton("Connect to selected preset","connect",() -> { activate(); connect(); workspace.tutorialAction("Connect / disconnect"); });
+        connectButton=Ui.iconButton("Reconnect selected profile","connect",() -> { activate(); connect(); workspace.tutorialAction("Connect / disconnect"); });
         connectButton.setPreferredSize(new Dimension(32,30)); connectButton.setContentAreaFilled(true);
         choices.add(presets,BorderLayout.CENTER); choices.add(connectButton,BorderLayout.EAST);
         empty.setLayout(new BoxLayout(empty,BoxLayout.X_AXIS));
@@ -185,6 +186,7 @@ public final class SessionPane extends JPanel {
     public Font workspaceFont() { return workspace.terminalFont(); }
     public boolean connected() { return network != null && network.isConnected(); }
     public boolean busy() { return connecting || connected(); }
+    boolean pristine() { return !attempted && !busy() && core==null; }
     public void activate() { workspace.activate(this); }
     public JPopupMenu clipboardMenu() { return workspace.clipboardMenu(this); }
     public void focusTerminal() {
@@ -203,6 +205,7 @@ public final class SessionPane extends JPanel {
     public void updateProfile(Profile value) {
         Profile previous=profile;
         profile = value;
+        if (!previous.id().equals(value.id()) || previous.zoom()!=value.zoom()) view.clearSavedZoom();
         if (!previous.keymap().equals(value.keymap())) refreshKeys();
         refreshPresets();
         updateHeader();
@@ -277,15 +280,16 @@ public final class SessionPane extends JPanel {
     }
     private void connect(boolean interactive) {
         if (busy()) { disconnect(); return; }
+        attempted=true;
         if (credentialOperations>0) { problem("The previous Windows sign-in lookup is still finishing. Please wait before reconnecting."); return; }
         Profile connectionProfile=workspace.connectionProfile(profile);
         if (profile.host().isEmpty() || connectionProfile.automaticSignOn() && connectionProfile.username().isEmpty()) {
             if (interactive) workspace.profiles();
-            else startupGuidance("Finish this profile in Settings > Profiles, then Connect.");
+            else startupGuidance("Finish this profile in Edit > Settings > Profiles, then Reconnect.");
             return;
         }
         if (!interactive && connectionProfile.automaticSignOn() && !connectionProfile.rememberPassword()) {
-            startupGuidance("Connect to enter a password, or enable Save password in Settings > Profiles.");
+            startupGuidance("Reconnect to enter a password, or enable Save password in Edit > Settings > Profiles.");
             return;
         }
         if (interactive) workspace.rememberProfile(profile);
@@ -310,7 +314,7 @@ public final class SessionPane extends JPanel {
                     if (saved.isPresent()) password = saved.get();
                     else {
                         if (!interactive) {
-                            startupGuidance("No saved password. Connect to sign in.");
+                            startupGuidance("No saved password. Reconnect to sign in.");
                             disconnectNetwork();
                             return;
                         }
@@ -417,10 +421,13 @@ public final class SessionPane extends JPanel {
                     notice = text;
                     if (text.startsWith("Connected") && network!=null) connectionDetails=network.connectionDetails();
                     if (text.startsWith("Connected") || text.startsWith("Disconnected")) connecting = false;
-                    if (text.startsWith("Disconnected")) { generation++; disconnectNetwork(); }
+                    if (text.startsWith("Disconnected")) {
+                        generation++; disconnectNetwork(); startupGuidance(text+" Reconnect to retry.");
+                    }
                     updateHeader();
                     updateOia();
                     view.screenChanged();
+                    if (text.startsWith("Connected") && workspace.active()==this && workspace.isFocused()) focusTerminal();
                 }
             }));
             core = new Session5250(connectionProfile.name(),connectionProfile.codePage(),network.output(),this::problem);
@@ -444,6 +451,10 @@ public final class SessionPane extends JPanel {
     }
 
     public void disconnect() {
+        attempted=true; stopConnection();
+    }
+    void disconnectForProfileChange() { stopConnection(); }
+    private void stopConnection() {
         generation++;
         disconnectNetwork();
         notice = "Disconnected";

@@ -83,7 +83,7 @@ horizontal insets. Display origins retain at least 12px horizontal and 10px
 vertical padding. Resizing does not resize the host's presentation space.
 The main window is undecorated: one 31px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
-menus/compact + Pane control and three 36px window controls.
+menus/compact profile selector and + control and three 36px window controls.
 The leftmost mark is a true 45-degree square with its two left sides extended
 straight through the left corner to form one X and a triangular tail on the left.
 The tail tips end level with the square's top and bottom, without a line joining them.
@@ -211,7 +211,7 @@ menus and shortcuts; disabled actions remain disabled and modal focus isolates
 host input. Former Commands chords are retired no-ops until explicitly reassigned.
 Every app/host action is
 listed in the global shortcut editor, with recording, unbind/default controls,
-atomic conflict rejection and format-14 exact, multiline persistence. Window-scoped dispatch
+atomic conflict rejection and format-15 exact, multiline persistence. Window-scoped dispatch
 precedes Swing traversal/host input, so Ctrl+Tab works without taking keys in
 owned dialogs. Older per-profile definitions migrate globally with exact
 conflict archives; retired Settings routes migrate to the canonical action,
@@ -225,6 +225,21 @@ Next, Back and both skip controls remain available; opening/replaying a guide
 never connects, creates a profile or saves credentials.
 Updates embeds the shared safe offline Markdown renderer, with explicit safe
 links and no automatic image/resource/code loading.
+
+The rightmost action group pairs one 160px profile selector with a single plus;
+narrow chrome shrinks the selector before sacrificing drag space/native controls.
+Selection is harmless; plus adds and asynchronously connects that exact profile.
+Only a lone never-used offline tile is reused. Explicit New window and saved
+recipes also connect once, independently of the ordinary-startup preference.
+Disconnect/failure never retries itself. Offline panes retain a small accessible
+Reconnect control, not a connection wizard.
+
+Panes > Saved layouts / shortcuts is modeless and operational, not another
+Settings hierarchy. A name and recipe selector lead to explicit Save as new,
+Update from current, Rename/Delete, Open new window and Create shortcut.
+Recipes retain stable IDs, bounded geometry and fit/zoom; screen contents and
+secrets are excluded. Export uses native Windows Shell links and the real
+Fish.exe target. Each link launches a new independent ordinary window.
 
 This task-based topology follows recognition-over-recall and conventional direct
 settings navigation rather than progressive disclosure of everyday controls:

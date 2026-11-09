@@ -19,6 +19,11 @@ public final class ProfileManagement {
             throw new IllegalArgumentException("This profile is not saved.");
         if (state.profiles().size()==1)
             throw new IllegalArgumentException("Keep at least one profile. Create a replacement first, or use Factory defaults to start over.");
+        List<String> layouts=state.savedLayouts().stream().filter(s -> s.window().lastProfile().equals(id)
+                || s.window().addProfile().equals(id) || s.window().layout().leaves().stream().anyMatch(p -> p.profile().equals(id)))
+                .map(SavedLayout::name).toList();
+        if (!layouts.isEmpty()) throw new IllegalArgumentException("Profile is used by saved layouts: "+String.join(", ",layouts)
+                +". Update or delete those layouts in Panes > Saved layouts / shortcuts first.");
         List<String> dependents=state.profiles().stream().filter(p -> id.equals(p.loginSource())).map(Profile::name).toList();
         if (!dependents.isEmpty())
             throw new IllegalArgumentException("This login is used by: "+String.join(", ",dependents)+". Choose an independent or different login in those profiles first.");
@@ -29,6 +34,7 @@ public final class ProfileManagement {
                 state.lastProfile().equals(id) ? replacement : state.lastProfile(),state.shortcuts(),state.highlightActive(),
                 state.appearance(),state.tutorial(),state.connectOnStartup(),state.updates(),state.keyboardRecovery(),
                 state.windows().stream().map(w -> new StateStore.WindowState(w.layout().replaceProfile(id,replacement),w.width(),w.height(),
-                        w.lastProfile().equals(id) ? replacement : w.lastProfile())).toList());
+                        w.lastProfile().equals(id) ? replacement : w.lastProfile(),w.addProfile().equals(id) ? replacement : w.addProfile(),w.displays())).toList(),
+                state.addProfile().equals(id) ? replacement : state.addProfile(),state.savedLayouts(),state.selectedLayout(),state.displays());
     }
 }

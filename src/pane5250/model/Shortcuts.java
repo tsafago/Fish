@@ -32,6 +32,7 @@ public final class Shortcuts {
             {"Next pane","ctrl TAB"},{"Previous pane","ctrl shift TAB"},
             {"Decrease divider","ctrl alt OPEN_BRACKET"},{"Increase divider","ctrl alt CLOSE_BRACKET"},
             {"Save layout to profile","ctrl alt S"},{"Restore profile layout","ctrl alt L"},
+            {"Saved layouts / shortcuts...",""},
             {"Fit host screen","ctrl 0"},{"Zoom in","ctrl EQUALS"},{"Zoom out","ctrl MINUS"},{"Appearance...",""},
             {"Preferences...",""},{"Settings...","ctrl COMMA"},
             {"Fonts...",""},{"Pane information...",""},{"Window and focus...",""},{"Theme designer...",""},{"Flux animated text",""},

@@ -8,7 +8,7 @@ import pane5250.model.*;
 import pane5250.ui.*;
 
 public final class Main {
-    public static final String VERSION="0.7.4";
+    public static final String VERSION="0.7.5";
     private Main() {}
     public static void main(String[] args) {
         if (args.length>0 && args[0].equals("--config")) {
@@ -17,11 +17,18 @@ public final class Main {
         }
         boolean demonstration = false;
         Path supplied = null;
+        UUID requestedLayout=null;
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals("--demo")) demonstration = true;
             else if (args[i].equals("--data-dir") && i + 1 < args.length) supplied = Path.of(args[++i]);
+            else if (args[i].equals("--layout") && i+1<args.length) {
+                if (requestedLayout!=null) { System.err.println("Supply --layout only once."); System.exit(2); return; }
+                try { requestedLayout=SavedLayout.reference(args[++i]); }
+                catch (IllegalArgumentException e) { System.err.println(e.getMessage()); System.exit(2); return; }
+            }
             else if (args[i].equals("--help")) {
-                System.out.println("Fish [--demo] [--data-dir DIRECTORY]\n"
+                System.out.println("Fish [--demo] [--data-dir DIRECTORY] [--layout UUID]\n"
+                        + "--layout opens exactly one new auto-connecting window from a named saved layout.\n"
                         + "--demo starts a loopback-only synthetic TN5250 host in a separate temporary workspace.\n"
                         + "Fish --config <command> ... provides offline configuration.\n"+Configuration.HELP);
                 return;
@@ -31,17 +38,19 @@ public final class Main {
             }
         }
         try {
+            if (demonstration && requestedLayout!=null) throw new IllegalArgumentException("--layout cannot be combined with --demo.");
+            UUID launchLayout=requestedLayout;
             Path directory = supplied != null ? supplied : demonstration ? Files.createTempDirectory("Fish-demo-")
                     : defaultDirectory(Path.of(Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home"))));
             java.util.concurrent.atomic.AtomicReference<ApplicationWindows> running=new java.util.concurrent.atomic.AtomicReference<>();
-            LaunchBroker.Claim claim=LaunchBroker.claim(directory,VERSION+(demonstration ? ":demo" : ":normal"),() -> {
-                var accepted=new java.util.concurrent.atomic.AtomicBoolean();
+            LaunchBroker.Claim claim=LaunchBroker.claim(directory,VERSION+(demonstration ? ":demo" : ":normal"),launchLayout,id -> {
+                var accepted=new java.util.concurrent.atomic.AtomicInteger();
                 try {
                     SwingUtilities.invokeAndWait(() -> {
                         ApplicationWindows app=running.get();
-                        accepted.set(app!=null && app.newWindow());
+                        if (app!=null) accepted.set(app.openRequest(id));
                     });
-                } catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
+                } catch (InterruptedException e) { Thread.currentThread().interrupt(); return 0; }
                 catch (java.lang.reflect.InvocationTargetException e) {
                     System.getLogger(Main.class.getName()).log(System.Logger.Level.ERROR,"New Fish window failed",e.getCause());
                 }
@@ -59,26 +68,26 @@ public final class Main {
             SwingUtilities.invokeLater(() -> {
                 try {
                     ApplicationWindows application=new ApplicationWindows(store,helper,demo);
-                application.onClosed(() -> {
-                    running.set(null);
-                    try { claim.broker().close(); }
-                    catch (java.io.IOException e) { System.err.println("Could not remove Fish launch metadata: "+e.getMessage()); }
-                    if (host != null) host.close();
-                    if (temporary) {
-                        try {
-                            Files.deleteIfExists(directory.resolve("workspace.xml"));
-                            Files.deleteIfExists(directory.resolve("workspace.xml.tmp"));
-                            Files.deleteIfExists(directory.resolve("workspace.lock"));
-                            Files.delete(directory);
-                        } catch (java.io.IOException e) {
-                            System.err.println("Could not remove temporary demo workspace: " + e.getMessage());
+                    application.onClosed(() -> {
+                        running.set(null);
+                        try { claim.broker().close(); }
+                        catch (java.io.IOException e) { System.err.println("Could not remove Fish launch metadata: "+e.getMessage()); }
+                        if (host != null) host.close();
+                        if (temporary) {
+                            try {
+                                Files.deleteIfExists(directory.resolve("workspace.xml"));
+                                Files.deleteIfExists(directory.resolve("workspace.xml.tmp"));
+                                Files.deleteIfExists(directory.resolve("workspace.lock"));
+                                Files.delete(directory);
+                            } catch (java.io.IOException e) {
+                                System.err.println("Could not remove temporary demo workspace: " + e.getMessage());
+                            }
                         }
-                    }
-                });
-                application.restore(state);
-                running.set(application);
-                if (!store.loadNotice().isEmpty())
-                    System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
+                    });
+                    application.restore(state,launchLayout);
+                    running.set(application);
+                    if (!store.loadNotice().isEmpty())
+                        System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
                 } catch (RuntimeException e) {
                     try { claim.broker().close(); }
                     catch (java.io.IOException closeError) { e.addSuppressed(closeError); }

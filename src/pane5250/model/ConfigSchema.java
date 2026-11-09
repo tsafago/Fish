@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",4); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",5); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -29,12 +29,15 @@ public final class ConfigSchema {
         fields.put("profiles",field("comma-separated-uuid-list",null,"Ordered, nonempty, unique saved profile IDs; no passwords."));
         fields.put("layout",field("layout",null,"1-8 unique pane IDs referencing listed profiles; bounded Fish shape. See layoutGrammar."));
         fields.put("lastProfile",field("uuid",null,"Must be a listed profile ID."));
+        fields.put("addProfile",field("uuid",null,"This window's titlebar profile selection; must be a listed ID. Old formats initialize it from lastProfile. Selecting alone does not connect."));
+        fields.put("savedLayouts",field("comma-separated-uuid-list","","Ordered, unique stable named-layout IDs, at most 64. Empty means none. Names must be unique ignoring case."));
+        fields.put("selectedLayout",field("uuid-or-empty","","Empty or an ID from savedLayouts; management selection only, not a launch instruction."));
         fields.put("width",field("integer",1360,"330..10000 logical pixels."));
         fields.put("height",field("integer",850,"260..10000 logical pixels."));
         fields.put("windows",field("integer",0,"Additional independent windows; 0..20000. Total configuration remains at most 2 MB. Primary window uses layout/width/height/lastProfile."));
         fields.put("appTheme",enumeration("Charcoal",Arrays.stream(AppTheme.values()).map(Enum::name).toList()));
         fields.put("highlightActive",field("boolean",true,"true or false; independent active-pane tint."));
-        fields.put("connectOnStartup",field("boolean",true,"New/factory default. Existing saved off choices and older formats without this preference stay off. Connect each restored pane once on startup; incomplete PASSWORD logins stay offline without prompts. Adding a pane never auto-connects. Kerberos still requires configured IBM i/domain services."));
+        fields.put("connectOnStartup",field("boolean",true,"Ordinary restored-window startup only. New/factory default on; existing off stays off. Explicit Add, New window, Restore profile layout and --layout connect their intended panes once asynchronously even when off. No automatic retries after failure/disconnect; incomplete login stays offline with Reconnect guidance. Kerberos still requires IBM i/domain setup."));
         fields.put("updates.startup",field("boolean",true,"Bounded nonblocking public GitHub release check. Errors stay quiet on startup. Download/install always requires explicit consent."));
         fields.put("updates.channel",enumeration("PREVIEW_PATCHES",Arrays.stream(UpdateSettings.Channel.values()).map(Enum::name).toList()));
         fields.put("updates.ignoredVersion",field("numeric-version-or-empty","","Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES permits this installed major/minor only; STABLE permits non-prereleases in this installed major. Neither channel installs a new major."));
@@ -72,7 +75,20 @@ public final class ConfigSchema {
         root.put("properties",fields); root.put("profilePrefix","profile.{uuid}."); root.put("profileFields",profile);
         root.put("themePrefix","appearance.theme.{zero-based-index}."); root.put("themeFields",theme);
         root.put("windowPrefix","window.{zero-based-index}.");
-        root.put("windowFields",Map.of("layout",fields.get("layout"),"width",fields.get("width"),"height",fields.get("height"),"lastProfile",fields.get("lastProfile")));
+        root.put("windowFields",Map.of("layout",fields.get("layout"),"width",fields.get("width"),"height",fields.get("height"),
+                "lastProfile",fields.get("lastProfile"),"addProfile",fields.get("addProfile")));
+        root.put("displayPrefix","pane.{pane-uuid}. or window.{index}.pane.{pane-uuid}.");
+        root.put("displayFields",Map.of("fit",field("boolean",true,"Optional paired fit/zoom entries for a pane in the corresponding window; both or neither. No screen data."),
+                "zoom",field("number",1,"Finite 0.5..3; captured per-pane manual zoom, used when fit=false.")));
+        root.put("savedLayoutPrefix","savedLayout.{listed-layout-uuid}.");
+        root.put("savedLayoutFields",Map.of("version",enumeration("1",List.of("1")),
+                "name",field("text",null,"1..80 printable characters; unique ignoring case. Rename retains UUID/shortcuts."),
+                "layout",fields.get("layout"),"width",fields.get("width"),"height",fields.get("height"),
+                "lastProfile",fields.get("lastProfile"),"addProfile",fields.get("addProfile")));
+        root.put("savedLayoutDisplayPrefix","savedLayout.{listed-layout-uuid}.pane.{pane-uuid}.");
+        root.put("savedLayoutDisplayFields",Map.of("fit",field("boolean",true,"Required for every pane in this recipe; no extra pane IDs."),
+                "zoom",field("number",1,"Required finite 0.5..3; no terminal contents, credentials or authenticated state.")));
+        root.put("savedLayoutLaunch","Fish.exe --layout UUID [--data-dir DIRECTORY]. Exactly one new ordinary window with rekeyed fresh sessions; never filenames, names, hosts or executable configuration. Missing/deleted IDs fail explicitly. Exported .lnk retains the executable path and explicit data directory; moving portable Fish breaks its old target. Cold shortcut launches retain previous window restoration without opening it; saved collection appends the shortcut window for the next ordinary cold launch. Named recipes change only on explicit Update, not moving dividers.");
         root.put("shortcutPrefix","binding.{exact-action-title}");
         root.put("shortcutValue","Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.");
         root.put("actions",Shortcuts.commands().stream().filter(c -> !Shortcuts.SETTINGS_ALIASES.contains(c.title())).map(c -> {
@@ -87,8 +103,8 @@ public final class ConfigSchema {
                 "shortcut.{old-action-title}","Original single Swing stroke or empty.",
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
-        root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-14.");
-        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before upgrading. Format 14 adds independent window snapshots and info.footerDevice. Previous formats become one window; only the exact old built-in information defaults migrate to concise defaults, preserving custom/hidden flags. Older Fish cannot read format 14; to downgrade, close all windows and restore your backup, never relabel version.");
+        root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-15.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before upgrading, including from 0.7.4. Format 15 adds named recipes, add-profile selections and per-pane fit/zoom. Format 14 windows/settings/profile IDs remain intact with an empty recipe library and add selection from lastProfile. Earlier formats retain their window/footer migration. Older Fish cannot read format 15; downgrade only by restoring the backup with every window closed, never relabel version.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",
                 "ratio","finite 0.05..0.95","shape","1 full; 2 horizontal; 3 large left with vertically stacked right; 4-8 two rows, ceil(count/2) above. Each row is a right-nested horizontal chain."));
         root.put("semantics","Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Configuration apply performs no connections/transactions/credential operations. Normal startup follows the saved startup preference; only new/factory workspaces default on.");

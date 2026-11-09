@@ -5,6 +5,40 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Fish 0.7.5 layout shortcuts and automatic additions
+
+The titlebar profile selector/+ is the rightmost menu-action group. Selecting
+does not touch a session; + reuses only a lone never-used offline tile or creates
+a fresh pane and connects once. New window and saved-recipe launches also have
+explicit connect intent; ordinary startup-off remains intact. Failures expose
+Reconnect, not a retry loop; explicit disconnect stays offline.
+
+Panes > Saved layouts / shortcuts manages up to 64 named, versioned recipes.
+Native Windows Shell .lnk export targets Fish.exe with a strict UUID and quoted
+data-directory scope. Hot/cold launches create one new independent ordinary window,
+not a screen/session copy. Cold shortcut launches retain prior ordinary-window
+restoration without opening it and append their current windows on save.
+Rename/update retain link IDs; deleting makes old links explicitly unavailable.
+Referenced profiles cannot be deleted until recipes are updated/removed.
+Format 15 needs a pre-upgrade backup, including from 0.7.4, for downgrade.
+
+Focused checks cover strict recipe/config migration, bounded fields/secret
+absence, selected profile and startup-off intent, independently connected loopback
+windows, eight-pane limit, retries/cancellation/disconnect, shared selection/order
+refresh, stale/deleted IDs, authenticated fixed-size concurrent launch requests,
+crash recovery, actual native shortcut target/arguments/icon/working-directory,
+private-runtime/native integration and offline native Unicode-path export.
+The packaged launcher manifest opts into Windows UTF-8 argument handling (Windows
+10 version 1903+) without changing its native controls or DPI settings.
+
+Final fixtures use isolated workspaces, synthetic/loopback hosts and injected
+authentication, never installer execution or shared clipboard/desktop input.
+An initial legacy fixture reached the default DNS/Kerberos lookup before it was
+changed to an empty-host fixture; ticket-cache state was not inspected.
+Offscreen 100%/150% rendering does not establish physical Alt+Tab/keyboard,
+assistive-technology, mixed-monitor or real IBM i/SSO/ACS acceptance.
+The existing perimeter/flicker/emulation limits remain unchanged.
+
 ## Fish 0.7.4 windows and cursor refinement
 
 The single Settings action is under Edit; + Pane follows all menus. Repeated

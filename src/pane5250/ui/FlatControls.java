@@ -1,6 +1,7 @@
 package pane5250.ui;
 
 import java.awt.*;
+import java.util.Objects;
 import javax.swing.*;
 import javax.swing.plaf.*;
 import javax.swing.plaf.basic.*;
@@ -120,7 +121,7 @@ public final class FlatControls {
         }
         @Override public void paintCurrentValue(Graphics g,Rectangle bounds,boolean focus) {
             Component value=comboBox.getRenderer().getListCellRendererComponent(listBox,comboBox.getSelectedItem(),-1,false,false);
-            value.setFont(comboBox.getFont());
+            value.setFont(Ui.textFont(comboBox.getFont(),Objects.toString(comboBox.getSelectedItem(),"")));
             value.setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.color(ColorRole.DISABLED));
             value.setBackground(Ui.FIELD);
             Ui.quality(g);
@@ -130,6 +131,7 @@ public final class FlatControls {
             return new DefaultListCellRenderer.UIResource() {
                 @Override public Component getListCellRendererComponent(JList<?> list,Object value,int index,boolean selected,boolean focus) {
                     super.getListCellRendererComponent(list,value,index,selected,focus);
+                    setFont(Ui.textFont(list.getFont(),Objects.toString(value,"")));
                     setBorder(BorderFactory.createEmptyBorder(4,8,4,8));
                     if (index < 0) { setBackground(Ui.FIELD); setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.color(ColorRole.DISABLED)); }
                     return this;

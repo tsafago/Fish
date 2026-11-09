@@ -96,6 +96,11 @@
       "title": "Restore profile layout"
     },
     {
+      "default": "",
+      "hostAction": null,
+      "title": "Saved layouts / shortcuts..."
+    },
+    {
       "default": "ctrl 0\nctrl NUMPAD0@numpad",
       "hostAction": null,
       "title": "Fit host screen"
@@ -656,7 +661,20 @@
       "title": "Host NEW LINE"
     }
   ],
-  "catalogVersion": 4,
+  "catalogVersion": 5,
+  "displayFields": {
+    "fit": {
+      "constraints": "Optional paired fit/zoom entries for a pane in the corresponding window; both or neither. No screen data.",
+      "default": true,
+      "type": "boolean"
+    },
+    "zoom": {
+      "constraints": "Finite 0.5..3; captured per-pane manual zoom, used when fit=false.",
+      "default": 1,
+      "type": "number"
+    }
+  },
+  "displayPrefix": "pane.{pane-uuid}. or window.{index}.pane.{pane-uuid}.",
   "format": "Fish XML properties configuration",
   "freshWorkspaceProfile": {
     "authentication": "KERBEROS",
@@ -673,7 +691,7 @@
     "property": "binding.Unbound keys",
     "value": "Newline-separated exact chords disabled only in terminals; empty removes these per-key suppressions."
   },
-  "keyboardMigration": "Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-14.",
+  "keyboardMigration": "Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-15.",
   "keyboardRecoveryFields": {
     "binding.{old-settings-action-title}": "Original format-12 exact multiline list or empty; recovery only, never dispatched.",
     "profile.{uuid}.key.{old-Swing-stroke}": "Original host mnemonic or empty. Recovery only, never dispatched.",
@@ -829,6 +847,11 @@
   },
   "profilePrefix": "profile.{uuid}.",
   "properties": {
+    "addProfile": {
+      "constraints": "This window's titlebar profile selection; must be a listed ID. Old formats initialize it from lastProfile. Selecting alone does not connect.",
+      "default": null,
+      "type": "uuid"
+    },
     "appTheme": {
       "constraints": "Exact case-sensitive value.",
       "default": "Charcoal",
@@ -873,7 +896,7 @@
       "type": "boolean"
     },
     "connectOnStartup": {
-      "constraints": "New/factory default. Existing saved off choices and older formats without this preference stay off. Connect each restored pane once on startup; incomplete PASSWORD logins stay offline without prompts. Adding a pane never auto-connects. Kerberos still requires configured IBM i/domain services.",
+      "constraints": "Ordinary restored-window startup only. New/factory default on; existing off stays off. Explicit Add, New window, Restore profile layout and --layout connect their intended panes once asynchronously even when off. No automatic retries after failure/disconnect; incomplete login stays offline with Reconnect guidance. Kerberos still requires IBM i/domain setup.",
       "default": true,
       "type": "boolean"
     },
@@ -967,6 +990,16 @@
       "default": null,
       "type": "comma-separated-uuid-list"
     },
+    "savedLayouts": {
+      "constraints": "Ordered, unique stable named-layout IDs, at most 64. Empty means none. Names must be unique ignoring case.",
+      "default": "",
+      "type": "comma-separated-uuid-list"
+    },
+    "selectedLayout": {
+      "constraints": "Empty or an ID from savedLayouts; management selection only, not a launch instruction.",
+      "default": "",
+      "type": "uuid-or-empty"
+    },
     "tutorial.status": {
       "constraints": "Exact case-sensitive value.",
       "default": "NEW",
@@ -999,10 +1032,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "14",
+      "default": "15",
       "type": "enum",
       "values": [
-        "14"
+        "15"
       ]
     },
     "width": {
@@ -1016,6 +1049,61 @@
       "type": "integer"
     }
   },
+  "savedLayoutDisplayFields": {
+    "fit": {
+      "constraints": "Required for every pane in this recipe; no extra pane IDs.",
+      "default": true,
+      "type": "boolean"
+    },
+    "zoom": {
+      "constraints": "Required finite 0.5..3; no terminal contents, credentials or authenticated state.",
+      "default": 1,
+      "type": "number"
+    }
+  },
+  "savedLayoutDisplayPrefix": "savedLayout.{listed-layout-uuid}.pane.{pane-uuid}.",
+  "savedLayoutFields": {
+    "addProfile": {
+      "constraints": "This window's titlebar profile selection; must be a listed ID. Old formats initialize it from lastProfile. Selecting alone does not connect.",
+      "default": null,
+      "type": "uuid"
+    },
+    "height": {
+      "constraints": "260..10000 logical pixels.",
+      "default": 850,
+      "type": "integer"
+    },
+    "lastProfile": {
+      "constraints": "Must be a listed profile ID.",
+      "default": null,
+      "type": "uuid"
+    },
+    "layout": {
+      "constraints": "1-8 unique pane IDs referencing listed profiles; bounded Fish shape. See layoutGrammar.",
+      "default": null,
+      "type": "layout"
+    },
+    "name": {
+      "constraints": "1..80 printable characters; unique ignoring case. Rename retains UUID/shortcuts.",
+      "default": null,
+      "type": "text"
+    },
+    "version": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "1",
+      "type": "enum",
+      "values": [
+        "1"
+      ]
+    },
+    "width": {
+      "constraints": "330..10000 logical pixels.",
+      "default": 1360,
+      "type": "integer"
+    }
+  },
+  "savedLayoutLaunch": "Fish.exe --layout UUID [--data-dir DIRECTORY]. Exactly one new ordinary window with rekeyed fresh sessions; never filenames, names, hosts or executable configuration. Missing/deleted IDs fail explicitly. Exported .lnk retains the executable path and explicit data directory; moving portable Fish breaks its old target. Cold shortcut launches retain previous window restoration without opening it; saved collection appends the shortcut window for the next ordinary cold launch. Named recipes change only on explicit Update, not moving dividers.",
+  "savedLayoutPrefix": "savedLayout.{listed-layout-uuid}.",
   "semantics": "Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Configuration apply performs no connections/transactions/credential operations. Normal startup follows the saved startup preference; only new/factory workspaces default on.",
   "shortcutPrefix": "binding.{exact-action-title}",
   "shortcutValue": "Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.",
@@ -1330,6 +1418,11 @@
   "themePrefix": "appearance.theme.{zero-based-index}.",
   "unknownKeys": "Rejected without writing. Future workspace versions are rejected, never downgraded.",
   "windowFields": {
+    "addProfile": {
+      "constraints": "This window's titlebar profile selection; must be a listed ID. Old formats initialize it from lastProfile. Selecting alone does not connect.",
+      "default": null,
+      "type": "uuid"
+    },
     "height": {
       "constraints": "260..10000 logical pixels.",
       "default": 850,
@@ -1351,7 +1444,7 @@
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before upgrading. Format 14 adds independent window snapshots and info.footerDevice. Previous formats become one window; only the exact old built-in information defaults migrate to concise defaults, preserving custom/hidden flags. Older Fish cannot read format 14; to downgrade, close all windows and restore your backup, never relabel version.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before upgrading, including from 0.7.4. Format 15 adds named recipes, add-profile selections and per-pane fit/zoom. Format 14 windows/settings/profile IDs remain intact with an empty recipe library and add selection from lastProfile. Earlier formats retain their window/footer migration. Older Fish cannot read format 15; downgrade only by restoring the backup with every window closed, never relabel version.",
   "windowPrefix": "window.{zero-based-index}.",
-  "workspaceVersion": "14"
+  "workspaceVersion": "15"
 }

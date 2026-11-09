@@ -7,15 +7,16 @@ import java.nio.file.attribute.*;
 import java.security.*;
 import java.util.*;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import pane5250.model.StateStore;
 
-/** One locked owner per data directory. IPC can only request a new, empty window. */
+/** One locked owner per data directory. IPC accepts only new-window intent and an optional saved UUID. */
 public final class LaunchBroker implements AutoCloseable {
     private static final int MAGIC=0x46495348;
     private final Path file;
     private final byte[] token=new byte[32],version;
     private final ServerSocket server;
-    private final BooleanSupplier open;
+    private final Function<UUID,Integer> open;
     private volatile boolean closed;
     public record Claim(StateStore store,LaunchBroker broker) {
         public boolean forwarded() { return store==null; }
@@ -23,6 +24,9 @@ public final class LaunchBroker implements AutoCloseable {
     private record Address(int port,byte[] token,byte[] version) {}
 
     public static Claim claim(Path directory,String identity,BooleanSupplier open) throws IOException {
+        return claim(directory,identity,null,id -> open.getAsBoolean() ? 1 : 0);
+    }
+    public static Claim claim(Path directory,String identity,UUID layout,Function<UUID,Integer> open) throws IOException {
         Path root=directory.toAbsolutePath().normalize();
         UUID request=UUID.randomUUID();
         long deadline=System.nanoTime()+8_000_000_000L;
@@ -39,16 +43,20 @@ public final class LaunchBroker implements AutoCloseable {
                     catch (NoSuchFileException replaced) { continue; }
                     try (Socket socket=new Socket()) {
                         socket.connect(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),target.port),500);
-                        if (!MessageDigest.isEqual(target.version,version(identity)))
-                            throw new IOException("Another Fish version or launch mode is running. Close its windows before opening this version.");
                         socket.setSoTimeout(10_000);
                         DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                        out.writeInt(MAGIC); out.write(target.token); out.write(target.version);
-                        out.writeLong(request.getMostSignificantBits()); out.writeLong(request.getLeastSignificantBits()); out.flush();
+                        out.writeInt(MAGIC); out.write(target.token); out.write(version(identity));
+                        out.writeLong(request.getMostSignificantBits()); out.writeLong(request.getLeastSignificantBits());
+                        out.writeByte(layout==null ? 0 : 1);
+                        if (layout!=null) { out.writeLong(layout.getMostSignificantBits()); out.writeLong(layout.getLeastSignificantBits()); }
+                        out.flush();
+                        socket.shutdownOutput();
                         int result=new DataInputStream(socket.getInputStream()).readInt();
                         if (result==MAGIC) return new Claim(null,null);
+                        if (result==3) throw new IOException("Another Fish version or launch mode is running. Close its windows before opening this version.");
+                        if (result==2) throw new IOException("Saved layout is unavailable. Open Fish normally and use Panes > Saved layouts / shortcuts to recreate or update this shortcut.");
                         if (result!=0) throw new IOException("The running Fish instance rejected the new-window request.");
-                    } catch (ConnectException | SocketTimeoutException | EOFException stale) {
+                    } catch (SocketException | SocketTimeoutException | EOFException stale) {
                         // The file can outlive a crash, but only the OS file lock elects a new owner.
                     }
                 }
@@ -58,7 +66,7 @@ public final class LaunchBroker implements AutoCloseable {
         } while (System.nanoTime()<deadline);
         throw new IOException("Fish is still starting or closing. Try opening it again shortly. If a different version is running, close its windows first.");
     }
-    private LaunchBroker(Path directory,String identity,BooleanSupplier open) throws IOException {
+    private LaunchBroker(Path directory,String identity,Function<UUID,Integer> open) throws IOException {
         this.open=open; file=directory.resolve("window-launch"); version=version(identity);
         new SecureRandom().nextBytes(token);
         server=new ServerSocket(0,8,InetAddress.getByName("127.0.0.1"));
@@ -114,25 +122,35 @@ public final class LaunchBroker implements AutoCloseable {
             }
     }
     private void listen() {
-        Map<UUID,Long> acceptedRequests=new LinkedHashMap<>();
+        record Accepted(UUID layout,long time) {}
+        Map<UUID,Accepted> acceptedRequests=new LinkedHashMap<>();
         while (!closed) {
             try (Socket socket=server.accept()) {
                 socket.setSoTimeout(1500);
                 if (!socket.getInetAddress().isLoopbackAddress()) continue;
                 DataInputStream in=new DataInputStream(socket.getInputStream());
-                if (in.readInt()!=MAGIC || !MessageDigest.isEqual(in.readNBytes(32),token)
-                        || !MessageDigest.isEqual(in.readNBytes(32),version)) continue;
+                if (in.readInt()!=MAGIC || !MessageDigest.isEqual(in.readNBytes(32),token)) continue;
+                byte[] requestedVersion=in.readNBytes(32);
                 UUID request=new UUID(in.readLong(),in.readLong());
+                int mode=in.readUnsignedByte();
+                if (mode!=0 && mode!=1) continue;
+                UUID layout=mode==1 ? new UUID(in.readLong(),in.readLong()) : null;
+                if (in.read()!=-1) continue;
+                if (!MessageDigest.isEqual(requestedVersion,version)) {
+                    new DataOutputStream(socket.getOutputStream()).writeInt(3); continue;
+                }
                 long now=System.nanoTime();
-                acceptedRequests.values().removeIf(time -> now-time>30_000_000_000L);
+                acceptedRequests.values().removeIf(value -> now-value.time()>30_000_000_000L);
                 boolean accepted=acceptedRequests.containsKey(request);
+                if (accepted && !Objects.equals(acceptedRequests.get(request).layout(),layout)) continue;
+                int result=accepted ? 1 : 0;
                 if (!accepted && !closed) {
                     if (acceptedRequests.size()>=256) continue;
-                    accepted=open.getAsBoolean();
-                    if (accepted) acceptedRequests.put(request,now);
+                    result=open.apply(layout); accepted=result==1;
+                    if (accepted) acceptedRequests.put(request,new Accepted(layout,now));
                 }
                 DataOutputStream out=new DataOutputStream(socket.getOutputStream());
-                out.writeInt(accepted ? MAGIC : 0); out.flush();
+                out.writeInt(accepted ? MAGIC : result==2 ? 2 : 0); out.flush();
             } catch (IOException e) {
                 if (!closed && !(e instanceof SocketTimeoutException || e instanceof EOFException || e instanceof SocketException))
                     System.getLogger(LaunchBroker.class.getName()).log(System.Logger.Level.WARNING,"Window launch request failed: "+e.getMessage());

@@ -99,8 +99,8 @@ final class TutorialDialog extends JDialog {
     private static List<Step> steps(Guide guide) {
         return switch(guide) {
             case GETTING_STARTED -> List.of(
-                    s("Connect when you're ready","The default Kerberos profile uses Windows sign-in. Your IBM i/domain administrator must enable Kerberos and account mapping. Click Connect when you want to try; you can skip this step.","connect","","Connect / disconnect"),
-                    s("Add a pane","Click + Pane. Each pane has an independent connection; adding one never sends a host transaction.","add","","Add pane"),
+                    s("Choose your profile","Use the profile selector beside +. Selection alone changes no session. The default Kerberos profile needs your administrator's IBM i/domain setup; Edit > Settings > Profiles supports password sign-in.","add-profile","","add-profile-selected"),
+                    s("Add and connect","Press + to connect the selected profile in a fresh pane. A lone never-used offline tile is reused. Each connection is independent; on failure use Reconnect in the pane or Session menu.","add","","Add pane"),
                     s("Close just one pane","Click X to remove a pane. The last pane is kept offline. With hidden headers, X is at the pane's upper-right edge.","close","","Close pane"),
                     s("Find your settings","Open Edit > Settings. Appearance brings application colors, terminal colors, fonts and pane information together. The left index goes straight to other controls.","settings","","settings-Appearance"),
                     s("Explore more guides","Open Help > Tutorials for appearance, profiles, keyboard shortcuts and pane tips. Every guide has Back, Next, Skip step and Skip tutorial.","Help","Tutorials",""));
@@ -120,7 +120,7 @@ final class TutorialDialog extends JDialog {
                     s("Enter your username","Enter your username, or choose an existing saved login when available. The guide never reads, records or supplies a password.","Profiles","username","profile-username"),
                     s("Review sign-in preferences","New password profiles have automatic sign-in and Save password on. Keep or adjust them. A blank password keeps an existing saved password; none is invented.","Profiles","remember","profile-login-options"),
                     s("Optional advanced fields","Advanced contains port, requested device and code page. The optional Kerberos DNS identity is here in Kerberos mode. Leave defaults unless your administrator specifies otherwise.","Profiles","advanced","profile-advanced"),
-                    s("Save only if you want","Apply saves without connecting; Done saves and closes. A password you explicitly enter is saved in Windows only with Save password enabled. Cancel drops the unapplied draft.","Profiles","apply","profile-saved"));
+                    s("Save, then select and add","Apply saves without connecting; Done saves and closes. Choose this profile beside + and press + to connect. Reconnect retries failures. A password you enter is saved in Windows only with Save password enabled.","Profiles","apply","profile-saved"));
             case KEYBOARD -> List.of(
                     s("Open Keyboard Shortcuts","Open Settings > Keyboard Shortcuts. Fish commands and host keys share this editor; host keys still act only in the terminal.","Keyboard Shortcuts","keyboard-search","settings-Keyboard Shortcuts"),
                     s("Find an action","Type part of an action or key in Find action. The table shows every effective binding, not just the one displayed in a menu.","Keyboard Shortcuts","keyboard-search","keyboard-search"),
@@ -128,19 +128,21 @@ final class TutorialDialog extends JDialog {
                     s("Edit or record a binding","Type one exact chord per line, or use Record and add. ENTER is the main key; ENTER@numpad is the keypad. Two custom owners conflict and cannot be applied.","Keyboard Shortcuts","keyboard-keys","keyboard-binding"),
                     s("Apply valid bindings","Apply requires a valid, conflict-free list. Done applies and closes; Cancel keeps the last applied list. Menus show the first available chord.","Keyboard Shortcuts","apply","settings-applied"));
             case PANES -> List.of(
-                    s("Add an independent pane","Click + Pane. At most eight panes fit the bounded layout; adding one does not connect it.","add","","Add pane"),
+                    s("Add an independent pane","Choose a profile beside +, then press + to add and connect it. A lone never-used offline tile is reused; later adds create new panes, up to eight.","add","","Add pane"),
                     s("Resize side by side","Drag the highlighted divider horizontally. Panes > Decrease / Increase divider are keyboard equivalents. Pane size scales text, not host dimensions.","divider-horizontal","","divider-horizontal"),
                     s("Add a second row","Add another pane for vertical resizing. The bounded layout avoids arbitrarily narrow nested strips.","add","","Add pane"),
                     s("Resize vertically","Drag the row divider vertically. If there is none, add at least three panes or skip this step.","divider-vertical","","divider-vertical"),
                     s("Swap positions","Drag a header onto another pane, or use Panes > Swap panes. With hidden headers, use the upper edge. Progress requires a real swap, not opening or canceling its dialog.","Panes","Swap panes...","panes-swapped"),
-                    s("Choose startup connections","Settings > General controls Connect restored panes on startup. New/factory workspaces start on; your saved choice is kept. This does not connect existing panes now.","General","startup","startup-changed"),
-                    s("Fit and navigate","View > Fit host screen fits the active pane. Ctrl+Tab moves between panes by default; X closes one and keeps the last offline. Settings lists your complete custom bindings.","View","Fit host screen","Fit host screen"));
+                    s("Choose startup connections","Edit > Settings > General controls ordinary restored-window startup. Its off choice is kept. Explicit +, New window and saved-layout launches still connect once; Disconnect stays disconnected until you explicitly retry.","General","startup","startup-changed"),
+                    s("Fit and navigate","View > Fit host screen fits the active pane. Ctrl+Tab moves between panes; X closes one and keeps the last offline. Settings lists your complete custom bindings.","View","Fit host screen","Fit host screen"),
+                    s("Save a layout shortcut","Panes > Saved layouts / shortcuts saves this window under a name. Save current as new keeps recipes separate; Create shortcut writes a Windows .lnk to Desktop or your chosen folder. Each launch opens a new window.","Panes","Saved layouts / shortcuts...","layout-saved"));
         };
     }
     private Component target(Step current) {
         Preferences settings=workspace.tutorialPreferences();
         return switch(current.surface()) {
             case "connect" -> workspace.active().tutorialConnectionTarget(); case "add" -> workspace.tutorialAddTarget();
+            case "add-profile" -> workspace.tutorialProfileTarget();
             case "close" -> workspace.active().tutorialCloseTarget(); case "settings" -> workspace.tutorialSettingsTarget();
             case "divider-horizontal","divider-vertical" -> {
                 Component divider=workspace.tutorialDivider(current.surface().equals("divider-horizontal"));
@@ -159,15 +161,13 @@ final class TutorialDialog extends JDialog {
         try {
             editor=workspace.tutorialProfileEditor(); Step current=steps.get(step);
             Component target=target(current); String message=current.text();
-            if (guide==Guide.GETTING_STARTED && step==0 && workspace.active().busy())
-                message="This pane is already connected or connecting. Use X to close/cancel, or Next to continue without another connection.";
             if (guide==Guide.APPEARANCE && current.control().equals("palette") && workspace.tutorialPreferences()!=null
                     && workspace.tutorialPreferences().category().equals("Appearance") && workspace.tutorialPreferences().customPalette()) {
                 message+=" This custom theme owns host colors. Choose a built-in application theme to enable a profile palette, or skip.";
                 target=workspace.tutorialPreferences().tutorialTarget("theme");
             }
             if (current.surface().startsWith("divider-") && workspace.tutorialDivider(current.surface().equals("divider-horizontal"))==null)
-                message+=" There is no matching divider yet. Use + Pane if you want one, or skip.";
+                message+=" There is no matching divider yet. Choose a profile and use + if you want one, or skip.";
             if (current.surface().equals("add") && workspace.sessionPanes().size()==8)
                 message+=" All eight slots are occupied. Close a pane first or skip.";
             if (current.surface().equals("close") && workspace.sessionPanes().size()==1 && !workspace.active().busy())

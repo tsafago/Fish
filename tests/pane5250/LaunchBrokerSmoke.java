@@ -19,18 +19,28 @@ public final class LaunchBrokerSmoke {
         throw new AssertionError(message);
     }
     private static Process child(Path directory,String identity) throws IOException {
-        return new ProcessBuilder(Path.of(System.getProperty("java.home"),"bin","java.exe").toString(),"-cp",
-                System.getProperty("java.class.path"),LaunchBrokerSmoke.class.getName(),"--child",directory.toString(),identity)
+        return child(directory,identity,null);
+    }
+    private static Process child(Path directory,String identity,UUID layout) throws IOException {
+        List<String> command=new ArrayList<>(List.of(Path.of(System.getProperty("java.home"),"bin","java.exe").toString(),"-cp",
+                System.getProperty("java.class.path"),LaunchBrokerSmoke.class.getName(),"--child",
+                Base64.getUrlEncoder().encodeToString(directory.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8)),identity));
+        if (layout!=null) command.add(layout.toString());
+        return new ProcessBuilder(command)
                 .redirectErrorStream(true).redirectOutput(directory.resolve("child-"+UUID.randomUUID()+".log").toFile()).start();
     }
     private static void child(String[] args) throws Exception {
-        Path root=Path.of(args[1]);
-        var claim=LaunchBroker.claim(root,args[2],() -> {
-            try { Files.writeString(root.resolve("requests"),"window\n",StandardOpenOption.CREATE,StandardOpenOption.APPEND); }
+        // Stock java.exe on non-UTF-8 Windows has a lossy argv code page; Fish.exe has UTF-8 activation.
+        Path root=Path.of(new String(Base64.getUrlDecoder().decode(args[1]),java.nio.charset.StandardCharsets.UTF_8));
+        UUID initial=args.length>3 ? UUID.fromString(args[3]) : null;
+        var claim=LaunchBroker.claim(root,args[2],initial,id -> {
+            if (id!=null && !Set.of(new UUID(0,1),new UUID(0,2)).contains(id)) return 2;
+            try { Files.writeString(root.resolve("requests"),id==null ? "window\n" : "layout "+id+"\n",StandardOpenOption.CREATE,StandardOpenOption.APPEND); }
             catch (IOException e) { throw new UncheckedIOException(e); }
-            return true;
+            return 1;
         });
         if (claim.forwarded()) return;
+        if (initial!=null) Files.writeString(root.resolve("initial-layout"),initial.toString());
         Files.writeString(root.resolve("owner"),Long.toString(ProcessHandle.current().pid()));
         try {
             while (!Files.exists(root.resolve("stop"))) Thread.sleep(20);
@@ -38,6 +48,9 @@ public final class LaunchBrokerSmoke {
     }
     private static byte[] token(Path directory) throws IOException { return Arrays.copyOfRange(Files.readAllBytes(directory.resolve("window-launch")),8,40); }
     private static int request(Path directory,byte[] token,String identity,UUID id,boolean read) throws Exception {
+        return request(directory,token,identity,id,null,false,read);
+    }
+    private static int request(Path directory,byte[] token,String identity,UUID id,UUID layout,boolean extra,boolean read) throws Exception {
         byte[] address=Files.readAllBytes(directory.resolve("window-launch"));
         int port=new DataInputStream(new ByteArrayInputStream(address,4,4)).readInt();
         try (Socket socket=new Socket(InetAddress.getByName("127.0.0.1"),port)) {
@@ -45,7 +58,10 @@ public final class LaunchBrokerSmoke {
             DataOutputStream out=new DataOutputStream(socket.getOutputStream());
             out.writeInt(0x46495348); out.write(token);
             out.write(MessageDigest.getInstance("SHA-256").digest(identity.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-            out.writeLong(id.getMostSignificantBits()); out.writeLong(id.getLeastSignificantBits()); out.flush();
+            out.writeLong(id.getMostSignificantBits()); out.writeLong(id.getLeastSignificantBits()); out.writeByte(layout==null ? 0 : 1);
+            if (layout!=null) { out.writeLong(layout.getMostSignificantBits()); out.writeLong(layout.getLeastSignificantBits()); }
+            if (extra) out.write(new byte[1024]);
+            out.flush(); socket.shutdownOutput();
             return read ? new DataInputStream(socket.getInputStream()).readInt() : 0;
         }
     }
@@ -75,6 +91,34 @@ public final class LaunchBrokerSmoke {
             request(directory,token(directory),"synthetic-074",id,false);
             check(request(directory,token(directory),"synthetic-074",id,true)==0x46495348,"Lost acknowledgement can be retried");
             check(Files.readAllLines(directory.resolve("requests")).size()==2,"Same authenticated request is admitted exactly once");
+            try { request(directory,token(directory),"synthetic-074",id,new UUID(0,1),false,true); throw new AssertionError("Replayed ID with altered payload accepted"); }
+            catch (EOFException | SocketException expected) { checks++; }
+            try { request(directory,token(directory),"synthetic-074",UUID.randomUUID(),null,true,true); throw new AssertionError("Oversized IPC accepted"); }
+            catch (EOFException | SocketException expected) { checks++; }
+            check(Files.readAllLines(directory.resolve("requests")).size()==2,"Malformed/replayed requests cannot create sessions");
+            Path named=Files.createDirectory(root.resolve("named \u5317 spaces"));
+            Process namedOwner=child(named,"synthetic-075",new UUID(0,2)); processes.add(namedOwner);
+            await(() -> {
+                if (!namedOwner.isAlive()) {
+                    try (var files=Files.list(named)) {
+                        for (Path log:files.filter(p -> p.toString().endsWith(".log")).toList()) System.err.println(Files.readString(log));
+                    }
+                    throw new AssertionError("Cold saved-layout child exited "+namedOwner.exitValue());
+                }
+                return Files.exists(named.resolve("owner"));
+            },"Cold saved-layout owner did not start");
+            check(Files.readString(named.resolve("initial-layout")).equals(new UUID(0,2).toString())
+                    && !Files.exists(named.resolve("requests")),"Cold launch retains exactly its one layout intent, no default extra request");
+            Process namedOne=child(named,"synthetic-075",new UUID(0,1)),namedTwo=child(named,"synthetic-075",new UUID(0,2));
+            processes.add(namedOne); processes.add(namedTwo);
+            check(namedOne.waitFor(10,TimeUnit.SECONDS) && namedTwo.waitFor(10,TimeUnit.SECONDS)
+                    && namedOne.exitValue()==0 && namedTwo.exitValue()==0,"Concurrent hot layout launches forward and exit");
+            List<String> requests=Files.readAllLines(named.resolve("requests"));
+            check(requests.size()==2 && requests.contains("layout "+new UUID(0,1)) && requests.contains("layout "+new UUID(0,2)),
+                    "Concurrent shortcuts deliver each distinct UUID exactly once");
+            try { LaunchBroker.claim(named,"synthetic-075",UUID.randomUUID(),ignored -> 0); throw new AssertionError("Stale layout silently substituted"); }
+            catch (IOException expected) { check(expected.getMessage().contains("unavailable"),"Deleted layout references fail actionably, without retrying forever"); }
+            Files.createFile(named.resolve("stop")); check(namedOwner.waitFor(5,TimeUnit.SECONDS),"Named owner closes cleanly");
             Path independent=Files.createDirectory(root.resolve("independent"));
             var separate=LaunchBroker.claim(independent,"synthetic-074",() -> true);
             check(!separate.forwarded(),"Different data directory has an independent owner");

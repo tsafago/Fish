@@ -1,10 +1,10 @@
 # Fish manual
 
-Fish 0.7.4 - unsigned experimental multi-window/cursor refinement.
+Fish 0.7.5 - unsigned experimental saved-layout shortcuts and quick connections.
 
 Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
-“Settings” paths below refer to that same flat indexed dialog. **+ Pane** is the
-last action after the menus, before the drag area and native window controls.
+“Settings” paths below refer to that same flat indexed dialog. The **profile / +**
+group is the last action after the menus, before the drag area and native window controls.
 
 Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
 Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
@@ -19,16 +19,16 @@ You need the IBM i's address and permission to use its Telnet service. Windows s
 2. Open Session > Profiles. Select Local IBM i, or choose New.
 3. Give the profile a useful name. Check Host (new profiles start at 10.1.2.3). Leave Port at 23 unless your administrator gave you another port.
 4. Fresh installs already select Local IBM i at 10.1.2.3 with Windows (Kerberos) sign-in. No password is needed; see Windows sign-in below for administrator prerequisites. For a password profile choose Password / manual, enter your username and password, and leave the recommended options checked to sign in automatically and save the password in Windows Credential Manager. Blank keeps a saved password. Turn automatic sign-in off for manual login. Device can stay empty; code page defaults to 37.
-5. Choose Save & connect. A TCP connection is not the same as a successful IBM i sign-on.
+5. Apply/Done saves the profile. Select it beside + in the titlebar, then press + (Ctrl+N) to add and connect it. A lone never-used offline tile is reused. Session > Profiles also retains Save & connect for manual use. A TCP connection is not the same as a successful IBM i sign-on.
 6. If using manual sign-in, type in the IBM i's own sign-on fields and press Enter. The host controls their actual order. Password characters normally remain invisible. Automatic sign-in requires host support for RFC 4777 plain sign-on; a saved password or TCP connection is not proof of sign-on.
 7. Work with the displayed IBM i application. Enter submits to the host. F1-F12 are host function keys; Shift+F1-F12 sends F13-F24.
 8. Use the pane's X to close that connection. The final pane stays as an empty tile. A window's X disconnects only its sessions; other Fish windows remain open. Session > Quit ends all windows immediately, without confirmation.
 
 Plain TCP is not encrypted. Use a trusted network approved by your administrator. Fish has not yet been accepted against a real IBM i or ACS session; see Compatibility before production use.
 
-If connection fails, check the hostname, port, VPN/network and IBM i Telnet service first. A blank Device is the recommended starting point. Do not enter your password in a visible application field.
+If connection fails, check the hostname, port, VPN/network and IBM i Telnet service first, then use the pane's arrow Reconnect control or Session > Reconnect (Ctrl+Alt+Shift+R). There are no automatic retry loops. A blank Device is the recommended starting point. Do not enter your password in a visible application field.
 
-Fresh workspaces show a short modeless introduction: Connect when ready, + Pane,
+Fresh workspaces show a short modeless introduction: choose a profile, + to connect,
 X, Edit > Settings, and Help > Tutorials. Startup connections are a separate saved
 preference, now ON only for new/factory workspaces; the guide never initiates them.
 Show control opens/selects actual controls without editing, saving or connecting.
@@ -44,11 +44,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.7.3 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.3) includes Fish-0.7.3-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
+The public [v0.7.5 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.5) includes Fish-0.7.5-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
 
-Version 0.7.4 is a local package/source revision; no new GitHub release is published with it. The public link above is the previous milestone.
-
-Alternatively, extract the matching Fish-0.7.4-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.7.5-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -62,15 +60,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.4-setup.exe, dist\Fish-0.7.4-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.4\Fish\Fish.exe. Close a running copy before rebuilding its directory.
+Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.5-setup.exe, dist\Fish-0.7.5-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.5\Fish\Fish.exe. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.4\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.4\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.5\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.5\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -80,14 +78,14 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish, or the retained
 legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
-The next save writes configuration version 13. Older binaries, including 0.7.2, cannot read it:
-keep the pre-upgrade backup for downgrade, not just a version-13 export. Never relabel a new export as an older format.
+The next save writes configuration version 15. Older binaries, including 0.7.4, cannot read it:
+keep the pre-upgrade backup for downgrade, not just a version-15 export. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older workspaces migrate to version 14, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint and update choices. Format 14 adds additional-window snapshots and footer device visibility. Only the exact prior built-in pane information defaults migrate to the concise defaults; custom and hidden choices remain. Close ALL windows and back up workspace.xml before upgrading, including from 0.7.3. Older Fish cannot read format 14; close all windows and restore that backup to downgrade, never relabel XML. Format 12 settings-action lists merge into Settings... with original multiline lists retained in keyboard.legacy.binding.*; old explicit Ctrl+, unbinding and other custom key ownership are preserved. Formats 1-11 retain their original keyboard conflict recovery. The startup ON default applies only to absent/factory state: pre-9 startup remains off and explicit later OFF remains off. Existing PASSWORD auto/remember choices stay unchanged. A new Kerberos draft initializes both password preferences ON only on its first switch to PASSWORD, then retains changes. Kerberos keeps its required false password flags. Malformed state is preserved, never reset.
+Older workspaces migrate to version 15, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Format 15 adds named recipes, per-window add-profile selection and per-pane fit/zoom. Format 14 gains an empty recipe library and initializes the selector from each window's last profile; it does not enable startup. The earlier exact built-in pane information defaults still migrate to concise defaults; custom and hidden choices remain. Close ALL windows and back up workspace.xml before upgrading, including from 0.7.4. Older Fish cannot read format 15; restore that backup to downgrade, never relabel XML. Format 12 settings-action lists merge into Settings... with original multiline lists retained in keyboard.legacy.binding.*; old explicit Ctrl+, unbinding and custom key ownership are preserved. Formats 1-11 retain keyboard conflict recovery. Startup ON applies only to absent/factory state: pre-9 and explicit later OFF stay off. Existing PASSWORD auto/remember choices stay unchanged. A new Kerberos draft initializes password preferences ON only on its first switch to PASSWORD, then retains changes. Kerberos keeps its false password flags. Malformed state is preserved, never reset.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -111,7 +109,7 @@ The native setup reports the actual Windows Installer result and verifies the in
 
 Open Settings > General and choose Revert to factory defaults. Confirmation explains the removal and active-session shutdown; a single click never resets Fish. Cancel keeps everything.
 
-Confirming atomically replaces only this workspace, then exits without an old-state autosave. The next launch has the selected Kerberos 10.1.2.3:23 profile, startup connections ON, default appearance/updates and the introduction. This is not proof that domain/NAS/EIM or SSO works. Saved profiles/layouts, custom themes, font references, keys and hidden update version are cleared. At least one pane remains.
+Confirming atomically replaces only this workspace, then exits without an old-state autosave. The next launch has the selected Kerberos 10.1.2.3:23 profile, startup connections ON, default appearance/updates and the introduction. This is not proof that domain/NAS/EIM or SSO works. Saved profiles/layouts (including named recipes and selector choices), custom themes, font references, keys and hidden update version are cleared. Exported shortcut files are not deleted; their old recipe IDs become unavailable. At least one pane remains.
 
 Windows saved passwords, font files, installation files, unknown files and other/custom workspaces are retained. Removed profile IDs are not reused, so their retained OS passwords are not automatically inherited by new profiles. Remove obsolete Fish credential targets separately through Windows Credential Manager if desired. No backup is silently made: export/copy workspace.xml first if you need recovery. A fresh workspace.xml remains even in a legacy Pane5250 directory, preventing stale fallback settings from returning.
 
@@ -119,7 +117,7 @@ Windows saved passwords, font files, installation files, unknown files and other
 
 Fish supports one to eight independent sessions per window. Each connected pane has its own TCP socket, host screen and input state. Focus changes, pane moves and window resizing do not reconnect sessions or change host dimensions.
 
-The compact + Pane control adds the next tile. Layouts are deterministic: one full pane; two side-by-side; a full-height left pane and two stacked right panes; four quadrants; then top/bottom rows of 3/2, 3/3, 4/3 and 4/4. Adding is disabled at eight.
+Choose a profile in the titlebar, then press + (Ctrl+N) to add and immediately connect it. Changing that selection alone does not affect a session. The choice is saved per window and follows shared profile renames/order changes. A lone never-used offline tile is reused; a failed, used or explicitly disconnected tile is not replaced by a later add. Layouts are deterministic: one full pane; two side-by-side; a full-height left pane and two stacked right panes; four quadrants; then top/bottom rows of 3/2, 3/3, 4/3 and 4/4. Adding is disabled at eight with no ninth socket.
 
 Drag a pane header onto another pane to swap the sessions. The full target is previewed; dropping never subdivides a tile. Panes > Swap panes provides the keyboard equivalent. Drag a hairline divider, or use Decrease divider / Increase divider.
 
@@ -127,15 +125,55 @@ If headers are hidden, drag near the pane's top at the X overlay's height to swa
 
 Pane X disconnects and removes its tile immediately; other panes reflow and stay connected. The last pane disconnects but remains as an empty tile. Closing the window is immediate and does not ask about unsent host edits.
 
-The empty pane contains a preset selector and the arrow Connect button directly to its right. New tiles preselect the last-used preset, but never auto-connect. Existing offline tiles remember their own preset.
+The empty/failed pane contains a profile selector and adjacent arrow Reconnect button. It retries only that pane's selected profile. Session > Reconnect and Ctrl+Alt+Shift+R do the same; Session > Connect / disconnect (Ctrl+Alt+R) retains manual control. An explicit Disconnect stays offline until you reconnect or make a new explicit add/launch. Existing offline panes retain their own profile assignment; the titlebar selection is for new panes, not a way to silently retarget an existing session.
 
 Settings > General > Connect panes on startup reconnects restored panes when you
 open Fish if enabled. It is ON for new/factory workspaces; existing saved OFF
 choices and legacy absence remain OFF. Each pane uses its own profile, once per launch.
 Automatic sign-in needs a saved password; incomplete profiles or missing saved
-passwords stay offline with a notice. Click Connect to finish signing in.
+passwords stay offline with a notice. Click Reconnect to finish signing in.
 Manual sign-in profiles connect to the host's sign-on screen without password prompts.
-Adding a pane, applying settings or replaying the guide never starts a connection.
+Explicit +, New window, Restore profile layout and saved-layout launches attempt their intended connections once even if ordinary startup is off. Failures never cause uncontrolled retries or password-dialog storms. Applying settings or opening/replaying a guide does not connect; pressing the actual highlighted + is explicit connect intent.
+
+## Saved layouts and desktop shortcuts
+
+Arrange one window, assign its profiles and adjust its dividers and fit/zoom.
+Open **Panes > Saved layouts / shortcuts...**, enter a name and choose
+**Save current as new**. Repeat with other names for distinct layouts (up to 64).
+The selector only selects a recipe; it does not replace a window or connect.
+
+**Create shortcut...** writes a real Windows .lnk to Desktop or another chosen
+folder. Run installed/portable Fish.exe to export; source/java launches and
+temporary Demo workspaces are not shortcut targets. Choose a new file: existing
+files are never overwritten. Shortcuts reference a stable recipe ID and explicit
+data directory, with the Fish.exe target, working directory and icon; no password,
+username or host goes in their arguments. Unicode/spaced paths are supported.
+Native UTF-8 path activation needs Windows 10 version 1903 or later.
+
+Each shortcut launch opens exactly one NEW ordinary window with fresh independent
+sessions, even with other Fish windows open. It connects each recipe pane once;
+it never copies a socket, signed-in state or transaction. A cold shortcut launch
+opens no extra default window and retains the previous normal window collection
+without opening it. Quit/final X preserves those dormant windows and appends the
+shortcut-launched open collection for the next ordinary cold launch. Other
+currently open windows are never replaced. Repeated shortcut launches are explicit
+new-window requests, not focus-existing requests.
+
+**Open new window** in the layout manager has the same connect intent.
+**Update from current** replaces only the selected recipe; existing shortcuts
+then open that new arrangement. **Rename** retains its UUID/links. **Delete**
+removes the stored recipe, not exported shortcut files; stale shortcuts report
+"unavailable" rather than selecting another host. Named recipes change only on
+these explicit save/update actions, not ordinary resizing/quit. They retain
+arrangement, ratios, profile IDs, size and fit/zoom, not screen text or secrets.
+Other appearance/font/login settings follow the shared profiles/settings.
+
+Profile deletion is blocked while a named recipe references it; update or remove
+those recipes first. Profile renames retain their ID and keep working. If an
+explicit device name conflicts with another session, Fish does not silently rename
+it or report host success. Installed upgrades retain the executable target; moving
+a portable folder breaks its old links, so export new shortcuts from its new home.
+Factory reset clears recipes but never deletes external shortcut files.
 
 ## Focus and switching panes
 
@@ -227,8 +265,10 @@ Do not treat Connected/TCP as proof of authentication. The IBM i host decides wh
 ## Windows sign-in (Kerberos)
 
 Fresh installations select Local IBM i, 10.1.2.3, port 23, Windows (Kerberos).
-Nothing connects on launch: click Connect when ready. Existing installations are
-not converted and a deleted default is never added back to a saved workspace.
+Fresh/factory workspaces attempt restored connections once on ordinary launch.
+Existing saved startup-off choices remain off; explicit +, New window or layout
+shortcuts connect regardless of that preference. Existing installations are not
+converted and a deleted default is never added back to a saved workspace.
 
 Kerberos uses your signed-in Windows identity, not a Fish username or saved
 password. In Profiles, choose Windows (Kerberos). Leave Kerberos server blank
@@ -439,13 +479,13 @@ At very small pane sizes, the screen must be small to fit. Increase the window, 
 
 ## Layout persistence and multiple windows
 
-Launch Fish.exe again or use Session > New window (Ctrl+Shift+N). Each is an independent normal top-level/taskbar/Alt+Tab window with its own focus, size, last-used profile and up to eight panes. New window starts one fresh pane with the source window's last profile; it never copies live sockets or transactions. Startup follows the saved connection preference. Explicit device names are not silently changed to avoid host collisions.
+Launch Fish.exe again or use Session > New window (Ctrl+Shift+N). Each is an independent normal top-level/taskbar/Alt+Tab window with its own focus, size, titlebar profile choice and up to eight panes. An explicit New window starts one fresh pane with the source window's titlebar profile and connects once, even with ordinary startup off. Only an ordinary cold launch uses the saved startup preference for restored windows. Explicit device names are not silently changed to avoid host collisions.
 
-Profiles, credentials references, themes/fonts, shortcuts, updates and information settings are shared live across windows. Settings reuses one app-wide editor; conflicting global changes reject stale drafts instead of overwriting them. A pane/profile deletion or connection edit reaches affected windows without replacing their layouts. Closing a window's X disconnects only its sessions and removes that window from the saved collection. The final X saves that window. Session > Quit saves the entire currently open collection, which is restored on the next launch with distinct new sessions. Window size is persisted independently; windows open with a small cascade. Saved layouts never imply auto-connect without the preference.
+Profiles, named recipes, credential references, themes/fonts, shortcuts, updates and information settings are shared live across windows. Settings reuses one app-wide editor; conflicting global changes reject stale drafts instead of overwriting them. Profile edits reach affected windows without replacing their layouts. A window's X disconnects only its sessions and removes it from the saved collection; the final X saves its window. Session > Quit saves the whole open collection for the next ordinary launch with distinct new sessions. Size and fit/zoom persist independently; windows open with a small cascade. Named layout launches have explicit connect intent as described above.
 
-Panes > Save layout to profile and Restore profile layout preserve a profile-specific arrangement. The flat Panes menu also holds divider adjustment. Restoring/replacing a layout can close sessions removed from it. Old arbitrary layouts are normalized into bounded slots with a notice. Layouts over eight panes are rejected rather than silently truncated.
+Panes > Save layout to profile and Restore profile layout retain the older one-arrangement-per-profile workflow. Restore replaces this window and connects its intended offline panes once; it can close sessions removed from the layout. Use Saved layouts / shortcuts instead for multiple recipes and new-window launches. The flat Panes menu also holds divider adjustment. Old arbitrary layouts are normalized into bounded slots with a notice. Layouts over eight panes are rejected, never truncated.
 
-One owning process retains the exclusive workspace lock and writes a coherent all-window snapshot. Subsequent launches use an owner-only per-user/data-directory rendezvous and authenticated, bounded IPv4 loopback new-window requests; they cannot transmit commands, files, hosts or credentials. Startup races retry the OS lock, stale crash metadata cannot elect an owner, and incompatible versions/demo modes do not forward into one another. Offline configuration still refuses while ANY window is open. --data-dir remains an optional advanced separate workspace, not a requirement for multiple windows.
+One owning process retains the exclusive workspace lock and writes a coherent all-window snapshot. Subsequent launches use an owner-only per-user/data-directory rendezvous and authenticated, fixed-size IPv4 loopback requests containing only new-window intent and an optional saved UUID; no commands, files, hosts or credentials. UUID request IDs deduplicate lost acknowledgments. Startup races retry the OS lock, stale crash metadata cannot elect an owner, and incompatible versions/demo modes do not forward into one another. Offline configuration still refuses while ANY window is open. --data-dir remains an optional advanced separate workspace, not a requirement for multiple windows. --layout accepts a strict saved UUID only, not a file or layout name.
 
 New state is normally %APPDATA%\Fish\workspace.xml. If legacy %APPDATA%\Pane5250\workspace.xml exists, Fish keeps using that directory and its lock so profiles and legacy credential targets survive the rename.
 

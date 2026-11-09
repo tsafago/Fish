@@ -32,6 +32,9 @@ public final class Workspace extends JFrame {
     private Layout layout;
     private SessionPane active;
     private UUID lastProfile;
+    private UUID addProfile;
+    private List<SavedLayout> savedLayouts;
+    private UUID selectedLayout;
     private Component tree;
     private final boolean demonstration;
     private boolean closing;
@@ -42,6 +45,9 @@ public final class Workspace extends JFrame {
     private final AppShortcuts shortcuts;
     private final WindowChrome chrome;
     private JButton addPane;
+    private final JComboBox<Profile> addProfileSelector=new JComboBox<>();
+    private boolean refreshingAdd,exportingLayout;
+    private SavedLayoutsDialog layoutsDialog;
     private ApplicationWindows application;
     private Preferences preferences;
     private ProfilesEditor profileEditor;
@@ -75,6 +81,7 @@ public final class Workspace extends JFrame {
         connectOnStartup=state.connectOnStartup();
         updateSettings=state.updates();
         keyboardRecovery=state.keyboardRecovery();
+        addProfile=state.addProfile(); savedLayouts=state.savedLayouts(); selectedLayout=state.selectedLayout();
         if (initializeTheme) Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         this.store = store;
         this.demonstration = demonstration;
@@ -99,10 +106,21 @@ public final class Workspace extends JFrame {
         updateWindowOutline();
         JMenuBar menus=menus(); menuBar=menus;
         JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); tools.setOpaque(false);
+        addProfileSelector.setPreferredSize(new Dimension(160,27));
+        addProfileSelector.setMinimumSize(new Dimension(45,27));
+        addProfileSelector.getAccessibleContext().setAccessibleName("Profile for new pane");
+        addProfileSelector.setToolTipText("Choose a profile, then + to add and connect; selection alone changes no session");
+        refreshAddProfiles();
+        addProfileSelector.addActionListener(e -> {
+            if (!refreshingAdd && addProfileSelector.getSelectedItem() instanceof Profile selected) {
+                addProfile=selected.id(); changed(); tutorialAction("add-profile-selected");
+            }
+        });
+        tools.add(addProfileSelector);
         addPane=new JButton(command("Add pane"));
-        addPane.setText("Pane"); addPane.setIcon(Ui.symbol("plus"));
-        addPane.setToolTipText("Add the next pane (maximum 8)");
-        addPane.getAccessibleContext().setAccessibleName("Add pane");
+        addPane.setText(""); addPane.setIcon(Ui.symbol("plus"));
+        addPane.setToolTipText("Add and connect selected profile (maximum 8)");
+        addPane.getAccessibleContext().setAccessibleName("Add and connect selected profile");
         for (JButton b : List.of(addPane)) {
             b.setBorder(BorderFactory.createEmptyBorder(6,9,6,9));
             b.setContentAreaFilled(false);
@@ -117,6 +135,7 @@ public final class Workspace extends JFrame {
         updates=new UpdateController(this,updateService,confirmUpdate);
         commands.forEach(command -> command.performed(this::tutorialAction));
         buildTree();
+        state.displays().forEach((id,display) -> panes.get(id).view().restoreDisplay(display));
         if (!fontNotice.isEmpty()) SwingUtilities.invokeLater(() -> {
             if (!closing) { active.problem(fontNotice); Ui.error(this,fontNotice); }
         });
@@ -143,9 +162,12 @@ public final class Workspace extends JFrame {
         if (!demonstration && tutorialStatus==StateStore.Tutorial.NEW) openTutorial(true);
     }
     public void startup() {
+        startup(false);
+    }
+    void startup(boolean explicit) {
         if (startupHandled || demonstration || closing) return;
         startupHandled=true;
-        if (connectOnStartup) sessionPanes().forEach(SessionPane::connectOnStartup);
+        if (connectOnStartup || explicit) sessionPanes().forEach(SessionPane::connectOnStartup);
         startTutorialIfNeeded();
         if (updateSettings.startup() && (application==null || application.checkStartupUpdates(this))) updates.startup();
     }
@@ -172,6 +194,7 @@ public final class Workspace extends JFrame {
     }
     Preferences tutorialPreferences() { return preferences!=null && !preferences.ended() ? preferences : null; }
     Component tutorialAddTarget() { return addPane; }
+    Component tutorialProfileTarget() { return addProfileSelector; }
     Component tutorialSettingsTarget() { return tutorialMenuTarget("Edit","Settings..."); }
     void showTutorialSettings() { showTutorialMenu("Edit"); }
     Component tutorialDivider(boolean horizontal) { return dividerTarget(tree,horizontal); }
@@ -253,7 +276,7 @@ public final class Workspace extends JFrame {
     }
     void preferencesClosed(Preferences value) { if (preferences==value) preferences=null; tutorialChanged(); }
     UpdateController updateController() { return updates; }
-    boolean localSettingsSaving() { return preferences!=null && preferences.saving() || profileEditor!=null && profileEditor.saving(); }
+    boolean localSettingsSaving() { return exportingLayout || preferences!=null && preferences.saving() || profileEditor!=null && profileEditor.saving(); }
     boolean settingsSaving() { return localSettingsSaving() || application!=null && application.saving(); }
     void refreshActions() { if (application==null) refreshCommands(); else application.refreshActions(); }
     Map<String,String> keyboardRecovery() { return keyboardRecovery; }
@@ -300,7 +323,19 @@ public final class Workspace extends JFrame {
     public List<SessionPane> sessionPanes() { return layout.leaves().stream().map(l -> panes.get(l.pane())).toList(); }
     public List<AppCommand> commands() { return List.copyOf(commands); }
     private AppCommand command(String name) { return commands.stream().filter(c -> c.title.equals(name)).findFirst().orElseThrow(); }
-    public void refreshCommands() { commands.forEach(AppCommand::refresh); }
+    public void refreshCommands() {
+        commands.forEach(AppCommand::refresh);
+        if (addPane!=null) addPane.setToolTipText(panes.size()>=Layout.MAX_PANES ? "Eight panes open; close one before adding"
+                : "Add and connect "+Objects.toString(profiles.get(addProfile),"selected profile"));
+    }
+    private void refreshAddProfiles() {
+        refreshingAdd=true;
+        try {
+            if (!profiles.containsKey(addProfile)) addProfile=profiles.keySet().iterator().next();
+            addProfileSelector.setModel(new DefaultComboBoxModel<>(profileList().toArray(Profile[]::new)));
+            addProfileSelector.setSelectedItem(profiles.get(addProfile));
+        } finally { refreshingAdd=false; }
+    }
     private void refreshShortcutLabels() {
         if (shortcuts!=null) shortcuts.refreshLabels();
     }
@@ -337,7 +372,7 @@ public final class Workspace extends JFrame {
         refreshCommands();
     }
     public void onClosed(Runnable action) { afterClose = action; }
-    public void connectAll() { sessionPanes().forEach(SessionPane::connect); }
+    public void connectAll() { sessionPanes().forEach(SessionPane::connectOnStartup); }
     public void changed() {
         if (closing) return;
         if (application!=null) application.changed(this); else saveTimer.restart();
@@ -409,7 +444,12 @@ public final class Workspace extends JFrame {
     }
     public Layout currentLayout() { layout = capture(tree); return layout; }
     StateStore.State state() { return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
-            shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings,keyboardRecovery); }
+            shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings,keyboardRecovery,List.of(),addProfile,savedLayouts,selectedLayout,displayState()); }
+    private Map<UUID,SavedLayout.Display> displayState() {
+        Map<UUID,SavedLayout.Display> result=new LinkedHashMap<>();
+        sessionPanes().forEach(p -> result.put(p.id(),new SavedLayout.Display(p.view().isFit(),p.view().zoomValue())));
+        return result;
+    }
     public void saveAsync() {
         if (application!=null) { application.saveAsync(); return; }
         if (closing) return;
@@ -423,13 +463,20 @@ public final class Workspace extends JFrame {
         });
     }
     public void split(boolean horizontal) {
-        if (panes.size()>=Layout.MAX_PANES) return;
-        UUID id=UUID.randomUUID();
-        List<Layout.Leaf> slots=new ArrayList<>(currentLayout().leaves());
-        slots.add(new Layout.Leaf(id,lastProfile));
-        layout=Layout.bounded(slots);
-        buildTree();
-        activate(panes.get(id)); active.focusTerminal();
+        if (closing() || settingsSaving() || panes.size()>=Layout.MAX_PANES) return;
+        Profile selected=profiles.get(addProfile);
+        if (selected==null) { active.problem("Select a saved profile before adding."); return; }
+        SessionPane next;
+        if (panes.size()==1 && active.pristine()) {
+            next=active; next.updateProfile(selected);
+        } else {
+            UUID id=UUID.randomUUID();
+            List<Layout.Leaf> slots=new ArrayList<>(currentLayout().leaves());
+            slots.add(new Layout.Leaf(id,selected.id()));
+            layout=Layout.bounded(slots); buildTree(); next=panes.get(id);
+        }
+        lastProfile=selected.id();
+        activate(next); next.connectOnStartup(); next.focusTerminal();
         changed();
         tutorialAction("Add pane");
     }
@@ -494,7 +541,7 @@ public final class Workspace extends JFrame {
     public void moveProfile(UUID id,int direction) {
         List<Profile> order=ProfileManagement.move(profileList(),id,direction);
         profiles.clear(); order.forEach(p -> profiles.put(p.id(),p));
-        panes.values().forEach(SessionPane::refreshPresets); changed();
+        refreshAddProfiles(); panes.values().forEach(SessionPane::refreshPresets); changed();
         if (preferences!=null) preferences.syncProfiles();
     }
     public void validateDeleteProfile(UUID id) {
@@ -505,9 +552,10 @@ public final class Workspace extends JFrame {
     public void deleteProfile(UUID id) {
         validateDeleteProfile(id);
         StateStore.State next=ProfileManagement.delete(state(),id);
-        for (SessionPane pane:panes.values()) if (pane.profile().id().equals(id)) pane.disconnect();
+        for (SessionPane pane:panes.values()) if (pane.profile().id().equals(id)) pane.disconnectForProfileChange();
         profiles.clear(); next.profiles().forEach(p -> profiles.put(p.id(),p));
         lastProfile=next.lastProfile(); layout=next.layout();
+        addProfile=next.addProfile(); refreshAddProfiles();
         Map<UUID,UUID> references=new HashMap<>();
         layout.leaves().forEach(leaf -> references.put(leaf.pane(),leaf.profile()));
         for (SessionPane pane:panes.values()) pane.updateProfile(profiles.get(references.get(pane.id())));
@@ -527,11 +575,12 @@ public final class Workspace extends JFrame {
                 || connectionChanged(existing,value) || existing.rememberPassword()!=value.rememberPassword())
             validateProfile(value);
         Profile old = profiles.put(value.id(),value);
+        refreshAddProfiles();
         if (existing==null || !existing.keymap().equals(value.keymap()))
             shortcuts.apply(shortcuts.overrides(),profileList());
         for (SessionPane pane : panes.values()) {
             if (pane.profile().id().equals(value.id())) {
-                if (old != null && connectionChanged(old,value)) pane.disconnect();
+                if (old != null && connectionChanged(old,value)) pane.disconnectForProfileChange();
                 pane.updateProfile(value);
             }
             pane.refreshPresets();
@@ -573,20 +622,30 @@ public final class Workspace extends JFrame {
             for (Layout.Leaf leaf : restored.leaves()) {
                 if (!profiles.containsKey(leaf.profile())) throw new IllegalArgumentException("Saved profile no longer exists.");
             }
+            for (Layout.Leaf leaf:restored.leaves()) {
+                SessionPane existing=panes.get(leaf.pane());
+                if (existing!=null && !existing.profile().id().equals(leaf.profile())) {
+                    existing.disconnectForProfileChange(); existing.updateProfile(profiles.get(leaf.profile()));
+                }
+            }
             layout = restored;
             buildTree();
+            sessionPanes().forEach(SessionPane::connectOnStartup);
             changed();
         } catch (IllegalArgumentException e) { Ui.error(this,"Could not restore layout: " + e.getMessage()); }
     }
     private void zoom(double delta) {
-        double value = Math.max(.5,Math.min(3,active.profile().zoom() + delta));
+        double value = Math.max(.5,Math.min(3,active.view().zoomValue() + delta));
         Profile profile = active.profile().withZoom(value);
         putProfile(profile);
+        active.view().clearSavedZoom();
         active.view().setFit(false);
+        changed();
     }
     private void fit() {
         putProfile(active.profile().withZoom(1));
         active.view().setFit(true);
+        changed();
     }
     public void toggleFlux() {
         if (closing || settingsSaving() || active==null) return;
@@ -657,6 +716,7 @@ public final class Workspace extends JFrame {
         layoutMenu.addSeparator();
         action(layoutMenu,"Save layout to profile","ctrl alt S",this::saveProfileLayout);
         action(layoutMenu,"Restore profile layout","ctrl alt L",this::restoreProfileLayout);
+        action(layoutMenu,"Saved layouts / shortcuts...",null,this::savedLayoutsDialog);
         JMenu view = menu(bar,"View",KeyEvent.VK_V);
         action(view,"Fit host screen","ctrl alt 0",this::fit);
         action(view,"Zoom in","ctrl alt EQUALS",() -> zoom(.1));
@@ -755,7 +815,7 @@ public final class Workspace extends JFrame {
         AppCommand action=new AppCommand(text,(menu==null ? "Fish" : menu.getText())+" / "+text,Shortcuts.defaultStroke(text),command,() -> {
             if (closing || settingsSaving()) return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
-            if (List.of("Profiles...","New window","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
+            if (List.of("Profiles...","New window","Saved layouts / shortcuts...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
                     "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started",
                     "Getting started tutorial","Configuration for external tools","Application settings...","Check for updates...","Last pane notice...",Shortcuts.SETTINGS).contains(text)
                     || text.startsWith("Tutorial:")) return true;
@@ -846,9 +906,10 @@ public final class Workspace extends JFrame {
         Set<UUID> ids=new HashSet<>(); incoming.forEach(p -> ids.add(p.id()));
         for (SessionPane pane:panes.values()) {
             Profile next=incoming.stream().filter(p -> p.id().equals(pane.profile().id())).findFirst().orElse(incoming.getFirst());
-            if (!next.id().equals(pane.profile().id()) || connectionChanged(pane.profile(),next)) pane.disconnect();
+            if (!next.id().equals(pane.profile().id()) || connectionChanged(pane.profile(),next)) pane.disconnectForProfileChange();
         }
         profiles.clear(); incoming.forEach(p -> profiles.put(p.id(),p));
+        savedLayouts=value.savedLayouts(); selectedLayout=value.selectedLayout(); refreshAddProfiles();
         for (Layout.Leaf leaf:layout.leaves()) if (!ids.contains(leaf.profile())) layout=layout.replaceProfile(leaf.profile(),replacement);
         if (!ids.contains(lastProfile)) lastProfile=replacement;
         Appearance previous=appearance;
@@ -863,6 +924,63 @@ public final class Workspace extends JFrame {
         }
         updateWindowOutline(); refreshShortcutLabels(); refreshCommands();
         if (preferences!=null) preferences.syncProfiles();
+        if (layoutsDialog!=null && layoutsDialog.isDisplayable()) layoutsDialog.refresh();
+    }
+    List<SavedLayout> savedLayouts() { return savedLayouts; }
+    UUID selectedLayout() { return selectedLayout; }
+    void selectSavedLayout(UUID id) { if (!Objects.equals(selectedLayout,id)) { selectedLayout=id; changed(); } }
+    SavedLayout saveCurrentLayout(UUID id,String name) {
+        if (settingsSaving()) throw new IllegalArgumentException("Wait for the pending save to finish.");
+        StateStore.State current=state();
+        Map<UUID,SavedLayout.Display> displays=new LinkedHashMap<>();
+        sessionPanes().forEach(p -> displays.put(p.id(),new SavedLayout.Display(p.view().isFit(),p.view().zoomValue())));
+        SavedLayout value=new SavedLayout(id==null ? UUID.randomUUID() : id,name,
+                new StateStore.WindowState(current.layout(),current.width(),current.height(),current.lastProfile(),current.addProfile()),displays);
+        List<SavedLayout> next=new ArrayList<>(savedLayouts);
+        if (id!=null && next.stream().noneMatch(s -> s.id().equals(id))) throw new IllegalArgumentException("Saved layout was deleted. Save as new instead.");
+        next.removeIf(s -> s.id().equals(value.id())); next.add(value);
+        updateSavedLayouts(next,value.id()); tutorialAction("layout-saved"); return value;
+    }
+    void renameSavedLayout(UUID id,String name) {
+        List<SavedLayout> next=savedLayouts.stream().map(s -> s.id().equals(id) ? s.renamed(name) : s).toList();
+        updateSavedLayouts(next,id);
+    }
+    void deleteSavedLayout(UUID id) {
+        List<SavedLayout> next=savedLayouts.stream().filter(s -> !s.id().equals(id)).toList();
+        updateSavedLayouts(next,next.isEmpty() ? null : next.getFirst().id());
+    }
+    private void updateSavedLayouts(List<SavedLayout> next,UUID selection) {
+        if (settingsSaving()) throw new IllegalArgumentException("Wait for the pending save to finish.");
+        state().withSavedLayouts(next,selection);
+        savedLayouts=List.copyOf(next); selectedLayout=selection; changed();
+    }
+    boolean openSavedLayout(UUID id) {
+        if (application==null) throw new IllegalArgumentException("Launch Fish normally to open saved layouts in independent windows.");
+        return application.openLayout(id);
+    }
+    void exportSavedLayout(UUID id,Path destination,Runnable done,java.util.function.Consumer<String> failed) {
+        if (demonstration) { failed.accept("Shortcuts require a normal saved workspace, not a temporary Demo host."); return; }
+        if (settingsSaving()) { failed.accept("Wait for the pending save to finish."); return; }
+        if (savedLayouts.stream().noneMatch(s -> s.id().equals(id))) { failed.accept("Saved layout is unavailable."); return; }
+        final Path executable;
+        try { executable=pane5250.LayoutShortcuts.executable(); }
+        catch (java.io.IOException e) { failed.accept(e.getMessage()); return; }
+        exportingLayout=true; refreshActions();
+        Runnable success=() -> { exportingLayout=false; refreshActions(); done.run(); tutorialAction("layout-shortcut"); };
+        java.util.function.Consumer<String> failure=message -> { exportingLayout=false; refreshActions(); failed.accept(message); };
+        Maintenance task=() -> pane5250.LayoutShortcuts.create(destination,executable,dataDirectory(),id);
+        if (application!=null) application.persistTask(task,success,failure);
+        else {
+            StateStore.State snapshot=state();
+            persistence.submit(() -> {
+                try { store.save(snapshot); task.run(); SwingUtilities.invokeLater(success); }
+                catch (java.io.IOException | RuntimeException e) { SwingUtilities.invokeLater(() -> failure.accept(e.getMessage())); }
+            });
+        }
+    }
+    void savedLayoutsDialog() {
+        if (layoutsDialog==null || !layoutsDialog.isDisplayable()) layoutsDialog=new SavedLayoutsDialog(this);
+        if (isShowing()) { layoutsDialog.setVisible(true); layoutsDialog.toFront(); }
     }
     @FunctionalInterface interface Maintenance { void run() throws java.io.IOException; }
     boolean updateAndExit(Maintenance launch,java.util.function.Consumer<String> failed) {

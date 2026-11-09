@@ -95,6 +95,7 @@ public final class WindowRevisionSmoke {
         try (StateStore store=new StateStore(Files.createDirectory(root.resolve("migration")))) {
             Properties legacy=StateStore.properties(StateStore.freshState());
             legacy.setProperty("version","13"); legacy.remove("windows"); legacy.remove("info.footerDevice");
+            legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
             for (String flag:List.of("header","footer","profile","connection","host","status","dimensions","cursor","insert")) legacy.setProperty("info."+flag,"true");
             legacy.setProperty("info.device","false");
             check(store.decode(legacy).appearance().info().equals(Appearance.PaneInfo.defaults()),"Exact previous built-in defaults deliberately migrate");
@@ -116,12 +117,12 @@ public final class WindowRevisionSmoke {
     private static void windows(Fixture fixture,DemoHost host) throws Exception {
         Workspace first=fixture.first();
         Workspace second=edt(() -> {
-            for (int n=0;n<3;n++) first.split(true);
+            for (int n=0;n<4;n++) first.split(true);
             first.executeCommand("New window");
             Workspace next=fixture.app.windows().get(1);
             check(next.getOwner()==null && first.getOwner()==null,"Independent normal top-level frames, not owned dialogs");
             check(next.sessionPanes().size()==1 && first.sessionPanes().size()==4,"New window has a fresh session, not copied sockets");
-            for (int n=0;n<3;n++) next.split(true);
+            for (int n=0;n<4;n++) next.split(true);
             check(Collections.disjoint(first.sessionPanes(),next.sessionPanes()),"Two four-pane windows own distinct controllers");
             check(Collections.disjoint(first.currentLayout().leaves(),next.currentLayout().leaves()),"Independent pane IDs");
             check(first.shortcutLabel("New window").equals(KeyChord.parse("ctrl shift N").label()),"Conventional discoverable New window key");

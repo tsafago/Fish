@@ -233,6 +233,7 @@ public final class Tests {
             Properties legacy=new Properties(); legacy.loadFromXML(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
             legacy.setProperty("version","1"); legacy.remove("appTheme");
             legacy.remove("windows"); legacy.remove("info.footerDevice");
+            legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
             legacy.keySet().removeIf(key -> key.toString().startsWith("updates."));
             try (OutputStream migrated=Files.newOutputStream(store.file())) { legacy.storeToXML(migrated,"Legacy fixture"); }
             check(store.load().appTheme()==AppTheme.Charcoal && store.load().profiles().getFirst().equals(saved),

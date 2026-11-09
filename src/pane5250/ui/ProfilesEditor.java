@@ -300,7 +300,7 @@ final class ProfilesEditor extends JPanel {
         if (saving || !discardChanges()) return;
         try {
             workspace.validateDeleteProfile(selected.id());
-            if (!Ui.confirm(this,"Delete \""+selected.name()+"\"?\nPanes using it will disconnect and select the first remaining profile. Saved layouts will be updated.\n"
+            if (!Ui.confirm(this,"Delete \""+selected.name()+"\"?\nPanes using it will disconnect and select the first remaining profile. Legacy profile layouts will be updated; named layouts block deletion until updated or removed.\n"
                     +"Windows saved passwords are kept; this never deletes another profile's login.","Delete profile")) return;
             workspace.deleteProfile(selected.id());
             refreshList(workspace.profileList().getFirst()); list.requestFocusInWindow();

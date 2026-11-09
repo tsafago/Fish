@@ -296,6 +296,9 @@ public final class Ui {
         prepareDialog(dialog,body,actions,done); refresh.run();
         return dialog;
     }
+    static Font textFont(Font preferred,String text) {
+        return preferred.canDisplayUpTo(text)<0 ? preferred : new Font(Font.DIALOG,preferred.getStyle(),preferred.getSize()).deriveFont(preferred.getSize2D());
+    }
     static void observeEdits(Component component,Runnable changed) {
         component.addPropertyChangeListener("preferences.draft",e -> changed.run());
         component.addPropertyChangeListener("settings.draft",e -> changed.run());

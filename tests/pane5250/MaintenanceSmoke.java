@@ -103,6 +103,7 @@ public final class MaintenanceSmoke {
             store.save(state);
             check(Main.defaultDirectory(directory).equals(active),"Legacy workspace selection remains stable");
             var legacy=StateStore.properties(state); legacy.setProperty("version","10");
+            legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
             legacy.remove("windows"); legacy.remove("info.footerDevice");
             legacy.remove("updates.startup"); legacy.remove("updates.channel"); legacy.remove("updates.ignoredVersion");
             var migrated=store.decode(legacy);

@@ -245,10 +245,10 @@ final class Preferences {
     }
     private JPanel general() {
         JPanel body=column(); body.add(section("Startup")); body.add(startup); targets.put("startup",startup);
-        body.add(note("New and factory workspaces connect restored panes. Existing saved off choices are kept. Missing login information stays actionable, not signed in."));
+        body.add(note("Controls ordinary restored-window startup. Existing off choices are kept. Explicit +, New window and saved-layout launches still connect once; failures offer Reconnect."));
         body.add(section("Reset"));
         body.add(Ui.button("Revert to factory defaults...",0,workspace::factoryDefaults));
-        body.add(note("After confirmation, ends sessions and exits. Next startup uses the new defaults and introduction. Windows passwords and local font files are kept."));
+        body.add(note("After confirmation, ends sessions and exits. Profiles and named layouts are cleared. Windows passwords, local font files and exported shortcut files are kept."));
         return body;
     }
     private JPanel updates() {

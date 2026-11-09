@@ -66,7 +66,7 @@ public final class SettingsTutorialSmoke {
         final AtomicInteger checks=new AtomicInteger(),downloads=new AtomicInteger();
         final byte[] metadata;
         Http() {
-            Map<String,Object> release=MaintenanceSmoke.release("0.7.5",true);
+            Map<String,Object> release=MaintenanceSmoke.release("0.7.6",true);
             release.put("body","## Readable release notes\n\n**Bold**, *emphasis*, and `code`.\n\n- First change\n- Second change\n\n"
                     +"```text\nnot an executable command\n```\n\n[Project](https://github.com/tsafago/Fish)\n\n"
                     +"<script>alert('untrusted')</script>\n\n![No remote image](https://example.invalid/private.png)");
@@ -85,7 +85,8 @@ public final class SettingsTutorialSmoke {
         Fixture(Path root,String name,boolean incompletePassword) throws Exception {
             Path directory=Files.createDirectory(root.resolve(name)); store=new StateStore(directory);
             Profile first=incompletePassword ? new Profile(UUID.randomUUID(),"Incomplete","127.0.0.1",9,"","",true,true,
-                    "37","Phosphor","None",1,Map.of(),"") : Profile.createKerberos("Synthetic workstation");
+                    "37","Phosphor","None",1,Map.of(),"") : new Profile(UUID.randomUUID(),"Synthetic workstation","",23,"","",false,false,
+                    "37","Phosphor","None",1,Map.of(),"",null,Profile.Authentication.KERBEROS,"");
             Profile second=Profile.createKerberos("Other workstation");
             StateStore.State state=new StateStore.State(List.of(first,second),new Layout.Leaf(UUID.randomUUID(),first.id()),1060,740,
                     AppTheme.Charcoal,first.id(),Map.of(),true,Appearance.defaults(),StateStore.Tutorial.SKIPPED,incompletePassword,
@@ -111,6 +112,7 @@ public final class SettingsTutorialSmoke {
         try (StateStore store=new StateStore(Files.createDirectory(root.resolve("format")))) {
             Properties old=StateStore.properties(base); old.setProperty("version","12"); old.setProperty("connectOnStartup","false");
             old.remove("windows"); old.remove("info.footerDevice");
+            old.remove("addProfile"); old.remove("savedLayouts"); old.remove("selectedLayout");
             old.setProperty("binding.Preferences...","ctrl COMMA\nctrl F1@numpad");
             old.setProperty("binding.Fonts...","ctrl shift F2@right"); old.setProperty("binding.Shortcuts...","ctrl shift F3");
             old.setProperty("binding.Host F13","ENTER@numpad\nctrl F4");
@@ -127,9 +129,11 @@ public final class SettingsTutorialSmoke {
             store.save(migrated); check(store.load().equals(migrated),"Format 13 full roundtrip");
             Properties off=StateStore.properties(base); off.setProperty("version","12"); off.setProperty("binding.Preferences...","");
             off.remove("windows"); off.remove("info.footerDevice");
+            off.remove("addProfile"); off.remove("savedLayouts"); off.remove("selectedLayout");
             check(!KeyBindings.effective(store.decode(off).shortcuts()).containsKey(KeyChord.parse("ctrl COMMA")),"Explicit settings unbinding does not resurrect");
             Properties claimed=StateStore.properties(base); claimed.setProperty("version","12"); claimed.setProperty("binding.Copy selection / screen","ctrl COMMA");
             claimed.remove("windows"); claimed.remove("info.footerDevice");
+            claimed.remove("addProfile"); claimed.remove("savedLayouts"); claimed.remove("selectedLayout");
             check(KeyBindings.effective(store.decode(claimed).shortcuts()).get(KeyChord.parse("ctrl COMMA")).equals("Copy selection / screen"),"Other custom owner remains intact");
             Properties relabeled=StateStore.properties(migrated); relabeled.setProperty("version","12");
             rejects(store,relabeled,"Format 13 cannot be relabeled as 12");
@@ -159,9 +163,9 @@ public final class SettingsTutorialSmoke {
         WindowChrome chrome=(WindowChrome)field(w,"chrome");
         JPanel actions=(JPanel)field(chrome,"actions");
         Component tools=actions.getComponent(actions.getComponentCount()-1);
-        check(tools instanceof JPanel panel && panel.getComponentCount()==1
-                && ((JButton)panel.getComponent(0)).getAction() instanceof AppCommand command && command.title.equals("Add pane"),
-                "Only + Pane follows all menus before reserved drag space and window controls");
+        check(tools instanceof JPanel panel && panel.getComponentCount()==2 && panel.getComponent(0) instanceof JComboBox<?>
+                && ((JButton)panel.getComponent(1)).getAction() instanceof AppCommand command && command.title.equals("Add pane"),
+                "Only profile/+ group follows all menus before reserved drag space and window controls");
         check(Arrays.stream(menus.getMenu(1).getMenuComponents()).filter(JMenuItem.class::isInstance).map(JMenuItem.class::cast)
                 .filter(item -> item.getAction() instanceof AppCommand action && action.title.equals(Shortcuts.SETTINGS)).count()==1,"Exactly one Edit Settings entry");
         AppCommand settings=w.commands().stream().filter(c -> c.title.equals(Shortcuts.SETTINGS)).findFirst().orElseThrow();
@@ -192,8 +196,9 @@ public final class SettingsTutorialSmoke {
         w.openTutorial(TutorialDialog.Guide.GETTING_STARTED,true);
         check(guide(w).getModalityType()==Dialog.ModalityType.MODELESS,"Tutorial is actionable/modeless");
         check(guide(w).getModalExclusionType()==Dialog.ModalExclusionType.APPLICATION_EXCLUDE,"Guide remains accessible with a real modal editor");
-        button(guide(w),"Skip step").doClick(0); check(step(w)==1,"Skip connection without host/auth activity");
-        w.executeCommand("Add pane"); check(step(w)==2 && w.sessionPanes().size()==2,"Actual Add action progresses intro");
+        button(guide(w),"Skip step").doClick(0); check(step(w)==1,"Skip profile selection without host/auth activity");
+        w.executeCommand("Add pane"); check(step(w)==2 && w.sessionPanes().size()==1,"Actual Add action progresses intro and reuses a pristine tile");
+        w.executeCommand("Add pane");
         ((JButton)w.active().tutorialCloseTarget()).doClick(0); check(step(w)==3 && w.sessionPanes().size()==1,"Actual X progresses intro");
         w.executeCommand(Shortcuts.SETTINGS); check(step(w)==4,"Actual Settings route progresses intro");
         check(w.profileList().size()==profilesBefore && !w.active().busy(),"Intro never creates a profile or connects secretly");
@@ -249,7 +254,9 @@ public final class SettingsTutorialSmoke {
         button(guide(w),"Show control").doClick(0); p=w.tutorialPreferences();
         ((JCheckBox)p.tutorialTarget("startup")).doClick(0); check(step(w)==6,"Actual startup control progresses");
         snapshot(guide(w),"tutorial");
-        w.executeCommand("Fit host screen"); check(guide(w).ended(),"Actual Fit finishes pane guide");
+        w.executeCommand("Fit host screen"); check(step(w)==7,"Actual Fit advances to reusable shortcuts");
+        SavedLayout saved=w.saveCurrentLayout(null,"Tutorial synthetic layout");
+        check(guide(w).ended(),"Actual named layout save finishes pane guide"); w.deleteSavedLayout(saved.id());
         for (TutorialDialog.Guide type:TutorialDialog.Guide.values()) {
             int count=w.profileList().size(); w.openTutorial(type,false); check(step(w)==0,"Replay restarts "+type);
             button(guide(w),"Skip step").doClick(0); button(guide(w),"Back").doClick(0);

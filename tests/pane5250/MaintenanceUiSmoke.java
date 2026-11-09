@@ -50,17 +50,17 @@ public final class MaintenanceUiSmoke {
     }
     private static final class Http implements Updates.Transport {
         final byte[] exe="MZ injected test bytes, never executed".getBytes(StandardCharsets.UTF_8);
-        final byte[] manifest=(Updates.hash(exe)+"  Fish-0.7.5-setup.exe\r\n").getBytes(StandardCharsets.UTF_8);
+        final byte[] manifest=(Updates.hash(exe)+"  Fish-0.7.6-setup.exe\r\n").getBytes(StandardCharsets.UTF_8);
         final byte[] json;
         volatile boolean fail,block;
         final AtomicInteger downloads=new AtomicInteger();
         Http() {
-            var release=MaintenanceSmoke.release("0.7.5",true);
+            var release=MaintenanceSmoke.release("0.7.6",true);
             List<Map<String,Object>> assets=new ArrayList<>();
-            for (String name:List.of("Fish-0.7.5-setup.exe","SHA256SUMS.txt","Fish-0.7.5-windows-x64.zip")) {
+            for (String name:List.of("Fish-0.7.6-setup.exe","SHA256SUMS.txt","Fish-0.7.6-windows-x64.zip")) {
                 byte[] content=name.endsWith(".exe") ? exe : name.endsWith(".txt") ? manifest : new byte[]{1};
                 assets.add(Map.of("name",name,"state","uploaded","size",content.length,"digest","sha256:"+Updates.hash(content),
-                        "browser_download_url","https://github.com/tsafago/Fish/releases/download/v0.7.5/"+name));
+                        "browser_download_url","https://github.com/tsafago/Fish/releases/download/v0.7.6/"+name));
             }
             release.put("assets",assets); json=ConfigSchema.json(List.of(release)).getBytes(StandardCharsets.UTF_8);
         }
@@ -100,7 +100,9 @@ public final class MaintenanceUiSmoke {
         Fixture(Path root,String name) throws Exception {
             directory=Files.createDirectory(root.resolve(name)); staging=Files.createDirectory(directory.resolve("staging"));
             store=new StateStore(directory);
-            StateStore.State fresh=StateStore.freshState();
+            Profile offline=new Profile(UUID.randomUUID(),"Synthetic offline","",23,"","",false,false,
+                    "37","Phosphor","None",1,Map.of(),"",null,Profile.Authentication.KERBEROS,"");
+            StateStore.State fresh=new StateStore.State(List.of(offline),new Layout.Leaf(UUID.randomUUID(),offline.id()),1000,700);
             var state=new StateStore.State(fresh.profiles(),fresh.layout(),1000,700,AppTheme.Charcoal,fresh.lastProfile(),
                     Map.of(),false,Appearance.defaults(),StateStore.Tutorial.SKIPPED,false,UpdateSettings.defaults());
             store.save(state);
@@ -145,6 +147,7 @@ public final class MaintenanceUiSmoke {
             check(button(editor,"Delete").isEnabled(),"Delete is wired to saved profiles");
             editor.dispose();
             w.commands().stream().filter(c -> c.title.equals("Add pane")).findFirst().orElseThrow().actionPerformed(null);
+            w.executeCommand("Add pane");
             w.deleteProfile(first.id());
             check(w.sessionPanes().size()==2,"Deleting current profile keeps both panes");
             for (SessionPane pane:w.sessionPanes()) {
@@ -195,7 +198,7 @@ public final class MaintenanceUiSmoke {
         await(() -> ((TransientNotice)field(fixture.controller(),"notice")).isVisible(),"Startup notice missing");
         edt(() -> {
             button((Container)field(fixture.controller(),"notice"),"Hide version").doClick(0);
-            check(fixture.workspace.updateSettings().ignoredVersion().equals("0.7.5"),"Hide records the exact offered version");
+            check(fixture.workspace.updateSettings().ignoredVersion().equals("0.7.6"),"Hide records the exact offered version");
             invoke(fixture.controller(),"checkStartup"); return null;
         });
         Thread.sleep(100);
@@ -228,7 +231,7 @@ public final class MaintenanceUiSmoke {
         check(fixture.closed.await(10,TimeUnit.SECONDS),"Verified handoff did not save/close cleanly");
         check(fixture.platform.launches.get()==1,"Exactly one injected installer handoff, never a real process");
         try (StateStore reopened=new StateStore(fixture.directory)) {
-            check(reopened.load().updates().ignoredVersion().equals("0.7.5"),"Handoff saves update choices before closing");
+            check(reopened.load().updates().ignoredVersion().equals("0.7.6"),"Handoff saves update choices before closing");
         }
     }
     private static void reset(Fixture fixture) throws Exception {

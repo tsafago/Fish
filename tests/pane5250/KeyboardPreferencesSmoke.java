@@ -87,6 +87,7 @@ public final class KeyboardPreferencesSmoke {
         StateStore.State base=new StateStore.State(List.of(first,second),new Layout.Leaf(UUID.randomUUID(),first.id()),1000,700);
         Properties legacy=StateStore.properties(base); legacy.setProperty("version","11");
         legacy.remove("windows"); legacy.remove("info.footerDevice");
+        legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
         legacy.setProperty("profile."+first.id()+".key.F2","PF13");
         legacy.setProperty("profile."+second.id()+".key.F2","PF14");
         legacy.setProperty("profile."+first.id()+".key.ctrl F1","PF20");
@@ -307,7 +308,11 @@ public final class KeyboardPreferencesSmoke {
             model(root);
             Path directory=Files.createDirectory(root.resolve("ui"));
             StateStore store=new StateStore(directory);
-            StateStore.State state=StateStore.freshState().withTutorial(StateStore.Tutorial.SKIPPED);
+            Profile offline=new Profile(UUID.randomUUID(),"Synthetic offline","",23,"","",false,false,
+                    "37","Phosphor","None",1,Map.of(),"",null,Profile.Authentication.KERBEROS,"");
+            StateStore.State state=new StateStore.State(List.of(offline),new Layout.Leaf(UUID.randomUUID(),offline.id()),1060,740,
+                    AppTheme.Charcoal,offline.id(),Map.of(),true,Appearance.defaults(),StateStore.Tutorial.SKIPPED,false,
+                    new UpdateSettings(false,UpdateSettings.Channel.PREVIEW_PATCHES,""));
             Workspace workspace=edt(() -> new Workspace(store,state,directory.resolve("absent-helper.ps1"),false));
             CountDownLatch closed=new CountDownLatch(1);
             try (DemoHost host=new DemoHost()) {

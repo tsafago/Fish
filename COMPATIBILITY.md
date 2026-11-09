@@ -5,7 +5,20 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.7.5 layout shortcuts and automatic additions
+## Fish 0.7.6 shortcut guidance and chrome refinement
+
+This UI refinement keeps format 15 and the same connection
+semantics. The titlebar selector/+ now uses flat menu-row surfaces and alignment.
+Keyboard Shortcuts adds valid entry examples and searchable parser/catalog-derived
+key/action reference tables. A sixth interactive tutorial follows actual named
+layout save/export controls and the destination chooser; cancel/failure never
+claims a created shortcut. Isolated checks use empty hosts, injected destinations
+and native .lnk files only in temporary test directories, never the user's Desktop.
+Bounded never-shown theme/DPI rendering is not physical keyboard, screen-reader,
+native taskbar, live desktop or IBM i/SSO/ACS acceptance. No protocol capabilities
+are expanded and no full-compatibility or production-readiness claim is implied.
+
+## Retained Fish 0.7.5 layout shortcuts and automatic additions
 
 The titlebar profile selector/+ is the rightmost menu-action group. Selecting
 does not touch a session; + reuses only a lone never-used offline tile or creates

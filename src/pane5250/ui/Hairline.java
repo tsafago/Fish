@@ -41,6 +41,9 @@ public class Hairline extends AbstractBorder implements UIResource {
     public static void horizontal(Graphics g,double x,double y,double width) {
         edges(g,x,y,width,0,true,false,false,false);
     }
+    static void focusUnderline(Graphics g,double x,double y,double width) {
+        edges(g,x,y,width,0,true,false,false,false,Ui.FOCUS);
+    }
     public static void vertical(Graphics g,double x,double y,double height) {
         edges(g,x,y,0,height,false,true,false,false);
     }

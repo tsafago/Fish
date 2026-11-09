@@ -6,6 +6,9 @@ import javax.swing.KeyStroke;
 
 /** The action key's reported location is part of its identity; modifier sides are not. */
 public record KeyChord(int code,int modifiers,int location) {
+    private static final Map<String,Integer> LOCATIONS=Map.of("standard",KeyEvent.KEY_LOCATION_STANDARD,
+            "numpad",KeyEvent.KEY_LOCATION_NUMPAD,"left",KeyEvent.KEY_LOCATION_LEFT,
+            "right",KeyEvent.KEY_LOCATION_RIGHT,"unknown",KeyEvent.KEY_LOCATION_UNKNOWN);
     private static final int MASK=InputEvent.CTRL_DOWN_MASK|InputEvent.SHIFT_DOWN_MASK|InputEvent.ALT_DOWN_MASK
             |InputEvent.ALT_GRAPH_DOWN_MASK|InputEvent.META_DOWN_MASK;
     public KeyChord {
@@ -41,14 +44,8 @@ public record KeyChord(int code,int modifiers,int location) {
         String value=text.strip();
         int location=-1, at=value.lastIndexOf('@');
         if (at>=0) {
-            location=switch(value.substring(at+1).toLowerCase(Locale.ROOT)) {
-                case "standard" -> KeyEvent.KEY_LOCATION_STANDARD;
-                case "numpad" -> KeyEvent.KEY_LOCATION_NUMPAD;
-                case "left" -> KeyEvent.KEY_LOCATION_LEFT;
-                case "right" -> KeyEvent.KEY_LOCATION_RIGHT;
-                case "unknown" -> KeyEvent.KEY_LOCATION_UNKNOWN;
-                default -> throw new IllegalArgumentException("Use @standard, @numpad, @left, @right or @unknown.");
-            };
+            location=LOCATIONS.getOrDefault(value.substring(at+1).toLowerCase(Locale.ROOT),-1);
+            if (location<0) throw new IllegalArgumentException("Use @standard, @numpad, @left, @right or @unknown.");
             value=value.substring(0,at).strip();
         }
         if (value.endsWith("NUMPAD_ENTER")) {
@@ -81,6 +78,17 @@ public record KeyChord(int code,int modifiers,int location) {
         }
         return List.copyOf(result);
     }
+    public static List<String> supportedKeys() {
+        List<String> names=new ArrayList<>();
+        for (var field:KeyEvent.class.getFields()) if (field.getName().startsWith("VK_")) {
+            String name=field.getName().substring(3);
+            try { parse(name); names.add(name); }
+            catch (IllegalArgumentException unsupported) { /* Only parser-accepted action keys are shown. */ }
+        }
+        names.add("NUMPAD_ENTER");
+        return names.stream().distinct().sorted().toList();
+    }
+    public static List<String> locations() { return LOCATIONS.keySet().stream().sorted().map(s -> "@"+s).toList(); }
     public static String text(Collection<KeyChord> keys) { return String.join("\n",keys.stream().map(KeyChord::toString).toList()); }
     public static List<KeyChord> legacy(String value) {
         if (value.isBlank()) return List.of();

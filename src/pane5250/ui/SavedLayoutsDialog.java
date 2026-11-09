@@ -7,19 +7,38 @@ import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import pane5250.LayoutShortcuts;
 import pane5250.model.SavedLayout;
+import java.util.UUID;
+import java.io.IOException;
+import java.util.function.Consumer;
 
 /** Modeless, explicit snapshot management; selecting a recipe never opens or connects it. */
 final class SavedLayoutsDialog extends JDialog {
+    interface ShortcutExport {
+        Path desktop() throws IOException;
+        int choose(JFileChooser chooser,Component owner);
+        void write(UUID id,Path output,Runnable done,Consumer<String> failed);
+    }
     private final Workspace workspace;
+    private final ShortcutExport shortcutExport;
     private final JComboBox<SavedLayout> layouts=new JComboBox<>();
     private final JTextField name=new JTextField(24);
     private final JLabel message=new JLabel(" ");
-    private final JButton replace,rename,delete,open,export;
+    private final JButton save,replace,rename,delete,open,export;
+    private JFileChooser destination;
     private boolean refreshing,working;
 
     SavedLayoutsDialog(Workspace workspace) {
+        this(workspace,new ShortcutExport() {
+            @Override public Path desktop() throws IOException { return LayoutShortcuts.desktop(); }
+            @Override public int choose(JFileChooser chooser,Component owner) { return chooser.showSaveDialog(owner); }
+            @Override public void write(UUID id,Path output,Runnable done,Consumer<String> failed) {
+                workspace.exportSavedLayout(id,output,done,failed);
+            }
+        });
+    }
+    SavedLayoutsDialog(Workspace workspace,ShortcutExport shortcutExport) {
         super(workspace,"Saved layouts / shortcuts",false);
-        this.workspace=workspace;
+        this.workspace=workspace; this.shortcutExport=shortcutExport;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         JPanel body=new JPanel(new BorderLayout(0,14)); body.setBorder(BorderFactory.createEmptyBorder(18,18,14,18));
         JPanel fields=new JPanel(new GridLayout(0,2,12,10));
@@ -29,16 +48,21 @@ final class SavedLayoutsDialog extends JDialog {
         layouts.getAccessibleContext().setAccessibleName("Saved layout");
         name.getAccessibleContext().setAccessibleName("Layout name");
         Font nameFont=name.getFont();
-        Ui.observeEdits(name,() -> name.setFont(Ui.textFont(nameFont,name.getText())));
+        Ui.observeEdits(name,() -> {
+            name.setFont(Ui.textFont(nameFont,name.getText()));
+            String value=name.getText().strip();
+            if (!refreshing && !value.isEmpty() && value.length()<=80 && value.chars().noneMatch(Character::isISOControl))
+                workspace.tutorialAction("layout-named");
+        });
         name.setToolTipText("1-80 characters; renaming keeps existing shortcuts working");
         JPanel top=new JPanel(new BorderLayout(0,12));
         top.add(new JLabel("Save this window's pane arrangement and profiles, not its screen contents."),BorderLayout.NORTH);
         top.add(fields,BorderLayout.CENTER); body.add(top,BorderLayout.NORTH);
         JPanel actions=new JPanel(new GridLayout(2,3,8,8));
-        actions.add(Ui.button("Save current as new",0,() -> act(() -> {
+        save=Ui.button("Save current as new",0,() -> act(() -> {
             SavedLayout value=workspace.saveCurrentLayout(null,name.getText()); refresh();
             layouts.setSelectedItem(value); showMessage("Layout saved. Create a shortcut, or open a new window.");
-        })));
+        })); actions.add(save);
         replace=Ui.button("Update from current",0,() -> act(() -> {
             SavedLayout selected=selected();
             if (Ui.confirm(this,"Replace \""+selected.name()+"\" with this window's current layout?\nExisting shortcuts will open the updated layout.","Update saved layout")) {
@@ -99,21 +123,33 @@ final class SavedLayoutsDialog extends JDialog {
         act(() -> {
             SavedLayout selected=selected();
             try {
-                JFileChooser chooser=new JFileChooser(LayoutShortcuts.desktop().toFile());
+                JFileChooser chooser=new JFileChooser(shortcutExport.desktop().toFile());
+                destination=chooser;
+                chooser.addHierarchyListener(e -> workspace.tutorialChanged());
                 chooser.setDialogTitle("Create layout shortcut");
                 chooser.setFileFilter(new FileNameExtensionFilter("Windows shortcut (*.lnk)","lnk"));
                 String safe=selected.name().replaceAll("[<>:\"/\\\\|?*\\p{Cntrl}]","_").replaceAll("[. ]+$","");
                 if (safe.isBlank()) safe="Fish layout";
                 chooser.setSelectedFile(Path.of("Fish - "+safe+".lnk").toFile());
-                if (chooser.showSaveDialog(this)!=JFileChooser.APPROVE_OPTION) return;
+                workspace.tutorialAction("layout-destination-open");
+                if (shortcutExport.choose(chooser,this)!=JFileChooser.APPROVE_OPTION) return;
                 Path output=chooser.getSelectedFile().toPath();
                 if (!output.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".lnk"))
                     output=output.resolveSibling(output.getFileName()+".lnk");
                 working=true; refresh(); showMessage("Saving layout and creating shortcut...");
-                workspace.exportSavedLayout(selected.id(),output,() -> {
+                shortcutExport.write(selected.id(),output,() -> {
                     working=false; refresh(); showMessage("Shortcut created. It opens a new, auto-connecting Fish window.");
+                    workspace.tutorialAction("layout-shortcut");
                 },error -> { working=false; refresh(); showMessage(error); });
             } catch (java.io.IOException e) { showMessage(e.getMessage()); }
+            finally { destination=null; workspace.tutorialChanged(); }
         });
+    }
+    Component tutorialTarget(String control) {
+        return switch(control) {
+            case "name" -> name; case "save" -> save; case "export" -> export;
+            case "destination" -> destination==null ? export : destination;
+            case "message" -> message; default -> layouts;
+        };
     }
 }

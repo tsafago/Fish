@@ -66,7 +66,7 @@ public final class SettingsTutorialSmoke {
         final AtomicInteger checks=new AtomicInteger(),downloads=new AtomicInteger();
         final byte[] metadata;
         Http() {
-            Map<String,Object> release=MaintenanceSmoke.release("0.7.6",true);
+            Map<String,Object> release=MaintenanceSmoke.release(MaintenanceSmoke.futureVersion(),true);
             release.put("body","## Readable release notes\n\n**Bold**, *emphasis*, and `code`.\n\n- First change\n- Second change\n\n"
                     +"```text\nnot an executable command\n```\n\n[Project](https://github.com/tsafago/Fish)\n\n"
                     +"<script>alert('untrusted')</script>\n\n![No remote image](https://example.invalid/private.png)");
@@ -150,7 +150,7 @@ public final class SettingsTutorialSmoke {
                 .equals(List.of("Session","Edit","Inserts","Panes","View","Host","Help")),"Task-based top-level menus");
         for (Component top:menus.getComponents()) if (top instanceof JMenu menu) {
             for (Component entry:menu.getMenuComponents()) if (entry instanceof JMenu nested)
-                check(menu.getText().equals("Help") && nested.getText().equals("Tutorials") && nested.getItemCount()==5,"Only meaningful Tutorials submenu remains");
+                check(menu.getText().equals("Help") && nested.getText().equals("Tutorials") && nested.getItemCount()==6,"Only meaningful Tutorials submenu remains");
             for (Component entry:menu.getMenuComponents()) if (entry instanceof JMenuItem item && item.getAction() instanceof AppCommand action)
                 check(!Shortcuts.SETTINGS_ALIASES.contains(action.title)
                         && (!action.title.equals(Shortcuts.SETTINGS) || menu.getText().equals("Edit")),"Settings is only under Edit");
@@ -320,6 +320,6 @@ public final class SettingsTutorialSmoke {
         } finally {
             try (var paths=Files.walk(root)) { for (Path file:paths.sorted(Comparator.reverseOrder()).toList()) Files.delete(file); }
         }
-        System.out.println("Single Settings / inline controls / Markdown / five interactive tutorials / defaults checks passed: "+checks);
+        System.out.println("Single Settings / inline controls / Markdown / six interactive tutorials / defaults checks passed: "+checks);
     }
 }

@@ -163,6 +163,11 @@
     {
       "default": "",
       "hostAction": null,
+      "title": "Tutorial: Desktop shortcuts"
+    },
+    {
+      "default": "",
+      "hostAction": null,
       "title": "Keyboard reference"
     },
     {

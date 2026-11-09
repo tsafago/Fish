@@ -219,7 +219,7 @@ preserving original lists. Menu labels show one primary available chord; the
 inline editor shows all bindings, exact-location recording and recoverable conflicts.
 Edit contains clipboard operations; Inserts groups sign-on helpers, field/screen
 host inserts and the complete chooser. Pane actions have no one-child cascades.
-Help > Tutorials contains five event-driven, modeless real-control guides.
+Help > Tutorials contains six event-driven, modeless real-control guides.
 Highlights follow their production controls/windows without intercepting input.
 Next, Back and both skip controls remain available; opening/replaying a guide
 never connects, creates a profile or saves credentials.
@@ -228,6 +228,9 @@ links and no automatic image/resource/code loading.
 
 The rightmost action group pairs one 160px profile selector with a single plus;
 narrow chrome shrinks the selector before sacrificing drag space/native controls.
+Both align to the menu rhythm and share transparent titlebar resting surfaces,
+menu hover colors and restrained focus underlines, not boxed form-field chrome.
+The actual combo retains keyboard selection, an accessible name and its dropdown.
 Selection is harmless; plus adds and asynchronously connects that exact profile.
 Only a lone never-used offline tile is reused. Explicit New window and saved
 recipes also connect once, independently of the ordinary-startup preference.
@@ -240,6 +243,12 @@ Update from current, Rename/Delete, Open new window and Create shortcut.
 Recipes retain stable IDs, bounded geometry and fit/zoom; screen contents and
 secrets are excluded. Export uses native Windows Shell links and the real
 Fish.exe target. Each link launches a new independent ordinary window.
+The desktop-shortcut guide follows actual name/save/export/destination controls;
+showing, replaying or skipping it never writes a file or launches a window.
+Keyboard Shortcuts pairs concise valid single/modifier examples with a searchable
+Allowed keys and actions reference derived from KeyChord and the action catalog.
+Reference navigation selects an editor row without assigning a key; Apply/Done
+remain the only draft commit controls.
 
 This task-based topology follows recognition-over-recall and conventional direct
 settings navigation rather than progressive disclosure of everyday controls:

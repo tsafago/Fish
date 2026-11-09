@@ -1,6 +1,7 @@
 package pane5250.ui;
 
 import java.awt.*;
+import java.awt.event.*;
 import java.util.Objects;
 import javax.swing.*;
 import javax.swing.plaf.*;
@@ -24,7 +25,8 @@ public final class FlatControls {
             AbstractButton button=(AbstractButton)c;
             if (button.isContentAreaFilled() || button.getModel().isRollover() || button.getModel().isPressed() || button.getModel().isSelected()) {
                 g.setColor(!button.isEnabled() ? Ui.PANEL : button.getModel().isPressed()
-                        || button.getModel().isSelected() ? Ui.color(ColorRole.PRESSED) : button.getModel().isRollover() ? Ui.HOVER : Ui.FIELD);
+                        || button.getModel().isSelected() ? Ui.color(ColorRole.PRESSED) : button.getModel().isRollover()
+                        ? Ui.color(Boolean.TRUE.equals(button.getClientProperty("chrome.control")) ? ColorRole.MENU_HOVER : ColorRole.HOVER) : Ui.FIELD);
                 g.fillRect(0,0,c.getWidth(),c.getHeight());
             }
             super.paint(g,c);
@@ -102,9 +104,44 @@ public final class FlatControls {
         }
     }
     public static final class Combo extends BasicComboBoxUI {
+        private boolean rollover;
+        private final MouseAdapter hover=new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { rollover=true; comboBox.repaint(); }
+            @Override public void mouseExited(MouseEvent e) { rollover=false; comboBox.repaint(); }
+        };
+        private boolean chrome() { return Boolean.TRUE.equals(comboBox.getClientProperty("chrome.control")); }
+        private Color surface() {
+            return chrome() ? Ui.color(comboBox.isEnabled() && comboBox.isPopupVisible() ? ColorRole.PRESSED
+                    : comboBox.isEnabled() && rollover ? ColorRole.MENU_HOVER : ColorRole.CHROME) : Ui.FIELD;
+        }
         public static ComponentUI createUI(JComponent c) { return new Combo(); }
+        @Override public void installUI(JComponent c) {
+            super.installUI(c);
+            if (chrome()) {
+                comboBox.setOpaque(false);
+                comboBox.setBorder(BorderFactory.createEmptyBorder(0,0,0,0));
+                comboBox.addMouseListener(hover); arrowButton.addMouseListener(hover);
+            }
+        }
+        @Override public void uninstallUI(JComponent c) {
+            comboBox.removeMouseListener(hover);
+            if (arrowButton!=null) arrowButton.removeMouseListener(hover);
+            super.uninstallUI(c);
+        }
         @Override protected JButton createArrowButton() {
-            return Ui.iconButton("Show choices","down",() -> {});
+            JButton arrow=Ui.iconButton("Show choices","down",() -> {});
+            if (chrome()) {
+                arrow.putClientProperty("chrome.control",true); arrow.setFocusable(false);
+                Ui.foreground(arrow,ColorRole.CHROME_TEXT);
+            }
+            return arrow;
+        }
+        @Override public void paint(Graphics g,JComponent c) {
+            if (chrome()) { g.setColor(surface()); g.fillRect(0,0,c.getWidth(),c.getHeight()); }
+            super.paint(g,c);
+            if (chrome() && comboBox.isEnabled() && comboBox.hasFocus()) {
+                Hairline.focusUnderline(g,8,c.getHeight()-3,Math.max(8,c.getWidth()-16));
+            }
         }
         @Override protected ComboPopup createPopup() {
             return new BasicComboPopup(comboBox) {
@@ -117,13 +154,13 @@ public final class FlatControls {
             };
         }
         @Override public void paintCurrentValueBackground(Graphics g,Rectangle bounds,boolean focus) {
-            g.setColor(Ui.FIELD); g.fillRect(bounds.x,bounds.y,bounds.width,bounds.height);
+            g.setColor(surface()); g.fillRect(bounds.x,bounds.y,bounds.width,bounds.height);
         }
         @Override public void paintCurrentValue(Graphics g,Rectangle bounds,boolean focus) {
             Component value=comboBox.getRenderer().getListCellRendererComponent(listBox,comboBox.getSelectedItem(),-1,false,false);
             value.setFont(Ui.textFont(comboBox.getFont(),Objects.toString(comboBox.getSelectedItem(),"")));
-            value.setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.color(ColorRole.DISABLED));
-            value.setBackground(Ui.FIELD);
+            value.setForeground(comboBox.isEnabled() ? Ui.color(chrome() ? ColorRole.CHROME_TEXT : ColorRole.TEXT) : Ui.color(ColorRole.DISABLED));
+            value.setBackground(surface());
             Ui.quality(g);
             currentValuePane.paintComponent(g,value,comboBox,bounds.x,bounds.y,bounds.width,bounds.height,true);
         }

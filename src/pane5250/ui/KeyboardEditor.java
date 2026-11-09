@@ -22,6 +22,7 @@ final class KeyboardEditor extends JPanel {
     private final JLabel status=new JLabel(" ");
     private final JTextField search=new JTextField();
     private JButton record;
+    private KeyboardReference reference;
     private boolean loading;
     KeyboardEditor(Workspace workspace) {
         super(new BorderLayout(0,10));
@@ -48,6 +49,12 @@ final class KeyboardEditor extends JPanel {
         JPanel top=new JPanel(new BorderLayout(8,8));
         JLabel find=new JLabel("Find action"); find.setLabelFor(search);
         top.add(find,BorderLayout.WEST); top.add(search,BorderLayout.CENTER);
+        top.add(Ui.button("Allowed keys and actions...",KeyEvent.VK_K,() -> {
+            if (reference==null || !reference.isDisplayable())
+                reference=new KeyboardReference(SwingUtilities.getWindowAncestor(this),this::selectAction);
+            if (workspace.isShowing()) { reference.setVisible(true); reference.toFront(); reference.focusSearch(); }
+            workspace.tutorialAction("keyboard-reference");
+        }),BorderLayout.EAST);
         if (workspace.keyboardRecovery().containsKey("report")) {
             JLabel conflict=new JLabel("Migration retained conflicting old definitions. Review them below.");
             Ui.role(conflict,"muted"); top.add(conflict,BorderLayout.SOUTH);
@@ -94,11 +101,15 @@ final class KeyboardEditor extends JPanel {
         controls.add(primary); controls.add(secondary);
         JPanel bottom=new JPanel(new BorderLayout(0,8));
         bottom.add(controls,BorderLayout.NORTH);
-        JPanel help=new JPanel(new GridLayout(0,1,0,4));
-        help.add(new JLabel("ENTER: main. ENTER@numpad: keypad. ctrl / shift / alt / altGraph."));
-        help.add(new JLabel("Custom keys replace defaults; duplicate custom owners conflict."));
+        JPanel help=new JPanel(new BorderLayout(0,4));
+        JTextArea examples=new JTextArea(KeyboardReference.EXAMPLES+"\n"+KeyboardReference.ALTERNATIVES);
+        examples.setEditable(false); examples.setLineWrap(true); examples.setWrapStyleWord(true); examples.setOpaque(false);
+        examples.setBorder(BorderFactory.createEmptyBorder());
+        examples.getAccessibleContext().setAccessibleName("Binding entry examples");
+        help.add(examples,BorderLayout.NORTH);
+        help.add(new JLabel("Custom keys replace defaults; duplicate custom owners conflict."),BorderLayout.CENTER);
         status.getAccessibleContext().setAccessibleName("Keyboard validation and default replacements");
-        help.add(status); bottom.add(help,BorderLayout.SOUTH); editor.add(bottom,BorderLayout.SOUTH);
+        help.add(status,BorderLayout.SOUTH); bottom.add(help,BorderLayout.SOUTH); editor.add(bottom,BorderLayout.SOUTH);
         add(editor,BorderLayout.SOUTH);
         refreshRows();
         if (table.getRowCount()>0) table.setRowSelectionInterval(0,0);
@@ -125,6 +136,12 @@ final class KeyboardEditor extends JPanel {
         };
     }
     private String selected() { return table.getSelectedRow()<0 ? null : actions.get(table.convertRowIndexToModel(table.getSelectedRow())); }
+    private void selectAction(String action) {
+        search.setText(""); int index=actions.indexOf(action);
+        if (index<0) throw new IllegalArgumentException("Unknown keyboard action: "+action);
+        int row=table.convertRowIndexToView(index); table.setRowSelectionInterval(row,row);
+        table.scrollRectToVisible(table.getCellRect(row,0,true)); keys.requestFocusInWindow();
+    }
     private String text(String action) { return values.getOrDefault(action,KeyBindings.defaultText(action)); }
     private static String summary(String text) {
         try { return text.isBlank() ? "Unbound" : AppCommand.describeStroke(text); }

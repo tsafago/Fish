@@ -34,6 +34,10 @@ public final class MaintenanceSmoke {
                 "assets",List.of(asset(version,installer,EXE),asset(version,"SHA256SUMS.txt",manifest),
                         asset(version,"Fish-"+version+"-windows-x64.zip",bytes("synthetic portable metadata")))));
     }
+    public static String futureVersion() {
+        Updates.Version current=Updates.Version.parse(Main.VERSION);
+        return current.major()+"."+current.minor()+"."+Math.incrementExact(current.patch());
+    }
     private static Optional<Updates.Release> select(List<?> values,UpdateSettings.Channel channel) throws IOException {
         return Updates.select(bytes(ConfigSchema.json(values)),Updates.Version.parse("0.7.1"),channel);
     }
@@ -207,6 +211,6 @@ public final class MaintenanceSmoke {
         Path root=Files.createTempDirectory("Fish-071-fixtures-");
         try { versions(); state(root); downloads(root); }
         finally { remove(root); }
-        System.out.println("Fish 0.7.3 noninteractive maintenance/update checks passed: "+checks);
+        System.out.println("Fish "+Main.VERSION+" noninteractive maintenance/update checks passed: "+checks);
     }
 }

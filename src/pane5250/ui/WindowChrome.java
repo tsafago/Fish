@@ -117,13 +117,13 @@ final class WindowChrome extends JPanel {
                 if (b.getClientProperty("fullLabel")==null) b.putClientProperty("fullLabel",b.getText());
                 b.setText(narrow && b.getIcon()!=null ? "" : (String)b.getClientProperty("fullLabel"));
             }
-            for (Component component:tools.getComponents()) if (component instanceof JComboBox<?> combo) {
-                int fixed=caption.getPreferredSize().width+(narrow ? menuButton.getPreferredSize().width : menus.getPreferredSize().width)
-                        +controls.getPreferredSize().width+insets.left+insets.right+32
-                        +2*((BorderLayout)getLayout()).getHgap();
-                for (Component other:tools.getComponents()) if (other!=combo) fixed+=other.getPreferredSize().width;
-                combo.setPreferredSize(new Dimension(Math.max(45,Math.min(160,getWidth()-fixed)),27));
-            }
+        }
+        for (Component component:tools.getComponents()) if (component instanceof JComboBox<?> combo) {
+            int fixed=caption.getPreferredSize().width+(narrow ? menuButton.getPreferredSize().width : menus.getPreferredSize().width)
+                    +controls.getPreferredSize().width+insets.left+insets.right+32
+                    +2*((BorderLayout)getLayout()).getHgap();
+            for (Component other:tools.getComponents()) if (other!=combo) fixed+=other.getPreferredSize().width;
+            combo.setPreferredSize(new Dimension(Math.max(45,Math.min(160,getWidth()-fixed)),27));
         }
         super.doLayout(); left.doLayout(); actions.doLayout(); controls.doLayout();
         if (nativeWindow!=null) nativeWindow.regions(SwingUtilities.convertRectangle(dragArea.getParent(),dragArea.getBounds(),window),

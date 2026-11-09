@@ -49,18 +49,19 @@ public final class MaintenanceUiSmoke {
         return null;
     }
     private static final class Http implements Updates.Transport {
+        static final String VERSION=MaintenanceSmoke.futureVersion();
         final byte[] exe="MZ injected test bytes, never executed".getBytes(StandardCharsets.UTF_8);
-        final byte[] manifest=(Updates.hash(exe)+"  Fish-0.7.6-setup.exe\r\n").getBytes(StandardCharsets.UTF_8);
+        final byte[] manifest=(Updates.hash(exe)+"  Fish-"+VERSION+"-setup.exe\r\n").getBytes(StandardCharsets.UTF_8);
         final byte[] json;
         volatile boolean fail,block;
         final AtomicInteger downloads=new AtomicInteger();
         Http() {
-            var release=MaintenanceSmoke.release("0.7.6",true);
+            var release=MaintenanceSmoke.release(VERSION,true);
             List<Map<String,Object>> assets=new ArrayList<>();
-            for (String name:List.of("Fish-0.7.6-setup.exe","SHA256SUMS.txt","Fish-0.7.6-windows-x64.zip")) {
+            for (String name:List.of("Fish-"+VERSION+"-setup.exe","SHA256SUMS.txt","Fish-"+VERSION+"-windows-x64.zip")) {
                 byte[] content=name.endsWith(".exe") ? exe : name.endsWith(".txt") ? manifest : new byte[]{1};
                 assets.add(Map.of("name",name,"state","uploaded","size",content.length,"digest","sha256:"+Updates.hash(content),
-                        "browser_download_url","https://github.com/tsafago/Fish/releases/download/v0.7.6/"+name));
+                        "browser_download_url","https://github.com/tsafago/Fish/releases/download/v"+VERSION+"/"+name));
             }
             release.put("assets",assets); json=ConfigSchema.json(List.of(release)).getBytes(StandardCharsets.UTF_8);
         }
@@ -198,7 +199,7 @@ public final class MaintenanceUiSmoke {
         await(() -> ((TransientNotice)field(fixture.controller(),"notice")).isVisible(),"Startup notice missing");
         edt(() -> {
             button((Container)field(fixture.controller(),"notice"),"Hide version").doClick(0);
-            check(fixture.workspace.updateSettings().ignoredVersion().equals("0.7.6"),"Hide records the exact offered version");
+            check(fixture.workspace.updateSettings().ignoredVersion().equals(Http.VERSION),"Hide records the exact offered version");
             invoke(fixture.controller(),"checkStartup"); return null;
         });
         Thread.sleep(100);
@@ -231,7 +232,7 @@ public final class MaintenanceUiSmoke {
         check(fixture.closed.await(10,TimeUnit.SECONDS),"Verified handoff did not save/close cleanly");
         check(fixture.platform.launches.get()==1,"Exactly one injected installer handoff, never a real process");
         try (StateStore reopened=new StateStore(fixture.directory)) {
-            check(reopened.load().updates().ignoredVersion().equals("0.7.6"),"Handoff saves update choices before closing");
+            check(reopened.load().updates().ignoredVersion().equals(Http.VERSION),"Handoff saves update choices before closing");
         }
     }
     private static void reset(Fixture fixture) throws Exception {

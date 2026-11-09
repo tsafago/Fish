@@ -10,7 +10,23 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.7.5 saved-layout shortcuts and quick connections
+## Fish 0.7.6 shortcut guidance and chrome refinement
+
+The profile selector and + now share the flat titlebar surfaces, sizing and
+interaction states, with a clear keyboard-focus underline. Selection still only
+chooses the profile; pressing + adds and connects it.
+
+**Edit > Settings > Keyboard Shortcuts** explains entry syntax with valid examples
+and an **Allowed keys and actions...** searchable reference derived from the
+parser and action catalog. **Help > Tutorials > Desktop profile / layout shortcuts**
+walks through the existing save/export flow using its real controls and destination
+chooser. Back, Next and both Skip actions remain available; the guide never
+writes or opens a shortcut automatically.
+
+Configuration stays at **format 15**, unchanged from 0.7.5. Close all windows before
+upgrading; backups and the compatibility limits below still apply.
+
+### Retained 0.7.5 saved-layout shortcuts and quick connections
 
 Choose a profile in the compact titlebar selector, then press **+** (or Ctrl+N)
 to add and connect it immediately. Selection alone changes no pane or connection.
@@ -74,9 +90,12 @@ when known, cursor position and screen size. Authentication details remain under
 **Host > Last pane notice** rather than in the everyday footer. “Connected” is not
 a claim of verified IBM i sign-on.
 
-**Help > Tutorials** has five replayable, real-control guides: Getting started;
+**Help > Tutorials** has six replayable, real-control guides: Getting started;
 Appearance, colors and pane info; Non-Kerberos profile; Keyboard shortcuts; Pane
-tips and tricks. They progress on actual actions, highlight production controls,
+tips and tricks; Desktop profile / layout shortcuts. The desktop guide walks
+through naming, saving and choosing a destination for a real Windows link, with
+optional profile/add steps for a single-profile shortcut. No file is written or
+launched just by opening the guide. Guides progress on actual actions, highlight production controls,
 stay usable with editors open, and always offer Next/Back/Skip step/Skip tutorial.
 Opening/replaying/skipping a guide never supplies credentials or starts a session;
 pressing its highlighted + control is the same explicit connect action as usual.
@@ -89,6 +108,11 @@ owners are rejected. There are no live per-profile maps. Old explicit definition
 migrate without choosing a winning profile: incompatible keys start inactive,
 and exact originals/conflicts remain recoverable in Settings > Keyboard Shortcuts > Migrated definitions
 and exported `keyboard.legacy.*` data.
+
+The editor shows valid single-key and combination examples: `F5`, `ctrl F5`
+(Ctrl+F5), `ctrl shift F5` (Ctrl+Shift+F5). Use spaces, not + signs, and one
+alternative per line. **Allowed keys and actions...** opens searchable parser-
+and catalog-derived lists with exact tokens, defaults and direct action navigation.
 
 The native setup checkbox now paints its actual text/check/focus path with
 explicit colors, including disabled states and Windows high contrast. Never-shown
@@ -244,26 +268,26 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.7.5-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.7.5](https://github.com/tsafago/Fish/releases/tag/v0.7.5), then run the
+Download `Fish-0.7.6-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.7.6](https://github.com/tsafago/Fish/releases/tag/v0.7.6), then run the
 installer for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract the matching `Fish-0.7.5-windows-x64.zip` and open
+For a portable copy, extract the matching `Fish-0.7.6-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
 may warn or block them. Checksums accompany the package; do not bypass IT policy.
 
 **Back up before upgrading:** close ALL Fish windows normally and copy `workspace.xml`
-outside the application folder before first launching 0.7.5. The usual location
+outside the application folder before first launching 0.7.6. The usual location
 is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
 and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 15**, which older binaries cannot read. Keep a pre-upgrade backup
-for downgrade. XML/config exports contain no passwords or Kerberos tickets;
+to **version 15** if needed, unchanged from 0.7.5. Fish 0.7.4 and earlier cannot read
+it. Keep a pre-upgrade backup for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
 ## Generate an executable and installer yourself
@@ -277,8 +301,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.5-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.7.5-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.7.6-setup.exe` | Install the preview for the current Windows user |
+| `dist\Fish-0.7.6-windows-x64.zip` | Copy/extract the complete portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -289,10 +313,10 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.5**.
+The matching local package is **Fish 0.7.6**.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.5\Fish` to both Package and Installer.
-This local delivery is at `dist\Fish-0.7.5\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.6\Fish` to both Package and Installer.
+This local delivery is at `dist\Fish-0.7.6\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 

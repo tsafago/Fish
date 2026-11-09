@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.5 exposes its complete local configuration without an AI service, network
+Fish 0.7.6 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**

@@ -106,6 +106,8 @@ public final class Workspace extends JFrame {
         updateWindowOutline();
         JMenuBar menus=menus(); menuBar=menus;
         JPanel tools=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0)); tools.setOpaque(false);
+        addProfileSelector.putClientProperty("chrome.control",true);
+        addProfileSelector.updateUI();
         addProfileSelector.setPreferredSize(new Dimension(160,27));
         addProfileSelector.setMinimumSize(new Dimension(45,27));
         addProfileSelector.getAccessibleContext().setAccessibleName("Profile for new pane");
@@ -119,10 +121,12 @@ public final class Workspace extends JFrame {
         tools.add(addProfileSelector);
         addPane=new JButton(command("Add pane"));
         addPane.setText(""); addPane.setIcon(Ui.symbol("plus"));
+        addPane.putClientProperty("chrome.control",true);
+        addPane.setPreferredSize(new Dimension(30,27));
         addPane.setToolTipText("Add and connect selected profile (maximum 8)");
         addPane.getAccessibleContext().setAccessibleName("Add and connect selected profile");
         for (JButton b : List.of(addPane)) {
-            b.setBorder(BorderFactory.createEmptyBorder(6,9,6,9));
+            b.setBorder(BorderFactory.createEmptyBorder(0,9,0,9));
             b.setContentAreaFilled(false);
             b.setIconTextGap(5);
             Ui.foreground(b,ColorRole.CHROME_TEXT);
@@ -195,6 +199,10 @@ public final class Workspace extends JFrame {
     Preferences tutorialPreferences() { return preferences!=null && !preferences.ended() ? preferences : null; }
     Component tutorialAddTarget() { return addPane; }
     Component tutorialProfileTarget() { return addProfileSelector; }
+    Component tutorialLayoutTarget(String control) {
+        return layoutsDialog!=null && layoutsDialog.isDisplayable() ? layoutsDialog.tutorialTarget(control)
+                : tutorialMenuTarget("Panes","Saved layouts / shortcuts...");
+    }
     Component tutorialSettingsTarget() { return tutorialMenuTarget("Edit","Settings..."); }
     void showTutorialSettings() { showTutorialMenu("Edit"); }
     Component tutorialDivider(boolean horizontal) { return dividerTarget(tree,horizontal); }
@@ -739,7 +747,8 @@ public final class Workspace extends JFrame {
         action(host,"Last pane notice...",null,() -> active.showLastNotice());
         JMenu help = menu(bar,"Help",KeyEvent.VK_L);
         JMenu tutorials=new JMenu("Tutorials"); help.add(tutorials);
-        String[] tutorialActions={"Getting started tutorial","Tutorial: Appearance","Tutorial: Non-Kerberos profile","Tutorial: Keyboard shortcuts","Tutorial: Pane tips"};
+        String[] tutorialActions={"Getting started tutorial","Tutorial: Appearance","Tutorial: Non-Kerberos profile","Tutorial: Keyboard shortcuts",
+                "Tutorial: Pane tips","Tutorial: Desktop shortcuts"};
         TutorialDialog.Guide[] guides=TutorialDialog.Guide.values();
         for (int n=0;n<guides.length;n++) {
             TutorialDialog.Guide guide=guides[n];
@@ -966,7 +975,7 @@ public final class Workspace extends JFrame {
         try { executable=pane5250.LayoutShortcuts.executable(); }
         catch (java.io.IOException e) { failed.accept(e.getMessage()); return; }
         exportingLayout=true; refreshActions();
-        Runnable success=() -> { exportingLayout=false; refreshActions(); done.run(); tutorialAction("layout-shortcut"); };
+        Runnable success=() -> { exportingLayout=false; refreshActions(); done.run(); };
         java.util.function.Consumer<String> failure=message -> { exportingLayout=false; refreshActions(); failed.accept(message); };
         Maintenance task=() -> pane5250.LayoutShortcuts.create(destination,executable,dataDirectory(),id);
         if (application!=null) application.persistTask(task,success,failure);
@@ -981,6 +990,7 @@ public final class Workspace extends JFrame {
     void savedLayoutsDialog() {
         if (layoutsDialog==null || !layoutsDialog.isDisplayable()) layoutsDialog=new SavedLayoutsDialog(this);
         if (isShowing()) { layoutsDialog.setVisible(true); layoutsDialog.toFront(); }
+        tutorialAction("layouts-opened");
     }
     @FunctionalInterface interface Maintenance { void run() throws java.io.IOException; }
     boolean updateAndExit(Maintenance launch,java.util.function.Consumer<String> failed) {

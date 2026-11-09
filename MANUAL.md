@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.7.5 - unsigned experimental saved-layout shortcuts and quick connections.
+Fish 0.7.6 - unsigned experimental shortcut guidance and chrome refinement.
 
 Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
 “Settings” paths below refer to that same flat indexed dialog. The **profile / +**
@@ -34,7 +34,8 @@ preference, now ON only for new/factory workspaces; the guide never initiates th
 Show control opens/selects actual controls without editing, saving or connecting.
 Next, Back, Skip step and Skip tutorial remain available while using Settings or
 the profile editor. Help > Tutorials replays Getting started; Appearance, colors
-and pane info; Non-Kerberos profile; Keyboard shortcuts; Pane tips and tricks.
+and pane info; Non-Kerberos profile; Keyboard shortcuts; Pane tips and tricks;
+Desktop profile / layout shortcuts.
 Steps follow actual choices/actions; opening a swap dialog is not a completed swap.
 Replaying/skipping never duplicates profiles, changes settings or interrupts sessions.
 Legacy upgrades do not force the guide over existing work. Closing the app midway
@@ -44,9 +45,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.7.5 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.5) includes Fish-0.7.5-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
+The public [v0.7.6 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.6) includes Fish-0.7.6-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
 
-Alternatively, extract the matching Fish-0.7.5-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.7.6-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -60,15 +61,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.5-setup.exe, dist\Fish-0.7.5-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.5\Fish\Fish.exe. Close a running copy before rebuilding its directory.
+Default build outputs are dist\Fish\Fish.exe, dist\Fish-0.7.6-setup.exe, dist\Fish-0.7.6-windows-x64.zip and dist\Fish-source.zip. This side-by-side local delivery uses dist\Fish-0.7.6\Fish\Fish.exe. Close a running copy before rebuilding its directory.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.5\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.5\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.6\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.6\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -78,7 +79,8 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish, or the retained
 legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
-The next save writes configuration version 15. Older binaries, including 0.7.4, cannot read it:
+The next save writes configuration version 15, unchanged between 0.7.5 and 0.7.6.
+Older binaries, including 0.7.4, cannot read it:
 keep the pre-upgrade backup for downgrade, not just a version-15 export. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
@@ -138,6 +140,12 @@ Explicit +, New window, Restore profile layout and saved-layout launches attempt
 ## Saved layouts and desktop shortcuts
 
 Arrange one window, assign its profiles and adjust its dividers and fit/zoom.
+For a guided path, choose **Help > Tutorials > Desktop profile / layout shortcuts**.
+It highlights the real name, Save and Create shortcut controls and follows the
+destination chooser. For a profile-only shortcut, start with a single-pane window
+using that profile; for a multi-pane layout, skip the optional profile/add steps.
+Back, Next, Skip step and Skip tutorial are always available. The guide never
+writes or opens a shortcut for you: choose the destination and confirm yourself.
 Open **Panes > Saved layouts / shortcuts...**, enter a name and choose
 **Save current as new**. Repeat with other names for distinct layouts (up to 64).
 The selector only selects a recipe; it does not replace a window or connect.
@@ -357,6 +365,27 @@ and runtime pane/scale/logo actions are not undone by Settings Cancel.
 
 Keyboard combines all Fish and host actions. Search/select a row. The table shows effective keys; the typed area contains its default list or your replacement, **one chord per line**. Use **Record and add**, press/release a chord and choose Use chord. Record only observes its explicit capture field, not passwords or other windows. Tab, Enter and Escape can be recorded; Alt+C cancels the recorder (type that chord manually if needed). Clear records again; Cancel leaves the draft unchanged. Record appends, so several shortcuts can invoke the same action. Remove line deletes one; Unbind action empties that action; Restore default removes its explicit override.
 
+You do not need to memorize the syntax: **Allowed keys and actions...** opens a
+searchable, keyboard-navigable reference derived from the running parser and
+action definitions. Keys shows the exact token; Actions shows scope and defaults.
+Select an action and choose **Edit selected action** to return directly to its
+binding editor without changing a binding. These lists are supported names, not
+a guarantee that your physical keyboard reports every key or location.
+
+| What you press | What you type |
+|---|---|
+| F5 (single key) | `F5` |
+| Ctrl+F5 | `ctrl F5` |
+| Ctrl+Shift+F5 | `ctrl shift F5` |
+| Main Enter | `ENTER` |
+| Keypad Enter | `ENTER@numpad` |
+
+Use **spaces, not literal + signs** between modifiers and the key. To offer
+several alternatives for an action, enter each on a separate line, for example
+`ctrl F5` on the first and `ctrl shift F5` on the second. Unmodified typing keys
+cannot invoke Fish commands; host actions and Windows-reserved chords retain
+their restrictions below.
+
 Bindings are application-level within this workspace, the same in every profile/pane, not system-wide hotkeys. Host actions only act in a terminal; normal dialog text editing and IME input are not intercepted. Ctrl+Tab works in terminals and offline selectors. Ctrl+C/V retain field-aware terminal behavior and normal dialog text editing. A recoverable local error still makes the first plain Enter at either location Reset only, not a host submission.
 
 A chord is the key, modifiers and Java-reported action-key location. `ENTER` means main Enter; `ENTER@numpad` (also `NUMPAD_ENTER`) means keypad Enter. Examples: `ctrl ENTER`, `ctrl ENTER@numpad`, `shift F1`, `altGraph Q`. Optional suffixes are `@standard`, `@numpad`, `@left`, `@right`, `@unknown`. Modifier sides are not distinguished. No claim is made for physical distinctions Windows/Java does not report. Unlocated events use an explicit @unknown binding or standard fallback only. NumLock can change a keypad digit into a navigation code; record each needed variant. Java's KP arrow variants normalize to the corresponding numpad arrow.
@@ -393,7 +422,7 @@ Tabs and newlines navigate without submitting Enter. Pasting never signs on or s
 ## Menus and action access
 
 The Commands window is removed. Session, Edit, Inserts, Panes, View and Host are
-flat task menus; Help contains the meaningful five-guide Tutorials submenu.
+flat task menus; Help contains the meaningful six-guide Tutorials submenu.
 The compact narrow-window menu and configurable shortcuts use the same handlers.
 Disabled actions remain disabled; host keys do not intercept dialog typing.
 

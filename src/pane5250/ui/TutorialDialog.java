@@ -11,7 +11,8 @@ import pane5250.model.StateStore;
 final class TutorialDialog extends JDialog {
     enum Guide {
         GETTING_STARTED("Getting started"),APPEARANCE("Appearance, colors and pane info"),
-        PASSWORD_PROFILE("Non-Kerberos profile"),KEYBOARD("Keyboard shortcuts"),PANES("Pane tips and tricks");
+        PASSWORD_PROFILE("Non-Kerberos profile"),KEYBOARD("Keyboard shortcuts"),PANES("Pane tips and tricks"),
+        DESKTOP_SHORTCUTS("Desktop profile / layout shortcuts");
         final String title;
         Guide(String title) { this.title=title; }
     }
@@ -88,6 +89,7 @@ final class TutorialDialog extends JDialog {
         switch(current.surface()) {
             case "Appearance","Profiles","Keyboard Shortcuts","General" -> workspace.preferences(current.surface());
             case "settings" -> workspace.showTutorialSettings();
+            case "layouts","layout-destination" -> workspace.savedLayoutsDialog();
             case "Help","Panes","View","Session" -> workspace.showTutorialMenu(current.surface());
             default -> { if (workspace.isShowing()) workspace.toFront(); }
         }
@@ -103,7 +105,7 @@ final class TutorialDialog extends JDialog {
                     s("Add and connect","Press + to connect the selected profile in a fresh pane. A lone never-used offline tile is reused. Each connection is independent; on failure use Reconnect in the pane or Session menu.","add","","Add pane"),
                     s("Close just one pane","Click X to remove a pane. The last pane is kept offline. With hidden headers, X is at the pane's upper-right edge.","close","","Close pane"),
                     s("Find your settings","Open Edit > Settings. Appearance brings application colors, terminal colors, fonts and pane information together. The left index goes straight to other controls.","settings","","settings-Appearance"),
-                    s("Explore more guides","Open Help > Tutorials for appearance, profiles, keyboard shortcuts and pane tips. Every guide has Back, Next, Skip step and Skip tutorial.","Help","Tutorials",""));
+                    s("Explore more guides","Open Help > Tutorials for appearance, profiles, keyboard shortcuts, pane tips and desktop layout shortcuts. Every guide has Back, Next, Skip step and Skip tutorial.","Help","Tutorials",""));
             case APPEARANCE -> List.of(
                     s("Open Appearance","Open Edit > Settings, then Appearance. Common appearance controls are all on this page; scroll to the sections below.","Appearance","theme","settings-Appearance"),
                     s("Choose application colors","Choose Application theme. This is a draft until Apply or Done. Custom theme editing is optional.","Appearance","theme","appearance-theme"),
@@ -125,7 +127,7 @@ final class TutorialDialog extends JDialog {
                     s("Open Keyboard Shortcuts","Open Settings > Keyboard Shortcuts. Fish commands and host keys share this editor; host keys still act only in the terminal.","Keyboard Shortcuts","keyboard-search","settings-Keyboard Shortcuts"),
                     s("Find an action","Type part of an action or key in Find action. The table shows every effective binding, not just the one displayed in a menu.","Keyboard Shortcuts","keyboard-search","keyboard-search"),
                     s("Select the action","Select the action row. Its complete binding list appears below.","Keyboard Shortcuts","keyboard-table","keyboard-action"),
-                    s("Edit or record a binding","Type one exact chord per line, or use Record and add. ENTER is the main key; ENTER@numpad is the keypad. Two custom owners conflict and cannot be applied.","Keyboard Shortcuts","keyboard-keys","keyboard-binding"),
+                    s("Edit or record a binding","F5 is a single key. For Ctrl+F5 type ctrl F5; for Ctrl+Shift+F5 type ctrl shift F5 (spaces, not +). Use one alternative per line or Record and add. Allowed keys and actions lists every supported token/action. ENTER@numpad is keypad Enter. Two custom owners conflict.","Keyboard Shortcuts","keyboard-keys","keyboard-binding"),
                     s("Apply valid bindings","Apply requires a valid, conflict-free list. Done applies and closes; Cancel keeps the last applied list. Menus show the first available chord.","Keyboard Shortcuts","apply","settings-applied"));
             case PANES -> List.of(
                     s("Add an independent pane","Choose a profile beside +, then press + to add and connect it. A lone never-used offline tile is reused; later adds create new panes, up to eight.","add","","Add pane"),
@@ -136,6 +138,15 @@ final class TutorialDialog extends JDialog {
                     s("Choose startup connections","Edit > Settings > General controls ordinary restored-window startup. Its off choice is kept. Explicit +, New window and saved-layout launches still connect once; Disconnect stays disconnected until you explicitly retry.","General","startup","startup-changed"),
                     s("Fit and navigate","View > Fit host screen fits the active pane. Ctrl+Tab moves between panes; X closes one and keeps the last offline. Settings lists your complete custom bindings.","View","Fit host screen","Fit host screen"),
                     s("Save a layout shortcut","Panes > Saved layouts / shortcuts saves this window under a name. Save current as new keeps recipes separate; Create shortcut writes a Windows .lnk to Desktop or your chosen folder. Each launch opens a new window.","Panes","Saved layouts / shortcuts...","layout-saved"));
+            case DESKTOP_SHORTCUTS -> List.of(
+                    s("Choose a profile or keep this layout","For a profile shortcut, use a window with just that profile. Choose it beside +, then use the next step. For your current multi-pane layout, skip these first two steps; no session changes just by opening this guide.","add-profile","","add-profile-selected"),
+                    s("Prepare the window","Press + to add and connect the selected profile, or skip if the window already has the panes you want. To make a one-profile shortcut, use Session > New window and replay this guide there. Saving a recipe never captures screen contents or passwords.","add","","Add pane"),
+                    s("Open saved layouts","Open Panes > Saved layouts / shortcuts. Show control opens that menu; choose the item. Existing layouts and their shortcuts stay separate.","Panes","Saved layouts / shortcuts...","layouts-opened"),
+                    s("Give the layout a name","Enter a recognizable name, such as Morning work or Inventory. A single pane is a profile shortcut; several panes make a layout shortcut. This is only a name draft until you save.","layouts","name","layout-named"),
+                    s("Save a separate layout","Choose Save current as new to store this window's profiles, arrangement, proportions and fit/zoom. Update from current replaces the selected recipe instead; its existing shortcuts will use the update.","layouts","save","layout-saved"),
+                    s("Create the shortcut","Choose Create shortcut. Nothing is written until you choose a destination and confirm. Use the installed or portable Fish.exe; source/Java and Demo launches cannot export runnable shortcuts.","layouts","export","layout-destination-open"),
+                    s("Choose Desktop or a folder","The save chooser starts at Desktop. Keep it or choose another folder, check the .lnk name, then confirm. Cancel writes nothing. Existing files are never overwritten; failures stay visible in Saved layouts so you can retry.","layout-destination","destination","layout-shortcut"),
+                    s("Open it when you need it","When created, double-click the .lnk to open one new independent, auto-connecting Fish window, even while Fish is running. Rename or update the saved layout without breaking its link. Moving a portable Fish folder requires a new link. This guide never launches it for you.","layouts","message",""));
         };
     }
     private Component target(Step current) {
@@ -143,6 +154,7 @@ final class TutorialDialog extends JDialog {
         return switch(current.surface()) {
             case "connect" -> workspace.active().tutorialConnectionTarget(); case "add" -> workspace.tutorialAddTarget();
             case "add-profile" -> workspace.tutorialProfileTarget();
+            case "layouts","layout-destination" -> workspace.tutorialLayoutTarget(current.control());
             case "close" -> workspace.active().tutorialCloseTarget(); case "settings" -> workspace.tutorialSettingsTarget();
             case "divider-horizontal","divider-vertical" -> {
                 Component divider=workspace.tutorialDivider(current.surface().equals("divider-horizontal"));

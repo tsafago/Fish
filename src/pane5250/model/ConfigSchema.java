@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",5); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",6); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -81,7 +81,7 @@ public final class ConfigSchema {
         root.put("displayFields",Map.of("fit",field("boolean",true,"Optional paired fit/zoom entries for a pane in the corresponding window; both or neither. No screen data."),
                 "zoom",field("number",1,"Finite 0.5..3; captured per-pane manual zoom, used when fit=false.")));
         root.put("savedLayoutPrefix","savedLayout.{listed-layout-uuid}.");
-        root.put("savedLayoutFields",Map.of("version",enumeration("1",List.of("1")),
+        root.put("savedLayoutFields",Map.of("version",enumeration("2",List.of("2")),
                 "name",field("text",null,"1..80 printable characters; unique ignoring case. Rename retains UUID/shortcuts."),
                 "layout",fields.get("layout"),"width",fields.get("width"),"height",fields.get("height"),
                 "lastProfile",fields.get("lastProfile"),"addProfile",fields.get("addProfile")));
@@ -103,10 +103,11 @@ public final class ConfigSchema {
                 "shortcut.{old-action-title}","Original single Swing stroke or empty.",
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
-        root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-15.");
-        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before upgrading, including from 0.7.4. Format 15 adds named recipes, add-profile selections and per-pane fit/zoom. Format 14 windows/settings/profile IDs remain intact with an empty recipe library and add selection from lastProfile. Earlier formats retain their window/footer migration. Older Fish cannot read format 15; downgrade only by restoring the backup with every window closed, never relabel version.");
+        root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-16.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before this local 0.7.7 build. Format 16 preserves directional two-lane layouts; recipe version 2 records the same grammar. Format 15 windows and recipe version 1 migrate without changing identity, geometry, ratios, profiles or display state. Earlier migrations remain intact. Fish 0.7.6 and earlier cannot read format 16; downgrade only by restoring the backup with every window closed, never relabel version.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",
-                "ratio","finite 0.05..0.95","shape","1 full; 2 horizontal; 3 large left with vertically stacked right; 4-8 two rows, ceil(count/2) above. Each row is a right-nested horizontal chain."));
+                "ratio","finite 0.05..0.95","shape","1-8 unique panes. A leaf spans 1 column and 1 row. H sums child columns and takes maximum rows; V takes maximum columns and sums rows. Both spans must be at most 4, with at least one at most 2. Edge drops insert locally after source removal, center swaps. Valid layouts/ratios never normalize to a different grid; UI drops also require at least 70x70 logical pixels per pane."));
+        root.put("settingsEditing","Valid Settings edits apply immediately after a short coalescing pause and persist through the existing exclusive/revision-checked writer. Saved acknowledges disk success. Invalid partial groups retain their previous usable state; stale edits require reload, failed saves retain Retry. New profiles, password-store operations, destructive actions and file exports require explicit actions. No setting edit connects a session.");
         root.put("semantics","Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Configuration apply performs no connections/transactions/credential operations. Normal startup follows the saved startup preference; only new/factory workspaces default on.");
         return root;
     }

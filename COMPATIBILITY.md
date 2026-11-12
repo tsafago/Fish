@@ -5,7 +5,33 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.7.6 shortcut guidance and chrome refinement
+## Fish 0.7.7 local usability build (not published)
+
+Valid Settings edits now apply/persist after a short coalescing pause, with
+acknowledged Saved status, inline invalid input and stale/save-failure recovery.
+New profiles, password-store changes, destructive actions and actual exports stay
+explicit. The shortcut maker starts with current-window context, naming and one
+create/destination flow; a separate saved-layout library retains management.
+Edge docking projects its actual result before release, center swaps, and Undo /
+Arrange pane provide keyboard control. Eight panes and a two-lane/four-other-axis
+constraint remain; invalid or too-small candidates are refused. Format 16 /
+recipe 2 preserves old format-15 geometry/IDs, but older binaries need a backup
+to downgrade.
+
+Focused synthetic fixtures cover these controls, cross-window propagation,
+failure/retry, exact pane geometry/identity and legacy/recipe roundtrips.
+The final noninteractive Maintenance pass included 1,200 focused usability
+assertions and the existing model, update, key, tutorial, window and launch gates.
+One batched offscreen review and one confirmation covered dark/light and
+100%/150% rendering, including minimum Settings, save failures and drop previews.
+Loopback hosts and temporary native .lnk destinations are not IBM i/ACS or physical desktop
+acceptance. Two initially failing legacy fixture teardowns invoked Fish's normal
+wait-for-save dialog; those fixture processes were stopped and cleanup was
+corrected to await acknowledged saves. No clipboard, actual Desktop shortcut,
+credential/ticket operation or installer test was performed.
+Protocol, maximize-outline and flicker limitations below remain unchanged.
+
+## Retained Fish 0.7.6 shortcut guidance and chrome refinement
 
 This UI refinement keeps format 15 and the same connection
 semantics. The titlebar selector/+ now uses flat menu-row surfaces and alignment.

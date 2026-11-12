@@ -74,10 +74,13 @@ transform or bilinear bitmap enlargement. Manual zoom uses the 16px base and scr
 ## Layout
 
 The demo's reference composition is one large left pane and two stacked right
-panes. Persistent bounded slots support 1-8 sessions: 1 full, 2 side-by-side,
-3 reference panes, 4 quadrants, then top/bottom 3/2, 3/3, 4/3 and 4/4.
-Binary containers are an implementation detail, never arbitrary subdivisions.
-Header dragging and keyboard moves only swap sessions. A divider has a
+panes. Persistent constrained slots support 1-8 sessions. Edge docking stacks or
+places panes side by side; the center swaps. One overall axis stays capped at two,
+the other at four. Local insert/contraction preserves unrelated panes and ratios.
+Binary containers are implementation details, never unrestricted subdivisions.
+A shaded projected result precedes a valid drop; invalid/minimum-size/self/outside
+drops do not move anything. Arrange pane and Undo provide keyboard control.
+A divider has a
 4px draggable target but paints a 1px line. Headers are 25px high with 8px
 horizontal insets. Display origins retain at least 12px horizontal and 10px
 vertical padding. Resizing does not resize the host's presentation space.
@@ -164,15 +167,17 @@ a right-click menu. The close X occupies the far-right header position, outside
 the drag target, or a zero-space upper-right overlay when information is hidden.
 It is independent of the selected header items and does not overlap Reset.
 An invisible, zero-layout-space pane-top drag target at X height supplies the same
-swap action when a header is hidden; controls remain excluded and normal terminal
+edge arrangement / center swap when a header is hidden; controls remain excluded and normal terminal
 selection starts below it.
-X disconnects and removes the pane, reflowing bounded slots;
+X disconnects and removes the pane, contracting its layout branch;
 only the final pane is retained as an empty offline tile. Window
-close disconnects all without confirmation. An offline tile contains only a
+close disconnects that window's sessions; unsaved Settings errors retain their
+recovery boundary. An offline tile contains only a
 centered preset selector and adjacent arrow Connect icon with tooltip and
 accessible name. Collapsed combo values never use selection coloring just
-because the combo has focus; focus stays on its border. Newly added panes select the last
-used preset; restored slots preserve their own selection. No visible A1/A2 IDs.
+because the combo has focus; focus stays on its border. Newly added panes use
+the titlebar's selected profile and connect once; restored panes preserve their
+own profiles. No visible A1/A2 IDs.
 One subtly tinted active surface spans header, terminal and
 footer; a constant-inset, physical-pixel outer focus border replaces the old terminal-only focus box
 and header underline. The optional pane-background tint and active outline can be disabled independently;
@@ -200,10 +205,12 @@ Profiles dialog; only genuinely optional host/device/code-page/Kerberos identity
 fields live under Advanced. Username/password controls appear only in the proper
 mode. Labels and mnemonics accompany controls. Owned forms, confirmations, errors and System Request
 prompts share custom draggable chrome, Escape dismissal and icon-free content.
-Editable settings have Cancel/Apply/Done in reading/tab order: Apply stays open
-and updates the baseline, Done accepts pending changes and closes, dismissal
-discards only drafts since Apply. Immediate selectors do not gain transaction
-buttons or tautological save helper text. Profile credential work stays asynchronous.
+Valid Settings edits apply and persist after a short coalescing pause; Saved
+acknowledges the disk write, while invalid, stale and failed states stay visible
+with repair/reload/retry controls. Close keeps saved edits; invalid/explicit
+unsaved buffers cannot silently disappear. New profiles, password-store changes,
+destructive actions and file exports retain explicit boundaries. Immediate
+selectors do not gain transaction buttons. Profile credential work stays asynchronous.
 Custom window controls retain visible keyboard focus. Native Alt+Space is not
 shadowed by a second popup; Ctrl+Alt+Space exposes the dark window menu.
 The Commands window is removed. A single registry backs menus, terminal context
@@ -238,8 +245,10 @@ Disconnect/failure never retries itself. Offline panes retain a small accessible
 Reconnect control, not a connection wizard.
 
 Panes > Saved layouts / shortcuts is modeless and operational, not another
-Settings hierarchy. A name and recipe selector lead to explicit Save as new,
-Update from current, Rename/Delete, Open new window and Create shortcut.
+Settings hierarchy. This window's profile/layout context and a name lead directly
+to Create desktop shortcut; destination confirmation saves the recipe and link.
+Save layout only and an expandable Saved layouts library retain explicit
+Update from this window, Rename/Delete, Open new window and Create shortcut.
 Recipes retain stable IDs, bounded geometry and fit/zoom; screen contents and
 secrets are excluded. Export uses native Windows Shell links and the real
 Fish.exe target. Each link launches a new independent ordinary window.
@@ -247,8 +256,17 @@ The desktop-shortcut guide follows actual name/save/export/destination controls;
 showing, replaying or skipping it never writes a file or launches a window.
 Keyboard Shortcuts pairs concise valid single/modifier examples with a searchable
 Allowed keys and actions reference derived from KeyChord and the action catalog.
-Reference navigation selects an editor row without assigning a key; Apply/Done
-remain the only draft commit controls.
+Reference navigation selects an editor row without assigning a key; complete
+conflict-free binding edits apply and persist automatically.
+
+Directional header targets and shaded pre-drop results follow familiar editor
+docking conventions, constrained to Fish's eight-pane/two-lane grammar rather
+than unrestricted nesting:
+https://code.visualstudio.com/docs/editing/getting-started/userinterface and
+https://learn.microsoft.com/en-us/visualstudio/ide/customizing-window-layouts-in-visual-studio?view=visualstudio#dock-windows .
+Saved/error visibility, conventional direction mappings, refused invalid targets,
+recognition and arrangement undo apply the relevant Nielsen heuristics; autosave
+alone is not a claim to satisfy all ten.
 
 This task-based topology follows recognition-over-recall and conventional direct
 settings navigation rather than progressive disclosure of everyday controls:

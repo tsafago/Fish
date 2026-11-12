@@ -69,7 +69,17 @@ public final class WindowRevisionSmoke {
         }
         Workspace first() { return app.windows().getFirst(); }
         @Override public void close() throws Exception {
-            if (closed.getCount()>0) edt(() -> { app.quit(); return null; });
+            if (closed.getCount()>0) edt(() -> {
+                UsabilityIterationSmoke.settle(() -> !app.saving(),"Pending settings did not settle before teardown");
+                for (Workspace w:app.windows()) {
+                    Preferences p=w.tutorialPreferences();
+                    if (p!=null) {
+                        ((JButton)field(p,"reloadButton")).doClick(0); p.dialog().dispose();
+                        UsabilityIterationSmoke.settle(p::ended,"Settings teardown did not close");
+                    }
+                }
+                app.quit(); return null;
+            });
             check(closed.await(10,TimeUnit.SECONDS),"All-window lifecycle releases the store and worker");
         }
     }
@@ -143,16 +153,20 @@ public final class WindowRevisionSmoke {
             Preferences editor=new Preferences(first,"Appearance");
             set(first,"preferences",editor);
             check(second.preferencesDialog("General")==editor.dialog(),"Other windows reuse the same Settings editor");
+            ((JCheckBox)field(editor,"startup")).setSelected(!first.connectOnStartup());
             second.highlightActive(false);
             Method apply=Preferences.class.getDeclaredMethod("apply",boolean.class); apply.setAccessible(true); apply.invoke(editor,false);
-            check(((JLabel)field(editor,"error")).getText().contains("changed while"),"Stale app-global draft is rejected rather than overwriting another window");
+            check(((JLabel)field(editor,"error")).getText().contains("Changed elsewhere"),"Stale app-global draft is rejected rather than overwriting another window");
+            ((JButton)field(editor,"reloadButton")).doClick(0);
             editor.dialog().dispose();
             Preferences colors=new Preferences(first,"Appearance"); set(first,"preferences",colors);
             ((JComboBox<?>)field(colors,"palette")).setSelectedItem("Amber");
-            second.toggleFlux();
+            Profile concurrent=second.active().profile();
+            second.putProfile(concurrent.withDisplay(concurrent.theme(),Profile.FLUX));
             apply.invoke(colors,false);
             check(((JLabel)field(colors,"error")).getText().contains("Terminal colors/effect changed"),"Stale profile palette/effect draft cannot overwrite another window's live change");
             check(first.active().profile().effect().equals(Profile.FLUX),"Concurrent profile effect remains intact after rejected Apply");
+            ((JButton)field(colors,"reloadButton")).doClick(0);
             colors.dialog().dispose(); first.toggleFlux();
             Profile other=Profile.createKerberos("Other saved profile"); first.putProfile(other);
             check(second.profileList().contains(other),"Profiles are shared live without stale copies");

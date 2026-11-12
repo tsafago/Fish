@@ -95,7 +95,7 @@ final class UpdateController implements AutoCloseable {
         if (updateButton==null) return;
         boolean current=offered!=null && offeredChannel==channel.get();
         updateButton.setEnabled(current && !busy && !dirty.getAsBoolean() && !workspace.closing());
-        updateButton.setToolTipText(dirty.getAsBoolean() ? "Apply or cancel your settings edits before updating."
+        updateButton.setToolTipText(dirty.getAsBoolean() ? "Wait for settings to save, or repair the marked edits before updating."
                 : !current ? "Check for updates in the selected channel first." : null);
     }
     void detach(JDialog window) {

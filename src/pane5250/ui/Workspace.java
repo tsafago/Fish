@@ -36,6 +36,31 @@ public final class Workspace extends JFrame {
     private List<SavedLayout> savedLayouts;
     private UUID selectedLayout;
     private Component tree;
+    private final Deque<Layout> arrangementHistory=new ArrayDeque<>();
+    private final JComponent dropOverlay=new JComponent() {
+        @Override public boolean contains(int x,int y) { return false; }
+        @Override protected void paintComponent(Graphics graphics) {
+            if (dropPlan==null) return;
+            Graphics2D g=(Graphics2D)graphics.create();
+            Ui.quality(g); g.setFont(UIManager.getFont("Label.font"));
+            for (var entry:dropPlan.bounds().entrySet()) {
+                Rectangle r=entry.getValue();
+                if (entry.getKey().equals(dropPlan.source())) {
+                    g.setColor(new Color(Ui.FOCUS.getRed(),Ui.FOCUS.getGreen(),Ui.FOCUS.getBlue(),65)); g.fill(r);
+                    Hairline.rectangle(g,r.x+1,r.y+1,r.width-2,r.height-2);
+                    String label=dropPlan.dock()==Layout.Dock.CENTER ? "Swap panes" : "Place "+dropPlan.dock().name().toLowerCase(Locale.ROOT);
+                    FontMetrics metrics=g.getFontMetrics(); int width=metrics.stringWidth(label)+16,height=metrics.getHeight()+8;
+                    int x=r.x+(r.width-width)/2,y=r.y+(r.height-height)/2;
+                    g.setColor(Ui.PANEL); g.fillRect(x,y,width,height);
+                    Hairline.rectangle(g,x,y,width,height);
+                    g.setColor(Ui.TEXT); g.drawString(label,x+8,y+4+metrics.getAscent());
+                } else Hairline.rectangle(g,r.x,r.y,r.width,r.height);
+            }
+            g.dispose();
+        }
+    };
+    record DropPlan(UUID source,UUID target,Layout.Dock dock,Layout layout,Map<UUID,Rectangle> bounds) {}
+    private DropPlan dropPlan;
     private final boolean demonstration;
     private boolean closing;
     private boolean highlightActive;
@@ -362,13 +387,7 @@ public final class Workspace extends JFrame {
         Ui.applyTheme(theme); changed();
     }
     public String paneName(UUID id) {
-        List<SessionPane> order=sessionPanes();
-        int index=order.indexOf(panes.get(id)),count=order.size();
-        if (count==1) return "Pane";
-        if (count==2) return index==0 ? "Left" : "Right";
-        if (count==3) return index==0 ? "Left" : index==1 ? "Upper right" : "Lower right";
-        int top=(count+1)/2;
-        return index<top ? "Top row, column "+(index+1) : "Bottom row, column "+(index-top+1);
+        return "Pane "+(sessionPanes().indexOf(panes.get(id))+1);
     }
     public void activate(SessionPane pane) {
         pane.view().restartCursor();
@@ -384,12 +403,17 @@ public final class Workspace extends JFrame {
     public void changed() {
         if (closing) return;
         if (application!=null) application.changed(this); else saveTimer.restart();
+        if (preferences!=null) preferences.sharedChanged();
+        if (layoutsDialog!=null) layoutsDialog.refresh();
     }
     private List<SessionPane> allPanes() { return application==null ? sessionPanes() : application.panes(); }
 
     private void buildTree() {
         Set<UUID> live = new HashSet<>();
         layout.leaves().forEach(l -> live.add(l.pane()));
+        if (!arrangementHistory.isEmpty() && !arrangementHistory.peek().leaves().stream().map(Layout.Leaf::pane).collect(java.util.stream.Collectors.toSet()).equals(live))
+            arrangementHistory.clear();
+        clearPreviews();
         Iterator<Map.Entry<UUID,SessionPane>> iterator = panes.entrySet().iterator();
         while (iterator.hasNext()) {
             var entry = iterator.next();
@@ -412,7 +436,13 @@ public final class Workspace extends JFrame {
             return panes.computeIfAbsent(leaf.pane(),id -> new SessionPane(this,id,Objects.requireNonNull(profiles.get(leaf.profile()))));
         Layout.Split split = (Layout.Split) node;
         JSplitPane divider = new JSplitPane(split.horizontal() ? JSplitPane.HORIZONTAL_SPLIT : JSplitPane.VERTICAL_SPLIT,
-                component(split.first()),component(split.second()));
+                component(split.first()),component(split.second())) {
+            private boolean initial=true;
+            @Override public void doLayout() {
+                if (initial && getWidth()>0 && getHeight()>0) { initial=false; setDividerLocation(split.ratio()); }
+                super.doLayout();
+            }
+        };
         divider.putClientProperty("initialRatio",split.ratio());
         divider.setBorder(BorderFactory.createEmptyBorder());
         divider.setDividerSize(4);
@@ -421,15 +451,6 @@ public final class Workspace extends JFrame {
         divider.setOneTouchExpandable(false);
         divider.setBackground(Ui.LINE);
         divider.setUI(new FlatControls.Split());
-        divider.addComponentListener(new ComponentAdapter() {
-            private boolean first = true;
-            @Override public void componentResized(ComponentEvent e) {
-                if (first && divider.getWidth() > 0 && divider.getHeight() > 0) {
-                    divider.setDividerLocation(split.ratio());
-                    first = false;
-                }
-            }
-        });
         divider.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY,e -> changed());
         if (divider.getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI ui) ui.getDivider().addMouseListener(new MouseAdapter() {
             private int start;
@@ -470,6 +491,15 @@ public final class Workspace extends JFrame {
             }); }
         });
     }
+    void persistSettings(Runnable done,java.util.function.Consumer<String> failed) {
+        saveTimer.stop();
+        if (application!=null) { application.persistTask(() -> {},done,failed); return; }
+        StateStore.State snapshot=state();
+        persistence.submit(() -> {
+            try { store.save(snapshot); SwingUtilities.invokeLater(done); }
+            catch (java.io.IOException | RuntimeException e) { SwingUtilities.invokeLater(() -> failed.accept(e.getMessage())); }
+        });
+    }
     public void split(boolean horizontal) {
         if (closing() || settingsSaving() || panes.size()>=Layout.MAX_PANES) return;
         Profile selected=profiles.get(addProfile);
@@ -479,9 +509,11 @@ public final class Workspace extends JFrame {
             next=active; next.updateProfile(selected);
         } else {
             UUID id=UUID.randomUUID();
-            List<Layout.Leaf> slots=new ArrayList<>(currentLayout().leaves());
-            slots.add(new Layout.Leaf(id,selected.id()));
-            layout=Layout.bounded(slots); buildTree(); next=panes.get(id);
+            try { layout=currentLayout().add(new Layout.Leaf(id,selected.id()),active.id(),candidate ->
+                    content.getWidth()<70 || content.getHeight()<70 || project(candidate,new Rectangle(0,0,content.getWidth(),content.getHeight()))
+                            .values().stream().allMatch(r -> r.width>=70 && r.height>=70)); }
+            catch (IllegalArgumentException e) { active.problem(e.getMessage()); return; }
+            arrangementHistory.clear(); buildTree(); next=panes.get(id);
         }
         lastProfile=selected.id();
         activate(next); next.connectOnStartup(); next.focusTerminal();
@@ -489,15 +521,62 @@ public final class Workspace extends JFrame {
         tutorialAction("Add pane");
     }
     public void dock(UUID source, UUID target, Layout.Dock dock) {
-        layout = currentLayout().move(source,target,Layout.Dock.CENTER);
+        DropPlan plan=planDock(source,target,dock);
+        clearPreviews();
+        if (plan==null) return;
+        arrangementHistory.push(currentLayout());
+        while (arrangementHistory.size()>20) arrangementHistory.removeLast();
+        layout=plan.layout();
         buildTree();
         active = panes.get(source);
         activate(active);
         SwingUtilities.invokeLater(active::focusTerminal);
         changed();
-        tutorialAction("panes-swapped");
+        tutorialAction(dock==Layout.Dock.CENTER ? "panes-swapped" : "panes-arranged");
     }
-    public void clearPreviews() { panes.values().forEach(SessionPane::clearPreview); }
+    static Map<UUID,Rectangle> project(Layout layout,Rectangle area) {
+        Map<UUID,Rectangle> result=new LinkedHashMap<>();
+        project(layout,area,result); return result;
+    }
+    private static void project(Layout layout,Rectangle r,Map<UUID,Rectangle> result) {
+        if (layout instanceof Layout.Leaf leaf) { result.put(leaf.pane(),new Rectangle(r)); return; }
+        Layout.Split split=(Layout.Split)layout;
+        int length=Math.max(0,(split.horizontal() ? r.width : r.height)-4);
+        int first=(int)(length*split.ratio());
+        Rectangle a=new Rectangle(r),b=new Rectangle(r);
+        if (split.horizontal()) { a.width=first; b.x+=first+4; b.width=length-first; }
+        else { a.height=first; b.y+=first+4; b.height=length-first; }
+        project(split.first(),a,result); project(split.second(),b,result);
+    }
+    DropPlan planDock(UUID source,UUID target,Layout.Dock dock) {
+        if (closing() || settingsSaving() || source.equals(target) || !hasPane(source) || !hasPane(target)) return null;
+        try {
+            Layout next=currentLayout().move(source,target,dock);
+            Map<UUID,Rectangle> bounds=project(next,new Rectangle(0,0,content.getWidth(),content.getHeight()));
+            if (dock!=Layout.Dock.CENTER && bounds.values().stream().anyMatch(r -> r.width<70 || r.height<70)) return null;
+            return new DropPlan(source,target,dock,next,bounds);
+        } catch (IllegalArgumentException e) { return null; }
+    }
+    boolean previewDock(UUID source,UUID target,Layout.Dock dock) {
+        clearPreviews(); dropPlan=planDock(source,target,dock);
+        if (dropPlan==null) return false;
+        Rectangle bounds=SwingUtilities.convertRectangle(content,new Rectangle(0,0,content.getWidth(),content.getHeight()),getLayeredPane());
+        dropOverlay.setBounds(bounds);
+        getLayeredPane().add(dropOverlay,JLayeredPane.DRAG_LAYER); dropOverlay.repaint();
+        return true;
+    }
+    void undoArrangement() {
+        if (arrangementHistory.isEmpty()) return;
+        Layout previous=arrangementHistory.pop();
+        Map<UUID,UUID> profiles=new HashMap<>();
+        currentLayout().leaves().forEach(leaf -> profiles.put(leaf.pane(),leaf.profile()));
+        for (Layout.Leaf leaf:previous.leaves()) previous=previous.mapLeaf(leaf.pane(),old -> new Layout.Leaf(old.pane(),profiles.get(old.pane())));
+        layout=previous; clearPreviews(); buildTree(); changed();
+    }
+    public void clearPreviews() {
+        dropPlan=null; Container parent=dropOverlay.getParent();
+        if (parent!=null) { Rectangle old=dropOverlay.getBounds(); parent.remove(dropOverlay); parent.repaint(old.x,old.y,old.width,old.height); }
+    }
     public void closePane() {
         if (active!=null) closePane(active);
     }
@@ -510,7 +589,7 @@ public final class Workspace extends JFrame {
             int index=sessionPanes().indexOf(pane);
             slots.removeIf(leaf -> leaf.pane().equals(pane.id()));
             if (active==pane) active=panes.get(slots.get(Math.min(index,slots.size()-1)).pane());
-            layout=Layout.bounded(slots);
+            layout=Objects.requireNonNull(currentLayout().remove(pane.id())); arrangementHistory.clear(); clearPreviews();
             buildTree();
         }
         active.focusTerminal();
@@ -544,13 +623,36 @@ public final class Workspace extends JFrame {
         if (Ui.form(this,"Swap panes",form,"Swap"))
             dock(source.id(),targets.get(target.getSelectedIndex()).id(),Layout.Dock.CENTER);
     }
+    private void arrangementDialog() {
+        if (panes.size()<2) return;
+        SessionPane source=active;
+        List<SessionPane> others=sessionPanes().stream().filter(p -> p!=source).toList();
+        JComboBox<String> target=new JComboBox<>(others.stream().map(p -> paneName(p.id())+" - "+p.profile().name()).toArray(String[]::new));
+        JComboBox<Layout.Dock> direction=new JComboBox<>(Layout.Dock.values());
+        JPanel form=new JPanel(new GridLayout(0,2,10,10));
+        JLabel targetLabel=new JLabel("Beside pane"); targetLabel.setLabelFor(target);
+        JLabel edgeLabel=new JLabel("Placement"); edgeLabel.setLabelFor(direction);
+        JLabel hint=new JLabel("Center swaps; edges split. Invalid positions are not accepted.");
+        form.add(targetLabel); form.add(target); form.add(edgeLabel); form.add(direction); form.add(hint); form.add(new JLabel());
+        Runnable preview=() -> {
+            boolean valid=previewDock(source.id(),others.get(target.getSelectedIndex()).id(),(Layout.Dock)direction.getSelectedItem());
+            hint.setText(valid ? "Highlighted position; Arrange confirms." : "Not enough room or outside the two-lane limit.");
+        };
+        target.addActionListener(e -> preview.run()); direction.addActionListener(e -> preview.run()); preview.run();
+        boolean accepted=Ui.form(this,"Arrange pane",form,"Arrange");
+        Layout.Dock edge=(Layout.Dock)direction.getSelectedItem();
+        boolean valid=planDock(source.id(),others.get(target.getSelectedIndex()).id(),edge)!=null;
+        clearPreviews();
+        if (accepted && valid) dock(source.id(),others.get(target.getSelectedIndex()).id(),edge);
+        else if (accepted) source.problem("This position needs more space or exceeds the two-lane limit. No panes moved.");
+    }
 
     public void profiles() { new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true); }
     public void moveProfile(UUID id,int direction) {
         List<Profile> order=ProfileManagement.move(profileList(),id,direction);
         profiles.clear(); order.forEach(p -> profiles.put(p.id(),p));
         refreshAddProfiles(); panes.values().forEach(SessionPane::refreshPresets); changed();
-        if (preferences!=null) preferences.syncProfiles();
+        if (preferences!=null) { preferences.syncProfiles(); preferences.sharedChanged(); }
     }
     public void validateDeleteProfile(UUID id) {
         ProfileManagement.delete(state(),id);
@@ -714,6 +816,8 @@ public final class Workspace extends JFrame {
         JMenu layoutMenu = menu(bar,"Panes",KeyEvent.VK_P);
         action(layoutMenu,"Add pane","ctrl alt H",() -> split(true));
         action(layoutMenu,"Swap panes...","ctrl alt D",this::dockingDialog);
+        action(layoutMenu,"Arrange pane...",null,this::arrangementDialog);
+        action(layoutMenu,"Undo pane arrangement",null,this::undoArrangement);
         action(layoutMenu,"Close pane","ctrl alt W",this::closePane);
         layoutMenu.addSeparator();
         action(layoutMenu,"Next pane","ctrl alt RIGHT",() -> cycle(1));
@@ -837,6 +941,8 @@ public final class Workspace extends JFrame {
             if (text.equals("Copy selection / screen")) return active.screen()!=null;
             if (List.of("Swap panes...","Next pane","Previous pane").contains(text)) return panes.size()>1;
             if (text.equals("Restore profile layout")) return !active.profile().savedLayout().isEmpty();
+            if (text.equals("Arrange pane...") || text.equals("Swap panes...")) return panes.size()>1;
+            if (text.equals("Undo pane arrangement")) return !arrangementHistory.isEmpty();
             if (menu!=null && (menu.getText().equals("Host") || menu.getText().equals("Inserts")) || text.equals("RESET")
                     || text.startsWith("Insert ") || text.startsWith("Paste")) {
                 return active.connected() && (!active.screen().getOIA().isKeyBoardLocked()
@@ -863,7 +969,7 @@ public final class Workspace extends JFrame {
         activate(pane);
         JPopupMenu menu = new JPopupMenu();
         for (String name : List.of("Connect / disconnect","Reconnect","Add pane",
-                "Swap panes...","Close pane","Profiles...")) menu.add(new JMenuItem(command(name)));
+                "Arrange pane...","Swap panes...","Undo pane arrangement","Close pane","Profiles...")) menu.add(new JMenuItem(command(name)));
         return menu;
     }
     public JPopupMenu clipboardMenu(SessionPane pane) {
@@ -874,7 +980,7 @@ public final class Workspace extends JFrame {
         menu.add(new JMenuItem(command("Paste into fields")));
         menu.addSeparator();
         menu.add(new JMenuItem(command("RESET")));
-        for (String action:List.of("Connect / disconnect","Add pane","Swap panes...","Close pane"))
+        for (String action:List.of("Connect / disconnect","Add pane","Arrange pane...","Swap panes...","Close pane"))
             menu.add(new JMenuItem(command(action)));
         return menu;
     }
@@ -882,6 +988,7 @@ public final class Workspace extends JFrame {
         if (application!=null) { application.closeWindow(this); return; }
         if (closing) return;
         if (settingsSaving()) { Ui.error(this,"Wait for the profile save to finish before closing Fish."); return; }
+        if (!closeSettings()) return;
         saveTimer.stop();
         StateStore.State snapshot = state();
         closing = true;
@@ -908,6 +1015,10 @@ public final class Workspace extends JFrame {
         dispose();
     }
     void pauseSaving() { saveTimer.stop(); }
+    boolean closeSettings() {
+        if (preferences==null) return true;
+        Preferences current=preferences; current.dialog().dispose(); return current.ended();
+    }
     void finishWindow() { closing=true; saveTimer.stop(); disposeWorkspace(); persistence.shutdown(); afterClose.run(); }
     void receiveShared(StateStore.State value) {
         List<Profile> incoming=value.profiles();
@@ -932,7 +1043,7 @@ public final class Workspace extends JFrame {
             if (!previous.font().equals(appearance.font())) pane.view().fontChanged();
         }
         updateWindowOutline(); refreshShortcutLabels(); refreshCommands();
-        if (preferences!=null) preferences.syncProfiles();
+        if (preferences!=null) { preferences.syncProfiles(); preferences.sharedChanged(); }
         if (layoutsDialog!=null && layoutsDialog.isDisplayable()) layoutsDialog.refresh();
     }
     List<SavedLayout> savedLayouts() { return savedLayouts; }

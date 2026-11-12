@@ -118,7 +118,8 @@ public final class ShortcutRefinementSmoke {
         check(table.getParent().getHeight()>=90 && input.getHeight()>=32,"Visible keyboard viewport and multiline editor remain usable at minimum Settings size");
         image(p.dialog().getContentPane(),"keyboard-settings-minimum");
         p.dialog().dispose();
-        check(w.shortcutOverrides().isEmpty(),"Closing Settings discards the reference-driven draft, preserving Apply/Done semantics");
+        UsabilityIterationSmoke.settle(p::ended,"Reference-driven key edit did not finish saving");
+        check(w.shortcutOverrides().containsKey("Zoom in"),"Closing Settings flushes the reference-driven valid edit");
     }
     private static TutorialDialog guide(Workspace w) throws Exception { return (TutorialDialog)field(w,"tutorial"); }
     private static int step(Workspace w) throws Exception { return (int)field(guide(w),"step"); }
@@ -141,7 +142,7 @@ public final class ShortcutRefinementSmoke {
                 try {
                     choices[0]++;
                     check(chooser.getCurrentDirectory().toPath().equals(root),"Production chooser starts in the injected destination, never actual Desktop");
-                    check(step(w)==6 && w.tutorialLayoutTarget("destination")==chooser,"Guide follows the real file chooser before approval");
+                    check(step(w)==5 && w.tutorialLayoutTarget("destination")==chooser,"Guide follows the real file chooser before approval");
                     check(chooser.getSelectedFile().getName().endsWith(".lnk"),"Production filename is a Windows link");
                     chooser.setSelectedFile(root.resolve("Synthetic tutorial shortcut.lnk").toFile());
                     return mode[0]==0 ? JFileChooser.CANCEL_OPTION : JFileChooser.APPROVE_OPTION;
@@ -158,20 +159,19 @@ public final class ShortcutRefinementSmoke {
         set(w,"layoutsDialog",manager);
         JTextField name=(JTextField)field(manager,"name"); name.setText("Synthetic tutorial layout");
         check(step(w)==4 && w.savedLayouts().isEmpty(),"Real name entry advances without saving");
-        button(manager,"Save current as new").doClick(0);
-        check(step(w)==5 && w.savedLayouts().size()==1,"Real Save captures one separate named recipe");
-        check(w.tutorialLayoutTarget("export")==field(manager,"export"),"Guide anchor is the actual export button");
-        button(manager,"Create shortcut...").doClick(0);
-        check(step(w)==6 && writes[0]==0 && !Files.exists(root.resolve("Synthetic tutorial shortcut.lnk")),"Cancel creates no file and never claims success");
-        mode[0]=1; button(manager,"Create shortcut...").doClick(0);
-        check(step(w)==6 && ((JLabel)field(manager,"message")).getText().contains("refused"),"Failed export stays actionable and does not advance");
+        check(w.tutorialLayoutTarget("export")==field(manager,"create"),"Guide anchor is the direct current-window export button");
+        button(manager,"Create desktop shortcut...").doClick(0);
+        check(step(w)==5 && w.savedLayouts().isEmpty() && writes[0]==0 && !Files.exists(root.resolve("Synthetic tutorial shortcut.lnk")),"Cancel creates no recipe or file and never claims success");
+        mode[0]=1; button(manager,"Create desktop shortcut...").doClick(0);
+        check(step(w)==5 && w.savedLayouts().size()==1 && ((JLabel)field(manager,"message")).getText().contains("refused"),"Failed export keeps the saved recipe and stays actionable");
+        ((JToggleButton)field(manager,"manage")).doClick(0);
         mode[0]=2; button(manager,"Create shortcut...").doClick(0);
-        check(step(w)==7 && writes[0]==2 && choices[0]==3,"Only actual successful native export advances to the launch instructions");
+        check(step(w)==6 && writes[0]==2 && choices[0]==3,"Only actual successful native export advances to the launch instructions");
         String[] link=LayoutShortcuts.inspect(root.resolve("Synthetic tutorial shortcut.lnk"));
         check(link[0].equals(target.toString()) && link[1].equals(LayoutShortcuts.arguments(w.savedLayouts().getFirst().id(),w.dataDirectory())),
                 "Guided production chooser/export path produces a real native link with exact stable recipe reference");
         layout(manager); layout(guide(w)); image(manager.getContentPane(),"layout-manager"); image(guide(w).getContentPane(),"desktop-guide");
-        button(guide(w),"Back").doClick(0); check(step(w)==6,"Back remains available after actual export");
+        button(guide(w),"Back").doClick(0); check(step(w)==5,"Back remains available after actual export");
         button(guide(w),"Skip tutorial").doClick(0); check(guide(w).ended(),"Guide is skippable at export stage");
         int saved=w.savedLayouts().size();
         w.executeCommand("Tutorial: Desktop shortcuts");

@@ -103,7 +103,16 @@ public final class SettingsTutorialSmoke {
             });
         }
         @Override public void close() throws Exception {
-            edt(() -> { for (Window window:workspace.getOwnedWindows()) window.dispose(); workspace.close(false); return null; });
+            edt(() -> {
+                Preferences p=workspace.tutorialPreferences();
+                if (p!=null) {
+                    ((JButton)field(p,"reloadButton")).doClick(0);
+                    UsabilityIterationSmoke.settle(() -> !p.saving(),"Settings teardown did not settle");
+                    p.dialog().dispose(); UsabilityIterationSmoke.settle(p::ended,"Settings teardown did not close");
+                }
+                for (Window window:workspace.getOwnedWindows()) window.dispose();
+                workspace.close(false); return null;
+            });
             check(closed.await(10,TimeUnit.SECONDS),"Workspace closed and persisted");
         }
     }
@@ -190,6 +199,7 @@ public final class SettingsTutorialSmoke {
         ((JCheckBox)field(p.profiles,"remember")).setSelected(false); auth.setSelectedItem(Profile.Authentication.KERBEROS); auth.setSelectedItem(Profile.Authentication.PASSWORD);
         check(!((JCheckBox)field(p.profiles,"remember")).isSelected(),"Mode toggling retains the user's later off choice");
         p.dialog().dispose();
+        UsabilityIterationSmoke.settle(p::ended,"Profile mode edits did not finish saving");
     }
     private static void tutorials(Fixture fixture) throws Exception {
         Workspace w=fixture.workspace; int profilesBefore=w.profileList().size();
@@ -215,7 +225,8 @@ public final class SettingsTutorialSmoke {
         p.tutorialTarget("theme"); layout(p.dialog()); snapshot(p.dialog(),"appearance-top");
         JCheckBox tint=(JCheckBox)field(p,"tint"); tint.scrollRectToVisible(new Rectangle(0,0,tint.getWidth(),tint.getHeight()));
         layout(p.dialog()); snapshot(p.dialog(),"appearance-info");
-        button(p.dialog(),"Apply").doClick(0); check(guide(w).ended() && !p.ended(),"Actual Apply finishes guide and retains Settings");
+        UsabilityIterationSmoke.settle(() -> !p.saving(),"Appearance did not autosave");
+        check(guide(w).ended() && !p.ended(),"Acknowledged autosave finishes guide and retains Settings");
         check(w.profileList().get(1).theme().equals("Phosphor"),"Appearance does not silently recolor every profile");
         w.openTutorial(TutorialDialog.Guide.PASSWORD_PROFILE,false); button(guide(w),"Show control").doClick(0);
         check(step(w)==1,"Profile guide selects actual inline editor");
@@ -226,11 +237,11 @@ public final class SettingsTutorialSmoke {
         ((JCheckBox)field(p.profiles,"remember")).doClick(0); check(step(w)==6,"Actual login preference progresses");
         ((JToggleButton)field(p.profiles,"disclosure")).doClick(0); check(step(w)==7,"Actual Advanced disclosure progresses");
         snapshot(p.dialog(),"profiles-inline");
-        button(p.dialog(),"Apply").doClick(0);
+        button(p.dialog(),"Create profile").doClick(0);
     }
     private static void keyboardAndPanes(Fixture fixture) throws Exception {
         Workspace w=fixture.workspace; Preferences p=w.tutorialPreferences();
-        check(guide(w).ended() && w.profileList().size()==3,"Explicit Apply saves exactly once, with no password/ticket operation");
+        check(guide(w).ended() && w.profileList().size()==3,"Explicit Create saves exactly once, with no password/ticket operation");
         check(((JComboBox<?>)field(p,"scope")).getItemCount()==3,"New profile immediately available for appearance in same Settings");
         w.openTutorial(TutorialDialog.Guide.KEYBOARD,false); button(guide(w),"Show control").doClick(0);
         check(step(w)==1,"Guide opens actual Keyboard Shortcuts");
@@ -241,18 +252,22 @@ public final class SettingsTutorialSmoke {
         ((JTextArea)field(keyboard,"keys")).setText("ctrl shift F9\nctrl shift F10"); check(step(w)==4,"Actual valid multiline edit progresses");
         check(table.getValueAt(0,2).toString().startsWith(KeyChord.parse("ctrl shift F9").label()),"Effective table retains the primary/chord-list order");
         p.dialog().setSize(760,560); layout(p.dialog()); snapshot(p.dialog(),"keyboard");
-        button(p.dialog(),"Apply").doClick(0); check(guide(w).ended(),"Actual validated Apply completes keyboard guide");
+        Preferences keysEditor=p;
+        UsabilityIterationSmoke.settle(() -> !keysEditor.saving(),"Keyboard edits did not autosave");
+        check(guide(w).ended(),"Actual validated autosave completes keyboard guide");
         check(w.shortcutLabel("Zoom in").equals(KeyChord.parse("ctrl shift F9").label()),"Custom first chord is primary, not lexical sorting");
         check(KeyChord.list(w.shortcutOverrides().get("Zoom in")).contains(KeyChord.parse("ctrl shift F10")),"Alternative remains fully editable");
         p.dialog().dispose();
         w.openTutorial(TutorialDialog.Guide.PANES,false); w.executeCommand("Add pane"); layout(w); check(step(w)==1,"Pane guide progresses actual add");
         w.executeCommand("Decrease divider"); check(step(w)==2,"Horizontal keyboard resize progresses");
-        w.executeCommand("Add pane"); layout(w); check(step(w)==3,"Three-pane layout progresses");
+        List<SessionPane> pair=w.sessionPanes(); w.dock(pair.getFirst().id(),pair.getLast().id(),Layout.Dock.TOP);
+        layout(w); check(step(w)==3,"Actual top-edge placement progresses");
         w.executeCommand("Increase divider"); check(step(w)==4,"Vertical keyboard resize progresses");
         List<SessionPane> order=w.sessionPanes(); w.dock(order.get(0).id(),order.get(1).id(),Layout.Dock.CENTER);
         check(step(w)==5,"Only an actual swap progresses");
         button(guide(w),"Show control").doClick(0); p=w.tutorialPreferences();
         ((JCheckBox)p.tutorialTarget("startup")).doClick(0); check(step(w)==6,"Actual startup control progresses");
+        Preferences startupEditor=p; UsabilityIterationSmoke.settle(() -> !startupEditor.saving(),"Startup setting did not autosave");
         snapshot(guide(w),"tutorial");
         w.executeCommand("Fit host screen"); check(step(w)==7,"Actual Fit advances to reusable shortcuts");
         SavedLayout saved=w.saveCurrentLayout(null,"Tutorial synthetic layout");
@@ -264,6 +279,7 @@ public final class SettingsTutorialSmoke {
             button(guide(w),"Skip tutorial").doClick(0); check(w.profileList().size()==count,"Replay/skip causes no profile changes");
         }
         p.dialog().dispose();
+        Preferences last=p; UsabilityIterationSmoke.settle(last::ended,"Startup option did not finish saving");
     }
     public static void main(String[] args) throws Exception {
         Ui.install(); String path=System.getProperty("fish.test.evidence","");

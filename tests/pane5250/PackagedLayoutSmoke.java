@@ -31,9 +31,10 @@ public final class PackagedLayoutSmoke {
             UUID id=UUID.randomUUID();
             Path directory=Files.createDirectory(root.resolve("workspace \u5317 spaces"));
             Profile profile=new Profile(UUID.randomUUID(),"Synthetic profile","",23,"","FIXTURE",false,false,"37","Phosphor","None",1,Map.of(),"");
-            Layout pane=new Layout.Leaf(UUID.randomUUID(),profile.id());
+            Layout pane=new Layout.Split(false,.37,new Layout.Leaf(UUID.randomUUID(),profile.id()),new Layout.Leaf(UUID.randomUUID(),profile.id()));
             SavedLayout recipe=new SavedLayout(id,"Synthetic \u5317",new StateStore.WindowState(pane,1000,700,profile.id()),
-                    Map.of(pane.leaves().getFirst().pane(),new SavedLayout.Display(false,1.25)));
+                    Map.of(pane.leaves().getFirst().pane(),new SavedLayout.Display(false,1.25),
+                            pane.leaves().getLast().pane(),new SavedLayout.Display(true,1)));
             try (StateStore store=new StateStore(directory)) {
                 store.save(new StateStore.State(List.of(profile),pane,1000,700).withSavedLayouts(List.of(recipe),id));
             }

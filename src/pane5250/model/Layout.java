@@ -35,8 +35,39 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
         return new Split(true,1.0/slots.size(),slots.getFirst(),row(slots.subList(1,slots.size())));
     }
     static Layout normalize(Layout layout) {
+        if (constrained(layout)) return layout;
         Layout expected=bounded(layout.leaves());
         return sameShape(layout,expected) ? layout : expected;
+    }
+    record Span(int columns,int rows) {}
+    default Span span() {
+        if (this instanceof Empty) return new Span(0,0);
+        if (this instanceof Leaf) return new Span(1,1);
+        Split split=(Split)this;
+        Span a=split.first.span(),b=split.second.span();
+        return split.horizontal ? new Span(a.columns+b.columns,Math.max(a.rows,b.rows))
+                : new Span(Math.max(a.columns,b.columns),a.rows+b.rows);
+    }
+    static boolean constrained(Layout layout) {
+        int size=layout.leaves().size(); Span span=layout.span();
+        return size>=1 && size<=MAX_PANES && span.columns<=4 && span.rows<=4
+                && (span.columns<=2 || span.rows<=2);
+    }
+    static boolean legacyShape(Layout layout) {
+        return !layout.leaves().isEmpty() && sameShape(layout,bounded(layout.leaves()));
+    }
+    default Layout add(Leaf added,UUID active) {
+        return add(added,active,next -> true);
+    }
+    default Layout add(Leaf added,UUID active,java.util.function.Predicate<Layout> fits) {
+        if (leaves().size()>=MAX_PANES) throw new IllegalArgumentException("Eight panes open; close one before adding.");
+        List<Leaf> order=new ArrayList<>(leaves());
+        order.sort(Comparator.comparing(leaf -> !leaf.pane.equals(active)));
+        for (Leaf target:order) for (Dock edge:List.of(Dock.RIGHT,Dock.BOTTOM)) {
+            Layout next=insert(target.pane,added,edge);
+            if (constrained(next) && fits.test(next)) return next;
+        }
+        throw new IllegalArgumentException("No room in this two-lane layout. Enlarge the window or rearrange panes before adding.");
     }
     private static boolean sameShape(Layout a,Layout b) {
         if (a instanceof Leaf) return b instanceof Leaf;
@@ -96,7 +127,9 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
         Leaf from = leaves().stream().filter(l -> l.pane.equals(source)).findFirst().orElseThrow();
         Leaf to = leaves().stream().filter(l -> l.pane.equals(target)).findFirst().orElseThrow();
         if (dock == Dock.CENTER) return swap(source, target, from, to);
-        return Objects.requireNonNull(remove(source)).insert(target, from, dock);
+        Layout result=Objects.requireNonNull(remove(source)).insert(target, from, dock);
+        if (!constrained(result)) throw new IllegalArgumentException("Use at most two rows or two columns, with at most four panes along the other axis.");
+        return result;
     }
 
     private Layout swap(UUID source, UUID target, Leaf from, Leaf to) {

@@ -7,7 +7,7 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="15";
+    public static final String VERSION="16";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
     public record WindowState(Layout layout,int width,int height,UUID lastProfile,UUID addProfile,Map<UUID,SavedLayout.Display> displays) {
@@ -96,8 +96,14 @@ public final class StateStore implements AutoCloseable {
                 Profile.login(p,profiles);
                 new HostKeys(p.keymap());
             }
+            for (Profile p:profiles) if (!p.savedLayout().isEmpty()) {
+                Layout saved=Layout.decode(p.savedLayout());
+                if (!Layout.constrained(saved) || saved.leaves().stream().anyMatch(leaf -> !ids.contains(leaf.profile())))
+                    throw new IllegalArgumentException("Saved profile layout is outside the two-lane bounds or references a missing profile.");
+            }
             if (layout.leaves().isEmpty() || layout.leaves().size()>Layout.MAX_PANES)
                 throw new IllegalArgumentException("A workspace needs 1-8 panes.");
+            if (!Layout.constrained(layout)) throw new IllegalArgumentException("Use at most two rows or two columns, and at most four panes on the other axis.");
             Set<UUID> paneIds=new HashSet<>();
             for (Layout.Leaf leaf : layout.leaves()) {
                 if (!ids.contains(leaf.profile())) throw new IllegalArgumentException("Layout references a missing profile.");
@@ -230,7 +236,7 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
             boolean usability=Integer.parseInt(version)>=8;
             boolean kerberos=Integer.parseInt(version)>=10;
             boolean exact=Integer.parseInt(version)>=12;
@@ -269,12 +275,19 @@ public final class StateStore implements AutoCloseable {
                 if (!usability && effect.equals("Neon")) {
                     effect="None"; notice("Removed Neon effect changed to None for "+required(properties,key+"name")+"; other profile settings retained.");
                 }
+                String profileLayout=required(properties,key+"layout");
+                if (!profileLayout.isEmpty()) {
+                    Layout saved=Layout.decode(profileLayout);
+                    if (usability && Integer.parseInt(version)<16 && !Layout.legacyShape(saved))
+                        throw new IllegalArgumentException("Directional profile layouts require format 16.");
+                    if (!usability) profileLayout=Layout.normalize(saved).encode();
+                }
                 profiles.add(new Profile(id, required(properties, key + "name"), required(properties, key + "host"),
                         Integer.parseInt(required(properties, key + "port")), required(properties, key + "device"),
                         required(properties, key + "username"), bool(properties, key + "auto"), bool(properties, key + "remember"),
                         required(properties, key + "codePage"), required(properties, key + "theme"),
                         effect, Double.parseDouble(required(properties, key + "zoom")),
-                        keys, required(properties, key + "layout"),
+                        keys, profileLayout,
                         usability && !required(properties,key+"loginSource").isEmpty()
                                 ? UUID.fromString(required(properties,key+"loginSource")) : null,
                         kerberos ? Profile.Authentication.valueOf(required(properties,key+"authentication")) : Profile.Authentication.PASSWORD,
@@ -289,6 +302,8 @@ public final class StateStore implements AutoCloseable {
                 notice("Restored one offline pane from the previous empty workspace; all presets retained.");
             }
             Layout bounded=Layout.normalize(layout);
+            if (usability && Integer.parseInt(version)<16 && !Layout.legacyShape(layout))
+                throw new IllegalArgumentException("Directional layouts require workspace version 16; do not relabel exports.");
             if (usability && !bounded.equals(layout))
                 throw new IllegalArgumentException("Layout must use Fish's bounded 1-8 pane slots; see AI-CONFIG.md.");
             if (!bounded.equals(layout)) notice("Previous pane layout rearranged into Fish's bounded slots; all presets retained.");
@@ -331,6 +346,8 @@ public final class StateStore implements AutoCloseable {
                 for (int i=0;i<count;i++) {
                     String key="window."+i+".";
                     Layout windowLayout=Layout.decode(required(properties,key+"layout"));
+                    if (Integer.parseInt(version)<16 && !Layout.legacyShape(windowLayout))
+                        throw new IllegalArgumentException("Directional window layouts require format 16.");
                     windows.add(new WindowState(windowLayout,
                             Integer.parseInt(required(properties,key+"width")),Integer.parseInt(required(properties,key+"height")),
                             UUID.fromString(required(properties,key+"lastProfile")),
@@ -345,8 +362,12 @@ public final class StateStore implements AutoCloseable {
                 if (!list.isEmpty()) for (String idText:list.split(",",-1)) {
                     if (savedLayouts.size()>=SavedLayout.MAX_SAVED) throw new IllegalArgumentException("Keep at most 64 saved layouts.");
                     UUID id=SavedLayout.reference(idText); String key="savedLayout."+id+".";
-                    if (!required(properties,key+"version").equals("1")) throw new IllegalArgumentException("Unknown saved layout version.");
+                    String recipeVersion=required(properties,key+"version");
+                    if (!(recipeVersion.equals("1") || recipeVersion.equals("2") && Integer.parseInt(version)>=16))
+                        throw new IllegalArgumentException("Unknown saved layout version.");
                     Layout saved=Layout.decode(required(properties,key+"layout"));
+                    if (recipeVersion.equals("1") && !Layout.legacyShape(saved))
+                        throw new IllegalArgumentException("Directional saved layouts require recipe version 2.");
                     Map<UUID,SavedLayout.Display> displays=new LinkedHashMap<>();
                     for (Layout.Leaf leaf:saved.leaves()) {
                         String pane=key+"pane."+leaf.pane()+".";
@@ -467,7 +488,7 @@ public final class StateStore implements AutoCloseable {
         writeDisplays(properties,"",state.displays);
         for (SavedLayout saved:state.savedLayouts) {
             String key="savedLayout."+saved.id()+".";
-            properties.setProperty(key+"version","1"); properties.setProperty(key+"name",saved.name());
+            properties.setProperty(key+"version","2"); properties.setProperty(key+"name",saved.name());
             properties.setProperty(key+"layout",saved.window().layout().encode());
             properties.setProperty(key+"width",Integer.toString(saved.window().width()));
             properties.setProperty(key+"height",Integer.toString(saved.window().height()));

@@ -146,6 +146,7 @@ public final class ApplicationWindows {
         return new StateStore.WindowState(value.layout(),value.width(),value.height(),value.lastProfile(),value.addProfile(),value.displays());
     }
     void persistTask(Workspace.Maintenance action,Runnable done,java.util.function.Consumer<String> failed) {
+        saveTimer.stop();
         StateStore.State value=snapshot();
         persistence.submit(() -> {
             try { store.save(value); action.run(); SwingUtilities.invokeLater(done); }
@@ -169,6 +170,7 @@ public final class ApplicationWindows {
     void closeWindow(Workspace window) {
         if (closing || window.closing()) return;
         if (saving()) { Ui.error(window,"Wait for the profile save to finish before closing."); return; }
+        if (!window.closeSettings()) return;
         if (windows.size()==1) { quit(); return; }
         windows.remove(window); window.finishWindow(); changed(windows.getFirst());
         saveAsync();
@@ -176,6 +178,7 @@ public final class ApplicationWindows {
     void quit() {
         if (closing) return;
         if (saving()) { Ui.error(windows.getFirst(),"Wait for the profile save to finish before quitting Fish."); return; }
+        for (Workspace window:windows) if (!window.closeSettings()) return;
         StateStore.State saved=snapshot();
         closing=true; saveTimer.stop();
         windows.forEach(Workspace::finishWindow);

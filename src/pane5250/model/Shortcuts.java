@@ -28,7 +28,7 @@ public final class Shortcuts {
             {"Connect / disconnect","ctrl alt R"},{"Reconnect","ctrl alt shift R"},{"New window","ctrl shift N"},{"Profiles...","ctrl alt P"},
             {"Switch profile...","ctrl O"},{"Insert profile username","ctrl alt U"},{"Insert remembered password","ctrl alt shift P"},
             {"Quit","ctrl Q"},{"Copy selection / screen","ctrl C"},{"Paste into fields","ctrl V"},{"Shortcuts...",""},
-            {"Add pane","ctrl N"},{"Swap panes...","ctrl alt D"},{"Close pane","ctrl W"},
+            {"Add pane","ctrl N"},{"Swap panes...","ctrl alt D"},{"Arrange pane...",""},{"Undo pane arrangement",""},{"Close pane","ctrl W"},
             {"Next pane","ctrl TAB"},{"Previous pane","ctrl shift TAB"},
             {"Decrease divider","ctrl alt OPEN_BRACKET"},{"Increase divider","ctrl alt CLOSE_BRACKET"},
             {"Save layout to profile","ctrl alt S"},{"Restore profile layout","ctrl alt L"},

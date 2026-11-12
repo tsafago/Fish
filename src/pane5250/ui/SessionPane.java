@@ -2,7 +2,7 @@ package pane5250.ui;
 
 import java.awt.*;
 import java.awt.datatransfer.*;
-import java.awt.dnd.DnDConstants;
+import java.awt.dnd.*;
 import java.awt.event.*;
 import java.io.IOException;
 import java.util.*;
@@ -75,7 +75,6 @@ public final class SessionPane extends JPanel {
     private Kerberos.Resolver kerberosResolver=Kerberos::resolve;
     private javax.swing.Timer kerberosDeadline;
     private long generation;
-    private Layout.Dock preview;
     private String notice = "Disconnected";
     private String lastProblem="";
     private String connectionDetails="";
@@ -169,7 +168,7 @@ public final class SessionPane extends JPanel {
         stage.add(body,JLayeredPane.DEFAULT_LAYER);
         dragZone.setName("pane-top-drag-zone");
         dragZone.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-        dragZone.setToolTipText("Drag onto another pane to swap");
+        dragZone.setToolTipText("Drag to an edge to split, or the center to swap");
         stage.add(dragZone,JLayeredPane.DRAG_LAYER);
         stage.add(noticeOverlay,JLayeredPane.PALETTE_LAYER); add(stage,BorderLayout.CENTER);
         view.setFit(profile.zoom() == 1);
@@ -707,39 +706,59 @@ public final class SessionPane extends JPanel {
     Component tutorialCloseTarget() { return close.isVisible() ? close : this; }
     boolean connecting() { return connecting || credentialOperations>0; }
     Component tutorialDragTarget() { return header.isVisible() ? header : dragZone.isVisible() ? dragZone : this; }
+    static Layout.Dock direction(Point point,Dimension size) {
+        if (point.x<0 || point.y<0 || point.x>=size.width || point.y>=size.height)
+            throw new IllegalArgumentException("Outside this pane.");
+        double x=point.x/(double)Math.max(1,size.width),y=point.y/(double)Math.max(1,size.height);
+        if (x>=.25 && x<=.75 && y>=.25 && y<=.75) return Layout.Dock.CENTER;
+        double nearest=Math.min(Math.min(x,1-x),Math.min(y,1-y));
+        if (nearest==y) return Layout.Dock.TOP;
+        if (nearest==1-y) return Layout.Dock.BOTTOM;
+        return nearest==x ? Layout.Dock.LEFT : Layout.Dock.RIGHT;
+    }
     private void installDrag() {
         TransferHandler transfer = new TransferHandler() {
             @Override public int getSourceActions(JComponent c) { return MOVE; }
             @Override protected Transferable createTransferable(JComponent c) { return new StringSelection(id.toString()); }
-            @Override public boolean canImport(TransferSupport support) {
-                if (!support.isDrop() || !support.isDataFlavorSupported(DataFlavor.stringFlavor)) return false;
-                try {
-                    UUID source = UUID.fromString((String) support.getTransferable().getTransferData(DataFlavor.stringFlavor));
-                    if (!workspace.hasPane(source) || source.equals(id)) return false;
-                    preview = Layout.Dock.CENTER;
-                    support.setDropAction(DnDConstants.ACTION_MOVE);
-                    repaint();
-                    return true;
-                } catch (UnsupportedFlavorException | IOException | IllegalArgumentException e) { return false; }
-            }
-            @Override public boolean importData(TransferSupport support) {
-                if (!canImport(support)) return false;
-                try {
-                    UUID source = UUID.fromString((String) support.getTransferable().getTransferData(DataFlavor.stringFlavor));
-                    workspace.dock(source,id,preview);
-                    workspace.clearPreviews();
-                    return true;
-                } catch (UnsupportedFlavorException | IOException | IllegalArgumentException e) {
-                    problem("Could not swap panes: " + e.getMessage());
-                    return false;
-                }
-            }
             @Override protected void exportDone(JComponent source, Transferable data, int action) { workspace.clearPreviews(); }
         };
         header.setTransferHandler(transfer);
         dragZone.setTransferHandler(transfer);
         view.setTransferHandler(transfer);
         setTransferHandler(transfer);
+        for (JComponent target:java.util.List.of(this,header,dragZone,view,empty,loading)) {
+            new DropTarget(target,DnDConstants.ACTION_MOVE,new DropTargetAdapter() {
+                private UUID source(Transferable data) throws UnsupportedFlavorException,IOException {
+                    if (!data.isDataFlavorSupported(DataFlavor.stringFlavor)) throw new IllegalArgumentException("Not a Fish pane.");
+                    String text=(String)data.getTransferData(DataFlavor.stringFlavor);
+                    return SavedLayout.reference(text);
+                }
+                private Layout.Dock edge(Point point) { return direction(SwingUtilities.convertPoint(target,point,SessionPane.this),getSize()); }
+                @Override public void dragEnter(DropTargetDragEvent e) { dragOver(e); }
+                @Override public void dragOver(DropTargetDragEvent e) {
+                    try {
+                        if ((e.getSourceActions()&DnDConstants.ACTION_MOVE)==0) { workspace.clearPreviews(); e.rejectDrag(); return; }
+                        if (workspace.previewDock(source(e.getTransferable()),id,edge(e.getLocation()))) { e.acceptDrag(DnDConstants.ACTION_MOVE); return; }
+                    } catch (UnsupportedFlavorException | IOException | IllegalArgumentException ignored) {
+                        // Foreign drags are rejected; they never become commands or files.
+                    }
+                    workspace.clearPreviews(); e.rejectDrag();
+                }
+                @Override public void dragExit(DropTargetEvent e) { workspace.clearPreviews(); }
+                @Override public void drop(DropTargetDropEvent e) {
+                    boolean accepted=false,completed=false;
+                    try {
+                        if ((e.getSourceActions()&DnDConstants.ACTION_MOVE)==0) { e.rejectDrop(); return; }
+                        UUID pane=source(e.getTransferable()); Layout.Dock dock=edge(e.getLocation());
+                        if (workspace.planDock(pane,id,dock)==null) { e.rejectDrop(); return; }
+                        e.acceptDrop(DnDConstants.ACTION_MOVE); accepted=true; workspace.dock(pane,id,dock); completed=true;
+                    } catch (UnsupportedFlavorException | IOException | IllegalArgumentException error) {
+                        if (!accepted) e.rejectDrop();
+                        problem("Panes not moved: "+error.getMessage());
+                    } finally { workspace.clearPreviews(); if (accepted) e.dropComplete(completed); }
+                }
+            },true);
+        }
         MouseAdapter drag = new MouseAdapter() {
             Point pressed;
             @Override public void mousePressed(MouseEvent e) {
@@ -784,18 +803,7 @@ public final class SessionPane extends JPanel {
             label.addMouseListener(forward); label.addMouseMotionListener(forward);
         }
     }
-    public void clearPreview() { preview = null; repaint(); }
-    @Override protected void paintChildren(Graphics graphics) {
-        super.paintChildren(graphics);
-        if (preview == null) return;
-        Rectangle area = new Rectangle(0,0,getWidth(),getHeight());
-        Graphics2D g = (Graphics2D) graphics.create();
-        g.setColor(new Color(Ui.FOCUS.getRed(),Ui.FOCUS.getGreen(),Ui.FOCUS.getBlue(),45)); g.fill(area);
-        Hairline.rectangle(g,area.x+1,area.y+1,area.width-2,area.height-2);
-        g.setColor(Ui.TEXT);
-        g.drawString("Swap panes",area.x + 12, area.y + 44);
-        g.dispose();
-    }
+    public void clearPreview() { workspace.clearPreviews(); }
     private static String message(Exception e) {
         Throwable cause = e.getCause() == null ? e : e.getCause();
         return cause.getMessage() == null ? cause.getClass().getSimpleName() : cause.getMessage();

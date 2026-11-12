@@ -10,7 +10,37 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.7.6 shortcut guidance and chrome refinement
+## Fish 0.7.7 local usability build (not published)
+
+**Edit > Settings** now applies valid edits automatically after a short typing
+pause. **Saved** confirms the disk write; invalid fields retain their last usable
+values, conflicting external edits require reload, and failed saves expose Retry.
+Close keeps saved changes. Profile creation and Windows password-store changes
+still require explicit actions; no settings edit connects a session.
+
+**Panes > Saved layouts / shortcuts...** starts with this window's profile/layout,
+a name, and **Create desktop shortcut...**. Confirm the destination to save the
+recipe and create its link in one flow. Cancel creates neither. **Save layout only**
+and the expandable **Saved layouts** library retain separate save/update/rename/
+delete/open/export operations.
+
+Drag a pane header to another pane's top/bottom for stacked panes, left/right for
+side-by-side, or center to swap. The shaded region shows the resulting geometry
+before release. **Panes > Arrange pane...** is the keyboard route;
+**Undo pane arrangement** restores recent moves. Live sessions remain intact.
+The limit stays eight, with at most two rows or two columns and four on the other
+axis; impossible or too-small drops have no accepted preview.
+
+This local build writes **format 16 / recipe 2**. Close **all** Fish windows and
+back up `workspace.xml` first. Fish 0.7.6 and earlier need the pre-upgrade backup
+to downgrade. Published [v0.7.6](https://github.com/tsafago/Fish/releases/tag/v0.7.6)
+and its files are unchanged. Run the separate local image:
+
+```powershell
+& '.\dist\Fish-0.7.7-local-usability\Fish\Fish.exe'
+```
+
+### Retained 0.7.6 shortcut guidance and chrome refinement
 
 The profile selector and + now share the flat titlebar surfaces, sizing and
 interaction states, with a clear keyboard-focus underline. Selection still only
@@ -23,8 +53,8 @@ walks through the existing save/export flow using its real controls and destinat
 chooser. Back, Next and both Skip actions remain available; the guide never
 writes or opens a shortcut automatically.
 
-Configuration stays at **format 15**, unchanged from 0.7.5. Close all windows before
-upgrading; backups and the compatibility limits below still apply.
+The published 0.7.6 image uses format 15. This local build migrates it to format 16
+without changing existing pane IDs, arrangements, divider ratios or recipes.
 
 ### Retained 0.7.5 saved-layout shortcuts and quick connections
 
@@ -35,8 +65,9 @@ sessions, up to eight per window. Failures stay in the affected pane with
 **Reconnect** available. Disconnect stays disconnected; there are no automatic
 retry loops or transaction replays.
 
-**Panes > Saved layouts / shortcuts...** saves this window under a name.
-Save current as new keeps multiple recipes; Update from current replaces the
+**Panes > Saved layouts / shortcuts...** captures this window under a new name.
+Create desktop shortcut saves a separate recipe and its link after destination
+confirmation; Update from this window in Saved layouts replaces the
 selected recipe without breaking its existing links. Create shortcut writes an
 actual Windows `.lnk` to Desktop or another chosen folder. Every shortcut launch
 opens exactly one new independent, auto-connecting window, whether Fish is already
@@ -59,8 +90,8 @@ same modeless dialog. Its flat index is **Appearance, Profiles, Keyboard Shortcu
 General, Updates**. Appearance contains application theme and selected-profile
 text palette/effect together, followed by font, header/footer information, outlines
 and tint. Profiles and the unified keyboard editor are actual inline controls,
-not launchers. Apply saves and stays; Done applies and closes; Cancel keeps the
-last applied state. Optional profile port/device/code page/Kerberos identity stay
+not launchers. Valid settings save automatically; Close keeps them. New profiles,
+password-store changes and file/destructive operations remain explicit. Optional profile port/device/code page/Kerberos identity stay
 under Advanced, with validation exposing the corrective field.
 
 Settings references below mean that same Edit menu dialog. The **profile / +**
@@ -206,11 +237,11 @@ the X, Reset or terminal input below it. Manual zoom remains centered when it fi
 larger content uses the existing scrollbars and keeps the editing cursor reachable.
 Active-pane outlines no longer add another line beside a shared pane divider.
 
-Editable font, information, window/focus, shortcut and profile settings use
+That 0.5.3 preview used
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-In 0.7.3, appearance selectors share the single indexed Settings dialog; pane scale/layout
+In this local 0.7.7 build, valid Settings edits autosave; pane scale/layout
 actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
@@ -301,8 +332,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.6-setup.exe` | Install the preview for the current Windows user |
-| `dist\Fish-0.7.6-windows-x64.zip` | Copy/extract the complete portable application |
+| `dist\Fish-0.7.7-setup.exe` | Optional installer build; not produced for this local iteration |
+| `dist\Fish-0.7.7-windows-x64.zip` | Copy/extract this local portable application |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -313,16 +344,16 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.6**.
+The matching local package is **Fish 0.7.7**, local and unpublished.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.6\Fish` to both Package and Installer.
-This local delivery is at `dist\Fish-0.7.6\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.7-local-usability\Fish` to Package.
+This local delivery is at `dist\Fish-0.7.7-local-usability\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
 ```powershell
-.\dist\Fish\Fish.exe
-.\dist\Fish\Fish.exe --demo
+.\dist\Fish-0.7.7-local-usability\Fish\Fish.exe
+.\dist\Fish-0.7.7-local-usability\Fish\Fish.exe --demo
 ```
 
 The packaged application includes a private Java runtime; no installed Java,
@@ -400,7 +431,17 @@ offline builds additionally need the pinned JDK and Zig cache already prepared
 & "$env:JAVA_HOME\bin\java.exe" -jar .\dist\Fish.jar --demo
 ```
 
-`Smoke` is the small noninteractive gate used for the Fish revision: bounded
+`Maintenance` is the current noninteractive regression gate. It includes
+`UsabilityIterationSmoke`: acknowledged autosave/invalid/stale/failure/retry
+controls, explicit profile/password boundaries, directional two-lane geometry,
+live loopback session preservation, legacy recipes and real native links in a
+temporary folder. Compile `tests\native\packaged-kerberos.c`, then invoke the helper
+as `helper.exe IMAGE_DIRECTORY --usability TEST_CLASSES` to run the fixture
+against the actual private-runtime image; `--layouts`
+checks its native executable's offline Unicode config CLI and restricted IPC.
+No actual Desktop shortcut, clipboard, ticket, installer or IBM i is needed.
+
+The earlier `Smoke` revision fixtures cover bounded
 slots, swap-only moves, immediate disconnect/close, minimal offline controls,
 last-preset/legacy migration, physical-pixel text and real loopback sockets.
 It also covers clipboard transfer/field safety with an isolated synthetic
@@ -468,13 +509,13 @@ window's sessions and closes immediately, without a confirmation. Other Fish
 windows stay alive; the owner releases the workspace lock after the final window
 closes. Save failures are reported explicitly.
 
-The titlebar **profile selector / +** adds and connects the chosen profile, up to **eight panes in two rows/four columns**.
-The sequence is one full pane; two side-by-side; left full-height/right two
-stacked; four quadrants; then top/bottom rows of 3/2, 3/3, 4/3 and 4/4.
-There are no arbitrary recursive split directions. Addition is disabled at eight.
-Drag any pane header anywhere onto another pane to **swap**; the entire target
-is previewed. Ctrl+Alt+D offers the same swap by spatial position/preset.
-Drag the hairline dividers to resize. Reflow and swaps retain actual session
+The titlebar **profile selector / +** adds and connects the chosen profile, up to
+**eight panes**. Header top/bottom drops stack; left/right drops place side by
+side; the center swaps. One axis stays capped at two and the other at four,
+without arbitrary recursive grids. The shaded result precedes a valid drop;
+invalid/minimum-size targets are refused. Panes > Arrange pane is the keyboard
+route, Swap panes retains direct swaps, and Undo pane arrangement restores moves.
+Addition is disabled at eight. Drag hairline dividers to resize. Moves retain actual session
 objects, socket connections and host state.
 
 The **X at the far right of each pane header** immediately disconnects and
@@ -571,10 +612,11 @@ The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored next launch; connections follow
 the saved startup preference (new/factory ON, existing explicit OFF preserved).
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-13 state, including tutorial progress and explicit login references.
-Version-1/2/3 profiles and credentials are retained. Old freeform layouts reflow
+preset are saved with version-16 state, including tutorial progress and explicit login references.
+Version-1/2/3 profiles and credentials are retained. Only pre-bounded freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
-becomes one offline tile. A legacy layout over eight panes is rejected explicitly
+becomes one offline tile. Format-15 and valid format-16 layouts retain geometry.
+A legacy layout over eight panes is rejected explicitly
 without overwriting its file: reduce it using the preserved Pane5250 package
 or use another `--data-dir`. It is never silently truncated.
 **Ctrl+Alt+S/L** additionally saves/restores a profile-specific layout.
@@ -663,7 +705,7 @@ existing divider color; old separate LINE/OUTLINE colors are linked to it with
 an explicit migration notice.
 
 **Settings > Appearance > Terminal font** discovers available regular monospaced families and accepts a
-local TTF/OTF file. Apply checks printable fixed-cell widths and the current
+local TTF/OTF file. Automatic application checks printable fixed-cell widths and the current
 profiles' code-page glyphs. Missing/unsupported files are reported explicitly;
 startup uses an announced temporary Monospaced fallback without erasing the
 saved choice. Font files stay local and must remain available at the saved path.

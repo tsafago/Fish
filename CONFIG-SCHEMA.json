@@ -61,6 +61,16 @@
       "title": "Swap panes..."
     },
     {
+      "default": "",
+      "hostAction": null,
+      "title": "Arrange pane..."
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Undo pane arrangement"
+    },
+    {
       "default": "ctrl W",
       "hostAction": null,
       "title": "Close pane"
@@ -666,7 +676,7 @@
       "title": "Host NEW LINE"
     }
   ],
-  "catalogVersion": 5,
+  "catalogVersion": 6,
   "displayFields": {
     "fit": {
       "constraints": "Optional paired fit/zoom entries for a pane in the corresponding window; both or neither. No screen data.",
@@ -696,7 +706,7 @@
     "property": "binding.Unbound keys",
     "value": "Newline-separated exact chords disabled only in terminals; empty removes these per-key suppressions."
   },
-  "keyboardMigration": "Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-15.",
+  "keyboardMigration": "Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-16.",
   "keyboardRecoveryFields": {
     "binding.{old-settings-action-title}": "Original format-12 exact multiline list or empty; recovery only, never dispatched.",
     "profile.{uuid}.key.{old-Swing-stroke}": "Original host mnemonic or empty. Recovery only, never dispatched.",
@@ -708,7 +718,7 @@
   "layoutGrammar": {
     "leaf": "L|{pane-uuid}|{profile-uuid}",
     "ratio": "finite 0.05..0.95",
-    "shape": "1 full; 2 horizontal; 3 large left with vertically stacked right; 4-8 two rows, ceil(count/2) above. Each row is a right-nested horizontal chain.",
+    "shape": "1-8 unique panes. A leaf spans 1 column and 1 row. H sums child columns and takes maximum rows; V takes maximum columns and sums rows. Both spans must be at most 4, with at least one at most 2. Edge drops insert locally after source removal, center swaps. Valid layouts/ratios never normalize to a different grid; UI drops also require at least 70x70 logical pixels per pane.",
     "split": "H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}"
   },
   "maxBytes": 2000000,
@@ -1037,10 +1047,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "15",
+      "default": "16",
       "type": "enum",
       "values": [
-        "15"
+        "16"
       ]
     },
     "width": {
@@ -1095,10 +1105,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "1",
+      "default": "2",
       "type": "enum",
       "values": [
-        "1"
+        "2"
       ]
     },
     "width": {
@@ -1110,6 +1120,7 @@
   "savedLayoutLaunch": "Fish.exe --layout UUID [--data-dir DIRECTORY]. Exactly one new ordinary window with rekeyed fresh sessions; never filenames, names, hosts or executable configuration. Missing/deleted IDs fail explicitly. Exported .lnk retains the executable path and explicit data directory; moving portable Fish breaks its old target. Cold shortcut launches retain previous window restoration without opening it; saved collection appends the shortcut window for the next ordinary cold launch. Named recipes change only on explicit Update, not moving dividers.",
   "savedLayoutPrefix": "savedLayout.{listed-layout-uuid}.",
   "semantics": "Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Configuration apply performs no connections/transactions/credential operations. Normal startup follows the saved startup preference; only new/factory workspaces default on.",
+  "settingsEditing": "Valid Settings edits apply immediately after a short coalescing pause and persist through the existing exclusive/revision-checked writer. Saved acknowledges disk success. Invalid partial groups retain their previous usable state; stale edits require reload, failed saves retain Retry. New profiles, password-store operations, destructive actions and file exports require explicit actions. No setting edit connects a session.",
   "shortcutPrefix": "binding.{exact-action-title}",
   "shortcutValue": "Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.",
   "storage": "All values are XML strings; types below describe their logical values. Use export, edit, validate, apply.",
@@ -1449,7 +1460,7 @@
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before upgrading, including from 0.7.4. Format 15 adds named recipes, add-profile selections and per-pane fit/zoom. Format 14 windows/settings/profile IDs remain intact with an empty recipe library and add selection from lastProfile. Earlier formats retain their window/footer migration. Older Fish cannot read format 15; downgrade only by restoring the backup with every window closed, never relabel version.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before this local 0.7.7 build. Format 16 preserves directional two-lane layouts; recipe version 2 records the same grammar. Format 15 windows and recipe version 1 migrate without changing identity, geometry, ratios, profiles or display state. Earlier migrations remain intact. Fish 0.7.6 and earlier cannot read format 16; downgrade only by restoring the backup with every window closed, never relabel version.",
   "windowPrefix": "window.{zero-based-index}.",
-  "workspaceVersion": "15"
+  "workspaceVersion": "16"
 }

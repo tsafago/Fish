@@ -9,7 +9,7 @@ import javax.swing.event.*;
 import javax.swing.table.*;
 import pane5250.model.*;
 
-/** Draft-only editor shared by Preferences and the Keyboard shortcut route. */
+/** Validated edit buffer; Settings applies complete, conflict-free bindings automatically. */
 final class KeyboardEditor extends JPanel {
     private final Map<String,String> values=new LinkedHashMap<>();
     private final List<String> actions=new ArrayList<>(KeyBindings.defaultsByAction().keySet().stream()
@@ -66,6 +66,7 @@ final class KeyboardEditor extends JPanel {
             if (loading || selected()==null) return;
             values.put(selected(),keys.getText().strip());
             refreshRows(); describe();
+            firePropertyChange("preferences.draft",false,true);
             try { KeyBindings.effective(values); if (!keys.getText().isBlank()) workspace.tutorialAction("keyboard-binding"); }
             catch (IllegalArgumentException e) { /* The visible validation message keeps this step actionable. */ }
         }));
@@ -94,7 +95,7 @@ final class KeyboardEditor extends JPanel {
         primary.add(Ui.button("Unbind action",0,() -> { if (selected()!=null) keys.setText(""); }));
         secondary.add(Ui.button("Restore default",0,() -> {
             if (selected()==null) return;
-            values.remove(selected()); load(); refreshRows();
+            values.remove(selected()); load(); refreshRows(); firePropertyChange("preferences.draft",false,true);
         }));
         secondary.add(Ui.button("Migrated definitions...",0,() ->
                 Ui.message(this,KeyboardMigration.report(workspace.keyboardRecovery()),"Keyboard migration")));
@@ -163,6 +164,9 @@ final class KeyboardEditor extends JPanel {
         } catch (IllegalArgumentException e) { status.setText(e.getMessage()); status.setToolTipText(e.getMessage()); Ui.role(status,"error"); }
     }
     Map<String,String> draft() { KeyBindings.effective(values); return KeyBindings.normalize(values); }
+    void reload(Map<String,String> saved) {
+        values.clear(); values.putAll(saved); load(); refreshRows(); describe();
+    }
     Component tutorialTarget(String control) { return switch(control) { case "search" -> search; case "keys" -> keys; case "record" -> record; default -> table; }; }
     boolean dirty(Map<String,String> saved) {
         try { return !draft().equals(saved); }

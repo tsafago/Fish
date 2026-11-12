@@ -35,11 +35,16 @@ final class ProfilesEditor extends JPanel {
     private Profile selected;
     private java.util.List<Object> baseline;
     private boolean loading, dirty, saving,passwordModeInitialized;
+    private final boolean automaticEdits;
+    private final javax.swing.Timer edits=new javax.swing.Timer(400,e -> autoSave());
+    private boolean diskUnsaved,editPending;
+    private String saveFailure="";
 
     ProfilesEditor(Workspace workspace, Profile initial,boolean embedded,Runnable close) {
         super(new BorderLayout());
         this.workspace = workspace;
         this.close=close;
+        automaticEdits=embedded; edits.setRepeats(false);
         workspace.profileList().forEach(model::addElement);
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.getAccessibleContext().setAccessibleName("Saved workstation profiles");
@@ -118,6 +123,18 @@ final class ProfilesEditor extends JPanel {
         use = Ui.button("Save & connect",KeyEvent.VK_G,() -> save(true,true));
         buttons.add(cancel); buttons.add(save); buttons.add(done); buttons.add(use);
         if (!embedded) bottom.add(buttons,BorderLayout.EAST);
+        else {
+            JPanel explicit=new JPanel(new FlowLayout(FlowLayout.RIGHT,6,0));
+            save.setText("Create profile"); save.setMnemonic(KeyEvent.VK_S);
+            explicit.add(Ui.button("Discard pending edits",0,() -> {
+                if (!saving && discardChanges()) {
+                    edits.stop(); saveFailure="";
+                    refreshList(workspace.profileList().stream().filter(p -> p.id().equals(selected.id())).findFirst().orElse(workspace.profileList().getFirst()));
+                }
+            }));
+            explicit.add(save);
+            bottom.add(explicit,BorderLayout.EAST);
+        }
         add(body,BorderLayout.CENTER); add(bottom,BorderLayout.SOUTH);
         DocumentListener changes = new DocumentListener() {
             private void changed(DocumentEvent e) {
@@ -169,10 +186,12 @@ final class ProfilesEditor extends JPanel {
         if (name.getText().isEmpty()) load(initial);
     }
     JButton doneButton() { return done; }
-    boolean dirty() { return dirty; }
-    boolean saving() { return saving; }
+    boolean dirty() { return dirty || diskUnsaved; }
+    boolean saving() { return saving || editPending; }
+    void flush() { if (editPending) autoSave(); }
+    boolean failedSave() { return !saveFailure.isEmpty(); }
     String error() { return error.getText(); }
-    void discard() { password.setText(""); }
+    void discard() { edits.stop(); editPending=false; loading=true; password.setText(""); loading=false; }
     void rebaseDisplay() {
         if (dirty) return;
         workspace.profileList().stream().filter(p -> p.id().equals(selected.id())).findFirst().ifPresent(current -> {
@@ -208,6 +227,7 @@ final class ProfilesEditor extends JPanel {
     }
 
     private void load(Profile profile) {
+        edits.stop(); editPending=false;
         selected = profile;
         loading = true;
         name.setText(profile.name()); host.setText(profile.host()); port.setText(Integer.toString(profile.port()));
@@ -262,16 +282,26 @@ final class ProfilesEditor extends JPanel {
                 Objects.toString(loginSource(),""),authentication.getSelectedItem(),kerberosServer.getText());
     }
     private void updateDirty() {
+        if (loading) return;
         dirty=baseline==null || !baseline.equals(fields()) || workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()));
-        save.setEnabled(dirty && !saving);
+        save.setEnabled((dirty || diskUnsaved) && !saving);
         boolean saved=workspace.profileList().stream().anyMatch(p -> p.id().equals(selected.id()));
+        if (automaticEdits) {
+            save.setText(!saveFailure.isEmpty() ? "Retry save" : saved ? "Save login changes" : "Create profile");
+            boolean loginBoundary=password.getDocument().getLength()>0 || selected.authentication()==Profile.Authentication.PASSWORD
+                    && selected.rememberPassword() && !selected.username().isEmpty() && !kerberos()
+                    && (!remember.isSelected() || loginSource()!=null || !selected.username().equals(username.getText().strip())
+                    || !selected.host().equals(host.getText().strip()) || !Integer.toString(selected.port()).equals(port.getText().strip()));
+            save.setVisible(!saved || loginBoundary || !saveFailure.isEmpty());
+            if (!saving && (dirty || diskUnsaved) && saveFailure.isEmpty()) { editPending=true; edits.restart(); }
+        }
         up.setEnabled(!saving && saved && list.getSelectedIndex()>0);
         down.setEnabled(!saving && saved && list.getSelectedIndex()<workspace.profileList().size()-1);
         delete.setEnabled(!saving && saved);
         firePropertyChange("settings.draft",false,true);
     }
     private boolean discardChanges() {
-        return !dirty || Ui.confirm(this,"Discard unsaved profile edits?","Unsaved edits");
+        return !dirty() || Ui.confirm(this,"Discard only unsaved profile edits? Already saved changes stay applied.","Unsaved edits");
     }
     void dismiss() {
         if (!saving && discardChanges()) { password.setText(""); close.run(); }
@@ -353,8 +383,62 @@ final class ProfilesEditor extends JPanel {
         }
     }
     private void save(boolean connect,boolean finish) {
+        edits.stop(); editPending=false;
+        if (diskUnsaved && !dirty) {
+            saveFailure=""; persist(() -> { if (finish) { close.run(); if (connect) workspace.useProfile(selected); } }); return;
+        }
         Pending pending=prepare(connect);
-        if (pending!=null) commit(pending,() -> { if (finish) { close.run(); if (connect) workspace.useProfile(selected); } },message -> {});
+        if (pending!=null) commit(pending,() -> {
+            diskUnsaved=true;
+            persist(() -> { if (finish) { close.run(); if (connect) workspace.useProfile(selected); } });
+        },message -> {});
+    }
+    private static boolean credentialChange(Pending value) {
+        Profile previous=value.previous,updated=value.updated;
+        return value.secret.length>0 || previous!=null && previous.authentication()==Profile.Authentication.PASSWORD
+                && updated.authentication()==Profile.Authentication.PASSWORD && previous.rememberPassword() && !previous.username().isEmpty()
+                && (!updated.rememberPassword() || !previous.credentialTarget().equals(updated.credentialTarget()));
+    }
+    private void autoSave() {
+        edits.stop(); editPending=false;
+        if (!automaticEdits || loading || saving || !saveFailure.isEmpty()) return;
+        if (workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()))) {
+            error.setText("New profile is not saved. Choose Create profile when ready."); firePropertyChange("settings.draft",false,true); return;
+        }
+        if (dirty) {
+            Pending pending=prepare(false);
+            if (pending==null) { firePropertyChange("settings.draft",false,true); return; }
+            try {
+                if (credentialChange(pending)) {
+                    error.setText("Login/password changes need Save login changes. Nothing in Windows was changed.");
+                    firePropertyChange("settings.draft",false,true);
+                    return;
+                }
+                Profile updated=pending.updated;
+                workspace.putProfile(updated);
+                selected=updated; baseline=fields(); dirty=false; diskUnsaved=true;
+                loading=true;
+                try {
+                    int index=list.getSelectedIndex(); if (index>=0) model.set(index,updated);
+                } finally { loading=false; }
+            } finally { pending.close(); }
+        }
+        if (diskUnsaved) persist(() -> {});
+        else if (!dirty) { error.setText("Saved"); updateDirty(); }
+    }
+    private void persist(Runnable done) {
+        saving=true; error.setText("Saving profile...");
+        firePropertyChange("settings.draft",false,true);
+        workspace.persistSettings(() -> {
+            saving=false; diskUnsaved=false; saveFailure="";
+            error.setText(dirty ? "Editing; not saved yet." : "Saved");
+            updateDirty(); workspace.tutorialAction("profile-saved"); done.run();
+        },message -> {
+            saving=false; saveFailure=message; error.setText("Not saved: "+message+" Choose Retry save.");
+            error.setToolTipText(error.getText());
+            save.setText("Retry save"); save.setVisible(true); save.setEnabled(true);
+            firePropertyChange("settings.draft",false,true); workspace.refreshActions();
+        });
     }
     void commit(Pending pending,Runnable success,java.util.function.Consumer<String> failed) {
         Profile updated=pending.updated,previous=pending.previous; char[] secret=pending.secret;
@@ -369,7 +453,7 @@ final class ProfilesEditor extends JPanel {
             }
             @Override protected void done() {
                 pending.close();
-                password.setText("");
+                loading=true; password.setText(""); loading=false;
                 setSaving(false);
                 try {
                     get();
@@ -378,7 +462,6 @@ final class ProfilesEditor extends JPanel {
                     workspace.putProfile(updated);
                     dirty = false;
                     refreshList(updated);
-                    workspace.tutorialAction("profile-saved");
                     success.run();
                 } catch (Exception e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();

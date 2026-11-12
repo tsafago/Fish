@@ -231,7 +231,7 @@ public final class Tests {
             String xml = Files.readString(store.file());
             check(!xml.contains("IBMSUBSPW") && !xml.contains("password</"),"Workspace persistence contains no password property.");
             Properties legacy=new Properties(); legacy.loadFromXML(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-            legacy.setProperty("version","1"); legacy.remove("appTheme");
+            legacy.setProperty("version","1"); legacy.remove("appearance.cursorStyle"); legacy.remove("appTheme");
             legacy.remove("windows"); legacy.remove("info.footerDevice");
             legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
             legacy.keySet().removeIf(key -> key.toString().startsWith("updates."));

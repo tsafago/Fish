@@ -109,7 +109,7 @@ final class TutorialDialog extends JDialog {
             case APPEARANCE -> List.of(
                     s("Open Appearance","Open Edit > Settings, then Appearance. Common appearance controls are all on this page; scroll to the sections below.","Appearance","theme","settings-Appearance"),
                     s("Choose application colors","Choose Application theme. Valid settings apply automatically. Watch the Saved / error status below. Custom theme editing is optional.","Appearance","theme","appearance-theme"),
-                    s("Choose terminal colors","Check Terminal profile, then choose Text palette. Only that profile and its panes change. Text effect is optional and off by default.","Appearance","palette","appearance-palette"),
+                    s("Choose terminal colors","Check Terminal profile, then choose Text palette. Only that profile and its panes change. Text effect is optional and off by default. Cursor style below chooses underline, outline or filled; Insert fills the cell.","Appearance","palette","appearance-palette"),
                     s("Choose your font","Choose a monospaced family. A local custom font file is optional; Check font verifies alignment and characters before Apply.","Appearance","font","appearance-font"),
                     s("Set header information","Scroll to Pane information. Show header controls visibility; the checkboxes below select its information.","Appearance","header","appearance-header"),
                     s("Set footer information","Show footer controls connection status, device name, screen size and cursor location. Extra information is optional. Window and focus outlines are just below.","Appearance","footer","appearance-footer"),

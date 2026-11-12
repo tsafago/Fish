@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.8 (local, unpublished) exposes its complete local configuration without an AI service, network
+Fish 0.7.9 exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -74,10 +74,10 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 17 with recoverable keyboard migration
+An exported legacy workspace is migrated to version 18 with recoverable keyboard migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries (including 0.7.7) cannot read version 17: restore a pre-upgrade backup for a downgrade.
-Do not manually relabel old/future data as version 17. Version-8/9 hosts, sign-in
+save. Older binaries (including local 0.7.8) cannot read version 18: restore a pre-upgrade backup for a downgrade.
+Do not manually relabel old/future data as version 18. Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
 is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles
 remain PASSWORD, never silently Kerberos. No existing profile is replaced by a seed.
@@ -111,6 +111,7 @@ The catalog lists exact field types/defaults/limits and all dynamic prefixes:
 | Fonts | font.family and font.file; exact installed fixed-width family or local TTF/OTF reference |
 | Themes | appearance.selected, appearance.themes and `appearance.theme.{index}.` name plus **every** ColorRole |
 | Window/focus | appearance.outline, appearance.windowOutline, independent highlightActive |
+| Terminal cursor | appearance.cursorStyle: IBM (underline replace / filled Insert), OUTLINE (outline replace / filled Insert), FILLED (both modes) |
 | Reserved legacy keys | appearance.retired, newline-separated valid shortcut strokes |
 | Tutorial | tutorial.status: NEW, IN_PROGRESS, COMPLETED, SKIPPED |
 | Updates | updates.startup, updates.channel, updates.ignoredVersion |
@@ -150,7 +151,7 @@ only that startup notice, not manual checks or future versions. The endpoint is
 fixed public tsafago/Fish, not configurable; no executable/download URL hook exists.
 Export contains no tokens, download state or installation commands.
 
-Format 17 retains `windows` (the additional-window count) and complete
+Format 18 retains `windows` (the additional-window count) and complete
 `window.{zero-based-index}.layout/width/height/lastProfile/addProfile` entries. The primary
 window still uses the original unprefixed keys. Preserve every window in a full
 snapshot; each has 1-8 bounded panes. Profiles, themes, fonts, shortcuts and other
@@ -158,7 +159,7 @@ settings are shared, not copied per window. `info.footerDevice` controls actual
 allocated device display, independently of optional requested-device header info.
 Only the exact prior built-in information defaults migrate; custom/hidden flags
 remain unchanged. Back up with all Fish windows closed before upgrading. Older
-versions through 0.7.7 cannot read format 17; downgrade by restoring the backup, never relabeling.
+versions through 0.7.8 cannot read format 18; downgrade by restoring the backup, never relabeling.
 All Settings routes now start at Edit > Settings... (Ctrl+,).
 
 Settings UI edits apply and persist valid values automatically, with a short
@@ -167,7 +168,7 @@ the previous usable state. New profiles, credential-store changes, destructive
 actions and exports remain explicit. This does not change the offline CLI's
 whole-snapshot `validate` / atomic `apply` transaction.
 
-Format 17 / recipe 3 permits only these canonical families:
+Format 18 / recipe 3 retains these canonical families from format 17:
 one full pane; two halves (H/V); three equal-default rows/columns or a half and
 opposite-axis pair, mirrored/rotated; four quadrants; five to eight quadrants each
 split at most once into two children. Grid roots have two opposite-axis pairs;
@@ -182,7 +183,13 @@ pixels. Whole-window edges arrange two/three panes; quadrant edges at four/eight
 fill half-slots or swap/reorient existing slots, never nest further. Centers swap.
 Unsupported format-1..16 geometry/extreme ratios normalize with a notice while
 retaining every pane/profile ID, saved-layout UUID and fit/zoom state. Supported
-shapes/ratios remain; current-format invalid geometry is rejected, not normalized.
+shapes/ratios remain; format-17 and current-format invalid geometry is rejected, not normalized.
+
+`appearance.cursorStyle` is a required, exact enum in format 18. Older data gains
+`IBM`, the IBM-documented underline-replace/filled-insert style, not a verified ACS
+factory default. `OUTLINE` uses an outline in replace mode; `FILLED` fills in both
+modes. Insert always fills the cell with a contrasting glyph, respecting secrecy
+and host blink. Do not copy foreign emulator option names into this property.
 
 `addProfile` is this window's titlebar selection for the next + action, not the
 active pane's profile. Old formats initialize it from lastProfile without
@@ -210,7 +217,7 @@ open windows for the next ordinary launch. Named recipes update only explicitly.
 
 Factory reset is an explicitly confirmed in-app maintenance action, not an
 executable configuration setting. It saves fresh workspace state and closes
-ALL its Fish windows; next launch is format-15 first-run with startup
+ALL its Fish windows; next launch is format-18 first-run with startup
 connections ON. It retains actual font files,
 Windows credentials, exported shortcut files and other workspaces. Old recipe IDs
 become unavailable; reset never deletes arbitrary shortcut destinations. Do not invoke reset to repair a failed

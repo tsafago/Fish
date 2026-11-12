@@ -171,7 +171,7 @@ public final class KerberosSmoke {
         StateStore.State existing=new StateStore.State(List.of(old),new Layout.Leaf(UUID.randomUUID(),old.id()),900,600,
                 AppTheme.Charcoal,old.id(),Map.of(),false,Appearance.defaults(),StateStore.Tutorial.COMPLETED,true);
         for (String version:List.of("8","9")) {
-            Properties p=StateStore.properties(existing); p.setProperty("version",version);
+            Properties p=StateStore.properties(existing); p.remove("appearance.cursorStyle"); p.setProperty("version",version);
             p.remove("windows"); p.remove("info.footerDevice");
             p.keySet().removeIf(key -> key.toString().startsWith("updates."));
             p.remove("profile."+old.id()+".authentication"); p.remove("profile."+old.id()+".kerberosServer");

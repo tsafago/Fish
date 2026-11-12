@@ -5,7 +5,48 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.7.8 local simple-pane revision (not published)
+## Fish 0.7.9 cursor stability and accepted usability preview
+
+Includes the accepted autosaved Settings, direct shortcut flow and canonical
+simple-pane family from the local 0.7.7/0.7.8 milestones below, without reopening
+their design. The shortcut name field alone gains native text hints and resets
+native typography after Unicode fallback; its accepted sizing/flow is unchanged.
+
+Synthetic production paints reproduced a cursor/text mismatch with fractional
+translation and inherited shape antialiasing. The cursor now shares the text's
+snapped device transform and explicit solid-pixel edges; dirty repaint restores
+exact underlying ink without changing pixels outside its cell or enlarging clips.
+None/Flux reuse identical LCD glyph masks and physical metrics. Actual Fish-icon
+activation plus revalidation preserves pane interior bounds and screen origin.
+No full-screen cursor workaround, DPI guess or font-weight change was added.
+
+Insert now fills its character cell with a contrasting glyph. Secrecy, reverse
+attributes, selection, host blink and effects remain respected. Appearance has
+three autosaved workspace choices: underline replace / filled Insert (default),
+outline replace / filled Insert, and filled in both modes. IBM's
+[Linux emulator resource documentation](https://www.ibm.com/docs/en/i/7.1.0?topic=emulation-emulator-resources)
+supports the default mode-aware choice. That source does **not** establish the
+ACS default; exact ACS factory behavior remains unverified.
+
+Format 18 / recipe 3 / catalog 8 retains simple topology and adds typed cursor
+preferences. Formats through 17 gain the IBM-style cursor default; all existing
+settings/profile/recipe identities remain. Close all windows and back up
+workspace.xml before migration; downgrade to 0.7.8 or older needs that backup.
+Current incomplete/unknown cursor settings are rejected without writing.
+
+Focused checks cover fit/manual zoom, fractional transforms, first/last cells
+and rows, clipped paints, every cursor/effect mode, masked and blink-off glyphs,
+selection/reverse colors, real icon controls, disk persistence/peer propagation,
+and Unicode name selection/caret metrics. Tests use never-shown windows, private
+synthetic state and loopback only. The focused fixture passed 5,340 assertions
+at the packaged 192 MB heap limit; the accepted simple-pane and retained
+usability gates passed 4,405 and 1,920 assertions. One batched offscreen review
+covered cursor modes, dark/light and 100%/150% name-field/settings rendering.
+Offscreen validation is not physical desktop,
+mixed-monitor, screen-reader, IBM i/ACS/SSO or actual installation acceptance.
+Protocol, maximize-outline and intermittent flicker limits remain unchanged.
+
+## Retained Fish 0.7.8 local simple-pane milestone (not published)
 
 Replaces the earlier local two-lane topology with the confirmed canonical family:
 one full, two halves, three equal strips or a half and pair (rotated/mirrored),

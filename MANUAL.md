@@ -1,7 +1,7 @@
 # Fish manual
 
-Fish 0.7.8 - unsigned local simple-pane revision; not pushed or published.
-Published 0.7.6 remains unchanged. This build requires a format-17 workspace;
+Fish 0.7.9 - unsigned experimental preview, including the accepted local usability/simple-pane work.
+Earlier images/releases remain unchanged. This build requires a format-18 workspace;
 close all Fish windows and back up workspace.xml before first launch.
 
 Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
@@ -47,9 +47,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.7.6 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.6) includes Fish-0.7.6-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
+The public [v0.7.9 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.9) includes Fish-0.7.9-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
 
-Alternatively, extract the matching Fish-0.7.6-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.7.9-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -63,15 +63,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs use 0.7.8 names. This local delivery builds only the separate portable image, ZIP and matching source at dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe; no installer or public release is created. The new version also prevents a launch from silently forwarding to an older local 0.7.7 owner. Close all older windows before using the same workspace; earlier review images remain intact.
+Default build outputs use 0.7.9 names. The final side-by-side image is at dist\Fish-0.7.9\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.8-local-simple-panes\Fish`.
-An installer remains an optional build task, not part of this local delivery. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.9\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.9\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -81,15 +81,15 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish, or the retained
 legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
-The next save writes configuration version 17 with simple layouts and recipe version 3.
-Older binaries, including local 0.7.7, cannot read it:
+The next save writes configuration version 18 with cursor style, simple layouts and recipe version 3.
+Older binaries, including local 0.7.8, cannot read it:
 keep the matching pre-upgrade backup for downgrade. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older workspaces migrate to version 17, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; already supported shapes and reasonable ratios remain unchanged. Format 14 gains an empty recipe library and initializes the selector from each window's last profile; startup stays unchanged. Exact prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.7.7 and earlier require that backup to downgrade. Format 12 settings bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD, then retain choices. Malformed state is preserved, never reset.
+Older workspaces migrate to version 18, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. The cursor initializes to underline replace / filled Insert. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; already supported shapes and reasonable ratios remain unchanged. Format 14 gains an empty recipe library and initializes the selector from each window's last profile; startup stays unchanged. Exact prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.7.8 and earlier require that backup to downgrade. Format 12 settings bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD, then retain choices. Malformed state is preserved, never reset.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -492,8 +492,17 @@ Settings > Appearance > Pane information groups header/footer visibility with th
 Typing (including rejected input), field/arrow navigation, mouse cursor placement,
 terminal focus, switching panes/windows, Reset and Insert restart the cursor
 visibly for a full 550 ms on interval. Normal blinking resumes afterward. Insert
-draws a heavier two-physical-pixel outline rather than changing terminal font
-weight. Host blink attributes and Flux keep independent timing. Hidden/minimized
+fills the complete physical cell and redraws its glyph in a contrasting color,
+without revealing non-display/blink-off text or changing font weight.
+Settings > Appearance > Cursor style defaults to **Underline / filled Insert**.
+**Outline / filled Insert** uses a box in replace mode; **Filled** uses a block in
+both modes. All changes apply and save automatically across windows.
+IBM documents underline-replace/block-insert for its Linux 5250 emulator
+([emulator resources](https://www.ibm.com/docs/en/i/7.1.0?topic=emulation-emulator-resources));
+this is IBM-style behavior, not a demonstrated ACS factory default.
+Text and cursor share snapped device coordinates; cursor-only dirty painting
+clears/restores only its clip and does not shift neighboring glyphs.
+Host blink attributes and Flux keep independent timing. Hidden/minimized
 or disposed terminals stop unnecessary animation timers.
 
 A disabled row, or a row with no actual text, reserves zero vertical space. Close/connect/add/swap actions remain available through menus, shortcuts and the terminal context menu. The invisible pane-top strip and Alt+drag swap from a terminal when no header is shown.
@@ -506,7 +515,7 @@ Settings > Appearance selects the target profile and its Phosphor, Cool, Warm, A
 
 Text effects are None, Soft glow, Prism and Flux (animated). None is the default, using crisp final-resolution glyphs. Effects are opt-in and not a workaround for host compatibility. Neon was removed; saved Neon values migrate to None with a load notice.
 
-The top-left fish is an animated-text toggle for the active preset: Flux (animated) becomes None; any other effect becomes Flux (animated). A mouse release switches immediately, without a double-click timer; a second activation in a double-click restores the preceding effect. Dragging the logo does not activate it. Tab to the icon and press Space for keyboard activation. Keyboard focus has a subtle underline; mouse clicks leave no focus box. Like Appearance, it saves the preset and refreshes other panes using that same preset. None/Flux use the same regular-font metrics and per-channel LCD glyph mask, changing only color. The logo no longer performs a temporary shimmer.
+The top-left fish is an animated-text toggle for the active preset: Flux (animated) becomes None; any other effect becomes Flux (animated). A mouse release switches immediately, without a double-click timer; a second activation in a double-click restores the preceding effect. Dragging the logo does not activate it. Tab to the icon and press Space for keyboard activation. Keyboard focus has a subtle underline; mouse clicks leave no focus box. Like Appearance, it saves the preset and refreshes other panes using that same preset. None/Flux use the same regular-font metrics and per-channel LCD glyph mask, changing only color, not pane interior bounds, screen origin or cell height. The logo no longer performs a temporary shimmer.
 
 During connection setup a rotating ring replaces the middle preset controls or terminal view. It is progress, not a claim that sign-on has succeeded; connection status and failures remain in the footer. The pane X can cancel this pending connection. X is hidden only when the sole remaining pane is disconnected and showing the preset selector; keyboard/menu disconnect commands remain available.
 

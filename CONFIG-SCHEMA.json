@@ -676,7 +676,12 @@
       "title": "Host NEW LINE"
     }
   ],
-  "catalogVersion": 7,
+  "catalogVersion": 8,
+  "cursorStyles": {
+    "FILLED": "Filled block in both modes.",
+    "IBM": "Underline in replace mode; filled block in Insert. IBM-documented mode-aware style, not a verified ACS default.",
+    "OUTLINE": "Outline in replace mode; filled block in Insert."
+  },
   "displayFields": {
     "fit": {
       "constraints": "Optional paired fit/zoom entries for a pane in the corresponding window; both or neither. No screen data.",
@@ -885,6 +890,16 @@
         "Eye_Saver"
       ]
     },
+    "appearance.cursorStyle": {
+      "constraints": "Exact case-sensitive value.",
+      "default": "IBM",
+      "type": "enum",
+      "values": [
+        "IBM",
+        "OUTLINE",
+        "FILLED"
+      ]
+    },
     "appearance.outline": {
       "constraints": "Active-pane outline; shared internal edges have one owner.",
       "default": true,
@@ -1047,10 +1062,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "17",
+      "default": "18",
       "type": "enum",
       "values": [
-        "17"
+        "18"
       ]
     },
     "width": {
@@ -1460,7 +1475,7 @@
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before this local 0.7.8 build. Format 17 and recipe 3 use simple pane families. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain. Formats 15/16 and recipes 1/2 migrate deliberately; do not relabel. Downgrade to Fish 0.7.7 or earlier requires restoring the matching backup.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.7.9. Format 18 / recipe 3 retains simple pane families and adds a typed cursor style. Formats through 17 gain IBM (underline replace / filled Insert). Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Formats 15/16 and recipes 1/2 migrate deliberately; do not relabel. Downgrade to Fish 0.7.8 or earlier requires restoring the matching backup.",
   "windowPrefix": "window.{zero-based-index}.",
-  "workspaceVersion": "17"
+  "workspaceVersion": "18"
 }

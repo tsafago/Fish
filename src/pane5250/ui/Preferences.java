@@ -20,6 +20,7 @@ final class Preferences {
     private final JComboBox<Profile> scope=new JComboBox<>();
     private final JComboBox<String> palette=new JComboBox<>(Profile.THEMES.toArray(String[]::new));
     private final JComboBox<String> effect=new JComboBox<>(Profile.EFFECTS.toArray(String[]::new));
+    private final JComboBox<Appearance.CursorStyle> cursorStyle=new JComboBox<>(Appearance.CursorStyle.values());
     private final JComboBox<String> family=new JComboBox<>();
     private final JTextField fontPath=new JTextField(24);
     private final JComboBox<UpdateSettings.Channel> channel=new JComboBox<>(UpdateSettings.Channel.values());
@@ -45,8 +46,8 @@ final class Preferences {
     }
     private record Display(String palette,String effect) {}
     private record Draft(boolean startup,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,
-                         Appearance.PaneInfo info,UpdateSettings updates,Map<String,String> keys,Map<UUID,Display> displays) {
-        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,theme,font,window,pane,tint,info,updates,keys,Map.copyOf(value)); }
+                         Appearance.PaneInfo info,Appearance.CursorStyle cursorStyle,UpdateSettings updates,Map<String,String> keys,Map<UUID,Display> displays) {
+        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,theme,font,window,pane,tint,info,cursorStyle,updates,keys,Map.copyOf(value)); }
     }
 
     Preferences(Workspace workspace,String category) {
@@ -59,6 +60,7 @@ final class Preferences {
             }
         };
         Appearance a=workspace.appearanceSettings();
+        cursorStyle.setSelectedItem(a.cursorStyle());
         startup=new JCheckBox("Connect restored panes on startup",workspace.connectOnStartup());
         startup.addActionListener(e -> workspace.tutorialAction("startup-changed"));
         window=new JCheckBox("Show whole-window outline",a.windowOutline());
@@ -125,7 +127,7 @@ final class Preferences {
             @Override public void windowOpened(WindowEvent e) { navigation.requestFocusInWindow(); workspace.tutorialChanged(); }
         });
         saved=draft(); baseline=currentShared();
-        for (Component control:List.of(startup,window,pane,tint,checkUpdates,theme,palette,effect,family,fontPath,channel))
+        for (Component control:List.of(startup,window,pane,tint,checkUpdates,theme,palette,effect,cursorStyle,family,fontPath,channel))
             Ui.observeEdits(control,this::edited);
         info.forEach(control -> Ui.observeEdits(control,this::edited));
         keyboard.addPropertyChangeListener("preferences.draft",e -> edited());
@@ -215,6 +217,8 @@ final class Preferences {
         body.add(note("Palette and effect apply to the selected profile, including its other panes. This does not switch your session."));
         body.add(row("Text palette",palette)); body.add(paletteStatus); Ui.role(paletteStatus,"muted");
         body.add(row("Text effect (opt-in)",effect));
+        body.add(row("Cursor style",cursorStyle));
+        cursorStyle.setToolTipText("Replace mode uses an underline or outline; Insert fills the cell. Filled uses a block in both modes.");
         body.add(row("Custom theme",designer));
         targets.put("theme",theme); targets.put("palette",palette); targets.put("effect",effect); targets.put("scope",scope);
         body.add(section("Terminal font"));
@@ -309,6 +313,7 @@ final class Preferences {
         return new Draft(startup.isSelected(),theme.getSelectedItem(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),
                 new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                         info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
+                (Appearance.CursorStyle)cursorStyle.getSelectedItem(),
                 new UpdateSettings(checkUpdates.isSelected(),(UpdateSettings.Channel)channel.getSelectedItem(),ignored),keyboard.draft(),Map.copyOf(displays));
     }
     private boolean dirty() { try { return unsaved || conflict || !draft().equals(saved); } catch (IllegalArgumentException e) { return true; } }
@@ -353,6 +358,7 @@ final class Preferences {
             Draft raw=new Draft(startup.isSelected(),theme.getSelectedItem(),font,window.isSelected(),pane.isSelected(),tint.isSelected(),
                     new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                             info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
+                    (Appearance.CursorStyle)cursorStyle.getSelectedItem(),
                     new UpdateSettings(checkUpdates.isSelected(),(UpdateSettings.Channel)channel.getSelectedItem(),ignored),keys,Map.copyOf(displays));
             Draft next=raw;
             for (Profile profile:workspace.profileList()) {
@@ -372,7 +378,7 @@ final class Preferences {
             if (!next.equals(saved)) {
                 Appearance previous=workspace.appearanceSettings();
                 Appearance value=new Appearance(next.pane(),next.window(),next.info(),next.font(),
-                        next.theme() instanceof ColorTheme custom ? custom.name() : "",previous.themes(),previous.retiredShortcuts());
+                        next.theme() instanceof ColorTheme custom ? custom.name() : "",previous.themes(),previous.retiredShortcuts(),next.cursorStyle());
                 workspace.applyShortcuts(next.keys());
                 if (next.theme() instanceof AppTheme app) workspace.applyTheme(app);
                 workspace.appearanceSettings(value); workspace.highlightActive(next.tint());
@@ -420,6 +426,7 @@ final class Preferences {
         edits.stop(); editPending=false; loading=true;
         try {
             Appearance a=workspace.appearanceSettings();
+            cursorStyle.setSelectedItem(a.cursorStyle());
             startup.setSelected(workspace.connectOnStartup()); window.setSelected(a.windowOutline()); pane.setSelected(a.outline());
             tint.setSelected(workspace.highlightActive()); checkUpdates.setSelected(workspace.updateSettings().startup());
             channel.setSelectedItem(workspace.updateSettings().channel()); ignored=workspace.updateSettings().ignoredVersion();

@@ -10,7 +10,23 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.7.8 local simple-pane revision (not published)
+## Fish 0.7.9 preview
+
+[Download v0.7.9](https://github.com/tsafago/Fish/releases/tag/v0.7.9):
+current-user setup, portable image, complete corresponding source/licenses and checksums.
+The accepted local 0.7.7/0.7.8 settings, shortcut and simple-pane work is included.
+
+Cursor and text share one snapped physical grid; inherited antialiasing cannot
+move the cursor relative to its cell. Cursor-only dirty repaint restores the same
+pixels as a complete paint without changing neighboring ink. None/Flux reuse
+identical glyph coverage and metrics. **Settings > Appearance > Cursor style**
+defaults to **Underline / filled Insert**. **Outline / filled Insert** and
+**Filled** (both modes) are available and autosave. Filled cells retain readable,
+contrasting glyphs without revealing hidden/blink-off text or changing font weight.
+This mode-aware style is documented by IBM for its Linux 5250 emulator; ACS's
+exact factory default remains unverified. The shortcut name field uses the same
+native text rendering as other controls and restores it after Unicode fallback;
+the accepted shortcut window/flow is unchanged.
 
 **Edit > Settings** now applies valid edits automatically after a short typing
 pause. **Saved** confirms the disk write; invalid fields retain their last usable
@@ -40,15 +56,15 @@ the actual resulting geometry. Too-small/invalid/outside drops do not move panes
 **Panes > Arrange pane...** offers both target areas from the keyboard;
 **Undo pane arrangement** restores recent moves without reconnecting.
 
-This local build writes **format 17 / recipe 3**. Unsupported older experimental
+This build writes **format 18 / recipe 3**. Unsupported older experimental
 geometry normalizes with a notice, retaining pane/profile IDs, recipe references
 and display state. Close **all** Fish windows and
-back up `workspace.xml` first. Fish 0.7.7 and earlier need the pre-upgrade backup
+back up `workspace.xml` first. Fish 0.7.8 and earlier need the pre-upgrade backup
 to downgrade. Published [v0.7.6](https://github.com/tsafago/Fish/releases/tag/v0.7.6)
-and its files are unchanged. Run the separate local image:
+and its files are unchanged. Run the separate final image:
 
 ```powershell
-& '.\dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe'
+& '.\dist\Fish-0.7.9\Fish\Fish.exe'
 ```
 
 ### Retained 0.7.6 shortcut guidance and chrome refinement
@@ -64,7 +80,7 @@ walks through the existing save/export flow using its real controls and destinat
 chooser. Back, Next and both Skip actions remain available; the guide never
 writes or opens a shortcut automatically.
 
-The published 0.7.6 image uses format 15. This local build migrates it to format 17.
+The published 0.7.6 image uses format 15. This build migrates it to format 18.
 Already supported shapes/reasonable proportions remain; unsupported geometry is
 deliberately simplified without losing sessions' saved identities or recipes.
 
@@ -126,8 +142,8 @@ Only one process writes configuration; subsequent launches use a private,
 authenticated loopback new-window rendezvous. No workspace cloning is needed.
 
 Terminal typing, field navigation, mouse placement, focus and pane/window switches
-restart the cursor visibly for a complete blink interval. Insert uses a heavier
-physical-pixel cursor outline, not bold terminal text. Default headers show only
+restart the cursor visibly for a complete 550ms blink interval. Insert fills its
+physical cell with a contrasting glyph, not bold terminal text. Default headers show only
 the profile; footers show concise connection/input status, actual allocated device
 when known, cursor position and screen size. Authentication details remain under
 **Host > Last pane notice** rather than in the everyday footer. “Connected” is not
@@ -185,14 +201,14 @@ transaction and bundled runtime. Input notices have a physical-pixel border,
 an accessible X and a 2.8-second lifetime. Dismiss does not Reset input; recovery
 and **Host > Last pane notice** remain available.
 Read the [manual](MANUAL.md#checking-for-updates) for update/reset details.
-Configuration is now **format 15**: close ALL windows and back up before upgrading,
+Configuration is now **format 18**: close ALL windows and back up before upgrading,
 including from 0.7.4. Named recipes, per-window add-profile selection and per-pane
 fit/zoom are new; format-14 windows, profile IDs and settings remain intact.
 Old settings action bindings merge into `Settings...`; their original exact lists
 remain in `keyboard.legacy.binding.*`. Existing exact host keys, profiles, fonts,
 themes and update settings remain. Only the exact prior built-in information
 defaults migrate to the concise defaults; custom and hidden rows stay unchanged.
-Older binaries cannot read format 15; close all windows and restore the pre-upgrade
+Older binaries cannot read format 18; close all windows and restore the pre-upgrade
 backup to downgrade, never relabel exports.
 
 ## Included Kerberos sign-in
@@ -253,7 +269,7 @@ That 0.5.3 preview used
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-In this local 0.7.8 build, valid Settings edits autosave; pane scale/layout
+In this 0.7.9 build, valid Settings edits autosave; pane scale/layout
 actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
@@ -311,25 +327,25 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.7.6-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.7.6](https://github.com/tsafago/Fish/releases/tag/v0.7.6), then run the
+Download `Fish-0.7.9-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.7.9](https://github.com/tsafago/Fish/releases/tag/v0.7.9), then run the
 installer for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract the matching `Fish-0.7.6-windows-x64.zip` and open
+For a portable copy, extract the matching `Fish-0.7.9-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 The executable/installer are unsigned, so SmartScreen or organizational policy
 may warn or block them. Checksums accompany the package; do not bypass IT policy.
 
 **Back up before upgrading:** close ALL Fish windows normally and copy `workspace.xml`
-outside the application folder before first launching 0.7.6. The usual location
+outside the application folder before first launching 0.7.9. The usual location
 is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
 and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 15** if needed, unchanged from 0.7.5. Fish 0.7.4 and earlier cannot read
+to **version 18** if needed. Fish 0.7.8 and earlier cannot read
 it. Keep a pre-upgrade backup for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
@@ -344,8 +360,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.8-setup.exe` | Optional installer build; not produced for this local iteration |
-| `dist\delivery-0.7.8-local-simple-panes\Fish-0.7.8-local-windows-x64.zip` | Local portable image, alongside matching source and checksums |
+| `dist\Fish-0.7.9-setup.exe` | Current-user native installer with bundled runtime |
+| `dist\Fish-0.7.9-windows-x64.zip` | Portable image, alongside matching source and checksums |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -356,16 +372,16 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.8**, local and unpublished.
+The matching package is **Fish 0.7.9**, an unsigned experimental preview.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.8-local-simple-panes\Fish` to Package.
-This local delivery is at `dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.9\Fish` to Package.
+This delivery is at `dist\Fish-0.7.9\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
 ```powershell
-.\dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe
-.\dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe --demo
+.\dist\Fish-0.7.9\Fish\Fish.exe
+.\dist\Fish-0.7.9\Fish\Fish.exe --demo
 ```
 
 The packaged application includes a private Java runtime; no installed Java,
@@ -627,7 +643,7 @@ The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored next launch; connections follow
 the saved startup preference (new/factory ON, existing explicit OFF preserved).
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-17 state, including tutorial progress and explicit login references.
+preset are saved with version-18 state, including tutorial progress and explicit login references.
 Version-1/2/3 profiles and credentials are retained. Only pre-bounded freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. Supported simple layouts retain geometry; unsupported

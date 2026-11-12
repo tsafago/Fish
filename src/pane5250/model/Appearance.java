@@ -4,7 +4,17 @@ import java.util.*;
 
 /** Workspace-wide appearance; profiles retain their host palette and effect. */
 public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
-                         Set<String> retiredShortcuts) {
+                         Set<String> retiredShortcuts,CursorStyle cursorStyle) {
+    public enum CursorStyle {
+        IBM("Underline / filled Insert"),OUTLINE("Outline / filled Insert"),FILLED("Filled");
+        private final String label;
+        CursorStyle(String label) { this.label=label; }
+        @Override public String toString() { return label; }
+    }
+    public Appearance(boolean outline,boolean windowOutline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
+                      Set<String> retiredShortcuts) {
+        this(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,CursorStyle.IBM);
+    }
     public record PaneInfo(boolean header,boolean footer,boolean profile,boolean connection,
                            boolean host,boolean device,boolean status,boolean dimensions,boolean cursor,boolean insert,boolean footerDevice) {
         public PaneInfo(boolean header,boolean footer,boolean profile,boolean connection,boolean host,boolean device,
@@ -19,6 +29,7 @@ public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,Fon
     }
     public Appearance {
         Objects.requireNonNull(info); Objects.requireNonNull(font); Objects.requireNonNull(selectedTheme);
+        Objects.requireNonNull(cursorStyle);
         themes=List.copyOf(themes);
         if (themes.size()>32) throw new IllegalArgumentException("Up to 32 custom themes are supported.");
         retiredShortcuts=Set.copyOf(retiredShortcuts);
@@ -31,9 +42,10 @@ public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,Fon
     public static Appearance defaults() {
         return new Appearance(true,true,PaneInfo.defaults(),FontChoice.defaults(),"",List.of(),Set.of("ctrl alt K"));
     }
-    public Appearance withTheme(String selected,List<ColorTheme> values) { return new Appearance(outline,windowOutline,info,font,selected,values,retiredShortcuts); }
-    public Appearance withLayout(boolean border,PaneInfo values) { return new Appearance(border,windowOutline,values,font,selectedTheme,themes,retiredShortcuts); }
-    public Appearance withWindowOutline(boolean value) { return new Appearance(outline,value,info,font,selectedTheme,themes,retiredShortcuts); }
-    public Appearance withFont(FontChoice value) { return new Appearance(outline,windowOutline,info,value,selectedTheme,themes,retiredShortcuts); }
+    public Appearance withTheme(String selected,List<ColorTheme> values) { return new Appearance(outline,windowOutline,info,font,selected,values,retiredShortcuts,cursorStyle); }
+    public Appearance withLayout(boolean border,PaneInfo values) { return new Appearance(border,windowOutline,values,font,selectedTheme,themes,retiredShortcuts,cursorStyle); }
+    public Appearance withWindowOutline(boolean value) { return new Appearance(outline,value,info,font,selectedTheme,themes,retiredShortcuts,cursorStyle); }
+    public Appearance withFont(FontChoice value) { return new Appearance(outline,windowOutline,info,value,selectedTheme,themes,retiredShortcuts,cursorStyle); }
+    public Appearance withCursorStyle(CursorStyle value) { return new Appearance(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,value); }
     public Optional<ColorTheme> custom() { return themes.stream().filter(t -> t.name().equals(selectedTheme)).findFirst(); }
 }

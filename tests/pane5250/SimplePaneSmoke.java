@@ -104,7 +104,7 @@ public final class SimplePaneSmoke {
             SavedLayout recipe=new SavedLayout(UUID.randomUUID(),"Synthetic recipe",new StateStore.WindowState(normalized,1100,760,profile),displays);
             StateStore.State state=new StateStore.State(List.of(p),normalized,1100,760).withSavedLayouts(List.of(recipe),recipe.id())
                     .withWindows(List.of(new StateStore.WindowState(normalized,1100,760,profile)));
-            Properties legacy=StateStore.properties(state); legacy.setProperty("version","16");
+            Properties legacy=StateStore.properties(state); legacy.remove("appearance.cursorStyle"); legacy.setProperty("version","16");
             legacy.setProperty("layout",bizarre.encode()); legacy.setProperty("window.0.layout",bizarre.encode());
             legacy.setProperty("profile."+profile+".layout",bizarre.encode());
             legacy.setProperty("savedLayout."+recipe.id()+".layout",bizarre.encode()); legacy.setProperty("savedLayout."+recipe.id()+".version","2");
@@ -122,7 +122,7 @@ public final class SimplePaneSmoke {
             StateStore.State from15=store.decode(version15);
             check(Layout.constrained(from15.layout()) && from15.savedLayouts().getFirst().displays().equals(displays)
                     && new HashSet<>(from15.layout().leaves()).equals(new HashSet<>(panes)),"Actual legacy format15 / recipe1 eight-pane rows migrate without losing IDs or display settings");
-            Properties supported=StateStore.properties(new StateStore.State(List.of(p),manual,1100,760)); supported.setProperty("version","16");
+            Properties supported=StateStore.properties(new StateStore.State(List.of(p),manual,1100,760)); supported.remove("appearance.cursorStyle"); supported.setProperty("version","16");
             check(store.decode(supported).layout().equals(manual),"Supported older shapes and deliberate reasonable divider sizes remain exact");
             Properties relabeled=new Properties(); relabeled.putAll(legacy); relabeled.setProperty("version","17");
             relabeled.setProperty("savedLayout."+recipe.id()+".version","3");

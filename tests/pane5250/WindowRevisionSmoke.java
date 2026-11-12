@@ -104,6 +104,7 @@ public final class WindowRevisionSmoke {
     private static void migration(Path root) throws Exception {
         try (StateStore store=new StateStore(Files.createDirectory(root.resolve("migration")))) {
             Properties legacy=StateStore.properties(StateStore.freshState());
+            legacy.remove("appearance.cursorStyle");
             legacy.setProperty("version","13"); legacy.remove("windows"); legacy.remove("info.footerDevice");
             legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
             for (String flag:List.of("header","footer","profile","connection","host","status","dimensions","cursor","insert")) legacy.setProperty("info."+flag,"true");
@@ -219,7 +220,7 @@ public final class WindowRevisionSmoke {
                 pane.send(KeyMnemonic.INSERT);
                 BufferedImage normal=paint(view,scale);
                 int ink=Ui.color(ColorRole.CURSOR).getRGB()&0xffffff;
-                check(pixels(heavy,ink)>pixels(normal,ink)*1.5,"Insert uses a measurably heavier physical-pixel cursor at "+scale);
+                check(pixels(heavy,ink)>pixels(normal,ink)*1.5,"Insert uses a filled physical-pixel cell at "+scale);
                 if (evidence!=null) { ImageIO.write(heavy,"png",evidence.resolve("cursor-insert-"+scale+".png").toFile()); ImageIO.write(normal,"png",evidence.resolve("cursor-normal-"+scale+".png").toFile()); }
                 view.focused=false;
                 BufferedImage inactive=paint(view,scale);

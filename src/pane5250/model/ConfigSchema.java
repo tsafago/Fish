@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",7); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",8); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -43,6 +43,9 @@ public final class ConfigSchema {
         fields.put("updates.ignoredVersion",field("numeric-version-or-empty","","Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES permits this installed major/minor only; STABLE permits non-prereleases in this installed major. Neither channel installs a new major."));
         fields.put("appearance.outline",field("boolean",true,"Active-pane outline; shared internal edges have one owner."));
         fields.put("appearance.windowOutline",field("boolean",true,"Whole-window outline; known maximize/restore defect remains."));
+        fields.put("appearance.cursorStyle",enumeration("IBM",Arrays.stream(Appearance.CursorStyle.values()).map(Enum::name).toList()));
+        root.put("cursorStyles",Map.of("IBM","Underline in replace mode; filled block in Insert. IBM-documented mode-aware style, not a verified ACS default.",
+                "OUTLINE","Outline in replace mode; filled block in Insert.","FILLED","Filled block in both modes."));
         fields.put("appearance.selected",field("text","","Empty for builtin appTheme, otherwise exact custom theme name."));
         fields.put("appearance.themes",field("integer",0,"0..32; all theme indices 0 through count-1 must be complete."));
         fields.put("appearance.retired",field("newline-separated-strokes","ctrl alt K","Former reserved shortcuts; only valid non-typing application strokes."));
@@ -104,7 +107,7 @@ public final class ConfigSchema {
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
         root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-17.");
-        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before this local 0.7.8 build. Format 17 and recipe 3 use simple pane families. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain. Formats 15/16 and recipes 1/2 migrate deliberately; do not relabel. Downgrade to Fish 0.7.7 or earlier requires restoring the matching backup.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.7.9. Format 18 / recipe 3 retains simple pane families and adds a typed cursor style. Formats through 17 gain IBM (underline replace / filled Insert). Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Formats 15/16 and recipes 1/2 migrate deliberately; do not relabel. Downgrade to Fish 0.7.8 or earlier requires restoring the matching backup.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",
                 "ratio","Finite 0.05..0.95 at parse time; current layouts also require each pane's normalized width and height at least 60% of its balanced share. Structural changes reset balanced ratios. Three-strip root ratio measures its first share after both divider widths are excluded.",
                 "shape","1 full; 2 equal-default halves, H or V; 3 equal-default rows/columns (first leaf then same-axis pair), or a half beside an opposite-axis pair, mirrored/rotated; 4 quadrants; 5-8 quadrants each splitting at most once into two. A quadrant grid has opposite-axis pairs under its root; each of four quadrant children is a leaf or one leaf pair. No deeper nesting. Centers swap. Whole-window edges arrange 2-3 panes; matching strip direction yields equal thirds, otherwise a half and pair. Quadrant edges fill available half-slots or swap/reorient existing slots without subdivision. UI drops require at least 70x70 logical pixels per pane."));

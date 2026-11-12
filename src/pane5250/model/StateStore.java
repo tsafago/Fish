@@ -7,7 +7,7 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="17";
+    public static final String VERSION="18";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
     public record WindowState(Layout layout,int width,int height,UUID lastProfile,UUID addProfile,Map<UUID,SavedLayout.Display> displays) {
@@ -247,7 +247,9 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (Integer.parseInt(version)<18 && properties.containsKey("appearance.cursorStyle"))
+                throw new IllegalArgumentException("Cursor style requires workspace version 18; do not relabel or downgrade it.");
             boolean usability=Integer.parseInt(version)>=8;
             boolean kerberos=Integer.parseInt(version)>=10;
             boolean exact=Integer.parseInt(version)>=12;
@@ -326,7 +328,7 @@ public final class StateStore implements AutoCloseable {
                 String old=shortcuts.remove("Search commands...");
                 if (!old.isBlank()) retired.add(old);
                 appearance=new Appearance(appearance.outline(),appearance.windowOutline(),appearance.info(),appearance.font(),appearance.selectedTheme(),
-                        appearance.themes(),retired);
+                        appearance.themes(),retired,appearance.cursorStyle());
                 notice("Commands window removed; its former shortcut is reserved until explicitly reassigned. All actions remain in menus/shortcuts.");
             }
             if (!usability) {
@@ -455,7 +457,8 @@ public final class StateStore implements AutoCloseable {
             boolean windowOutline=!"5".equals(version) && bool(p,"appearance.windowOutline");
             return new Appearance(bool(p,"appearance.outline"),Integer.parseInt(version)<7 || windowOutline,info,
                     new Appearance.FontChoice(required(p,"font.family"),required(p,"font.file")),
-                    required(p,"appearance.selected"),themes,retired);
+                    required(p,"appearance.selected"),themes,retired,Integer.parseInt(version)>=18
+                            ? Appearance.CursorStyle.valueOf(required(p,"appearance.cursorStyle")) : Appearance.CursorStyle.IBM);
     }
 
     private static String required(Properties properties, String key) {
@@ -516,6 +519,7 @@ public final class StateStore implements AutoCloseable {
         Appearance a=state.appearance;
         properties.setProperty("appearance.outline",Boolean.toString(a.outline()));
         properties.setProperty("appearance.windowOutline",Boolean.toString(a.windowOutline()));
+        properties.setProperty("appearance.cursorStyle",a.cursorStyle().name());
         properties.setProperty("font.family",a.font().family()); properties.setProperty("font.file",a.font().file());
         properties.setProperty("appearance.selected",a.selectedTheme());
         properties.setProperty("appearance.retired",String.join("\n",a.retiredShortcuts()));

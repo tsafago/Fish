@@ -212,6 +212,7 @@ public final class SessionPane extends JPanel {
         else if (!previous.theme().equals(value.theme()) || !previous.effect().equals(value.effect())) view.displayChanged();
         if (previous.zoom()!=value.zoom()) { view.revalidate(); view.repaint(); }
     }
+    Appearance.CursorStyle cursorStyle() { return workspace.appearanceSettings().cursorStyle(); }
     public void updateHeader() {
         boolean active=workspace.active()==this;
         Appearance.PaneInfo info=workspace.appearanceSettings().info();

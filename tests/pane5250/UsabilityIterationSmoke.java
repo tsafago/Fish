@@ -128,9 +128,11 @@ public final class UsabilityIterationSmoke {
             StateStore.State state=new StateStore.State(List.of(p),vertical,1000,700).withSavedLayouts(List.of(recipe),recipe.id());
             store.save(state); check(store.load().equals(state),"Current format persists oriented windows and recipe fit/zoom exactly");
             Properties legacy=StateStore.properties(new StateStore.State(List.of(p),Layout.bounded(slots.subList(0,2)),1000,700));
+            legacy.remove("appearance.cursorStyle");
             legacy.setProperty("version","15");
             check(store.decode(legacy).layout().equals(Layout.bounded(slots.subList(0,2))),"Actual format15 migration keeps geometry and profile IDs");
             Properties oldRecipe=StateStore.properties(state);
+            oldRecipe.remove("appearance.cursorStyle");
             oldRecipe.setProperty("layout",Layout.bounded(slots.subList(0,2)).encode());
             oldRecipe.setProperty("savedLayout."+recipe.id()+".layout",Layout.bounded(slots.subList(0,2)).encode());
             oldRecipe.setProperty("savedLayout."+recipe.id()+".version","1"); oldRecipe.setProperty("version","15");

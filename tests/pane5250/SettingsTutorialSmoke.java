@@ -119,7 +119,7 @@ public final class SettingsTutorialSmoke {
     private static void migration(Path root) throws Exception {
         StateStore.State base=StateStore.freshState();
         try (StateStore store=new StateStore(Files.createDirectory(root.resolve("format")))) {
-            Properties old=StateStore.properties(base); old.setProperty("version","12"); old.setProperty("connectOnStartup","false");
+            Properties old=StateStore.properties(base); old.remove("appearance.cursorStyle"); old.setProperty("version","12"); old.setProperty("connectOnStartup","false");
             old.remove("windows"); old.remove("info.footerDevice");
             old.remove("addProfile"); old.remove("savedLayouts"); old.remove("selectedLayout");
             old.setProperty("binding.Preferences...","ctrl COMMA\nctrl F1@numpad");
@@ -136,11 +136,11 @@ public final class SettingsTutorialSmoke {
             check(KeyboardMigration.report(migrated.keyboardRecovery()).contains("ctrl F1@numpad"),"Recovery appears in actual editor report");
             check(migrated.shortcuts().get("Host F13").equals(old.getProperty("binding.Host F13")),"Host multiline identities untouched");
             store.save(migrated); check(store.load().equals(migrated),"Format 13 full roundtrip");
-            Properties off=StateStore.properties(base); off.setProperty("version","12"); off.setProperty("binding.Preferences...","");
+            Properties off=StateStore.properties(base); off.remove("appearance.cursorStyle"); off.setProperty("version","12"); off.setProperty("binding.Preferences...","");
             off.remove("windows"); off.remove("info.footerDevice");
             off.remove("addProfile"); off.remove("savedLayouts"); off.remove("selectedLayout");
             check(!KeyBindings.effective(store.decode(off).shortcuts()).containsKey(KeyChord.parse("ctrl COMMA")),"Explicit settings unbinding does not resurrect");
-            Properties claimed=StateStore.properties(base); claimed.setProperty("version","12"); claimed.setProperty("binding.Copy selection / screen","ctrl COMMA");
+            Properties claimed=StateStore.properties(base); claimed.remove("appearance.cursorStyle"); claimed.setProperty("version","12"); claimed.setProperty("binding.Copy selection / screen","ctrl COMMA");
             claimed.remove("windows"); claimed.remove("info.footerDevice");
             claimed.remove("addProfile"); claimed.remove("savedLayouts"); claimed.remove("selectedLayout");
             check(KeyBindings.effective(store.decode(claimed).shortcuts()).get(KeyChord.parse("ctrl COMMA")).equals("Copy selection / screen"),"Other custom owner remains intact");

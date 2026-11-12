@@ -149,6 +149,20 @@ One coalescing
 eligible, including minimized windows. Host blink, secrecy, selection and
 cursor remain independent. None is still the default and immediate stop control.
 
+Text and cursor use the same snapped device-space transform. Cell fills/edges
+disable inherited shape antialiasing; glyph masks retain their LCD coverage.
+Dirty cursor painting honors the existing clip, never substitutes a full-screen
+repaint. Replace mode defaults to a one-physical-pixel underline; Insert fills
+the cell with a contrasting, identically positioned glyph. Outline replace or
+always-filled are optional workspace preferences. Hidden/attribute/blink-off
+glyphs stay masked inside the filled cursor. These IBM-documented mode-aware
+choices are not a verified ACS factory-default claim.
+
+Shortcut names retain native Segoe UI sizing/insets and desktop text hints.
+Unicode fallback is derived from the current native field font, not from an
+already substituted fallback, so subsequent ordinary typing restores the same
+native character spacing. The accepted shortcut manager layout is unchanged.
+
 ## Shapes
 
 Rectangular panes and shared flat Swing controls. Hairline borders and the visible

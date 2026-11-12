@@ -391,6 +391,7 @@ public class TerminalView extends JComponent implements Scrollable {
         try {
             // A bare JComponent has no UI delegate to honor its opaque-background contract.
             g.setColor(getBackground());
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_OFF);
             g.fillRect(0,0,getWidth(),getHeight());
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
             g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
@@ -438,22 +439,50 @@ public class TerminalView extends JComponent implements Scrollable {
                     for (EffectTile tile : layer.tiles)
                         if (clip==null || clip.intersects(tile.bounds)) cells.drawImage(tile.image,tile.placement,null);
                 }
+                if (hasFocus() && pane.connected() && screen.isCursorActive() && cursorPhase)
+                    paintCursor(cells,screen,rows,cols);
             } finally { cells.dispose(); }
-            if (hasFocus() && pane.connected() && screen.isCursorActive() && cursorPhase) {
-                int pos = Math.min(screen.getCurrentPos() - 1, rows * cols - 1);
-                Graphics2D cursor=(Graphics2D)g.create();
-                try {
-                    cursor.scale(1/dpiX,1/dpiY);
-                    cursor.setColor(Ui.color(ColorRole.CURSOR));
-                    int x=(int)Math.round((originX+pos%cols*cellWidth)*dpiX);
-                    int y=(int)Math.round((originY+pos/cols*cellHeight)*dpiY);
-                    int width=Math.max(1,(int)Math.round(cellWidth*dpiX)-1),height=Math.max(1,(int)Math.round(cellHeight*dpiY)-1);
-                    int weight=screen.getOIA().isInsertMode() ? Math.min(2,Math.max(1,Math.min(width,height)/3)) : 1;
-                    cursor.fillRect(x,y,width,weight); cursor.fillRect(x,y+height-weight,width,weight);
-                    cursor.fillRect(x,y,weight,height); cursor.fillRect(x+width-weight,y,weight,height);
-                } finally { cursor.dispose(); }
-            }
         } finally { g.dispose(); }
+    }
+    private void paintCursor(Graphics2D cells,Screen5250 screen,int rows,int cols) {
+        int pos=Math.max(0,Math.min(screen.getCurrentPos()-1,rows*cols-1));
+        int col=pos%cols,row=pos/cols,width=(int)baseWidth,height=(int)baseHeight;
+        int x=col*width,y=row*height;
+        Appearance.CursorStyle style=pane.cursorStyle();
+        Color fill=Ui.color(ColorRole.CURSOR);
+        if (!screen.getOIA().isInsertMode() && style!=Appearance.CursorStyle.FILLED) {
+            cells.setColor(fill);
+            cells.fillRect(x,y+height-1,width,1);
+            if (style==Appearance.CursorStyle.OUTLINE) {
+                cells.fillRect(x,y,width,1); cells.fillRect(x,y,1,height); cells.fillRect(x+width-1,y,1,height);
+            }
+            return;
+        }
+        BufferedImage image=new BufferedImage(width,height,BufferedImage.TYPE_INT_RGB);
+        int[] output=((DataBufferInt)image.getRaster().getDataBuffer()).getData();
+        java.util.Arrays.fill(output,fill.getRGB());
+        Color ink=contrast(Color.BLACK,fill)>=contrast(Color.WHITE,fill) ? Color.BLACK : Color.WHITE;
+        for (RenderRun run:rendered.runs) {
+            if (run.row!=row || col<run.start || col>=run.end || run.hidden
+                    || (run.flags&EXTENDED_5250_BLINK)!=0 && !phase) continue;
+            if (run.glyphs!=null) {
+                GlyphMask mask=glyphMask(run.glyphs);
+                int left=(int)(run.inkStart*baseWidth)+mask.left-x,top=(int)ascent+mask.top;
+                for (int n=0;n<mask.positions.length;n++) {
+                    int pixel=mask.positions[n],px=left+pixel%mask.width,py=top+pixel/mask.width;
+                    if (px>=0 && px<width && py>=0 && py<height)
+                        output[py*width+px]=blendInk(fill.getRGB(),ink.getRGB(),mask.coverage[n]);
+                }
+            }
+            Graphics2D details=image.createGraphics();
+            try {
+                details.setColor(ink); details.translate(-x,-y);
+                if ((run.flags&EXTENDED_5250_UNDERLINE)!=0)
+                    details.draw(new Line2D.Double(run.start*baseWidth,row*baseHeight+ascent+1,run.end*baseWidth,row*baseHeight+ascent+1));
+                if (run.separators!=null) details.draw(run.separators);
+            } finally { details.dispose(); }
+        }
+        cells.drawImage(image,x,y,null);
     }
     private record InkMetrics(Font font,double width,double height,double ascent) {}
     private InkMetrics metrics(int pixels) {

@@ -85,7 +85,7 @@ public final class KeyboardPreferencesSmoke {
         check(KeyBindings.defaultClaims(Map.of("Host F13","ENTER@numpad")).stream().anyMatch(s -> s.contains("ENTER -> Host F13")),"Default takeover explicitly reportable");
         Profile first=Profile.createKerberos("First"),second=Profile.createKerberos("Second");
         StateStore.State base=new StateStore.State(List.of(first,second),new Layout.Leaf(UUID.randomUUID(),first.id()),1000,700);
-        Properties legacy=StateStore.properties(base); legacy.setProperty("version","11");
+        Properties legacy=StateStore.properties(base); legacy.remove("appearance.cursorStyle"); legacy.setProperty("version","11");
         legacy.remove("windows"); legacy.remove("info.footerDevice");
         legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
         legacy.setProperty("profile."+first.id()+".key.F2","PF13");

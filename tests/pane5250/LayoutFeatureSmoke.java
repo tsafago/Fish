@@ -108,7 +108,7 @@ public final class LayoutFeatureSmoke {
             rejects(() -> store.decode(invalid),"Relabeled recipe data rejected without downgrade");
             rejects(() -> ProfileManagement.delete(named,second.id()),"Named references prevent dangling profile deletion");
             check(ProfileManagement.delete(state,second.id()).profiles().size()==1,"Unreferenced profile deletion still works");
-            Properties legacy=StateStore.properties(state); legacy.setProperty("version","14");
+            Properties legacy=StateStore.properties(state); legacy.remove("appearance.cursorStyle"); legacy.setProperty("version","14");
             legacy.remove("addProfile"); legacy.remove("savedLayouts"); legacy.remove("selectedLayout");
             StateStore.State upgraded=store.decode(legacy);
             check(upgraded.addProfile().equals(state.lastProfile()) && upgraded.savedLayouts().isEmpty() && !upgraded.connectOnStartup(),

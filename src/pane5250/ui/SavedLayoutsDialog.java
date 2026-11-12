@@ -20,7 +20,13 @@ final class SavedLayoutsDialog extends JDialog {
     }
     private final Workspace workspace;
     private final ShortcutExport shortcutExport;
-    private final JTextField name=new JTextField(24),existingName=new JTextField(24);
+    private final JTextField name=new JTextField(24) {
+        @Override protected void paintComponent(Graphics graphics) {
+            Graphics2D text=(Graphics2D)graphics.create();
+            try { Ui.quality(text); super.paintComponent(text); }
+            finally { text.dispose(); }
+        }
+    },existingName=new JTextField(24);
     private final JComboBox<SavedLayout> layouts=new JComboBox<>();
     private final JLabel context=new JLabel(),message=new JLabel(" ");
     private final JButton create,save,replace,rename,delete,open,export;
@@ -50,7 +56,7 @@ final class SavedLayoutsDialog extends JDialog {
         name.setText(workspace.sessionPanes().size()==1 ? workspace.active().profile().name() : "Work layout");
         name.getAccessibleContext().setAccessibleName("New shortcut layout name");
         Ui.observeEdits(name,() -> {
-            name.setFont(Ui.textFont(name.getFont(),name.getText()));
+            name.setFont(Ui.textFont(UIManager.getFont("TextField.font"),name.getText()));
             if (!refreshing && !name.getText().isBlank()) workspace.tutorialAction("layout-named");
         });
         current.add(row("Name",name),BorderLayout.CENTER);

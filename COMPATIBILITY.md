@@ -5,7 +5,40 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.7.7 local usability build (not published)
+## Fish 0.7.8 local simple-pane revision (not published)
+
+Replaces the earlier local two-lane topology with the confirmed canonical family:
+one full, two halves, three equal strips or a half and pair (rotated/mirrored),
+four quadrants, then each quadrant splits at most once, maximum eight.
+Structural moves/additions rebalance. Whole-window targets for two/three panes
+distinguish thirds and moving a large half intact; quadrant edges at four/eight
+fill or swap/reorient slots without deeper nesting. Centers swap; Undo retains
+the previous arrangement. Preview projection and actual Swing allocation share
+divider-aware pixel sizing, including equal thirds within one logical pixel.
+Stored ratios represent user divider intent, not paint/resize rounding. Repeated
+one-pixel window resizes and repainting cannot accumulate unequal strip sizes.
+
+Format 17 / recipe 3 normalizes unsupported earlier experimental geometry and
+extreme divider ratios with a notice, retaining pane/profile IDs, stable recipe
+IDs and per-pane display state. Already supported reasonable shapes/ratios
+remain. Close all windows and preserve the matching backup before migration;
+local 0.7.7 and older binaries cannot read the new format.
+The distinct 0.7.8 native stamp prevents launch forwarding into old 0.7.7 code.
+Autosaved Settings and the simpler shortcut workflow are retained.
+
+Focused model/production tests cover the direct mirrored/rotated examples,
+whole-vs-local intent, rounding, 1..8 add/remove, repeated eight-pane drops,
+rejected/cancelled targets and unchanged loopback sockets/screens/unsent fields.
+The final Maintenance gate passed, including 4,405 focused simple-pane assertions
+and 1,920 retained autosave/shortcut/docking assertions. A bounded offscreen
+review and one confirmation covered dark/light, 100%/150%, whole-window targets,
+three even rows and eight-pane/minimum-size layouts.
+Offscreen rendering is not physical drag, mixed-monitor, accessibility or real
+IBM i/ACS/SSO acceptance. Existing protocol/perimeter/flicker limits remain.
+No push, public release, installer, visible desktop, shared clipboard,
+credentials/tickets or real-host test is part of this iteration.
+
+## Retained Fish 0.7.7 local usability milestone (not published)
 
 Valid Settings edits now apply/persist after a short coalescing pause, with
 acknowledged Saved status, inline invalid input and stale/save-failure recovery.

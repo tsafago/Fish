@@ -8,14 +8,15 @@ int wmain(int argc,wchar_t **argv) {
     BOOL updates=argc==4 && !wcscmp(argv[2],L"--updates");
     BOOL layouts=argc==4 && !wcscmp(argv[2],L"--layouts");
     BOOL usability=argc==4 && !wcscmp(argv[2],L"--usability");
-    if (argc!=2 && !updates && !layouts && !usability) { fputs("Expected complete Fish image directory [--updates|--layouts|--usability TEST_CLASSES].\n",stderr); return 1; }
+    BOOL simple=argc==4 && !wcscmp(argv[2],L"--simple");
+    if (argc!=2 && !updates && !layouts && !usability && !simple) { fputs("Expected complete Fish image directory [--updates|--layouts|--usability|--simple TEST_CLASSES].\n",stderr); return 1; }
     wchar_t image[32768],bin[32768],library[32768],jar[32768];
     DWORD length=GetFullPathNameW(argv[1],32768,image,NULL);
     if (!length || length>32000) return 1;
     swprintf(bin,32768,L"%ls\\runtime\\bin",image);
     swprintf(library,32768,L"%ls\\server\\jvm.dll",bin);
     swprintf(jar,32768,L"%ls\\app\\Fish.jar",image);
-    if (updates || layouts || usability) {
+    if (updates || layouts || usability || simple) {
         wchar_t classes[32768];
         DWORD size=GetFullPathNameW(argv[3],32768,classes,NULL);
         if (!size || size>32000 || wcslen(jar)+size+2>=32768) return 1;
@@ -33,14 +34,14 @@ int wmain(int argc,wchar_t **argv) {
     char classpath[65536]="-Djava.class.path=";
     size_t prefix=strlen(classpath);
     if (!WideCharToMultiByte(CP_UTF8,0,jar,-1,classpath+prefix,(int)(sizeof(classpath)-prefix),NULL,NULL)) return 1;
-    JavaVMOption options[2]={{classpath,NULL},{usability ? "-Djava.awt.headless=false" : "-Djava.awt.headless=true",NULL}};
+    JavaVMOption options[2]={{classpath,NULL},{usability || simple ? "-Djava.awt.headless=false" : "-Djava.awt.headless=true",NULL}};
     JavaVMInitArgs args={JNI_VERSION_1_8,2,options,JNI_FALSE};
     JavaVM *vm=NULL;
     JNIEnv *env=NULL;
     if (create(&vm,(void **)&env,&args)!=JNI_OK) { fputs("Private JVM startup failed.\n",stderr); return 1; }
     int result=1;
-    if (updates || layouts || usability) {
-        jclass type=(*env)->FindClass(env,usability ? "pane5250/ui/UsabilityIterationSmoke" : layouts ? "pane5250/PackagedLayoutSmoke" : "pane5250/update/PackagedUpdateSmoke");
+    if (updates || layouts || usability || simple) {
+        jclass type=(*env)->FindClass(env,simple ? "pane5250/ui/SimplePaneSmoke" : usability ? "pane5250/ui/UsabilityIterationSmoke" : layouts ? "pane5250/PackagedLayoutSmoke" : "pane5250/update/PackagedUpdateSmoke");
         jmethodID method=type ? (*env)->GetStaticMethodID(env,type,"main","([Ljava/lang/String;)V") : NULL;
         if (method) {
             jobjectArray empty=(*env)->NewObjectArray(env,0,(*env)->FindClass(env,"java/lang/String"),NULL);

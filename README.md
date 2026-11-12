@@ -10,7 +10,7 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.7.7 local usability build (not published)
+## Fish 0.7.8 local simple-pane revision (not published)
 
 **Edit > Settings** now applies valid edits automatically after a short typing
 pause. **Saved** confirms the disk write; invalid fields retain their last usable
@@ -24,20 +24,31 @@ recipe and create its link in one flow. Cancel creates neither. **Save layout on
 and the expandable **Saved layouts** library retain separate save/update/rename/
 delete/open/export operations.
 
-Drag a pane header to another pane's top/bottom for stacked panes, left/right for
-side-by-side, or center to swap. The shaded region shows the resulting geometry
-before release. **Panes > Arrange pane...** is the keyboard route;
-**Undo pane arrangement** restores recent moves. Live sessions remain intact.
-The limit stays eight, with at most two rows or two columns and four on the other
-axis; impossible or too-small drops have no accepted preview.
+Panes now use only simple arrangements: one full window; two halves; three equal
+rows/columns or a half beside two stacked panes (including rotated/mirrored forms);
+four quadrants; then each quadrant can split **once**, up to eight panes.
+Structural adds/moves rebalance sizes instead of accumulating uneven bands.
+Reasonable intentional divider resizing remains available between structural moves.
 
-This local build writes **format 16 / recipe 2**. Close **all** Fish windows and
-back up `workspace.xml` first. Fish 0.7.6 and earlier need the pre-upgrade backup
+With two or three panes, drag to the **window's outer edge** for whole-window
+placement: a large half crosses intact with its opposite pair, or a third pane
+beyond two aligned rows/columns makes **three equal strips**. Inner pane edges
+arrange a half and pair. At four to eight panes, edges operate on quadrant slots:
+fill an available half-slot or swap/reorient existing slots, never nest further.
+Centers always swap. The shaded preview labels **Window** or **Pane** and shows
+the actual resulting geometry. Too-small/invalid/outside drops do not move panes.
+**Panes > Arrange pane...** offers both target areas from the keyboard;
+**Undo pane arrangement** restores recent moves without reconnecting.
+
+This local build writes **format 17 / recipe 3**. Unsupported older experimental
+geometry normalizes with a notice, retaining pane/profile IDs, recipe references
+and display state. Close **all** Fish windows and
+back up `workspace.xml` first. Fish 0.7.7 and earlier need the pre-upgrade backup
 to downgrade. Published [v0.7.6](https://github.com/tsafago/Fish/releases/tag/v0.7.6)
 and its files are unchanged. Run the separate local image:
 
 ```powershell
-& '.\dist\Fish-0.7.7-local-usability\Fish\Fish.exe'
+& '.\dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe'
 ```
 
 ### Retained 0.7.6 shortcut guidance and chrome refinement
@@ -53,8 +64,9 @@ walks through the existing save/export flow using its real controls and destinat
 chooser. Back, Next and both Skip actions remain available; the guide never
 writes or opens a shortcut automatically.
 
-The published 0.7.6 image uses format 15. This local build migrates it to format 16
-without changing existing pane IDs, arrangements, divider ratios or recipes.
+The published 0.7.6 image uses format 15. This local build migrates it to format 17.
+Already supported shapes/reasonable proportions remain; unsupported geometry is
+deliberately simplified without losing sessions' saved identities or recipes.
 
 ### Retained 0.7.5 saved-layout shortcuts and quick connections
 
@@ -241,7 +253,7 @@ That 0.5.3 preview used
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-In this local 0.7.7 build, valid Settings edits autosave; pane scale/layout
+In this local 0.7.8 build, valid Settings edits autosave; pane scale/layout
 actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
@@ -332,8 +344,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.7.7-setup.exe` | Optional installer build; not produced for this local iteration |
-| `dist\Fish-0.7.7-windows-x64.zip` | Copy/extract this local portable application |
+| `dist\Fish-0.7.8-setup.exe` | Optional installer build; not produced for this local iteration |
+| `dist\delivery-0.7.8-local-simple-panes\Fish-0.7.8-local-windows-x64.zip` | Local portable image, alongside matching source and checksums |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -344,16 +356,16 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching local package is **Fish 0.7.7**, local and unpublished.
+The matching local package is **Fish 0.7.8**, local and unpublished.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.7.7-local-usability\Fish` to Package.
-This local delivery is at `dist\Fish-0.7.7-local-usability\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.7.8-local-simple-panes\Fish` to Package.
+This local delivery is at `dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
 ```powershell
-.\dist\Fish-0.7.7-local-usability\Fish\Fish.exe
-.\dist\Fish-0.7.7-local-usability\Fish\Fish.exe --demo
+.\dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe
+.\dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe --demo
 ```
 
 The packaged application includes a private Java runtime; no installed Java,
@@ -433,11 +445,14 @@ offline builds additionally need the pinned JDK and Zig cache already prepared
 
 `Maintenance` is the current noninteractive regression gate. It includes
 `UsabilityIterationSmoke`: acknowledged autosave/invalid/stale/failure/retry
-controls, explicit profile/password boundaries, directional two-lane geometry,
+controls and explicit profile/password boundaries. `SimplePaneSmoke` adds canonical
+halves/thirds/half-and-pair/quadrants, whole-vs-local targets, live field/session
+retention, exact preview/pixel rounding, repeated eight-pane moves and migration.
+Together they cover
 live loopback session preservation, legacy recipes and real native links in a
 temporary folder. Compile `tests\native\packaged-kerberos.c`, then invoke the helper
 as `helper.exe IMAGE_DIRECTORY --usability TEST_CLASSES` to run the fixture
-against the actual private-runtime image; `--layouts`
+against the actual private-runtime image; `--simple` runs the canonical-pane fixture and `--layouts`
 checks its native executable's offline Unicode config CLI and restricted IPC.
 No actual Desktop shortcut, clipboard, ticket, installer or IBM i is needed.
 
@@ -612,10 +627,11 @@ The legacy `Pane5250/` credential target above is intentionally unchanged.
 The last pane layout and window size are restored next launch; connections follow
 the saved startup preference (new/factory ON, existing explicit OFF preserved).
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-16 state, including tutorial progress and explicit login references.
+preset are saved with version-17 state, including tutorial progress and explicit login references.
 Version-1/2/3 profiles and credentials are retained. Only pre-bounded freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
-becomes one offline tile. Format-15 and valid format-16 layouts retain geometry.
+becomes one offline tile. Supported simple layouts retain geometry; unsupported
+format-15/16 geometry simplifies with a notice and unchanged pane/profile IDs.
 A legacy layout over eight panes is rejected explicitly
 without overwriting its file: reduce it using the preserved Pane5250 package
 or use another `--data-dir`. It is never silently truncated.

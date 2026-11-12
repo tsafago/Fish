@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.7 (local, unpublished) exposes its complete local configuration without an AI service, network
+Fish 0.7.8 (local, unpublished) exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -74,10 +74,10 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 16 with recoverable keyboard migration
+An exported legacy workspace is migrated to version 17 with recoverable keyboard migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries (including 0.7.6) cannot read version 16: restore a pre-upgrade backup for a downgrade.
-Do not manually relabel old/future data as version 16. Version-8/9 hosts, sign-in
+save. Older binaries (including 0.7.7) cannot read version 17: restore a pre-upgrade backup for a downgrade.
+Do not manually relabel old/future data as version 17. Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
 is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles
 remain PASSWORD, never silently Kerberos. No existing profile is replaced by a seed.
@@ -150,7 +150,7 @@ only that startup notice, not manual checks or future versions. The endpoint is
 fixed public tsafago/Fish, not configurable; no executable/download URL hook exists.
 Export contains no tokens, download state or installation commands.
 
-Format 16 retains `windows` (the additional-window count) and complete
+Format 17 retains `windows` (the additional-window count) and complete
 `window.{zero-based-index}.layout/width/height/lastProfile/addProfile` entries. The primary
 window still uses the original unprefixed keys. Preserve every window in a full
 snapshot; each has 1-8 bounded panes. Profiles, themes, fonts, shortcuts and other
@@ -158,7 +158,7 @@ settings are shared, not copied per window. `info.footerDevice` controls actual
 allocated device display, independently of optional requested-device header info.
 Only the exact prior built-in information defaults migrate; custom/hidden flags
 remain unchanged. Back up with all Fish windows closed before upgrading. Older
-versions through 0.7.6 cannot read format 16; downgrade by restoring the backup, never relabeling.
+versions through 0.7.7 cannot read format 17; downgrade by restoring the backup, never relabeling.
 All Settings routes now start at Edit > Settings... (Ctrl+,).
 
 Settings UI edits apply and persist valid values automatically, with a short
@@ -167,13 +167,22 @@ the previous usable state. New profiles, credential-store changes, destructive
 actions and exports remain explicit. This does not change the offline CLI's
 whole-snapshot `validate` / atomic `apply` transaction.
 
-Format 16 preserves directional layouts: a leaf spans one row/column; `H` sums
-columns and takes maximum rows, `V` sums rows and takes maximum columns. Each
-span is at most four, and at least one is at most two; total panes remain 1..8.
-Valid topology/order/ratios are not replaced with a fixed grid. Interactive edge
-drops insert locally, center swaps, and all proposed panes must fit 70x70 logical
-pixels. Format-15 fixed shapes and version-1 recipes migrate without geometry,
-identity, profile-reference or display-state changes.
+Format 17 / recipe 3 permits only these canonical families:
+one full pane; two halves (H/V); three equal-default rows/columns or a half and
+opposite-axis pair, mirrored/rotated; four quadrants; five to eight quadrants each
+split at most once into two children. Grid roots have two opposite-axis pairs;
+each of their four quadrant children is a leaf or one leaf pair. Three strips use
+a first leaf followed by a same-axis pair, with root ratio 1/3 and child ratio 1/2
+by default. The strip root's ratio excludes both physical divider widths.
+
+Structural adds/moves equalize affected arrangements. Reasonable intentional
+ratios persist between moves; every pane's normalized width/height must remain
+at least 60% of its balanced share. UI placements also require 70x70 logical
+pixels. Whole-window edges arrange two/three panes; quadrant edges at four/eight
+fill half-slots or swap/reorient existing slots, never nest further. Centers swap.
+Unsupported format-1..16 geometry/extreme ratios normalize with a notice while
+retaining every pane/profile ID, saved-layout UUID and fit/zoom state. Supported
+shapes/ratios remain; current-format invalid geometry is rejected, not normalized.
 
 `addProfile` is this window's titlebar selection for the next + action, not the
 active pane's profile. Old formats initialize it from lastProfile without
@@ -183,7 +192,7 @@ changing startup. `pane.{pane-uuid}.fit/zoom` and
 
 `savedLayouts` lists up to 64 unique stable UUIDs; `selectedLayout` is empty or
 one listed ID (manager selection only). Each `savedLayout.{uuid}.` requires
-version=2, name (1-80 printable characters, unique ignoring case), layout,
+version=3, name (1-80 printable characters, unique ignoring case), layout,
 width/height, lastProfile and addProfile. Every recipe pane requires its own
 `savedLayout.{uuid}.pane.{pane-uuid}.fit/zoom`. All profile IDs must exist;
 profile deletion is blocked until named references are removed or updated.
@@ -317,8 +326,8 @@ delete unrecognized color roles or convert a complete theme to a partial one.
 Layouts use the catalog's prefix grammar: `L|pane-uuid|profile-uuid`, or
 `H|ratio|first|second` / `V|ratio|first|second`. Preserve existing IDs and ratios
 when not asked to rearrange. Use one to eight distinct pane IDs and only listed
-profile IDs. Current, named and per-profile saved layouts must match the format-16
-two-lane span rules above; orientation/order/ratios are preserved. Never invent pane IDs by reusing a profile ID or remove a profile that a
+profile IDs. Current, named and per-profile saved layouts must match the format-17
+canonical families above. Never invent pane IDs by reusing a profile ID or remove a profile that a
 current/saved layout still references.
 
 ## Login reuse and password boundary

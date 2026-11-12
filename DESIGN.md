@@ -74,12 +74,18 @@ transform or bilinear bitmap enlargement. Manual zoom uses the 16px base and scr
 ## Layout
 
 The demo's reference composition is one large left pane and two stacked right
-panes. Persistent constrained slots support 1-8 sessions. Edge docking stacks or
-places panes side by side; the center swaps. One overall axis stays capped at two,
-the other at four. Local insert/contraction preserves unrelated panes and ratios.
+panes. Persistent canonical slots support 1-8 sessions: full, halves, equal thirds,
+a half and opposite-axis pair, quadrants, then each quadrant splits at most once.
+Structural adds/moves rebalance; intentional reasonable divider resizing persists
+between structural changes. No recursive slivers, unequal strip defaults or deep
+nesting. With two/three panes an outer-window band selects whole placement:
+cross a full half intact with its opposite pair, or extend aligned panes into
+equal thirds. Inner edges place locally; with four/eight panes all edges operate
+on quadrant slots (fill half-slots or swap/reorient existing ones). Centers swap.
 Binary containers are implementation details, never unrestricted subdivisions.
 A shaded projected result precedes a valid drop; invalid/minimum-size/self/outside
-drops do not move anything. Arrange pane and Undo provide keyboard control.
+drops do not move anything. Preview labels distinguish Window and Pane, and shade
+the actual reflow. Arrange pane offers both target scopes; Undo restores moves.
 A divider has a
 4px draggable target but paints a 1px line. Headers are 25px high with 8px
 horizontal insets. Display origins retain at least 12px horizontal and 10px
@@ -260,7 +266,7 @@ Reference navigation selects an editor row without assigning a key; complete
 conflict-free binding edits apply and persist automatically.
 
 Directional header targets and shaded pre-drop results follow familiar editor
-docking conventions, constrained to Fish's eight-pane/two-lane grammar rather
+docking conventions, constrained to Fish's confirmed simple eight-pane family rather
 than unrestricted nesting:
 https://code.visualstudio.com/docs/editing/getting-started/userinterface and
 https://learn.microsoft.com/en-us/visualstudio/ide/customizing-window-layouts-in-visual-studio?view=visualstudio#dock-windows .

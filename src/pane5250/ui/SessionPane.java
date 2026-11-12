@@ -733,12 +733,13 @@ public final class SessionPane extends JPanel {
                     String text=(String)data.getTransferData(DataFlavor.stringFlavor);
                     return SavedLayout.reference(text);
                 }
-                private Layout.Dock edge(Point point) { return direction(SwingUtilities.convertPoint(target,point,SessionPane.this),getSize()); }
+                private Workspace.DockTarget placement(Point point) { return workspace.dropTarget(id,target,point); }
                 @Override public void dragEnter(DropTargetDragEvent e) { dragOver(e); }
                 @Override public void dragOver(DropTargetDragEvent e) {
                     try {
                         if ((e.getSourceActions()&DnDConstants.ACTION_MOVE)==0) { workspace.clearPreviews(); e.rejectDrag(); return; }
-                        if (workspace.previewDock(source(e.getTransferable()),id,edge(e.getLocation()))) { e.acceptDrag(DnDConstants.ACTION_MOVE); return; }
+                        Workspace.DockTarget placement=placement(e.getLocation());
+                        if (placement!=null && workspace.previewDock(source(e.getTransferable()),id,placement.dock(),placement.scope())) { e.acceptDrag(DnDConstants.ACTION_MOVE); return; }
                     } catch (UnsupportedFlavorException | IOException | IllegalArgumentException ignored) {
                         // Foreign drags are rejected; they never become commands or files.
                     }
@@ -749,9 +750,9 @@ public final class SessionPane extends JPanel {
                     boolean accepted=false,completed=false;
                     try {
                         if ((e.getSourceActions()&DnDConstants.ACTION_MOVE)==0) { e.rejectDrop(); return; }
-                        UUID pane=source(e.getTransferable()); Layout.Dock dock=edge(e.getLocation());
-                        if (workspace.planDock(pane,id,dock)==null) { e.rejectDrop(); return; }
-                        e.acceptDrop(DnDConstants.ACTION_MOVE); accepted=true; workspace.dock(pane,id,dock); completed=true;
+                        UUID pane=source(e.getTransferable()); Workspace.DockTarget placement=placement(e.getLocation());
+                        if (placement==null || workspace.planDock(pane,id,placement.dock(),placement.scope())==null) { e.rejectDrop(); return; }
+                        e.acceptDrop(DnDConstants.ACTION_MOVE); accepted=true; workspace.dock(pane,id,placement.dock(),placement.scope()); completed=true;
                     } catch (UnsupportedFlavorException | IOException | IllegalArgumentException error) {
                         if (!accepted) e.rejectDrop();
                         problem("Panes not moved: "+error.getMessage());

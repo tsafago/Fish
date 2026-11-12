@@ -1,7 +1,7 @@
 # Fish manual
 
-Fish 0.7.7 - unsigned local usability build; not pushed or published.
-Published 0.7.6 remains unchanged. This build requires a format-16 workspace;
+Fish 0.7.8 - unsigned local simple-pane revision; not pushed or published.
+Published 0.7.6 remains unchanged. This build requires a format-17 workspace;
 close all Fish windows and back up workspace.xml before first launch.
 
 Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
@@ -63,14 +63,14 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs use 0.7.7 names. This local delivery builds only the separate portable image, ZIP and matching source at dist\Fish-0.7.7-local-usability\Fish\Fish.exe; no installer or public release is created. Close a running copy before rebuilding its directory.
+Default build outputs use 0.7.8 names. This local delivery builds only the separate portable image, ZIP and matching source at dist\Fish-0.7.8-local-simple-panes\Fish\Fish.exe; no installer or public release is created. The new version also prevents a launch from silently forwarding to an older local 0.7.7 owner. Close all older windows before using the same workspace; earlier review images remain intact.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.7-local-usability\Fish`.
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.8-local-simple-panes\Fish`.
 An installer remains an optional build task, not part of this local delivery. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
@@ -81,15 +81,15 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish, or the retained
 legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
-The next save writes configuration version 16 with directional layouts and recipe version 2.
-Older binaries, including 0.7.4, cannot read it:
-keep the pre-upgrade backup for downgrade, not just a version-15 export. Never relabel a new export as an older format.
+The next save writes configuration version 17 with simple layouts and recipe version 3.
+Older binaries, including local 0.7.7, cannot read it:
+keep the matching pre-upgrade backup for downgrade. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older workspaces migrate to version 16, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Format 16 preserves directional layouts and writes recipe version 2; format-15 windows and version-1 recipes keep their identities, geometry, proportions and fit/zoom. Format 14 gains an empty recipe library and initializes the selector from each window's last profile; startup stays unchanged. Exact prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.7.6 and earlier cannot read format 16; restore the backup to downgrade, never relabel XML. Format 12 settings bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD, then retain choices. Malformed state is preserved, never reset.
+Older workspaces migrate to version 17, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; already supported shapes and reasonable ratios remain unchanged. Format 14 gains an empty recipe library and initializes the selector from each window's last profile; startup stays unchanged. Exact prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.7.7 and earlier require that backup to downgrade. Format 12 settings bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD, then retain choices. Malformed state is preserved, never reset.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -121,11 +121,13 @@ Windows saved passwords, font files, installation files, unknown files and other
 
 Fish supports one to eight independent sessions per window. Each connected pane has its own TCP socket, host screen and input state. Focus changes, pane moves and window resizing do not reconnect sessions or change host dimensions.
 
-Choose a profile in the titlebar, then press + (Ctrl+N) to add and immediately connect it. Changing that selection alone does not affect a session. The choice is saved per window and follows shared profile renames/order changes. A lone never-used offline tile is reused; a failed, used or explicitly disconnected tile is not replaced by a later add. Add first tries beside the active pane, then below it and other available positions, retaining unrelated panes and proportions. It refuses placements that cannot fit. Adding is disabled at eight with no ninth socket.
+Choose a profile in the titlebar, then press + (Ctrl+N) to add and immediately connect it. Changing that selection alone does not affect a session. The choice is saved per window and follows shared profile renames/order changes. A lone never-used offline tile is reused; a failed, used or explicitly disconnected tile is not replaced by a later add. Adds use simple balanced shapes: one full pane; two halves; three as a half and pair; four quadrants; then split the active or next unsplit quadrant once, never more deeply. A fourth pane after three strips reflows into quadrants. Adding is disabled at eight with no ninth socket.
 
-Drag a pane header to another pane's top/bottom edge to stack panes, or left/right edge for side-by-side placement. The center swaps sessions. A shaded region and divider outlines show the resulting geometry before release; impossible or too-small drops are not accepted. Escape/outside/self drops change nothing. Panes > Arrange pane is the keyboard equivalent; Swap panes retains direct swaps. Undo pane arrangement restores up to 20 recent arrangements without reconnecting. Add/remove clears incompatible undo history. Drag a hairline divider, or use Decrease divider / Increase divider.
+With two/three panes, drag a header to the window's outer edge for whole-window placement. A full-height left pane dragged to the right moves intact, keeping the opposite stacked pair together on the left; top/bottom forms work the same way. Extending two aligned rows/columns at the whole-window bottom/right makes three equal full-width/full-height strips, not a local nested split. Inner pane edges make a half and pair or rebalance thirds. At four to eight panes, edges operate on quadrant slots: fill an available half-slot or swap/reorient existing slots; no extra subdivision. Centers swap panes without changing divider sizes.
 
-The limit stays eight: at least one overall axis is capped at two, the other at four. No 3x3 or unrestricted nested grid is allowed. Valid order, orientation and divider proportions persist in ordinary windows, profile layouts and named recipes. Removing a pane contracts only its split instead of replacing the whole arrangement. Drop candidates require 70x70 logical pixels per pane; enlarge or rearrange the window if there is not enough room.
+A shaded region and outlines show the actual resulting geometry before release, labeled Window or Pane. Invalid/too-small/outside/self placements have no accepted preview; Escape cancels. Panes > Arrange pane exposes the same target-area and direction choices from the keyboard. Swap panes retains direct swaps; Undo pane arrangement restores up to 20 moves without reconnecting. Add/remove clears incompatible undo history.
+
+The only families are one full, two halves, three equal strips or a half and pair (all rotations/mirrors), four quadrants, and five to eight with each quadrant split once into two. Structural changes rebalance sizes. Removing a pane may fill its empty quadrant from the nearest split quadrant, retaining all other live sessions. Reasonable intentional divider resizing persists between structural moves; extreme slivers are refused. Drag a divider or use Decrease / Increase divider. Drop candidates require 70x70 logical pixels per pane; enlarge the window if there is not enough room. Width/height rounding for equal thirds differs by at most one logical pixel.
 
 If headers are hidden, drag near the pane's top at the X overlay's height to arrange or swap. This invisible strip takes no layout space and excludes close, Reset and other controls. Selection and field input below it remain normal; Alt+drag there is an alternative gesture. The terminal context menu and Panes menu retain pane actions.
 
@@ -530,7 +532,7 @@ Launch Fish.exe again or use Session > New window (Ctrl+Shift+N). Each is an ind
 
 Profiles, named recipes, credential references, themes/fonts, shortcuts, updates and information settings are shared live across windows. Settings reuses one app-wide editor; conflicting global changes reject stale drafts instead of overwriting them. Profile edits reach affected windows without replacing their layouts. A window's X disconnects only its sessions and removes it from the saved collection; the final X saves its window. Session > Quit saves the whole open collection for the next ordinary launch with distinct new sessions. Size and fit/zoom persist independently; windows open with a small cascade. Named layout launches have explicit connect intent as described above.
 
-Panes > Save layout to profile and Restore profile layout retain the older one-arrangement-per-profile workflow. Restore replaces this window and connects its intended offline panes once; it can close sessions removed from the layout. Use Saved layouts / shortcuts instead for multiple recipes and new-window launches. The flat Panes menu also holds Arrange, Swap, Undo and divider adjustment. Only pre-bounded historical layouts normalize during migration; valid format-16 directional layouts retain their geometry. Layouts over eight panes are rejected, never truncated.
+Panes > Save layout to profile and Restore profile layout retain the older one-arrangement-per-profile workflow. Restore replaces this window and connects its intended offline panes once; it can close sessions removed from the layout. Use Saved layouts / shortcuts instead for multiple recipes and new-window launches. The flat Panes menu also holds Arrange, Swap, Undo and divider adjustment. Unsupported historical geometry normalizes with a notice into the simple family, without discarding pane/profile identity. Layouts over eight panes are rejected, never truncated.
 
 One owning process retains the exclusive workspace lock and writes a coherent all-window snapshot. Subsequent launches use an owner-only per-user/data-directory rendezvous and authenticated, fixed-size IPv4 loopback requests containing only new-window intent and an optional saved UUID; no commands, files, hosts or credentials. UUID request IDs deduplicate lost acknowledgments. Startup races retry the OS lock, stale crash metadata cannot elect an owner, and incompatible versions/demo modes do not forward into one another. Offline configuration still refuses while ANY window is open. --data-dir remains an optional advanced separate workspace, not a requirement for multiple windows. --layout accepts a strict saved UUID only, not a file or layout name.
 

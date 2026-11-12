@@ -18,56 +18,144 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
         }
     }
     enum Dock { CENTER, LEFT, RIGHT, TOP, BOTTOM }
+    enum Scope { PANE, WINDOW }
     int MAX_PANES = 8;
 
     static Layout bounded(List<Leaf> slots) {
         if (slots.isEmpty() || slots.size()>MAX_PANES)
             throw new IllegalArgumentException("Fish supports 1-8 panes. Original layout and presets have not been discarded.");
         if (slots.size()==1) return slots.getFirst();
-        if (slots.size()==2) return row(slots);
+        if (slots.size()==2) return pair(true,slots.get(0),slots.get(1));
         if (slots.size()==3) return new Split(true,.5,slots.getFirst(),
                 new Split(false,.5,slots.get(1),slots.get(2)));
-        int top=(slots.size()+1)/2;
-        return new Split(false,.5,row(slots.subList(0,top)),row(slots.subList(top,slots.size())));
+        List<Layout> quarters=new ArrayList<>();
+        int extra=slots.size()-4,index=0;
+        for (int q=0;q<4;q++) quarters.add(q<extra
+                ? pair(true,slots.get(index++),slots.get(index++)) : slots.get(index++));
+        return grid(quarters,false);
     }
-    private static Layout row(List<Leaf> slots) {
+    private static Layout legacyRow(List<Leaf> slots) {
         if (slots.size()==1) return slots.getFirst();
-        return new Split(true,1.0/slots.size(),slots.getFirst(),row(slots.subList(1,slots.size())));
+        return new Split(true,1.0/slots.size(),slots.getFirst(),legacyRow(slots.subList(1,slots.size())));
+    }
+    private static Layout pair(boolean horizontal,Layout first,Layout second) {
+        return new Split(horizontal,.5,first,second);
+    }
+    private static Layout strips(List<Leaf> leaves,boolean horizontal) {
+        return new Split(horizontal,1.0/3,leaves.get(0),pair(horizontal,leaves.get(1),leaves.get(2)));
+    }
+    private static Layout grid(List<Layout> quarters,boolean horizontal) {
+        return horizontal
+                ? pair(true,pair(false,quarters.get(0),quarters.get(2)),pair(false,quarters.get(1),quarters.get(3)))
+                : pair(false,pair(true,quarters.get(0),quarters.get(1)),pair(true,quarters.get(2),quarters.get(3)));
+    }
+    private static List<Layout> quarters(Layout layout) {
+        Split root=(Split)layout,a=(Split)root.first,b=(Split)root.second;
+        return new ArrayList<>(root.horizontal ? List.of(a.first,b.first,a.second,b.second)
+                : List.of(a.first,a.second,b.first,b.second));
+    }
+    private static boolean two(Layout node) {
+        return node instanceof Split s && s.first instanceof Leaf && s.second instanceof Leaf;
+    }
+    private static boolean threeStrips(Layout node) {
+        return node instanceof Split s && s.first instanceof Leaf && two(s.second)
+                && ((Split)s.second).horizontal==s.horizontal;
+    }
+    private static boolean simpleShape(Layout layout) {
+        int count=layout.leaves().size();
+        if (count==1) return layout instanceof Leaf;
+        if (!(layout instanceof Split s)) return false;
+        if (count==2) return two(s);
+        if (count==3) return threeStrips(s)
+                || s.first instanceof Leaf && two(s.second) && ((Split)s.second).horizontal!=s.horizontal
+                || s.second instanceof Leaf && two(s.first) && ((Split)s.first).horizontal!=s.horizontal;
+        if (count<4 || count>MAX_PANES || !(s.first instanceof Split a) || !(s.second instanceof Split b)
+                || a.horizontal==s.horizontal || b.horizontal==s.horizontal) return false;
+        return quarters(s).stream().allMatch(q -> q instanceof Leaf || two(q));
+    }
+    static Layout equalize(Layout layout) {
+        if (!(layout instanceof Split s)) return layout;
+        return new Split(s.horizontal,threeStrips(s) ? 1.0/3 : .5,equalize(s.first),equalize(s.second));
     }
     static Layout normalize(Layout layout) {
         if (constrained(layout)) return layout;
-        Layout expected=bounded(layout.leaves());
-        return sameShape(layout,expected) ? layout : expected;
-    }
-    record Span(int columns,int rows) {}
-    default Span span() {
-        if (this instanceof Empty) return new Span(0,0);
-        if (this instanceof Leaf) return new Span(1,1);
-        Split split=(Split)this;
-        Span a=split.first.span(),b=split.second.span();
-        return split.horizontal ? new Span(a.columns+b.columns,Math.max(a.rows,b.rows))
-                : new Span(Math.max(a.columns,b.columns),a.rows+b.rows);
+        if (simpleShape(layout)) return equalize(layout);
+        List<Leaf> leaves=layout.leaves();
+        if (leaves.size()==3 && layout instanceof Split s
+                && (s.first instanceof Split a && a.horizontal==s.horizontal
+                    || s.second instanceof Split b && b.horizontal==s.horizontal)) return strips(leaves,s.horizontal);
+        return bounded(leaves);
     }
     static boolean constrained(Layout layout) {
-        int size=layout.leaves().size(); Span span=layout.span();
-        return size>=1 && size<=MAX_PANES && span.columns<=4 && span.rows<=4
-                && (span.columns<=2 || span.rows<=2);
+        if (!simpleShape(layout)) return false;
+        Map<UUID,double[]> actual=new HashMap<>(),balanced=new HashMap<>();
+        fractions(layout,1,1,actual); fractions(equalize(layout),1,1,balanced);
+        return actual.entrySet().stream().allMatch(entry -> {
+            double[] expected=balanced.get(entry.getKey()),value=entry.getValue();
+            return value[0]+1e-9>=expected[0]*.6 && value[1]+1e-9>=expected[1]*.6;
+        });
+    }
+    private static void fractions(Layout layout,double width,double height,Map<UUID,double[]> result) {
+        if (layout instanceof Leaf leaf) { result.put(leaf.pane,new double[]{width,height}); return; }
+        Split s=(Split)layout;
+        fractions(s.first,width*(s.horizontal ? s.ratio : 1),height*(s.horizontal ? 1 : s.ratio),result);
+        fractions(s.second,width*(s.horizontal ? 1-s.ratio : 1),height*(s.horizontal ? 1 : 1-s.ratio),result);
+    }
+    static int firstPixels(Split split,int extent) {
+        return firstPixels(split,extent,split.ratio);
+    }
+    static int firstPixels(Split split,int extent,double ratio) {
+        // A three-strip root must reserve both divider gaps before dividing its first share.
+        return (int)Math.round(Math.max(0,extent-4-(threeStrips(split) ? 4 : 0))*ratio);
+    }
+    static double dividerRatio(boolean threeStrips,int location,int extent) {
+        return location/(double)Math.max(1,extent-4-(threeStrips ? 4 : 0));
+    }
+    static boolean isThreeStrips(Layout layout) { return threeStrips(layout); }
+    default String arrangement() {
+        if (leaves().size()==1) return "Full window";
+        if (leaves().size()==2) return "Equal halves";
+        if (threeStrips(this)) return ((Split)this).horizontal ? "Three equal columns" : "Three equal rows";
+        return leaves().size()==3 ? "Half and pair" : leaves().size()==4 ? "Quadrants" : "Split quadrants";
     }
     static boolean legacyShape(Layout layout) {
-        return !layout.leaves().isEmpty() && sameShape(layout,bounded(layout.leaves()));
+        List<Leaf> leaves=layout.leaves(); int size=leaves.size();
+        if (size<1 || size>MAX_PANES) return false;
+        Layout expected=size<4 ? bounded(leaves) : pair(false,legacyRow(leaves.subList(0,(size+1)/2)),
+                legacyRow(leaves.subList((size+1)/2,size)));
+        return sameShape(layout,expected);
     }
     default Layout add(Leaf added,UUID active) {
         return add(added,active,next -> true);
     }
     default Layout add(Leaf added,UUID active,java.util.function.Predicate<Layout> fits) {
         if (leaves().size()>=MAX_PANES) throw new IllegalArgumentException("Eight panes open; close one before adding.");
-        List<Leaf> order=new ArrayList<>(leaves());
-        order.sort(Comparator.comparing(leaf -> !leaf.pane.equals(active)));
-        for (Leaf target:order) for (Dock edge:List.of(Dock.RIGHT,Dock.BOTTOM)) {
-            Layout next=insert(target.pane,added,edge);
+        if (leaves().stream().anyMatch(leaf -> leaf.pane.equals(added.pane))) throw new IllegalArgumentException("Duplicate pane ID.");
+        if (leaves().stream().noneMatch(leaf -> leaf.pane.equals(active))) throw new IllegalArgumentException("Active pane is missing.");
+        Layout current=equalize(normalize(this));
+        if (current.leaves().size()<3) {
+            Layout next=current instanceof Leaf ? pair(true,current,added)
+                    : current.insert(active,added,((Split)current).horizontal ? Dock.BOTTOM : Dock.RIGHT);
             if (constrained(next) && fits.test(next)) return next;
+        } else if (current.leaves().size()==3) {
+            Split s=(Split)current;
+            List<Leaf> order=new ArrayList<>(current.leaves()); order.add(added);
+            Layout next=threeStrips(s) ? bounded(order)
+                    : new Split(s.horizontal,.5,s.first instanceof Leaf ? pair(!s.horizontal,s.first,added) : s.first,
+                            s.second instanceof Leaf ? pair(!s.horizontal,s.second,added) : s.second);
+            if (fits.test(next)) return next;
+        } else {
+            List<Layout> quarters=quarters(current);
+            List<Integer> order=new ArrayList<>(List.of(0,1,2,3));
+            order.sort(Comparator.comparing(q -> quarters.get(q).leaves().stream().noneMatch(leaf -> leaf.pane.equals(active))));
+            for (int q:order) if (quarters.get(q) instanceof Leaf leaf)
+                for (boolean horizontal:List.of(true,false)) {
+                    List<Layout> next=new ArrayList<>(quarters); next.set(q,pair(horizontal,leaf,added));
+                    Layout candidate=grid(next,((Split)current).horizontal);
+                    if (fits.test(candidate)) return candidate;
+                }
         }
-        throw new IllegalArgumentException("No room in this two-lane layout. Enlarge the window or rearrange panes before adding.");
+        throw new IllegalArgumentException("No room for another simple pane. Enlarge the window; each quadrant splits only once.");
     }
     private static boolean sameShape(Layout a,Layout b) {
         if (a instanceof Leaf) return b instanceof Leaf;
@@ -100,10 +188,36 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
     }
 
     default Layout remove(UUID pane) {
+        if (leaves().stream().noneMatch(leaf -> leaf.pane.equals(pane))) return this;
+        if (leaves().size()<=4) {
+            Layout result=removeRaw(pane);
+            return result==null ? null : equalize(normalize(result));
+        }
+        List<Layout> quarters=quarters(this);
+        int removed=quarter(quarters,pane);
+        Layout remaining=quarters.get(removed).removeRaw(pane); quarters.set(removed,remaining);
+        if (remaining==null) {
+            int donor=-1,distance=Integer.MAX_VALUE;
+            for (int q=0;q<4;q++) if (two(quarters.get(q))) {
+                int next=Math.abs(q%2-removed%2)+Math.abs(q/2-removed/2);
+                if (next<distance) { donor=q; distance=next; }
+            }
+            Split split=(Split)quarters.get(donor);
+            boolean before=removed<donor;
+            quarters.set(removed,before ? split.first : split.second);
+            quarters.set(donor,before ? split.second : split.first);
+        }
+        return grid(quarters,((Split)this).horizontal);
+    }
+    private static int quarter(List<Layout> quarters,UUID pane) {
+        for (int q=0;q<4;q++) if (quarters.get(q).leaves().stream().anyMatch(leaf -> leaf.pane.equals(pane))) return q;
+        throw new IllegalArgumentException("Pane is missing.");
+    }
+    private Layout removeRaw(UUID pane) {
         if (this instanceof Empty) return this;
         if (this instanceof Leaf leaf) return leaf.pane.equals(pane) ? null : leaf;
         Split split = (Split) this;
-        Layout first = split.first.remove(pane), second = split.second.remove(pane);
+        Layout first = split.first.removeRaw(pane), second = split.second.removeRaw(pane);
         if (first == null) return second;
         if (second == null) return first;
         return new Split(split.horizontal, split.ratio, first, second);
@@ -123,13 +237,40 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
     }
 
     default Layout move(UUID source, UUID target, Dock dock) {
+        return move(source,target,dock,Scope.PANE);
+    }
+    default Layout move(UUID source,UUID target,Dock dock,Scope scope) {
+        Leaf from=leaves().stream().filter(l -> l.pane.equals(source)).findFirst().orElseThrow(() -> new IllegalArgumentException("Source pane is missing."));
+        if (scope==Scope.WINDOW) {
+            if (dock==Dock.CENTER || leaves().size()>3 || leaves().size()<2)
+                throw new IllegalArgumentException("Whole-window edges arrange two or three panes. Use quadrant edges or centers for four to eight.");
+            boolean horizontal=dock==Dock.LEFT || dock==Dock.RIGHT,before=dock==Dock.LEFT || dock==Dock.TOP;
+            Layout rest=Objects.requireNonNull(removeRaw(source));
+            if (rest instanceof Leaf) return pair(horizontal,before ? from : rest,before ? rest : from);
+            if (((Split)rest).horizontal==horizontal) {
+                List<Leaf> order=new ArrayList<>(rest.leaves()); order.add(before ? 0 : order.size(),from);
+                return strips(order,horizontal);
+            }
+            return pair(horizontal,before ? from : equalize(rest),before ? equalize(rest) : from);
+        }
         if (source.equals(target)) return this;
-        Leaf from = leaves().stream().filter(l -> l.pane.equals(source)).findFirst().orElseThrow();
-        Leaf to = leaves().stream().filter(l -> l.pane.equals(target)).findFirst().orElseThrow();
+        Leaf to = leaves().stream().filter(l -> l.pane.equals(target)).findFirst().orElseThrow(() -> new IllegalArgumentException("Target pane is missing."));
         if (dock == Dock.CENTER) return swap(source, target, from, to);
-        Layout result=Objects.requireNonNull(remove(source)).insert(target, from, dock);
-        if (!constrained(result)) throw new IllegalArgumentException("Use at most two rows or two columns, with at most four panes along the other axis.");
-        return result;
+        if (leaves().size()<4) return equalize(normalize(Objects.requireNonNull(removeRaw(source)).insert(target,from,dock)));
+        List<Layout> quarters=quarters(this);
+        int a=quarter(quarters,source),b=quarter(quarters,target);
+        if (a!=b && two(quarters.get(a)) && quarters.get(b) instanceof Leaf) {
+            quarters.set(a,Objects.requireNonNull(quarters.get(a).removeRaw(source)));
+            quarters.set(b,to.insert(target,from,dock));
+        } else {
+            Layout swapped=swap(source,target,from,to);
+            quarters=quarters(swapped);
+            if (two(quarters.get(b))) {
+                Leaf other=quarters.get(b).leaves().stream().filter(l -> !l.pane.equals(source)).findFirst().orElseThrow();
+                quarters.set(b,other.insert(other.pane,from,dock));
+            }
+        }
+        return grid(quarters,((Split)this).horizontal);
     }
 
     private Layout swap(UUID source, UUID target, Leaf from, Leaf to) {

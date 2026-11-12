@@ -36,6 +36,7 @@ public final class Workspace extends JFrame {
     private List<SavedLayout> savedLayouts;
     private UUID selectedLayout;
     private Component tree;
+    private boolean adjustingDividers,rebuildingLayout;
     private final Deque<Layout> arrangementHistory=new ArrayDeque<>();
     private final JComponent dropOverlay=new JComponent() {
         @Override public boolean contains(int x,int y) { return false; }
@@ -47,19 +48,27 @@ public final class Workspace extends JFrame {
                 Rectangle r=entry.getValue();
                 if (entry.getKey().equals(dropPlan.source())) {
                     g.setColor(new Color(Ui.FOCUS.getRed(),Ui.FOCUS.getGreen(),Ui.FOCUS.getBlue(),65)); g.fill(r);
+                    g.setColor(Ui.FOCUS);
                     Hairline.rectangle(g,r.x+1,r.y+1,r.width-2,r.height-2);
-                    String label=dropPlan.dock()==Layout.Dock.CENTER ? "Swap panes" : "Place "+dropPlan.dock().name().toLowerCase(Locale.ROOT);
-                    FontMetrics metrics=g.getFontMetrics(); int width=metrics.stringWidth(label)+16,height=metrics.getHeight()+8;
+                    String label=dropPlan.dock()==Layout.Dock.CENTER ? "Swap panes" : (dropPlan.scope()==Layout.Scope.WINDOW ? "Window " : "Pane ")
+                            +dropPlan.dock().name().toLowerCase(Locale.ROOT)+" - "+dropPlan.layout().arrangement();
+                    FontMetrics metrics=g.getFontMetrics();
+                    if (metrics.stringWidth(label)+16>r.width-8) label=dropPlan.dock()==Layout.Dock.CENTER ? "Swap"
+                            : (dropPlan.scope()==Layout.Scope.WINDOW ? "Window " : "Pane ")+dropPlan.dock().name().toLowerCase(Locale.ROOT);
+                    if (metrics.stringWidth(label)+16>r.width-8) label=dropPlan.scope()==Layout.Scope.WINDOW ? "Window" : "Pane";
+                    int width=metrics.stringWidth(label)+16,height=metrics.getHeight()+8;
                     int x=r.x+(r.width-width)/2,y=r.y+(r.height-height)/2;
                     g.setColor(Ui.PANEL); g.fillRect(x,y,width,height);
+                    g.setColor(Ui.LINE);
                     Hairline.rectangle(g,x,y,width,height);
                     g.setColor(Ui.TEXT); g.drawString(label,x+8,y+4+metrics.getAscent());
-                } else Hairline.rectangle(g,r.x,r.y,r.width,r.height);
+                } else { g.setColor(Ui.FOCUS); Hairline.rectangle(g,r.x,r.y,r.width,r.height); }
             }
             g.dispose();
         }
     };
-    record DropPlan(UUID source,UUID target,Layout.Dock dock,Layout layout,Map<UUID,Rectangle> bounds) {}
+    record DropPlan(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope,Layout layout,Map<UUID,Rectangle> bounds) {}
+    record DockTarget(UUID pane,Layout.Dock dock,Layout.Scope scope) {}
     private DropPlan dropPlan;
     private final boolean demonstration;
     private boolean closing;
@@ -420,8 +429,11 @@ public final class Workspace extends JFrame {
             if (!live.contains(entry.getKey())) { entry.getValue().dispose(); iterator.remove(); }
         }
         content.removeAll();
-        tree = component(layout);
+        rebuildingLayout=true;
+        try { tree = component(layout); } finally { rebuildingLayout=false; }
         content.add(tree,BorderLayout.CENTER);
+        Dimension minimum=tree.getMinimumSize();
+        setMinimumSize(new Dimension(Math.max(330,minimum.width+4),Math.max(260,minimum.height+35)));
         if (active == null || !live.contains(active.id())) active = live.isEmpty() ? null : panes.get(layout.leaves().getFirst().pane());
         panes.values().forEach(SessionPane::updateHeader);
         refreshShortcutLabels();
@@ -437,13 +449,25 @@ public final class Workspace extends JFrame {
         Layout.Split split = (Layout.Split) node;
         JSplitPane divider = new JSplitPane(split.horizontal() ? JSplitPane.HORIZONTAL_SPLIT : JSplitPane.VERTICAL_SPLIT,
                 component(split.first()),component(split.second())) {
-            private boolean initial=true;
             @Override public void doLayout() {
-                if (initial && getWidth()>0 && getHeight()>0) { initial=false; setDividerLocation(split.ratio()); }
-                super.doLayout();
+                boolean before=adjustingDividers; adjustingDividers=true;
+                try {
+                    // Swing's incremental resize allocation drifts; panes and previews use one partition.
+                    Rectangle[] areas=partition(split,new Rectangle(0,0,getWidth(),getHeight()),(double)getClientProperty("userRatio"));
+                    int location=split.horizontal() ? areas[0].width : areas[0].height;
+                    if (getDividerLocation()!=location) setDividerLocation(location);
+                    super.doLayout();
+                    getLeftComponent().setBounds(areas[0]); getRightComponent().setBounds(areas[1]);
+                    if (getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI ui)
+                        ui.getDivider().setBounds(split.horizontal() ? new Rectangle(location,0,4,getHeight()) : new Rectangle(0,location,getWidth(),4));
+                    if (getDividerLocation()!=location) setDividerLocation(location);
+                } finally {
+                    adjustingDividers=before;
+                }
             }
         };
-        divider.putClientProperty("initialRatio",split.ratio());
+        divider.putClientProperty("userRatio",split.ratio());
+        divider.putClientProperty("threeStrips",Layout.isThreeStrips(split));
         divider.setBorder(BorderFactory.createEmptyBorder());
         divider.setDividerSize(4);
         divider.setContinuousLayout(true);
@@ -451,23 +475,48 @@ public final class Workspace extends JFrame {
         divider.setOneTouchExpandable(false);
         divider.setBackground(Ui.LINE);
         divider.setUI(new FlatControls.Split());
-        divider.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY,e -> changed());
+        divider.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY,e -> dividerChanged(divider,(int)e.getOldValue()));
         if (divider.getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI ui) ui.getDivider().addMouseListener(new MouseAdapter() {
             private int start;
-            @Override public void mousePressed(MouseEvent e) { start=divider.getDividerLocation(); }
+            @Override public void mousePressed(MouseEvent e) {
+                start=divider.getDividerLocation();
+                if (SwingUtilities.isLeftMouseButton(e)) divider.putClientProperty("editingDivider",true);
+            }
             @Override public void mouseReleased(MouseEvent e) {
+                divider.putClientProperty("editingDivider",false);
                 if (start!=divider.getDividerLocation()) tutorialAction(split.horizontal() ? "divider-horizontal" : "divider-vertical");
             }
         });
         return divider;
     }
+    private void dividerChanged(JSplitPane divider,int before) {
+        if (adjustingDividers || rebuildingLayout || tree==null || !Boolean.TRUE.equals(divider.getClientProperty("editingDivider"))) return;
+        adjustingDividers=true;
+        double previousRatio=(double)divider.getClientProperty("userRatio");
+        try {
+            int extent=divider.getOrientation()==JSplitPane.HORIZONTAL_SPLIT ? divider.getWidth() : divider.getHeight();
+            if (extent>4) divider.putClientProperty("userRatio",Layout.dividerRatio(
+                    Boolean.TRUE.equals(divider.getClientProperty("threeStrips")),divider.getDividerLocation(),extent));
+            Layout candidate=capture(tree);
+            if (before>=0 && (!Layout.constrained(candidate)
+                    || content.getWidth()>0 && content.getHeight()>0
+                    && project(candidate,new Rectangle(0,0,content.getWidth(),content.getHeight())).values().stream().anyMatch(r -> r.width<70 || r.height<70))) {
+                divider.setDividerLocation(before);
+                divider.putClientProperty("userRatio",previousRatio);
+            }
+        } finally { adjustingDividers=false; }
+        changed();
+    }
+    void resizeDivider(JSplitPane divider,int location) {
+        divider.putClientProperty("editingDivider",true);
+        try { divider.setDividerLocation(location); }
+        finally { divider.putClientProperty("editingDivider",false); }
+    }
     private Layout capture(Component component) {
         if (component==tree && layout instanceof Layout.Empty) return layout;
         if (component instanceof SessionPane pane) return new Layout.Leaf(pane.id(),pane.profile().id());
         JSplitPane split = (JSplitPane) component;
-        int total = (split.getOrientation() == JSplitPane.HORIZONTAL_SPLIT ? split.getWidth() : split.getHeight()) - split.getDividerSize();
-        double ratio = total > 0 && split.getDividerLocation() >= 0 ? split.getDividerLocation() / (double) total
-                : (double) split.getClientProperty("initialRatio");
+        double ratio=(double)split.getClientProperty("userRatio");
         return new Layout.Split(split.getOrientation() == JSplitPane.HORIZONTAL_SPLIT,
                 Math.max(.05,Math.min(.95,ratio)),capture(split.getLeftComponent()),capture(split.getRightComponent()));
     }
@@ -521,7 +570,10 @@ public final class Workspace extends JFrame {
         tutorialAction("Add pane");
     }
     public void dock(UUID source, UUID target, Layout.Dock dock) {
-        DropPlan plan=planDock(source,target,dock);
+        dock(source,target,dock,Layout.Scope.PANE);
+    }
+    void dock(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope) {
+        DropPlan plan=planDock(source,target,dock,scope);
         clearPreviews();
         if (plan==null) return;
         arrangementHistory.push(currentLayout());
@@ -541,29 +593,53 @@ public final class Workspace extends JFrame {
     private static void project(Layout layout,Rectangle r,Map<UUID,Rectangle> result) {
         if (layout instanceof Layout.Leaf leaf) { result.put(leaf.pane(),new Rectangle(r)); return; }
         Layout.Split split=(Layout.Split)layout;
+        Rectangle[] areas=partition(split,r,split.ratio());
+        project(split.first(),areas[0],result); project(split.second(),areas[1],result);
+    }
+    private static Rectangle[] partition(Layout.Split split,Rectangle r,double ratio) {
         int length=Math.max(0,(split.horizontal() ? r.width : r.height)-4);
-        int first=(int)(length*split.ratio());
+        int first=Layout.firstPixels(split,(split.horizontal() ? r.width : r.height),ratio);
         Rectangle a=new Rectangle(r),b=new Rectangle(r);
         if (split.horizontal()) { a.width=first; b.x+=first+4; b.width=length-first; }
         else { a.height=first; b.y+=first+4; b.height=length-first; }
-        project(split.first(),a,result); project(split.second(),b,result);
+        return new Rectangle[]{a,b};
     }
     DropPlan planDock(UUID source,UUID target,Layout.Dock dock) {
-        if (closing() || settingsSaving() || source.equals(target) || !hasPane(source) || !hasPane(target)) return null;
+        return planDock(source,target,dock,Layout.Scope.PANE);
+    }
+    DropPlan planDock(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope) {
+        if (closing() || settingsSaving() || scope==Layout.Scope.PANE && source.equals(target) || !hasPane(source) || !hasPane(target)) return null;
         try {
-            Layout next=currentLayout().move(source,target,dock);
+            Layout current=currentLayout(),next=current.move(source,target,dock,scope);
+            if (next.equals(current)) return null;
             Map<UUID,Rectangle> bounds=project(next,new Rectangle(0,0,content.getWidth(),content.getHeight()));
             if (dock!=Layout.Dock.CENTER && bounds.values().stream().anyMatch(r -> r.width<70 || r.height<70)) return null;
-            return new DropPlan(source,target,dock,next,bounds);
+            return new DropPlan(source,target,dock,scope,next,bounds);
         } catch (IllegalArgumentException e) { return null; }
     }
     boolean previewDock(UUID source,UUID target,Layout.Dock dock) {
-        clearPreviews(); dropPlan=planDock(source,target,dock);
+        return previewDock(source,target,dock,Layout.Scope.PANE);
+    }
+    boolean previewDock(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope) {
+        clearPreviews(); dropPlan=planDock(source,target,dock,scope);
         if (dropPlan==null) return false;
         Rectangle bounds=SwingUtilities.convertRectangle(content,new Rectangle(0,0,content.getWidth(),content.getHeight()),getLayeredPane());
         dropOverlay.setBounds(bounds);
         getLayeredPane().add(dropOverlay,JLayeredPane.DRAG_LAYER); dropOverlay.repaint();
         return true;
+    }
+    DockTarget dropTarget(UUID pane,Component origin,Point position) {
+        return dropTarget(pane,SwingUtilities.convertPoint(origin,position,content));
+    }
+    DockTarget dropTarget(UUID pane,Point position) {
+        if (!content.contains(position) || !hasPane(pane)) return null;
+        int left=position.x,right=content.getWidth()-1-position.x,top=position.y,bottom=content.getHeight()-1-position.y;
+        int nearest=Math.min(Math.min(left,right),Math.min(top,bottom));
+        int band=Math.min(28,Math.max(12,Math.min(content.getWidth(),content.getHeight())/20));
+        if (panes.size()<=3 && nearest<band) return new DockTarget(pane,nearest==top ? Layout.Dock.TOP : nearest==bottom ? Layout.Dock.BOTTOM
+                : nearest==left ? Layout.Dock.LEFT : Layout.Dock.RIGHT,Layout.Scope.WINDOW);
+        Point local=SwingUtilities.convertPoint(content,position,panes.get(pane));
+        return new DockTarget(pane,SessionPane.direction(local,panes.get(pane).getSize()),Layout.Scope.PANE);
     }
     void undoArrangement() {
         if (arrangementHistory.isEmpty()) return;
@@ -608,7 +684,7 @@ public final class Workspace extends JFrame {
         if (parent instanceof JSplitPane split) {
             int before=split.getDividerLocation();
             int length = (split.getOrientation() == JSplitPane.HORIZONTAL_SPLIT ? split.getWidth() : split.getHeight()) - split.getDividerSize();
-            split.setDividerLocation(Math.max(.05,Math.min(.95,split.getDividerLocation() / (double) Math.max(1,length) + delta)));
+            resizeDivider(split,(int)Math.round(length*Math.max(.05,Math.min(.95,split.getDividerLocation() / (double) Math.max(1,length) + delta))));
             if (before!=split.getDividerLocation()) tutorialAction(split.getOrientation()==JSplitPane.HORIZONTAL_SPLIT ? "divider-horizontal" : "divider-vertical");
         } else active.problem("Add another pane first; there is no divider to adjust.");
     }
@@ -629,22 +705,31 @@ public final class Workspace extends JFrame {
         List<SessionPane> others=sessionPanes().stream().filter(p -> p!=source).toList();
         JComboBox<String> target=new JComboBox<>(others.stream().map(p -> paneName(p.id())+" - "+p.profile().name()).toArray(String[]::new));
         JComboBox<Layout.Dock> direction=new JComboBox<>(Layout.Dock.values());
+        JComboBox<String> scope=new JComboBox<>(new String[]{"Pane / quadrant","Whole window (2-3 panes)"});
         JPanel form=new JPanel(new GridLayout(0,2,10,10));
         JLabel targetLabel=new JLabel("Beside pane"); targetLabel.setLabelFor(target);
         JLabel edgeLabel=new JLabel("Placement"); edgeLabel.setLabelFor(direction);
-        JLabel hint=new JLabel("Center swaps; edges split. Invalid positions are not accepted.");
-        form.add(targetLabel); form.add(target); form.add(edgeLabel); form.add(direction); form.add(hint); form.add(new JLabel());
+        JLabel scopeLabel=new JLabel("Target area"); scopeLabel.setLabelFor(scope);
+        JLabel hint=new JLabel("Centers swap. Edges keep simple balanced layouts.");
+        form.add(scopeLabel); form.add(scope); form.add(targetLabel); form.add(target); form.add(edgeLabel); form.add(direction); form.add(hint); form.add(new JLabel());
         Runnable preview=() -> {
-            boolean valid=previewDock(source.id(),others.get(target.getSelectedIndex()).id(),(Layout.Dock)direction.getSelectedItem());
-            hint.setText(valid ? "Highlighted position; Arrange confirms." : "Not enough room or outside the two-lane limit.");
+            Layout.Scope area=scope.getSelectedIndex()==0 ? Layout.Scope.PANE : Layout.Scope.WINDOW;
+            boolean valid=previewDock(source.id(),others.get(target.getSelectedIndex()).id(),(Layout.Dock)direction.getSelectedItem(),area);
+            hint.setText(valid ? "Highlighted result; Arrange confirms." : "No simple placement here, or not enough room. No panes will move.");
         };
-        target.addActionListener(e -> preview.run()); direction.addActionListener(e -> preview.run()); preview.run();
+        target.addActionListener(e -> preview.run()); direction.addActionListener(e -> preview.run());
+        scope.addActionListener(e -> {
+            target.setEnabled(scope.getSelectedIndex()==0);
+            if (scope.getSelectedIndex()==1 && direction.getSelectedItem()==Layout.Dock.CENTER) direction.setSelectedItem(Layout.Dock.BOTTOM);
+            preview.run();
+        }); preview.run();
         boolean accepted=Ui.form(this,"Arrange pane",form,"Arrange");
         Layout.Dock edge=(Layout.Dock)direction.getSelectedItem();
-        boolean valid=planDock(source.id(),others.get(target.getSelectedIndex()).id(),edge)!=null;
+        Layout.Scope area=scope.getSelectedIndex()==0 ? Layout.Scope.PANE : Layout.Scope.WINDOW;
+        boolean valid=planDock(source.id(),others.get(target.getSelectedIndex()).id(),edge,area)!=null;
         clearPreviews();
-        if (accepted && valid) dock(source.id(),others.get(target.getSelectedIndex()).id(),edge);
-        else if (accepted) source.problem("This position needs more space or exceeds the two-lane limit. No panes moved.");
+        if (accepted && valid) dock(source.id(),others.get(target.getSelectedIndex()).id(),edge,area);
+        else if (accepted) source.problem("No simple placement here, or not enough room. No panes moved.");
     }
 
     public void profiles() { new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true); }

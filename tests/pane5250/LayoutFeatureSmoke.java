@@ -96,7 +96,7 @@ public final class LayoutFeatureSmoke {
             Properties invalid=new Properties(); invalid.putAll(values);
             invalid.setProperty("savedLayout."+one.id()+".pane."+b.pane()+".zoom","NaN");
             rejects(() -> store.decode(invalid),"Nonfinite saved zoom rejected");
-            invalid.clear(); invalid.putAll(values); invalid.setProperty("savedLayout."+one.id()+".version","3");
+            invalid.clear(); invalid.putAll(values); invalid.setProperty("savedLayout."+one.id()+".version","99");
             rejects(() -> store.decode(invalid),"Future recipe format rejected");
             invalid.clear(); invalid.putAll(values); invalid.setProperty("savedLayout."+one.id()+".layout","L|"+a.pane()+"|"+UUID.randomUUID());
             rejects(() -> store.decode(invalid),"Missing profile is not substituted");

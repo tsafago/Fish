@@ -62,7 +62,7 @@ public final class UsabilityIterationSmoke {
             ImageIO.write(image,"png",evidence.resolve(name+"-"+scale+".png").toFile());
         }
     }
-    private static final class Fixture implements AutoCloseable {
+    static final class Fixture implements AutoCloseable {
         final StateStore store;
         final ApplicationWindows app;
         final CountDownLatch closed=new CountDownLatch(1);
@@ -104,14 +104,18 @@ public final class UsabilityIterationSmoke {
         int refused=0,moved=0;
         for (int n=2;n<=8;n++) {
             Layout old=Layout.bounded(slots.subList(0,n));
-            check(Layout.normalize(old).equals(old),"Legacy geometry and ratios are preserved at "+n);
+            check(Layout.normalize(old).equals(old),"Balanced canonical geometry is preserved at "+n);
             for (Layout.Leaf from:old.leaves()) for (Layout.Leaf to:old.leaves()) for (Layout.Dock edge:Layout.Dock.values()) {
                 if (from.equals(to)) { check(old.move(from.pane(),to.pane(),edge).equals(old),"Self drop is a no-op"); continue; }
                 try {
                     Layout next=old.move(from.pane(),to.pane(),edge);
-                    check(Layout.constrained(next) && new HashSet<>(next.leaves()).equals(new HashSet<>(old.leaves())),"Accepted placement preserves identities and two-lane bounds");
+                    check(Layout.constrained(next) && new HashSet<>(next.leaves()).equals(new HashSet<>(old.leaves())),"Accepted placement preserves identities and simple shapes");
                     check(Layout.decode(next.encode()).equals(next),"Directional ratios/order/orientation roundtrip"); moved++;
                 } catch (IllegalArgumentException expected) { refused++; }
+            }
+            if (n>3) for (Layout.Leaf from:old.leaves()) for (Layout.Dock edge:Layout.Dock.values()) {
+                try { old.move(from.pane(),old.leaves().getFirst().pane(),edge,Layout.Scope.WINDOW); }
+                catch (IllegalArgumentException expected) { refused++; }
             }
         }
         check(moved>100 && refused>20,"Real valid and invalid directional placements are exercised");
@@ -122,7 +126,7 @@ public final class UsabilityIterationSmoke {
             SavedLayout recipe=new SavedLayout(UUID.randomUUID(),"Stacked",new StateStore.WindowState(vertical,1000,700,profile),
                     Map.of(slots.get(0).pane(),new SavedLayout.Display(true,1),slots.get(1).pane(),new SavedLayout.Display(false,1.4)));
             StateStore.State state=new StateStore.State(List.of(p),vertical,1000,700).withSavedLayouts(List.of(recipe),recipe.id());
-            store.save(state); check(store.load().equals(state),"Format16 persists oriented windows and recipe fit/zoom exactly");
+            store.save(state); check(store.load().equals(state),"Current format persists oriented windows and recipe fit/zoom exactly");
             Properties legacy=StateStore.properties(new StateStore.State(List.of(p),Layout.bounded(slots.subList(0,2)),1000,700));
             legacy.setProperty("version","15");
             check(store.decode(legacy).layout().equals(Layout.bounded(slots.subList(0,2))),"Actual format15 migration keeps geometry and profile IDs");

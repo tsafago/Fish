@@ -1,9 +1,21 @@
 @{
     Jdk = @{
-        Url = 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12.1%2B1/OpenJDK21U-jdk_x64_windows_hotspot_21.0.12.1_1.zip'
-        Sha256 = 'f9d6e191ab098c0d416e7d588a24420a8621cd2f4720dab2459b8b7b2d2d8b4e'
-        Archive = 'jdk-21.0.12.1.zip'
-        Directory = 'jdk-21.0.12.1+1'
+        Url = 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.5%2B8/OpenJDK25U-jdk_x64_windows_hotspot_25.0.5_8.zip'
+        Sha256 = '636bdc13dc649ddc7d5921c5c7d23cca6e44fd19d662b45cc9c02135a6c96c42'
+        Archive = 'jdk-25.0.5.zip'
+        Directory = 'jdk-25.0.5+8'
+    }
+    JavafxSdk = @{
+        Url = 'https://download2.gluonhq.com/openjfx/25.0.3/openjfx-25.0.3_windows-x64_bin-sdk.zip'
+        Sha256 = '839ca4a3220cfd5d30cba1bc54f222fa2f0b3033c7a14300f0728cf2b385094c'
+        Archive = 'openjfx-25.0.3-sdk.zip'
+        Directory = 'javafx-sdk-25.0.3'
+    }
+    JavafxJmods = @{
+        Url = 'https://download2.gluonhq.com/openjfx/25.0.3/openjfx-25.0.3_windows-x64_bin-jmods.zip'
+        Sha256 = '0bf9b83260b85607a9ba200124debabd9cdb013cbc0d659e62a20192a7137907'
+        Archive = 'openjfx-25.0.3-jmods.zip'
+        Directory = 'javafx-jmods-25.0.3'
     }
     Native = @{
         Url = 'https://ziglang.org/download/0.14.1/zig-x86_64-windows-0.14.1.zip'

@@ -36,14 +36,23 @@ int wmain(int argc,wchar_t **argv) {
     char classpath[65536]="-Djava.class.path=";
     size_t prefix=strlen(classpath);
     if (!WideCharToMultiByte(CP_UTF8,0,jar,-1,classpath+prefix,(int)(sizeof(classpath)-prefix),NULL,NULL)) return 1;
-    JavaVMOption options[3]={{classpath,NULL},{usability || simple || cursor || beta ? "-Djava.awt.headless=false" : "-Djava.awt.headless=true",NULL},{"-Xmx192m",NULL}};
-    JavaVMInitArgs args={JNI_VERSION_1_8,3,options,JNI_FALSE};
+    JavaVMOption options[8]={
+        {classpath,NULL},
+        {usability || simple || cursor || beta ? "-Djava.awt.headless=false" : "-Djava.awt.headless=true",NULL},
+        {"-Xmx256m",NULL},
+        {"--add-modules=javafx.base,javafx.controls,javafx.graphics,javafx.swing",NULL},
+        {"--enable-native-access=javafx.graphics,ALL-UNNAMED",NULL},
+        {"-Djavafx.enablePreview=true",NULL},
+        {"-Djavafx.suppressPreviewWarning=true",NULL},
+        {"-Dfish.embeddedJvm=true",NULL}
+    };
+    JavaVMInitArgs args={JNI_VERSION_1_8,8,options,JNI_FALSE};
     JavaVM *vm=NULL;
     JNIEnv *env=NULL;
     if (create(&vm,(void **)&env,&args)!=JNI_OK) { fputs("Private JVM startup failed.\n",stderr); return 1; }
     int result=1;
     if (beta) {
-        const char *classes[]={"pane5250/ui/BetaSettingsSmoke","pane5250/ui/BetaRecoverySmoke","pane5250/ui/BetaUiSmoke"};
+        const char *classes[]={"fish/ui/BetaSettingsSmoke","fish/ui/BetaRecoverySmoke","fish/ui/BetaUiSmoke"};
         result=0;
         for (int n=0;n<3;n++) {
             jclass type=(*env)->FindClass(env,classes[n]);
@@ -54,7 +63,7 @@ int wmain(int argc,wchar_t **argv) {
             if ((*env)->ExceptionCheck(env)) { result=1; break; }
         }
     } else if (updates || layouts || usability || simple || cursor) {
-        jclass type=(*env)->FindClass(env,cursor ? "pane5250/ui/CursorRenderingSmoke" : simple ? "pane5250/ui/SimplePaneSmoke" : usability ? "pane5250/ui/UsabilityIterationSmoke" : layouts ? "pane5250/PackagedLayoutSmoke" : "pane5250/update/PackagedUpdateSmoke");
+        jclass type=(*env)->FindClass(env,cursor ? "fish/ui/CursorRenderingSmoke" : simple ? "fish/ui/SimplePaneSmoke" : usability ? "fish/ui/UsabilityIterationSmoke" : layouts ? "fish/PackagedLayoutSmoke" : "fish/update/PackagedUpdateSmoke");
         jmethodID method=type ? (*env)->GetStaticMethodID(env,type,"main","([Ljava/lang/String;)V") : NULL;
         if (method) {
             jobjectArray empty=(*env)->NewObjectArray(env,0,(*env)->FindClass(env,"java/lang/String"),NULL);
@@ -62,7 +71,7 @@ int wmain(int argc,wchar_t **argv) {
             if (!(*env)->ExceptionCheck(env)) result=0;
         }
     } else {
-        jclass type=(*env)->FindClass(env,"pane5250/security/Kerberos");
+        jclass type=(*env)->FindClass(env,"fish/security/Kerberos");
         jmethodID method=type ? (*env)->GetStaticMethodID(env,type,"available","()Z") : NULL;
         if (method && (*env)->CallStaticBooleanMethod(env,type,method)==JNI_TRUE && !(*env)->ExceptionCheck(env)) {
             puts("PASS packaged private JVM and shipped native Kerberos capability; no tickets requested");
@@ -70,6 +79,12 @@ int wmain(int argc,wchar_t **argv) {
         }
     }
     if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionDescribe(env); (*env)->ExceptionClear(env); }
+    if (usability || simple || cursor || beta) {
+        jclass ui=(*env)->FindClass(env,"fish/ui/Ui");
+        jmethodID stop=ui ? (*env)->GetStaticMethodID(env,ui,"shutdown","()V") : NULL;
+        if (stop) (*env)->CallStaticVoidMethod(env,ui,stop);
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
     if ((*vm)->DestroyJavaVM(vm)!=JNI_OK) result=1;
     return result;
 }

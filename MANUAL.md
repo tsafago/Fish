@@ -8,8 +8,7 @@ Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
 “Settings” paths below refer to that same flat indexed dialog. The **profile / +**
 group is the last action after the menus, before the drag area and native window controls.
 
-Known remaining defect: the whole-window perimeter can disappear after maximize/restore. Real-monitor checks for that path still fail at 100% and 150% scaling. This is not a complete border/ACS-compatibility fix.
-Intermittent resize flicker was not reproduced in the bounded baseline and current-build monitor checks and remains an open hardware observation.
+Fish uses JavaFX 25 (`StageStyle.EXTENDED` + `HeaderBar`) with a bundled OpenJDK 25 + OpenJFX 25 runtime, eliminating custom Win32 window subclassing while preserving crisp ClearType LCD terminal rendering.
 This manual describes the implemented application, not an assurance of full ACS compatibility.
 Open Help > Full manual / Getting Started for the searchable topic index.
 
@@ -51,7 +50,9 @@ The public [v0.8.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.8.0) in
 
 Alternatively, extract the matching Fish-0.8.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
-The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
+For SmartScreen-free per-user installation without administrator privileges, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1` from a portable folder or release directory (or choose **Edit > Settings > General > Install for current user...** directly inside a portable Fish launch). Both install into `%LOCALAPPDATA%\Programs\Fish`, strip Internet `Zone.Identifier` streams on hash/source-verified files, create Start Menu and optional Desktop `.lnk` shortcuts, and register Fish under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish` (`Uninstall-Fish.ps1` removes the installation while keeping `%APPDATA%\Fish\workspace.xml` and saved Windows credentials).
+
+Note on Windows SmartScreen: any unsigned `.exe` or `.msi` downloaded directly by a web browser receives Mark-of-the-Web (`Zone.Identifier` `ZoneId=3`), which causes SmartScreen to prompt when launched directly via Explorer/`ShellExecute` unless signed with an Authenticode certificate. Extracting the portable ZIP with 7-Zip/`tar`/`Expand-Archive`, running `Install-Fish.ps1`, or using the in-app **Install for current user...** action installs without administrator rights and without triggering SmartScreen prompts on unsigned setup executables. Do not override your organization's security policy.
 
 The installer does not need your IBM i credentials. Profiles are created inside Fish after installation.
 
@@ -59,7 +60,7 @@ The installer does not need your IBM i credentials. Profiles are created inside 
 
 Download Fish-source.zip and extract it to a writable folder. Open that folder and double-click Setup-Fish.cmd. Leave the console open until it reports Ready.
 
-The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .tools, builds Fish and generates both its portable application and current-user installer. It does not install a system JDK, modify system PATH, require Git for the complete source archive, or require administrator installation.
+The script obtains checksum-pinned portable JDK 25, OpenJFX 25, Zig and WiX tools inside .tools, builds Fish and generates both its portable application and current-user installer. It does not install a system JDK, modify system PATH, require Git for the complete source archive, or require administrator installation.
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
@@ -79,8 +80,7 @@ must be named Fish. Do not move or replace a running app's files.
 Close running Fish windows before an upgrade. Install the new version for the same Windows user. The stable installer upgrade identity allows later releases to replace the application without changing the profile directory.
 
 Before first launching the new version, copy the existing workspace.xml outside
-the application directory. Normally it is in %APPDATA%\Fish, or the retained
-legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
+the application directory. Normally it is in %APPDATA%\Fish; a custom --data-dir takes precedence.
 The next save writes configuration version 19 with cursor style, simple layouts, expanded palettes and recipe version 3. Catalog version is 9.
 Older binaries, including local 0.7.8, cannot read it:
 keep the matching pre-upgrade backup for downgrade. Never relabel a new export as an older format.
@@ -127,7 +127,7 @@ Open Settings > General and choose Revert to factory defaults. Confirmation expl
 
 Confirming atomically replaces only this workspace, then exits without an old-state autosave. The next launch has the selected Kerberos 10.1.2.3:23 profile, startup connections ON, default appearance/updates and the introduction. This is not proof that domain/NAS/EIM or SSO works. Saved profiles/layouts (including named recipes and selector choices), custom themes, font references, keys and hidden update version are cleared. Exported shortcut files are not deleted; their old recipe IDs become unavailable. At least one pane remains.
 
-Windows saved passwords, font files, installation files, unknown files and other/custom workspaces are retained. Removed profile IDs are not reused, so their retained OS passwords are not automatically inherited by new profiles. Remove obsolete Fish credential targets separately through Windows Credential Manager if desired. No backup is silently made: export/copy workspace.xml first if you need recovery. A fresh workspace.xml remains even in a legacy Pane5250 directory, preventing stale fallback settings from returning.
+Windows saved passwords, font files, installation files, unknown files and other/custom workspaces are retained. Removed profile IDs are not reused, so their retained OS passwords are not automatically inherited by new profiles. Remove obsolete Fish credential targets separately through Windows Credential Manager if desired. No backup is silently made: export/copy workspace.xml first if you need recovery. A fresh workspace.xml remains in place, preventing stale fallback settings from returning.
 
 ## Workspace and panes
 
@@ -283,7 +283,7 @@ Enable Remember password and save a password in the profile editor to use Window
 
 A blank password field in the editor preserves an existing remembered secret; it is not an indication that no password exists. Disabling Remember while staying in password mode removes the remembered entry. Changing to Kerberos does not delete the previous OS password; changing back requires explicitly enabling remembering again. Duplicating a profile does not copy its remembered password.
 
-Credential targets retain the legacy Pane5250 prefix so existing secrets remain reachable after rebranding. Passwords are not stored in profile XML or process arguments. Clipboard export omits non-display fields.
+Credential targets use the `Fish/` prefix in Windows Credential Manager (`Fish/<profile UUID>/<host>:<port>/<username>`). Passwords are not stored in profile XML or process arguments. Clipboard export omits non-display fields.
 
 ## Automatic sign-on and security
 
@@ -565,7 +565,7 @@ Panes > Save layout to profile and Restore profile layout retain the older one-a
 
 One owning process retains the exclusive workspace lock and writes a coherent all-window snapshot. Subsequent launches use an owner-only per-user/data-directory rendezvous and authenticated, fixed-size IPv4 loopback requests containing only new-window intent and an optional saved UUID; no commands, files, hosts or credentials. UUID request IDs deduplicate lost acknowledgments. Startup races retry the OS lock, stale crash metadata cannot elect an owner, and incompatible versions/demo modes do not forward into one another. Offline configuration still refuses while ANY window is open. --data-dir remains an optional advanced separate workspace, not a requirement for multiple windows. --layout accepts a strict saved UUID only, not a file or layout name.
 
-New state is normally %APPDATA%\Fish\workspace.xml. If legacy %APPDATA%\Pane5250\workspace.xml exists, Fish keeps using that directory and its lock so profiles and legacy credential targets survive the rename.
+State is stored in %APPDATA%\Fish\workspace.xml unless overridden with --data-dir.
 
 Corrupt or unsupported state is preserved and produces an error, not silently replaced. Back up the entire workspace directory before manual edits. Passwords are stored separately in Windows Credential Manager and need separate handling.
 
@@ -593,7 +593,7 @@ Clipboard unavailable: another program may own the clipboard temporarily; retry.
 
 Snap layouts absent: confirm Windows 11/Snap settings, hover on maximize, or use Win+Z/Win+arrows. Windows 10 does not have the Windows 11 flyout. Very small display/work-area layouts may be unavailable.
 
-The executable will not start after moving it: restore the complete Fish folder including app and runtime. A native integration load error requires the matching fish-window.dll and the included runtime.
+The executable will not start after moving it: restore the complete Fish folder including app and runtime. A native integration load error requires the matching fish-native.dll and the included runtime.
 
 Workspace already open: close the other instance or choose a different --data-dir. A lock file by itself is not proof of an active process; the OS-held lock is authoritative.
 

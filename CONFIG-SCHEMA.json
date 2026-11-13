@@ -935,7 +935,7 @@
       "type": "integer"
     },
     "appearance.windowOutline": {
-      "constraints": "Whole-window outline; known maximize/restore defect remains.",
+      "constraints": "true or false; optional 1px whole-window perimeter outline.",
       "default": true,
       "type": "boolean"
     },

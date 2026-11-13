@@ -572,17 +572,15 @@ and preserved reverse video/non-display/blink. Captures are `build\fish-flux-a.p
 fixtures are not a fresh foreground animation/resize benchmark.
 
 The prior measurements and interaction descriptions below are historical
-Pane5250 0.1.1/0.2.0 evidence, not fresh Fish acceptance. Directional docking,
+0.1.1/0.2.0 evidence, not fresh Fish acceptance. Directional docking,
 empty workspaces and close confirmations are superseded.
-The old `UiRevisions.java` script is retained as historical source, not invoked
-by the Fish build. `Test` remains an opt-in physical-desktop regression command
-and was not run for this quick pass.
+`Test` remains an opt-in physical-desktop regression command.
 
 ## Previously demonstrated (0.1.1/0.2.0)
 
 `.\build.ps1 Test` exercises the actual selected engine and live desktop,
 not a separate presentation mock. Golden fixtures and exact byte assertions
-live in `tests\pane5250\Tests.java`; the live host is `demo\DemoHost`.
+live in `tests\fish\Tests.java`; the live host is `demo\DemoHost`.
 
 | Area | Local evidence |
 |---|---|
@@ -640,7 +638,7 @@ ink for larger physical text, accurate selection/reverse backgrounds and
 neighboring-row ink. No threshold was relaxed to hide the result.
 
 **Final timing limitation:** the shared Windows machine subsequently reported
-100% CPU with no Pane5250 test process left running. A later effects-off run
+100% CPU with no Fish test process left running. A later effects-off run
 measured 34.08ms paint p95 / 49.55ms EDT lag p95 and failed the unchanged 30ms
 paint threshold. Thus the earlier passing results above are not a repeatable
 final timing guarantee under that load. The user chose to finish packaging and

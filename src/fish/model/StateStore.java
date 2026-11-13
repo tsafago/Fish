@@ -1,0 +1,608 @@
+package fish.model;
+
+import java.io.*;
+import java.nio.channels.*;
+import java.nio.file.*;
+import java.security.*;
+import java.util.*;
+
+public final class StateStore implements AutoCloseable {
+    public static final String VERSION="19";
+    public static final int MAX_BYTES=2_000_000;
+    public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
+    public record WindowState(Layout layout,int width,int height,UUID lastProfile,UUID addProfile,Map<UUID,SavedLayout.Display> displays) {
+        public WindowState(Layout layout,int width,int height,UUID lastProfile) { this(layout,width,height,lastProfile,lastProfile); }
+        public WindowState(Layout layout,int width,int height,UUID lastProfile,UUID addProfile) { this(layout,width,height,lastProfile,addProfile,Map.of()); }
+        public WindowState {
+            Objects.requireNonNull(layout); Objects.requireNonNull(lastProfile); Objects.requireNonNull(addProfile);
+            displays=Map.copyOf(displays); validateDisplays(layout,displays);
+            if (width<330 || width>10000 || height<260 || height>10000)
+                throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
+        }
+    }
+    public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
+                        Map<String,String> shortcuts, boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                        UpdateSettings updates,Map<String,String> keyboardRecovery,List<WindowState> windows,
+                        UUID addProfile,List<SavedLayout> savedLayouts,UUID selectedLayout,Map<UUID,SavedLayout.Display> displays) {
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                     UpdateSettings updates,Map<String,String> keyboardRecovery,List<WindowState> windows,
+                     UUID addProfile,List<SavedLayout> savedLayouts,UUID selectedLayout) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,
+                    updates,keyboardRecovery,windows,addProfile,savedLayouts,selectedLayout,Map.of());
+        }
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                     UpdateSettings updates,Map<String,String> keyboardRecovery,List<WindowState> windows) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,
+                    updates,keyboardRecovery,windows,lastProfile,List.of(),null);
+        }
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                     UpdateSettings updates,Map<String,String> keyboardRecovery) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,List.of());
+        }
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                     UpdateSettings updates) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,Map.of());
+        }
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,UpdateSettings.defaults());
+        }
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,false);
+        }
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,Tutorial.SKIPPED);
+        }
+        public State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,Appearance.defaults());
+        }
+        public State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile) {
+            this(profiles,layout,width,height,appTheme,lastProfile,Map.of(),true);
+        }
+        public State(List<Profile> profiles, Layout layout, int width, int height) {
+            this(profiles,layout,width,height,AppTheme.Charcoal);
+        }
+        public State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme) {
+            this(profiles,layout,width,height,appTheme,profiles.isEmpty() ? null : profiles.getFirst().id());
+        }
+        public State {
+            Objects.requireNonNull(appTheme);
+            Objects.requireNonNull(appearance);
+            Objects.requireNonNull(tutorial);
+            Objects.requireNonNull(updates);
+            Objects.requireNonNull(layout);
+            if (width<330 || width>10000 || height<260 || height>10000)
+                throw new IllegalArgumentException("Window width must be 330-10000 and height 260-10000.");
+            KeyboardMigration.SettingsResult canonical=KeyboardMigration.settings(shortcuts,keyboardRecovery);
+            shortcuts=canonical.bindings(); keyboardRecovery=canonical.recovery();
+            KeyboardMigration.validateRecovery(keyboardRecovery);
+            KeyBindings.effective(shortcuts);
+            profiles = List.copyOf(profiles);
+            windows=List.copyOf(windows);
+            savedLayouts=List.copyOf(savedLayouts);
+            displays=Map.copyOf(displays); validateDisplays(layout,displays);
+            if (windows.size()>MAX_BYTES/100) throw new IllegalArgumentException("Too many saved windows.");
+            if (profiles.isEmpty()) throw new IllegalArgumentException("A workspace needs at least one saved profile.");
+            Set<UUID> ids = new HashSet<>();
+            for (Profile p : profiles) {
+                if (!ids.add(p.id())) throw new IllegalArgumentException("Duplicate profile ID.");
+                Profile.login(p,profiles);
+                new HostKeys(p.keymap());
+            }
+            for (Profile p:profiles) if (!p.savedLayout().isEmpty()) {
+                Layout saved=Layout.decode(p.savedLayout());
+                if (!Layout.constrained(saved) || saved.leaves().stream().anyMatch(leaf -> !ids.contains(leaf.profile())))
+                    throw new IllegalArgumentException("Saved profile layout is not a simple pane arrangement or references a missing profile.");
+            }
+            if (layout.leaves().isEmpty() || layout.leaves().size()>Layout.MAX_PANES)
+                throw new IllegalArgumentException("A workspace needs 1-8 panes.");
+            if (!Layout.constrained(layout)) throw new IllegalArgumentException("Use halves, thirds, a half and pair, or quadrants split once. Keep divider sizes reasonably balanced.");
+            Set<UUID> paneIds=new HashSet<>();
+            for (Layout.Leaf leaf : layout.leaves()) {
+                if (!ids.contains(leaf.profile())) throw new IllegalArgumentException("Layout references a missing profile.");
+                if (!paneIds.add(leaf.pane())) throw new IllegalArgumentException("Duplicate pane ID.");
+            }
+            if (!ids.contains(lastProfile)) throw new IllegalArgumentException("Last used preset is missing.");
+            if (!ids.contains(addProfile)) throw new IllegalArgumentException("Add-pane profile is missing.");
+            if (savedLayouts.size()>SavedLayout.MAX_SAVED) throw new IllegalArgumentException("Keep at most 64 saved layouts.");
+            Set<UUID> savedIds=new HashSet<>(); Set<String> names=new HashSet<>();
+            for (SavedLayout saved:savedLayouts) {
+                if (!savedIds.add(saved.id()) || !names.add(saved.name().toLowerCase(Locale.ROOT)))
+                    throw new IllegalArgumentException("Saved layout IDs and names must be unique.");
+                saved.validateProfiles(ids);
+            }
+            if (selectedLayout!=null && !savedIds.contains(selectedLayout)) throw new IllegalArgumentException("Selected saved layout is missing.");
+            for (WindowState window:windows) {
+                if (window.layout().leaves().isEmpty() || window.layout().leaves().size()>Layout.MAX_PANES)
+                    throw new IllegalArgumentException("Each window needs 1-8 panes.");
+                if (!ids.contains(window.lastProfile())) throw new IllegalArgumentException("Window's last profile is missing.");
+                if (!ids.contains(window.addProfile())) throw new IllegalArgumentException("Window's add-pane profile is missing.");
+                if (!Layout.normalize(window.layout()).equals(window.layout())) throw new IllegalArgumentException("Window layout must use bounded pane slots.");
+                Set<UUID> local=new HashSet<>();
+                for (Layout.Leaf leaf:window.layout().leaves()) {
+                    if (!ids.contains(leaf.profile()) || !local.add(leaf.pane())) throw new IllegalArgumentException("Invalid window pane/profile reference.");
+                }
+            }
+        }
+        public State withTutorial(Tutorial value) {
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,value,connectOnStartup,updates,keyboardRecovery,windows,addProfile,savedLayouts,selectedLayout,displays);
+        }
+        public State withWindows(List<WindowState> value) {
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,value,addProfile,savedLayouts,selectedLayout,displays);
+        }
+        public State forWindow(WindowState window) {
+            return new State(profiles,window.layout(),window.width(),window.height(),appTheme,window.lastProfile(),shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,List.of(),window.addProfile(),savedLayouts,selectedLayout,window.displays());
+        }
+        public State withSavedLayouts(List<SavedLayout> value,UUID selected) {
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,windows,addProfile,value,selected,displays);
+        }
+    }
+    private static void validateDisplays(Layout layout,Map<UUID,SavedLayout.Display> displays) {
+        Set<UUID> panes=new HashSet<>(); layout.leaves().forEach(p -> panes.add(p.pane()));
+        if (!panes.containsAll(displays.keySet())) throw new IllegalArgumentException("Display state references a missing pane.");
+    }
+    private final Path directory;
+    private final FileChannel lockChannel;
+    private final FileLock lock;
+    private String loadNotice="";
+    private String revision;
+    private boolean reset;
+    public String loadNotice() { return loadNotice; }
+    public static final class InUseException extends IOException {
+        public InUseException() { super("Fish is running. Close all Fish windows before using offline configuration or another Fish version."); }
+    }
+
+    public StateStore(Path directory) throws IOException {
+        this.directory = directory.toAbsolutePath().normalize();
+        Files.createDirectories(directory);
+        lockChannel = FileChannel.open(directory.resolve("workspace.lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE);
+        FileLock acquired;
+        try { acquired = lockChannel.tryLock(); }
+        catch (OverlappingFileLockException e) { acquired = null; }
+        catch (IOException e) { lockChannel.close(); throw e; }
+        if (acquired == null) {
+            lockChannel.close();
+            throw new InUseException();
+        }
+        lock = acquired;
+        try { revision=diskRevision(); }
+        catch (IOException e) { close(); throw e; }
+    }
+
+    public Path file() { return directory.resolve("workspace.xml"); }
+    public synchronized String revision() { return revision; }
+    private String diskRevision() throws IOException {
+        if (Files.notExists(file())) return "absent";
+        if (Files.isSymbolicLink(file())) throw new IOException("Workspace must not be a symbolic link.");
+        return fileRevision(file());
+    }
+    private static String fileRevision(Path file) throws IOException {
+        try (InputStream input=Files.newInputStream(file)) {
+            MessageDigest hash=MessageDigest.getInstance("SHA-256");
+            byte[] buffer=new byte[65536]; int size;
+            while ((size=input.read(buffer))!=-1) hash.update(buffer,0,size);
+            return HexFormat.of().formatHex(hash.digest());
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException("SHA-256 is required.",e); }
+    }
+    private static String digest(byte[] data) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException("SHA-256 is required by Java.",e); }
+    }
+    public synchronized void requireRevision(String expected) throws IOException {
+        if (!revision.equals(expected) || !revision.equals(diskRevision()))
+            throw new IOException("Workspace changed since export/load. Export again and reapply your edits; nothing was overwritten.");
+    }
+
+    public synchronized State load() throws IOException {
+        loadNotice="";
+        if (Files.notExists(file())) {
+            if (!revision.equals("absent")) throw new IOException("Workspace was removed while open; no default state was substituted.");
+            return freshState();
+        }
+        byte[] data=readBytes(file());
+        State result=decode(readProperties(data));
+        revision=digest(data);
+        return result;
+    }
+    public static State freshState() {
+        Profile profile=Profile.kerberosDefault();
+        return new State(List.of(profile),new Layout.Leaf(UUID.randomUUID(),profile.id()),1360,850,AppTheme.Charcoal,profile.id(),
+                Map.of(),true,Appearance.defaults(),Tutorial.NEW,true);
+    }
+    public synchronized void factoryReset() throws IOException {
+        save(freshState());
+        reset=true;
+    }
+    public synchronized Path recoverFactory() throws IOException {
+        if (!lock.isValid()) throw new InUseException();
+        requireRevision(revision);
+        if (!Files.isRegularFile(file(),LinkOption.NOFOLLOW_LINKS)) throw new IOException("No regular workspace file can be backed up. Nothing was replaced.");
+        Path backup=directory.resolve("workspace-recovery-"+UUID.randomUUID()+".xml");
+        try (InputStream original=Files.newInputStream(file())) { Files.copy(original,backup); }
+        try (FileChannel preserved=FileChannel.open(backup,StandardOpenOption.WRITE)) { preserved.force(true); }
+        if (!fileRevision(backup).equals(revision)) throw new IOException("Workspace changed while its backup was copied. Original was not replaced.");
+        requireRevision(revision);
+        save(freshState());
+        return backup;
+    }
+    private static byte[] readBytes(Path file) throws IOException {
+        try (InputStream in=Files.newInputStream(file)) {
+            byte[] data=in.readNBytes(MAX_BYTES+1);
+            if (data.length>MAX_BYTES) throw new IOException("Configuration exceeds the 2000000-byte safety limit.");
+            return data;
+        }
+    }
+    public static Properties readProperties(Path file) throws IOException {
+        return readProperties(readBytes(file));
+    }
+    private static Properties readProperties(byte[] data) throws IOException {
+        Properties result=new Properties() {
+            @Override public synchronized Object put(Object key,Object value) {
+                if (containsKey(key)) throw new IllegalArgumentException("Duplicate configuration property: "+key);
+                return super.put(key,value);
+            }
+        };
+        try (InputStream in=new ByteArrayInputStream(data)) { result.loadFromXML(in); }
+        catch (IllegalArgumentException e) { throw new IOException("Invalid configuration: "+e.getMessage(),e); }
+        Properties parsed=new Properties(); parsed.putAll(result); return parsed;
+    }
+    private Layout migrateLayout(Layout layout,String version,String context) {
+        int format=Integer.parseInt(version);
+        if (format>=8 && format<16 && !Layout.legacyShape(layout))
+            throw new IllegalArgumentException("Directional layouts require format 16 or later; do not relabel exports.");
+        Layout simple=Layout.normalize(layout);
+        if (format>=17 && !simple.equals(layout))
+            throw new IllegalArgumentException("Layout must use simple halves, thirds, a half and pair, or quadrants split once; see AI-CONFIG.md.");
+        if (!simple.equals(layout))
+            notice(context+" simplified to balanced panes; all pane/profile IDs and display settings retained.");
+        return simple;
+    }
+    public State decode(Properties properties) throws IOException {
+        try {
+            String version = properties.getProperty("version");
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18",VERSION).contains(version))
+                throw new IllegalArgumentException("Workspace version "+Objects.toString(version,"(missing)")+" is not supported by this Fish version. It may belong to a newer release; restore a matching backup or upgrade Fish, rather than relabeling it.");
+            if (Integer.parseInt(version)<18 && properties.containsKey("appearance.cursorStyle"))
+                throw new IllegalArgumentException("Cursor style requires workspace version 18; do not relabel or downgrade it.");
+            boolean usability=Integer.parseInt(version)>=8;
+            boolean kerberos=Integer.parseInt(version)>=10;
+            boolean exact=Integer.parseInt(version)>=12;
+            if (Integer.parseInt(version)<11 && properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith("updates.")))
+                throw new IllegalArgumentException("Update preferences require workspace version 11 or later; do not relabel or downgrade it.");
+            if (!exact && properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith("binding.") || key.startsWith("keyboard.")))
+                throw new IllegalArgumentException("Exact keyboard mappings require workspace version 12; do not relabel or downgrade it.");
+            if (Integer.parseInt(version)<13 && properties.stringPropertyNames().stream().anyMatch(key ->
+                    key.equals("binding."+Shortcuts.SETTINGS) || key.startsWith("binding.Tutorial:") || key.startsWith("keyboard.legacy.binding.")))
+                throw new IllegalArgumentException("Canonical settings/tutorial bindings require workspace version 13; do not relabel or downgrade it.");
+            if (Integer.parseInt(version)<14 && properties.stringPropertyNames().stream().anyMatch(key ->
+                    key.startsWith("window.") || key.equals("windows") || key.equals("info.footerDevice") || key.equals("binding.New window")))
+                throw new IllegalArgumentException("Multiple windows and footer device require workspace version 14; do not relabel it.");
+            boolean recipes=Integer.parseInt(version)>=15;
+            if (!recipes && properties.stringPropertyNames().stream().anyMatch(key -> key.startsWith("savedLayout.")
+                    || key.equals("savedLayouts") || key.equals("selectedLayout") || key.equals("addProfile") || key.endsWith(".addProfile")
+                    || key.startsWith("pane.") || key.matches("window\\.\\d+\\.pane\\..*") || key.equals("binding.Saved layouts / shortcuts...")))
+                throw new IllegalArgumentException("Named layouts and add-pane selections require workspace version 15; do not relabel it.");
+            Map<String,String> recovery=new TreeMap<>();
+            for (String property:properties.stringPropertyNames())
+                if (property.startsWith("keyboard.legacy.")) recovery.put(property.substring(16),properties.getProperty(property));
+            List<Profile> profiles = new ArrayList<>();
+            for (String idText : required(properties, "profiles").split(",",-1)) {
+                UUID id = UUID.fromString(idText);
+                String key = "profile." + id + ".";
+                if (!kerberos && (!properties.getProperty(key+"authentication","PASSWORD").equals("PASSWORD")
+                        || !properties.getProperty(key+"kerberosServer","").isEmpty()))
+                    throw new IllegalArgumentException("Kerberos metadata requires workspace version 10 or later; do not relabel or downgrade it.");
+                Map<String, String> keys = new LinkedHashMap<>();
+                for (String property : properties.stringPropertyNames()) {
+                    if (property.startsWith(key + "key."))
+                        keys.put(property.substring((key + "key.").length()), properties.getProperty(property));
+                }
+                if (exact && !keys.isEmpty()) throw new IllegalArgumentException("Per-profile keyboard mappings were replaced by application binding.* entries; use format-11 migration, not relabeling.");
+                String effect=required(properties,key+"effect");
+                if (!usability && effect.equals("Neon")) {
+                    effect="None"; notice("Removed Neon effect changed to None for "+required(properties,key+"name")+"; other profile settings retained.");
+                }
+                String profileLayout=required(properties,key+"layout");
+                if (!profileLayout.isEmpty()) {
+                    Layout saved=Layout.decode(profileLayout);
+                    profileLayout=migrateLayout(saved,version,"Saved profile layout").encode();
+                }
+                profiles.add(new Profile(id, required(properties, key + "name"), required(properties, key + "host"),
+                        Integer.parseInt(required(properties, key + "port")), required(properties, key + "device"),
+                        required(properties, key + "username"), bool(properties, key + "auto"), bool(properties, key + "remember"),
+                        required(properties, key + "codePage"), required(properties, key + "theme"),
+                        effect, Double.parseDouble(required(properties, key + "zoom")),
+                        keys, profileLayout,
+                        usability && !required(properties,key+"loginSource").isEmpty()
+                                ? UUID.fromString(required(properties,key+"loginSource")) : null,
+                        kerberos ? Profile.Authentication.valueOf(required(properties,key+"authentication")) : Profile.Authentication.PASSWORD,
+                        kerberos ? required(properties,key+"kerberosServer") : ""));
+            }
+            UUID last=Integer.parseInt(version)>=3 ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
+            Layout layout=Layout.decode(required(properties,"layout"));
+            if (Set.of("1","2").contains(version) && !layout.leaves().isEmpty()) last=layout.leaves().getFirst().profile();
+            if (layout instanceof Layout.Empty) {
+                if (usability) throw new IllegalArgumentException("A workspace needs at least one pane.");
+                layout=new Layout.Leaf(UUID.randomUUID(),last);
+                notice("Restored one offline pane from the previous empty workspace; all presets retained.");
+            }
+            Layout bounded=migrateLayout(layout,version,"Workspace layout");
+            Map<String,String> shortcuts=new LinkedHashMap<>();
+            for (String property:properties.stringPropertyNames())
+                if (property.startsWith(exact ? "binding." : "shortcut."))
+                    shortcuts.put(property.substring(exact ? 8 : 9),properties.getProperty(property));
+            if (Integer.parseInt(version)>=13 && shortcuts.keySet().stream().anyMatch(Shortcuts.SETTINGS_ALIASES::contains))
+                throw new IllegalArgumentException("Use binding.Settings... in format 13 or later. Old settings actions belong in migration recovery, not live bindings.");
+            Appearance appearance=Integer.parseInt(version)>=5 ? readAppearance(properties,version) : Appearance.defaults();
+            if ("5".equals(version)) notice("Structural borders use the saved divider color; other appearance choices retained.");
+            if (Set.of("5","6").contains(version))
+                notice("Window outline enabled once on upgrade. Earlier state did not distinguish an explicit off choice from the old default; Settings > Appearance can turn it off permanently.");
+            if (shortcuts.containsKey("Search commands...")) {
+                Set<String> retired=new HashSet<>(appearance.retiredShortcuts());
+                String old=shortcuts.remove("Search commands...");
+                if (!old.isBlank()) retired.add(old);
+                appearance=new Appearance(appearance.outline(),appearance.windowOutline(),appearance.info(),appearance.font(),appearance.selectedTheme(),
+                        appearance.themes(),retired,appearance.cursorStyle());
+                notice("Commands window removed; its former shortcut is reserved until explicitly reassigned. All actions remain in menus/shortcuts.");
+            }
+            if (!usability) {
+                Shortcuts.Migration migration=Shortcuts.migrate(profiles,shortcuts,appearance.retiredShortcuts());
+                profiles=new ArrayList<>(migration.profiles()); shortcuts=new LinkedHashMap<>(migration.overrides());
+                migration.notices().forEach(this::notice);
+            }
+            if (!exact) {
+                KeyboardMigration.Result migration=KeyboardMigration.migrate(profiles,shortcuts);
+                profiles=new ArrayList<>(migration.profiles()); shortcuts=new LinkedHashMap<>(migration.bindings());
+                recovery=new TreeMap<>(migration.recovery());
+            }
+            if (!VERSION.equals(version)) {
+                KeyboardMigration.SettingsResult migration=KeyboardMigration.settings(shortcuts,recovery);
+                shortcuts=new LinkedHashMap<>(migration.bindings()); recovery=new TreeMap<>(migration.recovery());
+            }
+            List<WindowState> windows=new ArrayList<>();
+            if (Integer.parseInt(version)>=14) {
+                int count=Integer.parseInt(required(properties,"windows"));
+                if (count<0 || count>MAX_BYTES/100) throw new IllegalArgumentException("Invalid saved window count.");
+                for (int i=0;i<count;i++) {
+                    String key="window."+i+".";
+                    Layout windowLayout=Layout.decode(required(properties,key+"layout"));
+                    windowLayout=migrateLayout(windowLayout,version,"Additional window layout");
+                    windows.add(new WindowState(windowLayout,
+                            Integer.parseInt(required(properties,key+"width")),Integer.parseInt(required(properties,key+"height")),
+                            UUID.fromString(required(properties,key+"lastProfile")),
+                            UUID.fromString(required(properties,key+(recipes ? "addProfile" : "lastProfile"))),
+                            recipes ? readDisplays(properties,key,windowLayout) : Map.of()));
+                }
+            }
+            List<SavedLayout> savedLayouts=new ArrayList<>();
+            UUID selectedLayout=null;
+            if (recipes) {
+                String list=required(properties,"savedLayouts");
+                if (!list.isEmpty()) for (String idText:list.split(",",-1)) {
+                    if (savedLayouts.size()>=SavedLayout.MAX_SAVED) throw new IllegalArgumentException("Keep at most 64 saved layouts.");
+                    UUID id=SavedLayout.reference(idText); String key="savedLayout."+id+".";
+                    String recipeVersion=required(properties,key+"version");
+                    if (!(Integer.parseInt(version)<17 && (recipeVersion.equals("1") || recipeVersion.equals("2") && Integer.parseInt(version)>=16)
+                            || recipeVersion.equals("3") && Integer.parseInt(version)>=17))
+                        throw new IllegalArgumentException("Unknown saved layout version.");
+                    Layout saved=Layout.decode(required(properties,key+"layout"));
+                    if (recipeVersion.equals("1") && !Layout.legacyShape(saved))
+                        throw new IllegalArgumentException("Directional saved layouts require recipe version 2.");
+                    saved=migrateLayout(saved,version,"Named layout");
+                    Map<UUID,SavedLayout.Display> displays=new LinkedHashMap<>();
+                    for (Layout.Leaf leaf:saved.leaves()) {
+                        String pane=key+"pane."+leaf.pane()+".";
+                        displays.put(leaf.pane(),new SavedLayout.Display(bool(properties,pane+"fit"),Double.parseDouble(required(properties,pane+"zoom"))));
+                    }
+                    savedLayouts.add(new SavedLayout(id,required(properties,key+"name"),new WindowState(saved,
+                            Integer.parseInt(required(properties,key+"width")),Integer.parseInt(required(properties,key+"height")),
+                            UUID.fromString(required(properties,key+"lastProfile")),UUID.fromString(required(properties,key+"addProfile"))),displays));
+                }
+                String selected=required(properties,"selectedLayout");
+                if (!selected.isEmpty()) selectedLayout=SavedLayout.reference(selected);
+            }
+            State result=new State(profiles, bounded,
+                    Math.max(330, Math.min(10000, Integer.parseInt(required(properties, "width")))),
+                    Math.max(260, Math.min(10000, Integer.parseInt(required(properties, "height")))),
+                    "1".equals(version) ? AppTheme.Charcoal : AppTheme.valueOf(required(properties,"appTheme")),last,
+                    shortcuts,Integer.parseInt(version)<4 || bool(properties,"highlightActive"),appearance,
+                    usability ? Tutorial.valueOf(required(properties,"tutorial.status")) : Tutorial.SKIPPED,
+                    Integer.parseInt(version)>=9 && bool(properties,"connectOnStartup"),
+                    Integer.parseInt(version)>=11 ? new UpdateSettings(bool(properties,"updates.startup"),
+                            UpdateSettings.Channel.valueOf(required(properties,"updates.channel")),required(properties,"updates.ignoredVersion"))
+                            : UpdateSettings.defaults(),recovery,windows,
+                    recipes ? UUID.fromString(required(properties,"addProfile")) : last,savedLayouts,selectedLayout,
+                    recipes ? readDisplays(properties,"",bounded) : Map.of());
+            if (usability && (result.width()!=Integer.parseInt(required(properties,"width"))
+                    || result.height()!=Integer.parseInt(required(properties,"height"))))
+                throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
+            Properties known=properties(result);
+            if (!exact) for (String key:properties.stringPropertyNames()) {
+                if (key.startsWith("shortcut.")) known.setProperty(key,"");
+                for (Profile profile:profiles) if (key.startsWith("profile."+profile.id()+".key.")) known.setProperty(key,"");
+            }
+            if (exact && Integer.parseInt(version)<13)
+                for (String alias:Shortcuts.SETTINGS_ALIASES) known.setProperty("binding."+alias,"");
+            if (Set.of("5","6").contains(version)) for (int i=0;i<appearance.themes().size();i++) {
+                for (String role:List.of("LINE","OUTLINE")) {
+                    String old="appearance.theme."+i+"."+role;
+                    if (properties.containsKey(old)) ColorTheme.parse(required(properties,old));
+                    known.setProperty(old,"");
+                }
+            }
+            for (String key:properties.stringPropertyNames())
+                if (!known.containsKey(key) && !(key.equals("shortcut.Search commands...") && !VERSION.equals(version)))
+                    throw new IllegalArgumentException("Unknown configuration property: "+key);
+            return result;
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid workspace; original file preserved: " + e.getMessage(), e);
+        }
+    }
+    private void notice(String text) { loadNotice+=(loadNotice.isEmpty() ? "" : "\n")+text; }
+    private static Map<UUID,SavedLayout.Display> readDisplays(Properties values,String prefix,Layout layout) {
+        Map<UUID,SavedLayout.Display> result=new LinkedHashMap<>();
+        for (Layout.Leaf pane:layout.leaves()) {
+            String key=prefix+"pane."+pane.pane()+".";
+            if (values.containsKey(key+"fit") || values.containsKey(key+"zoom"))
+                result.put(pane.pane(),new SavedLayout.Display(bool(values,key+"fit"),Double.parseDouble(required(values,key+"zoom"))));
+        }
+        return result;
+    }
+    private Appearance readAppearance(Properties p,String version) {
+            List<ColorTheme> themes=new ArrayList<>();
+            int count=Integer.parseInt(required(p,"appearance.themes"));
+            if (count<0 || count>32) throw new IllegalArgumentException("Custom theme count must be 0-32.");
+            for (int i=0;i<count;i++) {
+                String prefix="appearance.theme."+i+".";
+                EnumMap<ColorRole,Integer> colors=new EnumMap<>(ColorRole.class);
+                for (ColorRole role:ColorRole.values()) colors.put(role,ColorTheme.parse(required(p,prefix+role.name())));
+                themes.add(new ColorTheme(required(p,prefix+"name"),colors));
+            }
+            Appearance.PaneInfo info=new Appearance.PaneInfo(bool(p,"info.header"),bool(p,"info.footer"),
+                    bool(p,"info.profile"),bool(p,"info.connection"),bool(p,"info.host"),bool(p,"info.device"),
+                    bool(p,"info.status"),bool(p,"info.dimensions"),bool(p,"info.cursor"),bool(p,"info.insert"),
+                    Integer.parseInt(version)>=14 && bool(p,"info.footerDevice"));
+            if (Integer.parseInt(version)<14 && info.equals(new Appearance.PaneInfo(true,true,true,true,true,false,true,true,true,true))) {
+                info=Appearance.PaneInfo.defaults();
+                notice("Previous built-in pane information defaults updated: profile header; connection, device, cursor and size footer. Custom/hidden choices retained.");
+            }
+            Set<String> retired=new HashSet<>();
+            for (String value:required(p,"appearance.retired").split("\n")) if (!value.isBlank()) retired.add(value);
+            boolean windowOutline=!"5".equals(version) && bool(p,"appearance.windowOutline");
+            return new Appearance(bool(p,"appearance.outline"),Integer.parseInt(version)<7 || windowOutline,info,
+                    new Appearance.FontChoice(required(p,"font.family"),required(p,"font.file")),
+                    required(p,"appearance.selected"),themes,retired,Integer.parseInt(version)>=18
+                            ? Appearance.CursorStyle.valueOf(required(p,"appearance.cursorStyle")) : Appearance.CursorStyle.IBM);
+    }
+
+    private static String required(Properties properties, String key) {
+        String value = properties.getProperty(key);
+        if (value == null) throw new IllegalArgumentException("Missing workspace property: " + key);
+        return value;
+    }
+    private static boolean bool(Properties properties, String key) {
+        String value = required(properties, key);
+        if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Invalid boolean: " + key);
+        return Boolean.parseBoolean(value);
+    }
+
+    public static Properties properties(State state) {
+        Properties properties = new Properties();
+        properties.setProperty("version", VERSION);
+        properties.setProperty("tutorial.status",state.tutorial.name());
+        properties.setProperty("connectOnStartup",Boolean.toString(state.connectOnStartup));
+        properties.setProperty("updates.startup",Boolean.toString(state.updates.startup()));
+        properties.setProperty("updates.channel",state.updates.channel().name());
+        properties.setProperty("updates.ignoredVersion",state.updates.ignoredVersion());
+        properties.setProperty("highlightActive",Boolean.toString(state.highlightActive));
+        state.shortcuts.forEach((action,stroke) -> properties.setProperty("binding."+action,stroke));
+        state.keyboardRecovery.forEach((key,value) -> properties.setProperty("keyboard.legacy."+key,value));
+        properties.setProperty("lastProfile",state.lastProfile.toString());
+        properties.setProperty("appTheme",state.appTheme.name());
+        properties.setProperty("profiles", String.join(",", state.profiles.stream().map(p -> p.id().toString()).toList()));
+        properties.setProperty("layout", state.layout.encode());
+        properties.setProperty("width", Integer.toString(state.width));
+        properties.setProperty("height", Integer.toString(state.height));
+        properties.setProperty("windows",Integer.toString(state.windows.size()));
+        properties.setProperty("addProfile",state.addProfile.toString());
+        properties.setProperty("savedLayouts",String.join(",",state.savedLayouts.stream().map(s -> s.id().toString()).toList()));
+        properties.setProperty("selectedLayout",state.selectedLayout==null ? "" : state.selectedLayout.toString());
+        writeDisplays(properties,"",state.displays);
+        for (SavedLayout saved:state.savedLayouts) {
+            String key="savedLayout."+saved.id()+".";
+            properties.setProperty(key+"version","3"); properties.setProperty(key+"name",saved.name());
+            properties.setProperty(key+"layout",saved.window().layout().encode());
+            properties.setProperty(key+"width",Integer.toString(saved.window().width()));
+            properties.setProperty(key+"height",Integer.toString(saved.window().height()));
+            properties.setProperty(key+"lastProfile",saved.window().lastProfile().toString());
+            properties.setProperty(key+"addProfile",saved.window().addProfile().toString());
+            saved.displays().forEach((id,display) -> {
+                properties.setProperty(key+"pane."+id+".fit",Boolean.toString(display.fit()));
+                properties.setProperty(key+"pane."+id+".zoom",Double.toString(display.zoom()));
+            });
+        }
+        for (int i=0;i<state.windows.size();i++) {
+            WindowState window=state.windows.get(i); String key="window."+i+".";
+            properties.setProperty(key+"layout",window.layout().encode());
+            properties.setProperty(key+"width",Integer.toString(window.width()));
+            properties.setProperty(key+"height",Integer.toString(window.height()));
+            properties.setProperty(key+"lastProfile",window.lastProfile().toString());
+            properties.setProperty(key+"addProfile",window.addProfile().toString());
+            writeDisplays(properties,key,window.displays());
+        }
+        Appearance a=state.appearance;
+        properties.setProperty("appearance.outline",Boolean.toString(a.outline()));
+        properties.setProperty("appearance.windowOutline",Boolean.toString(a.windowOutline()));
+        properties.setProperty("appearance.cursorStyle",a.cursorStyle().name());
+        properties.setProperty("font.family",a.font().family()); properties.setProperty("font.file",a.font().file());
+        properties.setProperty("appearance.selected",a.selectedTheme());
+        properties.setProperty("appearance.retired",String.join("\n",a.retiredShortcuts()));
+        properties.setProperty("appearance.themes",Integer.toString(a.themes().size()));
+        for (int i=0;i<a.themes().size();i++) {
+            ColorTheme theme=a.themes().get(i); String prefix="appearance.theme."+i+".";
+            properties.setProperty(prefix+"name",theme.name());
+            theme.colors().forEach((role,rgb) -> properties.setProperty(prefix+role.name(),String.format("#%06X",rgb)));
+        }
+        Appearance.PaneInfo info=a.info();
+        boolean[] flags={info.header(),info.footer(),info.profile(),info.connection(),info.host(),info.device(),
+                info.status(),info.dimensions(),info.cursor(),info.insert(),info.footerDevice()};
+        String[] names={"header","footer","profile","connection","host","device","status","dimensions","cursor","insert","footerDevice"};
+        for (int i=0;i<names.length;i++) properties.setProperty("info."+names[i],Boolean.toString(flags[i]));
+        for (Profile p : state.profiles) {
+            String key = "profile." + p.id() + ".";
+            properties.setProperty(key + "name", p.name());
+            properties.setProperty(key + "host", p.host());
+            properties.setProperty(key + "port", Integer.toString(p.port()));
+            properties.setProperty(key + "device", p.device());
+            properties.setProperty(key + "username", p.username());
+            properties.setProperty(key + "auto", Boolean.toString(p.automaticSignOn()));
+            properties.setProperty(key + "remember", Boolean.toString(p.rememberPassword()));
+            properties.setProperty(key + "authentication",p.authentication().name());
+            properties.setProperty(key + "kerberosServer",p.kerberosServer());
+            properties.setProperty(key + "codePage", p.codePage());
+            properties.setProperty(key + "theme", p.theme());
+            properties.setProperty(key + "effect", p.effect());
+            properties.setProperty(key + "zoom", Double.toString(p.zoom()));
+            properties.setProperty(key + "layout", p.savedLayout());
+            properties.setProperty(key + "loginSource",p.loginSource()==null ? "" : p.loginSource().toString());
+            if (!p.keymap().isEmpty()) throw new IllegalArgumentException("Migrate per-profile keyboard mappings before saving a format-12 workspace.");
+        }
+        return properties;
+    }
+    private static void writeDisplays(Properties values,String prefix,Map<UUID,SavedLayout.Display> displays) {
+        displays.forEach((id,display) -> {
+            values.setProperty(prefix+"pane."+id+".fit",Boolean.toString(display.fit()));
+            values.setProperty(prefix+"pane."+id+".zoom",Double.toString(display.zoom()));
+        });
+    }
+    public synchronized void save(State state) throws IOException {
+        if (reset) throw new IOException("Workspace was reset to factory defaults. Reopen Fish before saving.");
+        requireRevision(revision);
+        Properties values=properties(state);
+        ByteArrayOutputStream data=new ByteArrayOutputStream();
+        values.storeToXML(data,"Fish workspace - no passwords","UTF-8");
+        if (data.size()>MAX_BYTES) throw new IOException("Configuration exceeds the 2000000-byte safety limit.");
+        byte[] serialized=data.toByteArray();
+        Path temporary=Files.createTempFile(directory,"workspace-",".tmp");
+        try {
+            try (FileChannel out=FileChannel.open(temporary,StandardOpenOption.WRITE)) {
+                java.nio.ByteBuffer bytes=java.nio.ByteBuffer.wrap(serialized);
+                while (bytes.hasRemaining()) out.write(bytes);
+                out.force(true);
+            }
+            requireRevision(revision);
+            Files.move(temporary,file(),StandardCopyOption.ATOMIC_MOVE,StandardCopyOption.REPLACE_EXISTING);
+            revision=digest(serialized);
+        } finally { Files.deleteIfExists(temporary); }
+    }
+
+    @Override public void close() throws IOException { try { lock.release(); } finally { lockChannel.close(); } }
+}

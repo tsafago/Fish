@@ -5,7 +5,7 @@ try {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class PaneCredentials {
+public static class FishCredentials {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct Credential {
         public uint Flags, Type;
@@ -30,17 +30,17 @@ public static class PaneCredentials {
     $target = [Console]::ReadLine()
     $userName = [Console]::ReadLine()
     $encoded = [Console]::ReadLine()
-    if (-not $target.StartsWith('Pane5250/')) { throw 'Invalid credential target.' }
+    if (-not $target.StartsWith('Fish/')) { throw 'Invalid credential target.' }
     if ($operation -eq 'read') {
         $ptr = [IntPtr]::Zero
-        if ([PaneCredentials]::Read($target, 1, 0, [ref]$ptr)) {
+        if ([FishCredentials]::Read($target, 1, 0, [ref]$ptr)) {
             try {
-                $credential = [Runtime.InteropServices.Marshal]::PtrToStructure($ptr, [type][PaneCredentials+Credential])
+                $credential = [Runtime.InteropServices.Marshal]::PtrToStructure($ptr, [type][FishCredentials+Credential])
                 $secret = New-Object byte[] $credential.CredentialBlobSize
                 [Runtime.InteropServices.Marshal]::Copy($credential.CredentialBlob, $secret, 0, $secret.Length)
                 [Console]::WriteLine('FOUND ' + [Convert]::ToBase64String($secret))
                 [Array]::Clear($secret, 0, $secret.Length)
-            } finally { [PaneCredentials]::CredFree($ptr) }
+            } finally { [FishCredentials]::CredFree($ptr) }
         } else {
             $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
             if ($code -ne 1168) { throw "CredRead failed (Windows error $code)." }
@@ -52,14 +52,14 @@ public static class PaneCredentials {
         $ptr = [Runtime.InteropServices.Marshal]::AllocHGlobal($secret.Length)
         try {
             [Runtime.InteropServices.Marshal]::Copy($secret, 0, $ptr, $secret.Length)
-            $credential = New-Object 'PaneCredentials+Credential'
+            $credential = New-Object 'FishCredentials+Credential'
             $credential.Type = 1
             $credential.TargetName = $target
             $credential.UserName = $userName
             $credential.CredentialBlobSize = $secret.Length
             $credential.CredentialBlob = $ptr
             $credential.Persist = 2
-            if (-not [PaneCredentials]::Write([ref]$credential, 0)) {
+            if (-not [FishCredentials]::Write([ref]$credential, 0)) {
                 $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
                 throw "CredWrite failed (Windows error $code)."
             }
@@ -70,7 +70,7 @@ public static class PaneCredentials {
             [Runtime.InteropServices.Marshal]::FreeHGlobal($ptr)
         }
     } elseif ($operation -eq 'delete') {
-        if (-not [PaneCredentials]::Delete($target, 1, 0)) {
+        if (-not [FishCredentials]::Delete($target, 1, 0)) {
             $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
             if ($code -ne 1168) { throw "CredDelete failed (Windows error $code)." }
         }

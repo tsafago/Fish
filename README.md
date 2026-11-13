@@ -1,8 +1,8 @@
 # Fish
 
-A Windows-first, keyboard-driven desktop 5250 workspace. Java 21 / Swing,
-plain TN5250 TCP, a pinned TN5250J screen/field engine, a small source-built
-Windows frame/SSPI bridge, and no third-party runtime JAR dependencies.
+A Windows-first, keyboard-driven desktop 5250 workspace. Java 25 + OpenJFX 25 (`StageStyle.EXTENDED` + `HeaderBar`),
+plain TN5250 TCP, a pinned TN5250J screen/field engine, and a small source-built
+Windows Kerberos/shortcut/update bridge (`fish-native.dll`), packaged as a self-contained portable runtime requiring zero admin rights.
 
 **Working experimental implementation, not an ACS-compatible release.**
 Real IBM i sign-on and ACS comparison have not been performed. Enhanced display
@@ -372,13 +372,21 @@ are public and require no GitHub account.
 For a portable copy, extract the matching `Fish-0.8.0-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
-The executable/installer are unsigned, so SmartScreen or organizational policy
-may warn or block them. Checksums accompany the package; do not bypass IT policy.
+
+### SmartScreen & Non-Admin Per-User Installation
+
+Any unsigned `.exe` or `.msi` downloaded directly by a web browser receives Windows Mark-of-the-Web (`Zone.Identifier` `ZoneId=3`), which causes Windows SmartScreen to prompt when launched directly via Explorer/`ShellExecute` unless Authenticode-signed. Fish provides three non-admin paths that avoid unnecessary SmartScreen blocks:
+
+1. **PowerShell Per-User Installer (`Install-Fish.ps1` / `Uninstall-Fish.ps1`)**: Installs from `dist\Fish`, a portable `.zip`, or a SHA-256-verified GitHub stream download into `%LOCALAPPDATA%\Programs\Fish` with zero UAC/admin prompts, strips `Zone.Identifier` streams, creates Start Menu and optional Desktop `.lnk` shortcuts, and registers per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish` so Fish appears normally in Windows Installed Apps:
+   ```powershell
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1 -Source .\dist\Fish -DesktopShortcut
+   ```
+2. **In-App One-Click User Install (`Edit > Settings > General > Install for current user...`)**: Copies a running portable `Fish.exe` image cleanly via Java NIO streams into `%LOCALAPPDATA%\Programs\Fish` with Start Menu/Desktop shortcuts and `HKCU` Uninstall registration without launching an external unsigned `setup.exe`.
+3. **SmartScreen-Free In-App Self-Update**: SHA-256-verified updates strip `Zone.Identifier` ADS and launch via `CreateProcessW` rather than `ShellExecuteExW`. Checksums accompany every package; do not bypass organizational IT policy.
 
 **Back up before upgrading:** close ALL Fish windows normally and copy `workspace.xml`
-outside the application folder before first launching 0.8.0 beta. The usual location
-is `%APPDATA%\Fish`; an existing legacy `%APPDATA%\Pane5250` workspace is reused,
-and custom `--data-dir` locations still apply. The next save upgrades configuration
+outside the application folder before first launching 0.8.0 beta. The default location
+is `%APPDATA%\Fish`, and custom `--data-dir` locations still apply. The next save upgrades configuration
 to **version 19** if needed. Fish 0.7.9 and earlier cannot read
 it. Keep a pre-upgrade backup for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
@@ -440,7 +448,7 @@ encrypt terminal traffic or provide verified mutual authentication. TLS is out o
 
 ## Advanced build commands
 
-Windows x64, Windows PowerShell 5.1 or later, and a **JDK 21** are required.
+Windows x64, Windows PowerShell 5.1 or later, and **JDK 25 + OpenJFX 25** (automatically bootstrapped into `.tools`) are required.
 Git is required for a development clone; initialize its pinned submodule:
 
 ```powershell
@@ -456,13 +464,13 @@ git submodule update --init --recursive
 .\build.ps1 Installer # after Package; current-user installer, portable ZIP, checksums
 ```
 
-The bootstrap downloads Temurin 21.0.12.1+1 into `.tools`, verifies its SHA-256,
+The bootstrap downloads Temurin OpenJDK 25.0.5+8 and OpenJFX 25.0.3 SDK/JMODs into `.tools`, verifies their SHA-256 hashes,
 and changes no system installation or PATH. Tool pins are in `tools.psd1`;
 maintainers must refresh them for later security updates. `JAVA_HOME` takes precedence;
-alternatively pass `-Jdk 'C:\path\to\jdk-21'` to `build.ps1`.
+alternatively pass `-Jdk 'C:\path\to\jdk-25'` to `build.ps1`.
 Native compilation uses checksum-pinned portable Zig; installer generation
 uses portable WiX 3.14.1. Neither compiler nor WiX is installed system-wide.
-Only the resulting small Fish-owned DLL is needed at runtime.
+Only the resulting small Fish-owned `fish-native.dll` is needed at runtime.
 The branded setup is compiled from `src\native\fish-setup.c` and embeds the
 matching MSI plus a verified size/hash footer; no external setup runtime is added.
 
@@ -481,10 +489,10 @@ packaging again; the script refuses to overwrite it.
 
 The matching source is also under `dist\Fish\app\source`. It contains the
 actual pinned upstream source and build adaptations, not just a retrieval
-URL. Extract the source ZIP to an empty directory, select a JDK 21, and run
+URL. Extract the source ZIP to an empty directory, select a JDK 25 + OpenJFX 25, and run
 the same build commands. Git is unnecessary for that complete source archive;
-offline builds additionally need the pinned JDK and Zig cache already prepared
-(and WiX for installers).
+offline builds additionally need the pinned JDK, OpenJFX and Zig cache already prepared
+(and WiX for MSI installers).
 
 ```powershell
 .\build.ps1 Run       # normal desktop, keeps the launching console attached
@@ -529,18 +537,7 @@ Its `--focus-only` mode exercises the actual Window and focus dialog's
 Cancel/Apply/Done buttons, all eight combinations of the three persistent settings,
 and Cancel/Escape/Close dismissal without saving unapplied edits. Evidence uses the
 real shared dialog builder.
-Its `--geometry-only` mode adds 100%/125%/150%/175%/200% strict-clip and
-nonzero-origin cases using Swing's actual backing-buffer endpoint rule.
-`pane5250.ui.DpiDesktop` requires fresh foreground/shared-desktop consent:
-it exercises production menus, combos, submenus and dialogs, partial repaints,
-caption hover and native-client-coordinate pixel captures across actual monitors.
-Those popup/hover/restored-window checks passed at 100%/150%; its six
-maximize/restore perimeter assertions still fail. `--window-only` isolates
-that remaining defect. Do not treat the offscreen smoke pass as physical
-maximize/restore acceptance.
-A separately consented, bounded
-`StreamliningDesktop` pass verifies actual Ctrl+Tab recording, native side/quarter/top
-snapping and maximize/restore. It is not the full foreground stress suite.
+Its `--geometry-only` mode adds 100%/125%/150%/175%/200% CSS scaling checks across JavaFX controls without desktop input.
 
 `Test` needs fresh consent and an unlocked, idle Windows desktop: it opens the app,
 uses the physical keyboard/mouse through `Robot`, and temporarily takes focus
@@ -548,14 +545,12 @@ with an always-on-top test window. Keep other windows out of the way.
 It also creates, reads and removes a uniquely named **synthetic** Windows
 credential. It never connects to an IBM i. The rendered artifact is
 `build\workspace-test.png`. The additional real-desktop rendering/window suite
-captures `build\desktop-render-none-native.png` and
-`build\desktop-render-soft-glow-native.png` and prints continuous-resize paint
-and event-thread latency measurements. It verifies background clearing against
-poisoned pixels, actual divider/header drags, all eight window resize directions,
-window controls, keyboard move/size, focus, and unchanged session connections
-and host dimensions, with effects off and Soft glow enabled. `UiRevisions.java`
-is the historical 0.2.0 interaction script; its removal/confirmation/directional
-split assertions are superseded and it is not part of the Fish test command.
+captures `build\desktop-render-none.png` and
+`build\desktop-render-soft-glow.png` and prints continuous-resize paint
+and FX-thread latency measurements. It verifies background clearing against
+poisoned pixels, split-divider resizing, window resize,
+window controls, keyboard focus, and unchanged session connections
+and host dimensions, with effects off and Soft glow enabled.
 
 ## Sessions and profiles
 
@@ -664,27 +659,23 @@ local fixtures and loopback named-device connections do not establish that
 host's acceptance. See [COMPATIBILITY.md](COMPATIBILITY.md).
 
 Remembered passwords are generic credentials in **Windows Credential Manager**,
-under `Pane5250/<profile UUID>/<host>:<port>/<username>`, scoped to the current
+under `Fish/<profile UUID>/<host>:<port>/<username>`, scoped to the current
 Windows user. Uncheck Remember and save to remove a remembered credential.
 Passwords are not written to profile XML, process arguments, logs or the
 clipboard. JVM/PowerShell immutable strings and host screen memory are not
 guaranteed to be securely erased.
 
-New workspace state is atomically saved to `%APPDATA%\Fish\workspace.xml`.
-If `%APPDATA%\Pane5250\workspace.xml` already exists, Fish uses that same
-legacy directory and lock instead, preserving existing profiles and passwords.
-The legacy `Pane5250/` credential target above is intentionally unchanged.
+Workspace state is atomically saved to `%APPDATA%\Fish\workspace.xml`.
 The last pane layout and window size are restored next launch; connections follow
 the saved startup preference (new/factory ON, existing explicit OFF preserved).
 Application appearance, global shortcuts, pane highlighting and the last used
-preset are saved with version-18 state, including tutorial progress and explicit login references.
+preset are saved with version-18/19 state, including tutorial progress and explicit login references.
 Version-1/2/3 profiles and credentials are retained. Only pre-bounded freeform layouts reflow
 into bounded slots with a visible status notice; a legacy empty workspace
 becomes one offline tile. Supported simple layouts retain geometry; unsupported
 format-15/16 geometry simplifies with a notice and unchanged pane/profile IDs.
 A legacy layout over eight panes is rejected explicitly
-without overwriting its file: reduce it using the preserved Pane5250 package
-or use another `--data-dir`. It is never silently truncated.
+without overwriting its file: reduce it or use another `--data-dir`. It is never silently truncated.
 **Ctrl+Alt+S/L** additionally saves/restores a profile-specific layout.
 The workspace is locked against concurrent writers. Corrupt state produces
 an error and is preserved, never silently replaced. `--data-dir DIRECTORY`

@@ -56,7 +56,7 @@ static const char *fish_error(SECURITY_STATUS status) {
     }
 }
 
-JNIEXPORT jboolean JNICALL Java_pane5250_security_Kerberos_available0(JNIEnv *env,jclass type) {
+JNIEXPORT jboolean JNICALL Java_fish_security_Kerberos_available0(JNIEnv *env,jclass type) {
     (void)env; (void)type;
     PSecPkgInfoW info=NULL;
     SECURITY_STATUS status=QuerySecurityPackageInfoW(L"Kerberos",&info);
@@ -64,7 +64,7 @@ JNIEXPORT jboolean JNICALL Java_pane5250_security_Kerberos_available0(JNIEnv *en
     return status==SEC_E_OK ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT jbyteArray JNICALL Java_pane5250_security_Kerberos_ticket0(JNIEnv *env,jclass type,jstring target) {
+JNIEXPORT jbyteArray JNICALL Java_fish_security_Kerberos_ticket0(JNIEnv *env,jclass type,jstring target) {
     (void)type;
     unsigned char token[FISH_MAX_TICKET]={0};
     WCHAR principal[264];

@@ -1,0 +1,947 @@
+package fish.ui;
+
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.function.BooleanSupplier;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
+import javafx.scene.layout.*;
+import javafx.scene.shape.SVGPath;
+import javafx.stage.*;
+import fish.model.*;
+
+/** JavaFX platform lifecycle, live CSS theme stylesheet engine, vector icons, and dialog shells. */
+@SuppressWarnings({"deprecation", "removal"})
+public final class Ui {
+    public static java.awt.Color BACKGROUND, PANEL, FIELD, HOVER, LINE, TEXT, MUTED, FOCUS, ERROR, SELECTION;
+    private static AppTheme theme = AppTheme.Charcoal;
+    private static ColorTheme colors = ColorTheme.builtin(theme);
+    private static boolean custom;
+    private static volatile boolean fxStarted;
+    private static String currentStylesheet = "";
+    private static final Set<Scene> SCENES = Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Set<Stage> STAGES = Collections.newSetFromMap(new WeakHashMap<>());
+    private static final List<Runnable> THEME_LISTENERS = new CopyOnWriteArrayList<>();
+
+    private Ui() {}
+
+    static {
+        updatePaletteFields(theme);
+        currentStylesheet = buildStylesheetUri();
+    }
+
+    private static java.awt.Color awtColor(int rgb) { return new java.awt.Color(rgb); }
+
+    private static void updatePaletteFields(AppTheme value) {
+        theme = value;
+        BACKGROUND = awtColor(colors.rgb(ColorRole.BACKGROUND));
+        PANEL = awtColor(colors.rgb(ColorRole.PANEL));
+        FIELD = awtColor(colors.rgb(ColorRole.FIELD));
+        HOVER = awtColor(colors.rgb(ColorRole.HOVER));
+        LINE = awtColor(colors.rgb(ColorRole.DIVIDER));
+        TEXT = awtColor(colors.rgb(ColorRole.TEXT));
+        MUTED = awtColor(colors.rgb(ColorRole.MUTED));
+        FOCUS = awtColor(colors.rgb(ColorRole.FOCUS));
+        ERROR = awtColor(colors.rgb(ColorRole.ERROR));
+        SELECTION = awtColor(colors.rgb(ColorRole.SELECTION));
+    }
+
+    public static AppTheme theme() { return theme; }
+    public static java.awt.Color color(ColorRole role) { return awtColor(colors.rgb(role)); }
+    public static javafx.scene.paint.Color fxColor(ColorRole role) {
+        int rgb = colors.rgb(role);
+        return javafx.scene.paint.Color.rgb((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255);
+    }
+    public static String hex(ColorRole role) { return String.format("#%06X", colors.rgb(role) & 0xffffff); }
+    public static String hex(java.awt.Color c) { return String.format("#%06X", c.getRGB() & 0xffffff); }
+    public static ColorTheme colorTheme() { return colors; }
+    public static boolean customTheme() { return custom; }
+    public static boolean dark() {
+        return (BACKGROUND.getRed() * .2126 + BACKGROUND.getGreen() * .7152 + BACKGROUND.getBlue() * .0722) < 128;
+    }
+    public static java.awt.Color paneBackground(boolean active) {
+        return color(active ? ColorRole.ACTIVE_TINT : ColorRole.BACKGROUND);
+    }
+
+    public static synchronized void install() {
+        System.setProperty("javafx.enablePreview", "true");
+        System.setProperty("javafx.suppressPreviewWarning", "true");
+        if (!fxStarted) {
+            if (Platform.isFxApplicationThread()) {
+                Platform.setImplicitExit(false);
+                fxStarted = true;
+            } else {
+                CountDownLatch started = new CountDownLatch(1);
+                try {
+                    Platform.startup(() -> {
+                        Platform.setImplicitExit(false);
+                        started.countDown();
+                    });
+                    if (!started.await(15, TimeUnit.SECONDS))
+                        throw new IllegalStateException("JavaFX toolkit startup timed out.");
+                } catch (IllegalStateException alreadyRunning) {
+                    runAndWaitDirect(() -> Platform.setImplicitExit(false));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("JavaFX startup interrupted.", e);
+                }
+                fxStarted = true;
+            }
+        }
+        if (Boolean.getBoolean("fish.testMode") && !Boolean.getBoolean("fish.embeddedJvm")
+                && "main".equals(Thread.currentThread().getName())
+                && Thread.currentThread().getUncaughtExceptionHandler() == Thread.currentThread().getThreadGroup()) {
+            Thread.currentThread().setUncaughtExceptionHandler((thread, error) -> {
+                error.printStackTrace();
+                System.exit(1);
+            });
+        }
+        runOnFx(() -> applyTheme(AppTheme.Charcoal));
+    }
+
+    public static boolean isFxStarted() { return fxStarted; }
+
+    public static synchronized void shutdown() {
+        if (fxStarted) {
+            fxStarted = false;
+            Platform.exit();
+        }
+    }
+
+    public static void finishTestRun() {
+        if (!Boolean.getBoolean("fish.embeddedJvm")) shutdown();
+    }
+
+    public static void runLater(Runnable work) {
+        if (fxStarted) Platform.runLater(work);
+        else work.run();
+    }
+
+    public static void runOnFx(Runnable work) {
+        if (!fxStarted || Platform.isFxApplicationThread()) work.run();
+        else runAndWait(work);
+    }
+
+    public static void runAndWait(Runnable work) {
+        if (!fxStarted || Platform.isFxApplicationThread()) {
+            work.run();
+            return;
+        }
+        runAndWaitDirect(work);
+    }
+
+    private static void runAndWaitDirect(Runnable work) {
+        CountDownLatch done = new CountDownLatch(1);
+        Throwable[] failure = {null};
+        Platform.runLater(() -> {
+            try { work.run(); }
+            catch (Throwable t) { failure[0] = t; }
+            finally { done.countDown(); }
+        });
+        try {
+            if (!done.await(120, TimeUnit.SECONDS))
+                throw new IllegalStateException("Timed out waiting for JavaFX Application Thread.");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted waiting for JavaFX Application Thread.", e);
+        }
+        if (failure[0] instanceof RuntimeException re) throw re;
+        if (failure[0] instanceof Error err) throw err;
+        if (failure[0] != null) throw new IllegalStateException(failure[0]);
+    }
+
+    public static <T> T callAndWait(Callable<T> work) throws Exception {
+        if (!fxStarted || Platform.isFxApplicationThread()) return work.call();
+        CountDownLatch done = new CountDownLatch(1);
+        Object[] box = {null};
+        Throwable[] failure = {null};
+        Platform.runLater(() -> {
+            try { box[0] = work.call(); }
+            catch (Throwable t) { failure[0] = t; }
+            finally { done.countDown(); }
+        });
+        if (!done.await(120, TimeUnit.SECONDS))
+            throw new TimeoutException("Timed out waiting for JavaFX Application Thread.");
+        if (failure[0] instanceof Exception ex) throw ex;
+        if (failure[0] instanceof Error err) throw err;
+        @SuppressWarnings("unchecked")
+        T result = (T) box[0];
+        return result;
+    }
+
+    public static void dispatchSessionRecord(BooleanSupplier alive, Runnable work) throws InterruptedException {
+        if (!fxStarted || Platform.isFxApplicationThread()) {
+            if (alive.getAsBoolean()) work.run();
+            return;
+        }
+        CountDownLatch done = new CountDownLatch(1);
+        Throwable[] failure = {null};
+        Platform.runLater(() -> {
+            try { if (alive.getAsBoolean()) work.run(); }
+            catch (Throwable t) { failure[0] = t; }
+            finally { done.countDown(); }
+        });
+        while (alive.getAsBoolean() && !done.await(40, TimeUnit.MILLISECONDS)) {
+            // Poll so closing a session never blocks indefinitely if the UI is shutting down.
+        }
+        if (failure[0] instanceof RuntimeException re) throw re;
+        if (failure[0] instanceof Error err) throw err;
+    }
+
+    public static void onThemeChanged(Runnable listener) { THEME_LISTENERS.add(listener); }
+    public static void removeThemeListener(Runnable listener) { THEME_LISTENERS.remove(listener); }
+
+    public static void registerStage(Stage stage) {
+        STAGES.add(stage);
+        stage.getIcons().setAll(FishIcon.fxImages());
+    }
+
+    public static List<Stage> stages() {
+        return List.copyOf(STAGES);
+    }
+
+    public static Scene styleScene(Scene scene) {
+        SCENES.add(scene);
+        scene.setFill(fxColor(ColorRole.BACKGROUND));
+        if (!currentStylesheet.isEmpty()) {
+            scene.getStylesheets().setAll(currentStylesheet);
+        }
+        return scene;
+    }
+
+    public static String stylesheetUri() { return currentStylesheet; }
+    public static String activeStylesheetUrl() { return currentStylesheet; }
+
+    public static void applyTheme(AppTheme value) { applyTheme(value, null); }
+
+    public static void applyTheme(AppTheme value, ColorTheme override) {
+        colors = override == null ? ColorTheme.builtin(value) : override;
+        custom = override != null;
+        updatePaletteFields(value);
+        HostPalette.clear();
+        currentStylesheet = buildStylesheetUri();
+        Runnable apply = () -> {
+            javafx.scene.paint.Color fill = fxColor(ColorRole.BACKGROUND);
+            List<javafx.scene.image.Image> icons = FishIcon.fxImages();
+            for (Scene scene : new ArrayList<>(SCENES)) {
+                if (scene != null) {
+                    scene.setFill(fill);
+                    scene.getStylesheets().setAll(currentStylesheet);
+                    if (scene.getRoot() != null) scene.getRoot().applyCss();
+                }
+            }
+            for (Stage stage : new ArrayList<>(STAGES)) {
+                if (stage != null) stage.getIcons().setAll(icons);
+            }
+            for (Runnable listener : THEME_LISTENERS) listener.run();
+        };
+        if (fxStarted && !Platform.isFxApplicationThread()) runAndWaitDirect(apply);
+        else apply.run();
+    }
+
+    private static String buildStylesheetUri() {
+        String css = """
+            .root {
+                -fish-bg: %s;
+                -fish-panel: %s;
+                -fish-field: %s;
+                -fish-dialog: %s;
+                -fish-text: %s;
+                -fish-muted: %s;
+                -fish-disabled: %s;
+                -fish-hover: %s;
+                -fish-pressed: %s;
+                -fish-focus: %s;
+                -fish-error: %s;
+                -fish-selection: %s;
+                -fish-selection-text: %s;
+                -fish-chrome: %s;
+                -fish-chrome-text: %s;
+                -fish-chrome-inactive: %s;
+                -fish-menu: %s;
+                -fish-menu-text: %s;
+                -fish-menu-hover: %s;
+                -fish-menu-selected-text: %s;
+                -fish-tooltip: %s;
+                -fish-tooltip-text: %s;
+                -fish-header: %s;
+                -fish-header-text: %s;
+                -fish-header-muted: %s;
+                -fish-footer: %s;
+                -fish-footer-text: %s;
+                -fish-status-error: %s;
+                -fish-status-wait: %s;
+                -fish-active-tint: %s;
+                -fish-divider: %s;
+                -fish-divider-bg: %s;
+                -fx-base: -fish-panel;
+                -fx-background: -fish-dialog;
+                -fx-control-inner-background: -fish-field;
+                -fx-control-inner-background-alt: -fish-panel;
+                -fx-accent: -fish-selection;
+                -fx-focus-color: -fish-focus;
+                -fx-faint-focus-color: transparent;
+                -fx-text-base-color: -fish-text;
+                -fx-text-background-color: -fish-text;
+                -fx-text-inner-color: -fish-text;
+                -fx-selection-bar: -fish-selection;
+                -fx-selection-bar-non-focused: -fish-selection;
+                -fx-selection-bar-text: -fish-selection-text;
+                -fx-font-family: "Segoe UI";
+                -fx-font-size: 12px;
+            }
+            .fish-dialog-shell {
+                -fx-background-color: -fish-dialog;
+                -fx-border-color: -fish-divider;
+                -fx-border-width: 1;
+            }
+            .fish-window-shell {
+                -fx-background-color: -fish-bg;
+            }
+            .fish-window-outlined {
+                -fx-border-color: -fish-divider;
+                -fx-border-width: 1;
+            }
+            .fish-header-bar {
+                -fx-background-color: -fish-chrome;
+                -fx-border-color: transparent transparent -fish-divider transparent;
+                -fx-border-width: 0 0 1 0;
+            }
+            .label, .text {
+                -fx-text-fill: -fish-text;
+            }
+            .fish-muted {
+                -fx-text-fill: -fish-muted !important;
+            }
+            .fish-error {
+                -fx-text-fill: -fish-error !important;
+            }
+            .fish-section-title {
+                -fx-font-weight: bold;
+                -fx-font-size: 12.5px;
+                -fx-text-fill: -fish-text;
+            }
+            .fish-page-heading {
+                -fx-font-weight: bold;
+                -fx-font-size: 16px;
+                -fx-text-fill: -fish-text;
+            }
+            .button, .toggle-button {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 2, 1;
+                -fx-text-fill: -fish-text;
+                -fx-padding: 5 11 5 11;
+                -fx-cursor: hand;
+            }
+            .button:hover, .toggle-button:hover {
+                -fx-background-color: -fish-divider, -fish-hover;
+            }
+            .button:armed, .toggle-button:armed, .toggle-button:selected {
+                -fx-background-color: -fish-focus, -fish-pressed;
+            }
+            .button:focused, .toggle-button:focused {
+                -fx-background-color: -fish-focus, -fish-field;
+            }
+            .button:default {
+                -fx-background-color: -fish-focus, -fish-selection;
+                -fx-text-fill: -fish-selection-text;
+            }
+            .button:default:hover {
+                -fx-background-color: -fish-focus, -fish-hover;
+            }
+            .button:disabled, .toggle-button:disabled {
+                -fx-opacity: 1.0;
+                -fx-text-fill: -fish-disabled;
+                -fx-background-color: -fish-divider, -fish-panel;
+            }
+            .fish-icon-button {
+                -fx-background-color: transparent;
+                -fx-background-insets: 0;
+                -fx-padding: 4 6 4 6;
+            }
+            .fish-icon-button:hover {
+                -fx-background-color: -fish-hover;
+            }
+            .fish-icon-button:armed {
+                -fx-background-color: -fish-pressed;
+            }
+            .fish-icon-button:focused {
+                -fx-border-color: transparent transparent -fish-focus transparent;
+                -fx-border-width: 0 0 1 0;
+            }
+            .fish-chrome-button {
+                -fx-background-color: transparent;
+                -fx-background-insets: 0;
+                -fx-background-radius: 0;
+                -fx-text-fill: -fish-chrome-text;
+                -fx-padding: 4 9 4 9;
+                -fx-focus-traversable: true;
+            }
+            .fish-chrome-button:hover {
+                -fx-background-color: -fish-menu-hover;
+            }
+            .fish-chrome-button:armed {
+                -fx-background-color: -fish-pressed;
+            }
+            .fish-chrome-button:focused {
+                -fx-border-color: transparent transparent -fish-focus transparent;
+                -fx-border-width: 0 0 1 0;
+            }
+            .fish-window-close:hover, .fish-window-close:armed {
+                -fx-background-color: -fish-error;
+            }
+            .text-field, .password-field, .text-area {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 2, 1;
+                -fx-text-fill: -fish-text;
+                -fx-prompt-text-fill: -fish-muted;
+                -fx-highlight-fill: -fish-selection;
+                -fx-highlight-text-fill: -fish-selection-text;
+            }
+            .text-field:focused, .password-field:focused, .text-area:focused {
+                -fx-background-color: -fish-focus, -fish-field;
+            }
+            .text-area .content {
+                -fx-background-color: -fish-field;
+                -fx-background-radius: 0;
+            }
+            .invalid-field {
+                -fx-background-color: -fish-error, -fish-field !important;
+            }
+            .combo-box-base {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 2, 1;
+            }
+            .combo-box-base:hover {
+                -fx-background-color: -fish-divider, -fish-hover;
+            }
+            .combo-box-base:focused {
+                -fx-background-color: -fish-focus, -fish-field;
+            }
+            .combo-box .list-cell {
+                -fx-text-fill: -fish-text;
+                -fx-background-color: transparent;
+                -fx-padding: 4 8 4 8;
+            }
+            .combo-box-popup .list-view {
+                -fx-background-color: -fish-divider, -fish-menu;
+                -fx-background-insets: 0, 1;
+                -fx-effect: null;
+            }
+            .combo-box-popup .list-view .list-cell {
+                -fx-background-color: -fish-menu;
+                -fx-text-fill: -fish-menu-text;
+            }
+            .combo-box-popup .list-view .list-cell:hover,
+            .combo-box-popup .list-view .list-cell:filled:selected {
+                -fx-background-color: -fish-menu-hover;
+                -fx-text-fill: -fish-menu-selected-text;
+            }
+            .fish-chrome-combo {
+                -fx-background-color: transparent;
+                -fx-background-insets: 0;
+                -fx-background-radius: 0;
+            }
+            .fish-chrome-combo:hover {
+                -fx-background-color: -fish-menu-hover;
+            }
+            .fish-chrome-combo:showing {
+                -fx-background-color: -fish-pressed;
+            }
+            .fish-chrome-combo:focused {
+                -fx-border-color: transparent transparent -fish-focus transparent;
+                -fx-border-width: 0 0 1 0;
+            }
+            .fish-chrome-combo > .list-cell {
+                -fx-text-fill: -fish-chrome-text;
+                -fx-alignment: center;
+                -fx-padding: 2 6 2 8;
+            }
+            .check-box {
+                -fx-text-fill: -fish-text;
+            }
+            .check-box:disabled {
+                -fx-opacity: 1.0;
+                -fx-text-fill: -fish-disabled;
+            }
+            .check-box > .box {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 2, 1;
+                -fx-padding: 3;
+            }
+            .check-box:focused > .box {
+                -fx-background-color: -fish-focus, -fish-field;
+            }
+            .check-box:selected > .box > .mark {
+                -fx-background-color: -fish-focus;
+            }
+            .check-box:disabled > .box > .mark {
+                -fx-background-color: -fish-disabled;
+            }
+            .menu-bar {
+                -fx-background-color: transparent;
+                -fx-padding: 0;
+                -fx-border-width: 0;
+            }
+            .menu-bar > .container > .menu-button {
+                -fx-background-color: transparent;
+                -fx-background-radius: 0;
+                -fx-padding: 5 9 5 9;
+            }
+            .menu-bar > .container > .menu-button > .label {
+                -fx-text-fill: -fish-chrome-text;
+            }
+            .menu-bar > .container > .menu-button:hover,
+            .menu-bar > .container > .menu-button:focused,
+            .menu-bar > .container > .menu-button:showing {
+                -fx-background-color: -fish-menu-hover;
+            }
+            .context-menu {
+                -fx-background-color: -fish-divider, -fish-menu;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 0;
+                -fx-padding: 3 1 3 1;
+                -fx-effect: null;
+            }
+            .menu-item {
+                -fx-background-color: transparent;
+                -fx-padding: 5 12 5 12;
+            }
+            .menu-item > .label {
+                -fx-text-fill: -fish-menu-text;
+            }
+            .menu-item:focused, .menu-item:hover {
+                -fx-background-color: -fish-menu-hover;
+            }
+            .menu-item:focused > .label, .menu-item:hover > .label {
+                -fx-text-fill: -fish-menu-selected-text;
+            }
+            .menu-item:disabled {
+                -fx-opacity: 1.0;
+            }
+            .menu-item:disabled > .label {
+                -fx-text-fill: -fish-disabled;
+            }
+            .separator > .line {
+                -fx-border-color: -fish-divider transparent transparent transparent;
+                -fx-border-width: 1 0 0 0;
+                -fx-border-insets: 0;
+            }
+            .separator:vertical > .line {
+                -fx-border-color: transparent transparent transparent -fish-divider;
+                -fx-border-width: 0 0 0 1;
+            }
+            .list-view, .table-view {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 0;
+                -fx-table-cell-border-color: -fish-divider;
+            }
+            .list-view:focused, .table-view:focused {
+                -fx-background-color: -fish-focus, -fish-field;
+            }
+            .list-cell {
+                -fx-background-color: -fish-field;
+                -fx-text-fill: -fish-text;
+                -fx-padding: 5 10 5 10;
+            }
+            .list-cell:filled:hover {
+                -fx-background-color: -fish-hover;
+            }
+            .list-cell:filled:selected {
+                -fx-background-color: -fish-selection;
+                -fx-text-fill: -fish-selection-text;
+            }
+            .fish-sidebar.list-view {
+                -fx-background-color: -fish-divider, -fish-panel;
+                -fx-background-insets: 0, 1;
+            }
+            .fish-sidebar .list-cell {
+                -fx-background-color: -fish-panel;
+                -fx-padding: 7 12 7 12;
+            }
+            .fish-sidebar .list-cell:filled:selected {
+                -fx-background-color: -fish-focus, -fish-selection;
+                -fx-background-insets: 0, 0 0 0 2;
+                -fx-text-fill: -fish-selection-text;
+                -fx-font-weight: bold;
+            }
+            .table-view .column-header-background,
+            .table-view .column-header,
+            .table-view .filler {
+                -fx-background-color: -fish-panel;
+                -fx-border-color: transparent transparent -fish-divider transparent;
+                -fx-border-width: 0 0 1 0;
+            }
+            .table-view .column-header .label {
+                -fx-text-fill: -fish-muted;
+                -fx-alignment: center-left;
+                -fx-padding: 5 8 5 8;
+            }
+            .table-row-cell {
+                -fx-background-color: -fish-field;
+                -fx-border-color: transparent transparent -fish-divider transparent;
+                -fx-border-width: 0 0 1 0;
+            }
+            .table-row-cell:filled:selected {
+                -fx-background-color: -fish-selection;
+            }
+            .table-row-cell:filled:selected .table-cell {
+                -fx-text-fill: -fish-selection-text;
+            }
+            .tab-pane > .tab-header-area > .tab-header-background {
+                -fx-background-color: -fish-panel;
+                -fx-border-color: transparent transparent -fish-divider transparent;
+                -fx-border-width: 0 0 1 0;
+            }
+            .tab-pane > .tab-header-area .tab {
+                -fx-background-color: -fish-panel;
+                -fx-background-insets: 0;
+                -fx-background-radius: 0;
+                -fx-padding: 6 14 6 14;
+            }
+            .tab-pane > .tab-header-area .tab:selected {
+                -fx-background-color: -fish-hover;
+                -fx-border-color: transparent transparent -fish-focus transparent;
+                -fx-border-width: 0 0 2 0;
+            }
+            .tab-pane > .tab-header-area .tab .tab-label {
+                -fx-text-fill: -fish-text;
+            }
+            .scroll-pane {
+                -fx-background-color: transparent;
+                -fx-padding: 0;
+            }
+            .scroll-pane > .viewport {
+                -fx-background-color: transparent;
+            }
+            .scroll-bar {
+                -fx-background-color: -fish-panel;
+                -fx-pref-width: 10;
+                -fx-pref-height: 10;
+            }
+            .scroll-bar > .increment-button, .scroll-bar > .decrement-button {
+                -fx-padding: 0;
+                -fx-pref-width: 0;
+                -fx-pref-height: 0;
+                -fx-opacity: 0;
+            }
+            .scroll-bar > .thumb {
+                -fx-background-color: -fish-divider;
+                -fx-background-insets: 2;
+                -fx-background-radius: 2;
+            }
+            .scroll-bar > .thumb:hover, .scroll-bar > .thumb:pressed {
+                -fx-background-color: -fish-muted;
+            }
+            .split-pane {
+                -fx-background-color: transparent;
+                -fx-padding: 0;
+            }
+            .split-pane > .split-pane-divider {
+                -fx-padding: 0 1.5 0 1.5;
+                -fx-background-color: -fish-divider-bg, -fish-divider;
+                -fx-background-insets: 0, 0 1.5 0 1.5;
+            }
+            .split-pane:vertical > .split-pane-divider {
+                -fx-padding: 1.5 0 1.5 0;
+                -fx-background-color: -fish-divider-bg, -fish-divider;
+                -fx-background-insets: 0, 1.5 0 1.5 0;
+            }
+            .split-pane > .split-pane-divider:hover {
+                -fx-background-color: -fish-divider-bg, -fish-focus;
+            }
+            .progress-bar > .track {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 0;
+            }
+            .progress-bar > .bar {
+                -fx-background-color: -fish-focus;
+                -fx-background-insets: 1;
+                -fx-background-radius: 0;
+            }
+            .tooltip {
+                -fx-background-color: -fish-divider, -fish-tooltip;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 0;
+                -fx-text-fill: -fish-tooltip-text;
+                -fx-padding: 5 8 5 8;
+                -fx-effect: null;
+            }
+            .hyperlink {
+                -fx-text-fill: -fish-focus;
+                -fx-border-color: transparent;
+                -fx-padding: 0;
+            }
+            .fish-notice {
+                -fx-background-color: -fish-footer;
+                -fx-border-color: -fish-divider;
+                -fx-border-width: 1;
+                -fx-padding: 4 6 4 10;
+            }
+            """.formatted(
+                hex(ColorRole.BACKGROUND), hex(ColorRole.PANEL), hex(ColorRole.FIELD), hex(ColorRole.DIALOG),
+                hex(ColorRole.TEXT), hex(ColorRole.MUTED), hex(ColorRole.DISABLED),
+                hex(ColorRole.HOVER), hex(ColorRole.PRESSED), hex(ColorRole.FOCUS), hex(ColorRole.ERROR),
+                hex(ColorRole.SELECTION), hex(ColorRole.SELECTION_TEXT),
+                hex(ColorRole.CHROME), hex(ColorRole.CHROME_TEXT), hex(ColorRole.CHROME_INACTIVE),
+                hex(ColorRole.MENU), hex(ColorRole.MENU_TEXT), hex(ColorRole.MENU_HOVER), hex(ColorRole.MENU_SELECTED_TEXT),
+                hex(ColorRole.TOOLTIP), hex(ColorRole.TOOLTIP_TEXT),
+                hex(ColorRole.HEADER), hex(ColorRole.HEADER_TEXT), hex(ColorRole.HEADER_MUTED),
+                hex(ColorRole.FOOTER), hex(ColorRole.FOOTER_TEXT), hex(ColorRole.STATUS_ERROR), hex(ColorRole.STATUS_WAIT),
+                hex(ColorRole.ACTIVE_TINT), hex(ColorRole.DIVIDER), hex(ColorRole.DIVIDER_BACKGROUND));
+        return "data:text/css;base64," + Base64.getEncoder().encodeToString(css.getBytes(StandardCharsets.UTF_8));
+    }
+
+    public static Node icon(String kind) {
+        return icon(kind, ColorRole.TEXT);
+    }
+
+    public static SVGPath icon(String kind, ColorRole colorRole) {
+        SVGPath svg = new SVGPath();
+        svg.setContent(switch (kind) {
+            case "close" -> "M 2 2 L 10 10 M 10 2 L 2 10";
+            case "plus" -> "M 1 6 L 11 6 M 6 1 L 6 11";
+            case "search" -> "M 7.5 7.5 L 11 11 M 8 4.5 A 3.5 3.5 0 1 1 1 4.5 A 3.5 3.5 0 1 1 8 4.5";
+            case "connect" -> "M 1 6 L 10 6 M 6 2 L 10 6 L 6 10";
+            case "right" -> "M 4 2 L 8 6 L 4 10";
+            case "down" -> "M 2 4 L 6 8 L 10 4";
+            case "minimize" -> "M 1 6 L 10 6";
+            case "maximize" -> "M 1.5 1.5 H 10.5 V 10.5 H 1.5 Z";
+            case "restore" -> "M 3.5 1.5 H 10.5 V 8.5 H 8.5 M 1.5 3.5 H 8.5 V 10.5 H 1.5 Z";
+            case "eye" -> "M 1 6 C 2.8 2.8 9.2 2.8 11 6 C 9.2 9.2 2.8 9.2 1 6 Z M 7.5 6 A 1.5 1.5 0 1 1 4.5 6 A 1.5 1.5 0 1 1 7.5 6";
+            case "eye-off" -> "M 1.5 1.5 L 10.5 10.5 M 1 6 C 2.8 2.8 9.2 2.8 11 6 C 9.8 8.1 7.8 9 6 9";
+            case "install" -> "M 6 1 V 8 M 3 5.5 L 6 8.5 L 9 5.5 M 1.5 10.5 H 10.5";
+            default -> "M 2 4 L 6 8 L 10 4";
+        });
+        svg.setFill(javafx.scene.paint.Color.TRANSPARENT);
+        svg.setStrokeWidth(1.35);
+        svg.setStrokeLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        svg.setStrokeLineJoin(javafx.scene.shape.StrokeLineJoin.ROUND);
+        Runnable sync = () -> svg.setStroke(svg.isDisabled() ? fxColor(ColorRole.DISABLED) : fxColor(colorRole));
+        svg.disabledProperty().addListener((o, a, b) -> sync.run());
+        onThemeChanged(sync);
+        sync.run();
+        return svg;
+    }
+
+    public static Button button(String text, Runnable action) {
+        Button b = new Button(text);
+        b.setMnemonicParsing(false);
+        b.setOnAction(e -> action.run());
+        return b;
+    }
+
+    public static Button iconButton(String accessibleName, String kind, Runnable action) {
+        return iconButton(accessibleName, kind, ColorRole.TEXT, action);
+    }
+
+    public static Button iconButton(String accessibleName, String kind, ColorRole role, Runnable action) {
+        Button b = new Button();
+        b.setGraphic(icon(kind, role));
+        b.getStyleClass().add("fish-icon-button");
+        b.setTooltip(new Tooltip(accessibleName));
+        b.setAccessibleText(accessibleName);
+        b.setMinSize(25, 24);
+        b.setPrefSize(25, 24);
+        b.setOnAction(e -> action.run());
+        return b;
+    }
+
+    public static HBox searchBox(TextField field, String placeholder) {
+        field.setPromptText(placeholder);
+        SVGPath glass = icon("search", ColorRole.MUTED);
+        Button clear = iconButton("Clear search", "close", ColorRole.MUTED, () -> {
+            field.clear();
+            field.requestFocus();
+        });
+        clear.setFocusTraversable(false);
+        clear.visibleProperty().bind(field.textProperty().isNotEmpty());
+        clear.managedProperty().bind(clear.visibleProperty());
+        HBox wrapper = new HBox(6, glass, field, clear);
+        wrapper.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(field, Priority.ALWAYS);
+        return wrapper;
+    }
+
+    public static HBox revealablePassword(PasswordField passwordField) {
+        TextField plain = new TextField();
+        plain.textProperty().bindBidirectional(passwordField.textProperty());
+        plain.promptTextProperty().bind(passwordField.promptTextProperty());
+        plain.tooltipProperty().bind(passwordField.tooltipProperty());
+        plain.disableProperty().bind(passwordField.disableProperty());
+        plain.setManaged(false);
+        plain.setVisible(false);
+        StackPane stack = new StackPane(passwordField, plain);
+        HBox.setHgrow(stack, Priority.ALWAYS);
+        ToggleButton toggle = new ToggleButton();
+        toggle.getStyleClass().add("fish-icon-button");
+        toggle.setGraphic(icon("eye", ColorRole.MUTED));
+        toggle.setTooltip(new Tooltip("Show or hide typed password"));
+        toggle.setAccessibleText("Show typed password");
+        toggle.disableProperty().bind(passwordField.disableProperty());
+        toggle.selectedProperty().addListener((obs, was, show) -> {
+            plain.setManaged(show);
+            plain.setVisible(show);
+            passwordField.setManaged(!show);
+            passwordField.setVisible(!show);
+            toggle.setGraphic(icon(show ? "eye-off" : "eye", ColorRole.MUTED));
+            if (show) { plain.requestFocus(); plain.positionCaret(plain.getText().length()); }
+            else { passwordField.requestFocus(); passwordField.positionCaret(passwordField.getText().length()); }
+        });
+        HBox box = new HBox(4, stack, toggle);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
+    public static void role(Node node, String roleName) {
+        node.getStyleClass().removeAll("fish-muted", "fish-error");
+        if ("error".equals(roleName)) node.getStyleClass().add("fish-error");
+        else if ("muted".equals(roleName)) node.getStyleClass().add("fish-muted");
+    }
+
+    public static void markInvalid(Node control, boolean invalid) {
+        if (invalid) {
+            if (!control.getStyleClass().contains("invalid-field")) control.getStyleClass().add("invalid-field");
+        } else {
+            control.getStyleClass().remove("invalid-field");
+        }
+    }
+
+    public static Stage dialogStage(Window owner, String title, boolean modal) {
+        Stage stage = new Stage(StageStyle.EXTENDED);
+        if (owner != null) stage.initOwner(owner);
+        stage.initModality(modal ? Modality.WINDOW_MODAL : Modality.NONE);
+        stage.setTitle(title);
+        HeaderBar.setPrefButtonHeight(stage, 0);
+        registerStage(stage);
+        return stage;
+    }
+
+    public static Scene decorateDialog(Stage dialog, Region content, Runnable dismiss, double prefW, double prefH) {
+        HeaderBar.setPrefButtonHeight(dialog, 0);
+        Label titleLabel = new Label(dialog.getTitle());
+        dialog.titleProperty().addListener((o, a, b) -> titleLabel.setText(b));
+        titleLabel.setPadding(new Insets(0, 8, 0, 12));
+        BorderPane dragArea = new BorderPane();
+        dragArea.setLeft(titleLabel);
+        BorderPane.setAlignment(titleLabel, Pos.CENTER_LEFT);
+        HeaderBar.setDragType(dragArea, HeaderDragType.DRAGGABLE);
+        HeaderBar.setDragType(titleLabel, HeaderDragType.DRAGGABLE);
+
+        Button close = iconButton("Close dialog", "close", ColorRole.CHROME_TEXT, dismiss);
+        close.getStyleClass().addAll("fish-chrome-button", "fish-window-close");
+        close.setPrefSize(36, 30);
+        HeaderBar.setButtonType(close, HeaderButtonType.CLOSE);
+
+        HeaderBar header = new HeaderBar(null, dragArea, close);
+        header.getStyleClass().add("fish-header-bar");
+        header.setMinHeight(31);
+        header.setPrefHeight(31);
+
+        BorderPane shell = new BorderPane();
+        shell.getStyleClass().add("fish-dialog-shell");
+        shell.setTop(header);
+        shell.setCenter(content);
+
+        Scene scene = prefW > 0 && prefH > 0 ? new Scene(shell, prefW, prefH) : new Scene(shell);
+        styleScene(scene);
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == KeyCode.ESCAPE) {
+                e.consume();
+                dismiss.run();
+            }
+        });
+        dialog.setOnCloseRequest(e -> {
+            e.consume();
+            dismiss.run();
+        });
+        dialog.setScene(scene);
+        shell.applyCss();
+        return scene;
+    }
+
+    public static boolean form(Window owner, String title, Node body, String acceptLabel) {
+        return prompt(owner, title, body, acceptLabel, true);
+    }
+
+    public static boolean confirm(Window owner, String message, String title) {
+        return prompt(owner, title, messageNode(message), "OK", true);
+    }
+
+    public static void message(Window owner, String message, String title) {
+        prompt(owner, title, messageNode(message), "Close", false);
+    }
+
+    public static void error(Window owner, String message) {
+        runOnFx(() -> message(owner, message, "Fish"));
+    }
+
+    public static String input(Window owner, String title, String message) {
+        String[] result = {null};
+        runOnFx(() -> {
+            TextField field = new TextField();
+            field.setPrefColumnCount(28);
+            Label label = new Label(message);
+            label.setLabelFor(field);
+            VBox box = new VBox(10, label, field);
+            if (prompt(owner, title, box, "Send", true)) result[0] = field.getText();
+        });
+        return result[0];
+    }
+
+    private static Node messageNode(String text) {
+        TextArea area = new TextArea(text);
+        area.setEditable(false);
+        area.setWrapText(true);
+        area.setFocusTraversable(false);
+        int lines = Math.min(18, Math.max(3, (int) text.lines().count() + 1));
+        area.setPrefRowCount(lines);
+        area.setPrefColumnCount(48);
+        return area;
+    }
+
+    private static boolean prompt(Window owner, String title, Node body, String acceptLabel, boolean showCancel) {
+        boolean[] accepted = {false};
+        Stage dialog = dialogStage(owner, title, true);
+        if (owner == null) dialog.initModality(Modality.APPLICATION_MODAL);
+        HBox actions = new HBox(8);
+        actions.setAlignment(Pos.CENTER_RIGHT);
+        if (showCancel) {
+            Button cancel = button("Cancel", dialog::close);
+            cancel.setCancelButton(true);
+            actions.getChildren().add(cancel);
+        }
+        Button ok = button(acceptLabel, () -> {
+            accepted[0] = true;
+            dialog.close();
+        });
+        ok.setDefaultButton(true);
+        actions.getChildren().add(ok);
+
+        BorderPane wrapper = new BorderPane();
+        wrapper.setPadding(new Insets(16));
+        wrapper.setCenter(body);
+        wrapper.setBottom(actions);
+        BorderPane.setMargin(actions, new Insets(16, 0, 0, 0));
+
+        decorateDialog(dialog, wrapper, dialog::close, -1, -1);
+        dialog.sizeToScene();
+        dialog.setMinWidth(380);
+        dialog.showAndWait();
+        return accepted[0];
+    }
+}

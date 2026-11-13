@@ -26,8 +26,7 @@ Use these commands from the Fish directory in Windows PowerShell:
 ```
 
 `paths` returns the actual workspace and lock paths. Default is
-`%APPDATA%\Fish\workspace.xml`; an existing legacy `%APPDATA%\Pane5250\workspace.xml`
-is still used so older profiles and credentials remain reachable. `--data-dir`
+`%APPDATA%\Fish\workspace.xml`. `--data-dir`
 selects another directory and must match the directory used to launch Fish.
 Every command accepts `--data-dir DIRECTORY`; export/validate/apply require
 `--file FILE`. Schema prints JSON or writes a **new** file using `--file`.
@@ -36,7 +35,7 @@ The batch wrapper waits for the GUI-subsystem executable and preserves its exit
 status. From sources, the identical interface is:
 
 ```powershell
-& '.\.tools\jdk-21.0.12.1+1\bin\java.exe' -jar .\dist\Fish.jar --config paths
+& '.\.tools\jdk-25.0.5+8\bin\java.exe' --enable-native-access=javafx.graphics,ALL-UNNAMED --module-path '.\.tools\javafx-sdk-25.0.3\lib' --add-modules javafx.base,javafx.controls,javafx.graphics,javafx.swing -jar .\dist\Fish.jar --config paths
 # Or use: Fish.exe --config <command> ...
 ```
 

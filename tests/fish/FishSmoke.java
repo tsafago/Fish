@@ -1,0 +1,528 @@
+package fish;
+
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.LinearGradientPaint;
+import java.awt.Paint;
+import java.awt.Shape;
+import java.awt.datatransfer.*;
+import java.awt.geom.*;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.lang.reflect.Field;
+import java.nio.file.*;
+import java.util.*;
+import java.util.List;
+import java.util.concurrent.*;
+import javafx.animation.Animation;
+import javafx.animation.Timeline;
+import javafx.scene.AccessibleRole;
+import javafx.scene.Node;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContextMenu;
+import javafx.scene.control.MenuItem;
+import javafx.stage.StageStyle;
+import javafx.stage.Window;
+import javax.imageio.ImageIO;
+import org.tn5250j.Session5250;
+import org.tn5250j.keyboard.KeyMnemonic;
+import fish.demo.DemoHost;
+import fish.demo.DemoScreens;
+import fish.model.*;
+import fish.ui.*;
+
+/** Bounded, noninteractive Fish checks: no Robot, credentials or visible windows. */
+public final class FishSmoke {
+    private static int checks;
+    private static void check(boolean value,String message) {
+        checks++;
+        if (!value) throw new AssertionError(message);
+    }
+    private static <T> T edt(Callable<T> work) throws Exception { return FxTestSupport.fx(work); }
+    private static void await(Callable<Boolean> condition,String message) throws Exception {
+        long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
+        while (!condition.call() && System.nanoTime()<deadline) Thread.sleep(25);
+        check(condition.call(),message);
+    }
+    private static BufferedImage paint(TerminalView view,double dpi) {
+        return view.paintToImage(dpi);
+    }
+    private static Object field(Object object,String name) throws Exception { return FxTestSupport.field(object,name); }
+    private static void setField(Object object,String name,Object value) throws Exception { FxTestSupport.setField(object,name,value); }
+    private static void clipboard(TerminalView view,boolean copy,Clipboard clipboard) {
+        view.clipboard(copy,() -> clipboard);
+    }
+    private static byte[] inputScreen(int ffw) {
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        DemoScreens.command(out,4,0x40,4,0x11,0,8);
+        DemoScreens.at(out,1,1,0x22,"HELLO");
+        for (int row=2;row<=4;row++) DemoScreens.field(out,row,1,8,row==2 ? ffw : 0x40,0x24);
+        DemoScreens.command(out,4,0x42,0,0);
+        return DemoScreens.gds(3,out.toByteArray());
+    }
+    private static byte[] attributesScreen() {
+        ByteArrayOutputStream out=new ByteArrayOutputStream();
+        DemoScreens.command(out,4,0x40,4,0x11,0,8);
+        DemoScreens.at(out,1,1,0x27,"TOPSECRET");
+        DemoScreens.at(out,2,1,0x21,"REVERSE");
+        DemoScreens.at(out,3,1,0x2a,"BLINK");
+        DemoScreens.field(out,4,1,8,0x40,0x27);
+        DemoScreens.command(out,4,0x42,0,0);
+        return DemoScreens.gds(3,out.toByteArray());
+    }
+    private static void clipboardChecks(Workspace workspace,SessionPane pane,DemoHost host) throws Exception {
+        TerminalView view=pane.view();
+        Session5250 core=(Session5250)field(pane,"core");
+        Clipboard clipboard=new Clipboard("Synthetic Fish fixture");
+        int transactions=host.requestCount();
+        core.accept(inputScreen(0x40));
+        clipboard.setContents(new StringSelection("AB[]"),null);
+        clipboard(view,false,clipboard);
+        check(new String(pane.screen().getScreenAsChars(),81,4).equals("AB[]"),"Clipboard paste edits the actual host input field, including literal brackets.");
+        setField(view,"anchor",81); setField(view,"end",84);
+        clipboard(view,true,clipboard);
+        check(clipboard.getData(DataFlavor.stringFlavor).equals("AB[]"),"Clipboard copy exports precisely the rectangular selection.");
+        view.resetSelection();
+        core.accept(inputScreen(0x40));
+        clipboard.setContents(new StringSelection("A\tB\nC"),null);
+        clipboard(view,false,clipboard);
+        check(host.requestCount()==transactions,"Clipboard newlines/tabs never submit Enter or a host transaction.");
+        core.accept(inputScreen(0x43));
+        clipboard.setContents(new StringSelection("4X5"),null);
+        clipboard(view,false,clipboard);
+        check(pane.screen().getScreenAsChars()[81]=='4' && pane.screen().getScreenAsChars()[82]!='X'
+                && pane.screen().getOIA().isKeyBoardLocked(),"Numeric rejection stops clipboard input without bypassing inhibition.");
+        workspace.refreshCommands();
+        ContextMenu inhibited=workspace.clipboardMenu(pane);
+        check(inhibited.getItems().size()>=2 && inhibited.getItems().get(1).isDisable(),"Context menu disables Paste when input is inhibited.");
+        core.accept(inputScreen(0x40));
+        pane.screen().moveCursor(2);
+        clipboard.setContents(new StringSelection("Z"),null);
+        clipboard(view,false,clipboard);
+        check(new String(pane.screen().getScreenAsChars(),1,5).equals("HELLO"),"Clipboard paste cannot overwrite protected host text.");
+        core.accept(inputScreen(0x40));
+        clipboard.setContents(new StringSelection("A\u6f22B"),null);
+        char[] before=pane.screen().getScreenAsChars().clone();
+        clipboard(view,false,clipboard);
+        check(Arrays.equals(before,pane.screen().getScreenAsChars()),"Unrepresentable clipboard text is rejected before editing a prefix.");
+        core.accept(DemoScreens.gds(3,new byte[]{4,0x11,0x20,0}));
+        clipboard.setContents(new StringSelection("NO"),null);
+        clipboard(view,false,clipboard);
+        check(pane.screen().getOIA().isKeyBoardLocked() && Arrays.equals(before,pane.screen().getScreenAsChars()),
+                "Clipboard paste cannot unlock or edit a host-inhibited screen.");
+        core.accept(attributesScreen());
+        clipboard.setContents(new StringSelection("PWD"),null);
+        clipboard(view,false,clipboard);
+        clipboard(view,true,clipboard);
+        String safe=(String)clipboard.getData(DataFlavor.stringFlavor);
+        check(!safe.contains("TOPSECRET") && !safe.contains("PWD") && safe.contains("REVERSE"),"Clipboard export omits both host-hidden text and typed password fields.");
+        clipboard(view,false,new Clipboard("Empty fixture"));
+        check(((String)field(pane,"notice")).contains("does not contain text"),"A clipboard without text produces an explicit message.");
+        clipboard(view,true,new Clipboard("Busy fixture") {
+            @Override public synchronized void setContents(Transferable contents,ClipboardOwner owner) {
+                throw new IllegalStateException("Synthetic clipboard busy");
+            }
+        });
+        check(((String)field(pane,"notice")).contains("Synthetic clipboard busy"),"Clipboard copy failures are reported, not thrown on the UI thread.");
+        core.accept(DemoScreens.screen(1,false,""));
+        ContextMenu context=workspace.clipboardMenu(pane);
+        MenuItem copyItem=context.getItems().getFirst();
+        check(copyItem.getProperties().get("fish.command")==workspace.commands().stream()
+                .filter(c -> c.matches("copy clipboard")).findFirst().orElseThrow(),"Context menu reuses the shared clipboard command.");
+    }
+    private static int differences(BufferedImage a,BufferedImage b,int top,int bottom) {
+        int count=0;
+        for (int y=Math.max(0,top);y<Math.min(bottom,a.getHeight());y++)
+            for (int x=0;x<a.getWidth();x++) if (a.getRGB(x,y)!=b.getRGB(x,y)) count++;
+        return count;
+    }
+    private static double luminance(Color color) {
+        int[] channels={color.getRed(),color.getGreen(),color.getBlue()};
+        double[] weights={.2126,.7152,.0722};
+        double result=0;
+        for (int i=0;i<3;i++) {
+            double value=channels[i]/255.0;
+            result+=weights[i]*(value<=.04045 ? value/12.92 : Math.pow((value+.055)/1.055,2.4));
+        }
+        return result;
+    }
+    private static double contrast(Color a,Color b) {
+        double x=luminance(a),y=luminance(b);
+        return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);
+    }
+    private static void fluxChecks(Workspace workspace,SessionPane pane) throws Exception {
+        TerminalView view=pane.view();
+        workspace.commands().stream().filter(c -> c.title.equals("Flux animated text")).findFirst().orElseThrow().execute();
+        check(pane.profile().effect().equals(Profile.FLUX),"Flux is immediately available through the View menu action and persistent effect list.");
+        setField(view,"fluxPhase",0.0);
+        BufferedImage first=paint(view,1.5);
+        Object glyphs=field(view,"rendered");
+        setField(view,"fluxPhase",.35);
+        BufferedImage second=paint(view,1.5);
+        check(differences(first,second,0,first.getHeight())>100,"Two deterministic Flux phases visibly change terminal text.");
+        check(glyphs==field(view,"rendered"),"Animation reuses the physical-size glyph vectors instead of allocating per-cell geometry.");
+        ImageIO.write(first,"png",Path.of("build","fish-flux-a.png").toFile());
+        ImageIO.write(second,"png",Path.of("build","fish-flux-b.png").toFile());
+        Timeline timer=TerminalView.fluxAnimationClock();
+        check(timer.getStatus()!=Animation.Status.RUNNING,"One 20fps Flux Timeline is suspended for hidden terminal surfaces.");
+        Session5250 core=(Session5250)field(pane,"core");
+        core.accept(attributesScreen());
+        setField(view,"phase",true); setField(view,"fluxPhase",0.0);
+        BufferedImage attributesA=paint(view,1);
+        setField(view,"fluxPhase",.35);
+        BufferedImage attributesB=paint(view,1);
+        int y=(int)Math.round((double)field(view,"originY")),height=(int)(double)field(view,"cellHeight");
+        check(differences(attributesA,attributesB,y+height,y+height*2)==0,"Flux preserves reverse-video foreground/background colors exactly.");
+        boolean hidden=true;
+        for (int row=y;row<y+height;row++) for (int x=0;x<attributesB.getWidth();x++)
+            hidden&=attributesB.getRGB(x,row)==view.getTerminalBackground().getRGB();
+        check(hidden,"Flux never draws non-display host data.");
+        setField(view,"phase",false);
+        BufferedImage blinkOff=paint(view,1);
+        check(differences(attributesB,blinkOff,y+height*2,y+height*3)>5,"Host blink still switches glyph visibility under Flux.");
+        core.accept(DemoScreens.screen(1,false,""));
+        AppTheme originalTheme=Ui.theme();
+        for (AppTheme theme:AppTheme.values()) {
+            workspace.applyTheme(theme); paint(view,1);
+            boolean readable=true;
+            for (Paint paint:(Paint[])field(view,"fluxPaints")) if (paint instanceof LinearGradientPaint gradient) {
+                for (Color color:gradient.getColors())
+                    readable&=contrast(color,view.getTerminalBackground())>=4.5 && contrast(color,Ui.SELECTION)>=4.5;
+            }
+            check(readable,"Flux gradient stops preserve text/selection contrast in "+theme+".");
+        }
+        workspace.applyTheme(originalTheme);
+        workspace.putProfile(pane.profile().withDisplay("Phosphor","None"));
+        setField(view,"fluxPhase",0.0); BufferedImage still=paint(view,1);
+        setField(view,"fluxPhase",.7);
+        check(differences(still,paint(view,1),0,still.getHeight())==0,"Default static rendering does not animate or change users' defaults.");
+        workspace.activate(pane);
+        Object cached=field(view,"rendered");
+        workspace.toggleFlux();
+        check(pane.profile().effect().equals(Profile.FLUX) && field(view,"rendered")==cached,
+                "Logo effect path updates coloration while retaining the same glyph cache.");
+        setField(view,"fluxPhase",0.0);
+        BufferedImage animated=paint(view,1);
+        check(differences(still,animated,0,still.getHeight())>100,"Logo animated Flux toggle visibly changes terminal ink, not just icon styling.");
+        setField(view,"fluxPhase",.35);
+        check(differences(animated,paint(view,1),0,still.getHeight())>100,"Logo selects the genuinely animated effect, not static Prism.");
+        workspace.toggleFlux();
+        check(pane.profile().effect().equals("None") && differences(still,paint(view,1),0,still.getHeight())==0,
+                "Second toggle restores the exact crisp no-effect rendering.");
+    }
+    private static void iconChecks() throws Exception {
+        Field outline=FishIcon.class.getDeclaredField("OUTLINE"); outline.setAccessible(true);
+        Shape shape=(Shape)outline.get(null);
+        List<Point2D> points=new ArrayList<>();
+        List<Line2D> lines=new ArrayList<>();
+        Point2D start=null,previous=null;
+        int paths=0,closed=0;
+        double[] xy=new double[6];
+        for (PathIterator path=shape.getPathIterator(null);!path.isDone();path.next()) {
+            int kind=path.currentSegment(xy);
+            Point2D point=new Point2D.Double(xy[0],xy[1]);
+            if (kind==PathIterator.SEG_MOVETO) { start=previous=point; paths++; }
+            else if (kind==PathIterator.SEG_LINETO) { lines.add(new Line2D.Double(previous,point)); previous=point; }
+            else if (kind==PathIterator.SEG_CLOSE) { lines.add(new Line2D.Double(previous,start)); closed++; }
+            if (kind!=PathIterator.SEG_CLOSE) points.add(point);
+        }
+        int crossings=0;
+        for (int a=0;a<lines.size();a++) for (int b=a+1;b<lines.size();b++) {
+            Line2D first=lines.get(a),second=lines.get(b);
+            if (first.getP1().equals(second.getP1()) || first.getP1().equals(second.getP2())
+                    || first.getP2().equals(second.getP1()) || first.getP2().equals(second.getP2())) continue;
+            if (first.intersectsLine(second)) crossings++;
+        }
+        check(paths==1 && closed==0 && lines.size()==4 && crossings==1,
+                "Fish has one open path and one crossing, with no line joining the tail tips.");
+        check(shape.getBounds2D().equals(new Rectangle2D.Double(4,6,54,36))
+                && points.contains(new Point2D.Double(58,24)) && points.contains(new Point2D.Double(4,6))
+                && points.contains(new Point2D.Double(4,42)) && !points.contains(new Point2D.Double(40,24)),
+                "Horizontal fish tail tips end at the top and bottom of the square, with no center-tip seam.");
+        Path2D square=new Path2D.Double();
+        square.moveTo(22,24); square.lineTo(40,6); square.lineTo(58,24); square.lineTo(40,42); square.closePath();
+        Path2D triangle=new Path2D.Double();
+        triangle.moveTo(4,6); triangle.lineTo(22,24); triangle.lineTo(4,42); triangle.closePath();
+        Area expected=new Area(square); expected.add(new Area(triangle)); expected.exclusiveOr(new Area(shape));
+        check(expected.isEmpty(),"Crossed outline encloses a true 45-degree square and the triangle formed by extending its left sides.");
+        check(shape.getBounds2D().getWidth()/shape.getBounds2D().getHeight()==1.5,
+                "Longer silhouette has a measurable 3:2 exterior aspect ratio without stretching the square body.");
+        ImageIO.write(FishIcon.image(256),"png",Path.of("build","fish-horizontal-icon.png").toFile());
+        BufferedImage squareMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
+        BufferedImage wideMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
+        Graphics2D squareGraphics=squareMark.createGraphics(),wideGraphics=wideMark.createGraphics();
+        try {
+            new FishIcon(40,30).paint(squareGraphics,10,0);
+            new FishIcon(60,30).paint(wideGraphics,0,0);
+        } finally { squareGraphics.dispose(); wideGraphics.dispose(); }
+        check(differences(squareMark,wideMark,0,30)==0,"Titlebar icon bounds center a uniform scale; the body remains an actual square.");
+        check(Profile.create("Default").effect().equals("None"),"New profiles still default to no effects.");
+    }
+    private static String shape(Layout node) {
+        if (node instanceof Layout.Leaf) return "L";
+        Layout.Split split=(Layout.Split)node;
+        return (split.horizontal() ? "H(" : "V(")+shape(split.first())+","+shape(split.second())+")";
+    }
+    private static void layouts() {
+        String[] expected={"L","H(L,L)","H(L,V(L,L))","V(H(L,L),H(L,L))",
+                "V(H(H(L,L),L),H(L,L))","V(H(H(L,L),H(L,L)),H(L,L))",
+                "V(H(H(L,L),H(L,L)),H(H(L,L),L))","V(H(H(L,L),H(L,L)),H(H(L,L),H(L,L)))"};
+        List<Layout.Leaf> slots=new ArrayList<>();
+        UUID profile=UUID.randomUUID();
+        for (int i=0;i<8;i++) {
+            slots.add(new Layout.Leaf(UUID.randomUUID(),profile));
+            Layout tree=Layout.bounded(slots);
+            check(shape(tree).equals(expected[i]),"Exact "+(i+1)+"-slot row/column topology.");
+            check(tree.leaves().equals(slots),"Bounded slots preserve every pane/preset identity.");
+        }
+        slots.add(new Layout.Leaf(UUID.randomUUID(),profile));
+        boolean rejected=false;
+        try { Layout.bounded(slots); } catch (IllegalArgumentException expectedError) { rejected=true; }
+        check(rejected,"A ninth slot is explicitly rejected.");
+        rejected=false;
+        try { Layout.bounded(List.of()); } catch (IllegalArgumentException expectedError) { rejected=true; }
+        check(rejected,"Zero bounded slots are explicitly rejected.");
+    }
+    private static void solePane(Path directory) throws Exception {
+        StateStore store=new StateStore(directory.resolve("single"));
+        StateStore.State state=store.load();
+        CountDownLatch closed=new CountDownLatch(1);
+        Workspace single=edt(() -> {
+            Workspace w=new Workspace(store,state,Path.of("scripts","credential-store.ps1"),false);
+            w.onClosed(closed::countDown);
+            FxTestSupport.layout(w);
+            return w;
+        });
+        try {
+            edt(() -> {
+                SessionPane only=single.active();
+                single.closePane();
+                check(single.sessionPanes().size()==1 && single.active()==only,"Disconnecting the sole tile cannot remove it.");
+                check(only.screen()==null && !only.busy(),"The sole tile remains empty and offline.");
+                check(!((Button)field(only,"close")).isVisible(),"The disconnected sole tile hides its redundant X.");
+                Profile offline=new Profile(only.profile().id(),only.profile().name(),"",23,"","",false,false,"37","Phosphor","None",1,Map.of(),"");
+                single.putProfile(offline);
+                single.split(true);
+                check(single.sessionPanes().stream().allMatch(p -> {
+                    try { return ((Button)field(p,"close")).isVisible(); }
+                    catch (Exception e) { throw new AssertionError(e); }
+                }),"Both offline tiles show their X after adding a pane.");
+                single.closePane(single.active());
+                check(single.sessionPanes().size()==1 && !((Button)field(single.active(),"close")).isVisible(),
+                        "Removing back to one offline tile hides its X again.");
+                ImageIO.write(FxTestSupport.snapshot(single,1.5),"png",directory.resolveSibling("fish-single-selection.png").toFile());
+                return null;
+            });
+            try (DemoHost host=new DemoHost()) {
+                edt(() -> {
+                    Profile p=single.active().profile();
+                    single.putProfile(new Profile(p.id(),p.name(),"127.0.0.1",host.port(),"","",false,false,
+                            p.codePage(),p.theme(),p.effect(),p.zoom(),p.keymap(),p.savedLayout()));
+                    single.active().connect();
+                    check(field(single.active(),"shownCard").equals("connecting"),"Real connection startup displays the loading card, not a blank terminal.");
+                    check(((Button)field(single.active(),"close")).isVisible(),"The lone connecting pane retains X for cancellation.");
+                    return null;
+                });
+                await(() -> edt(() -> single.active().connected() && field(single.active(),"shownCard").equals("terminal")),
+                        "Sole loopback session finishes negotiation.");
+                edt(() -> {
+                    SessionPane only=single.active();
+                    check(field(only,"shownCard").equals("terminal") && ((Button)field(only,"close")).isVisible(),
+                            "A connected sole pane shows the real terminal and its disconnect X.");
+                    check(((Timeline)field(field(only,"spinner"),"clock")).getStatus()!=Animation.Status.RUNNING,"Connection spinner stops after success.");
+                    only.disconnect();
+                    check(field(only,"shownCard").equals("offline") && !((Button)field(only,"close")).isVisible(),
+                            "Disconnect restores selection mode and hides the sole X.");
+                    return null;
+                });
+            }
+            try (var server=new java.net.ServerSocket(0,1,java.net.InetAddress.getByName("127.0.0.1"))) {
+                server.setSoTimeout(5000);
+                edt(() -> {
+                    Profile p=single.active().profile();
+                    single.putProfile(new Profile(p.id(),p.name(),"127.0.0.1",server.getLocalPort(),"","",false,false,
+                            p.codePage(),p.theme(),p.effect(),p.zoom(),p.keymap(),p.savedLayout()));
+                    single.active().connect(); return null;
+                });
+                try (var peer=server.accept()) {
+                    edt(() -> {
+                        SessionPane only=single.active();
+                        Node spinner=(Node)field(only,"spinner");
+                        check(only.busy() && !only.connected() && field(only,"shownCard").equals("connecting"),
+                                "A held real handshake stays in connecting mode rather than inventing success.");
+                        check(((ComboBox<?>)field(only,"presets")).isDisabled() && ((Button)field(only,"connectButton")).isDisabled(),
+                                "Preset/Connect stay disabled until connection finishes.");
+                        check(spinner.getAccessibleRole()==AccessibleRole.PROGRESS_INDICATOR,
+                                "Spinner exposes meaningful accessible progress indicator role.");
+                        setField(spinner,"angle",0.0); FxTestSupport.invoke(spinner,"repaint");
+                        BufferedImage first=FxTestSupport.snapshot(spinner,1.5);
+                        setField(spinner,"angle",90.0); FxTestSupport.invoke(spinner,"repaint");
+                        check(differences(first,FxTestSupport.snapshot(spinner,1.5),0,first.getHeight())>10,
+                                "Rotating indicator visibly differs at deterministic phases.");
+                        check(((Timeline)field(spinner,"clock")).getStatus()!=Animation.Status.RUNNING,"Hidden connecting panes consume no animation clock.");
+                        return null;
+                    });
+                }
+                await(() -> edt(() -> !single.active().busy()),"A failed held handshake leaves connecting mode.");
+                edt(() -> {
+                    SessionPane only=single.active();
+                    check(field(only,"shownCard").equals("offline") && ((String)field(only,"notice")).contains("Disconnected"),
+                            "Connection failure restores selection and reports the real diagnostic.");
+                    check(!((Button)field(only,"close")).isVisible()
+                            && ((Timeline)field(field(only,"spinner"),"clock")).getStatus()!=Animation.Status.RUNNING,
+                            "Failed sole connection hides X and leaves no running spinner.");
+                    only.connect(); return null;
+                });
+                try (var peer=server.accept()) {
+                    edt(() -> {
+                        SessionPane only=single.active();
+                        ((Button)field(only,"close")).fire();
+                        check(single.active()==only && !only.busy() && field(only,"shownCard").equals("offline"),
+                                "X cancels a real in-progress connection without removing the last tile.");
+                        return null;
+                    });
+                }
+            }
+        } finally {
+            edt(() -> { single.close(false); return null; });
+            check(closed.await(5,TimeUnit.SECONDS),"A never-shown one-pane workspace closes without a modal.");
+        }
+    }
+    private static void migration(Path directory) throws Exception {
+        Path migration=directory.resolve("migration");
+        Files.createDirectories(migration);
+        check(Main.defaultDirectory(migration).equals(migration.resolve("Fish")),"Users use Fish storage.");
+        Profile one=Profile.create("One"),two=Profile.create("Two").withDisplay("Ice",Profile.FLUX);
+        check(two.credentialTarget().startsWith("Fish/"),"Fish Credential Manager namespace is used.");
+        try (StateStore store=new StateStore(migration.resolve("state"))) {
+            StateStore.State state=new StateStore.State(List.of(one,two),new Layout.Leaf(UUID.randomUUID(),two.id()),
+                    1100,700,AppTheme.Midnight,two.id());
+            store.save(state);
+            check(store.load().equals(state),"Last preset, profiles, theme and layout persist.");
+            Properties xml=new Properties();
+            try (var in=Files.newInputStream(store.file())) { xml.loadFromXML(in); }
+            xml.setProperty("version","2"); xml.remove("lastProfile"); xml.setProperty("layout","E");
+            xml.remove("appearance.cursorStyle"); xml.remove("addProfile"); xml.remove("savedLayouts"); xml.remove("selectedLayout");
+            xml.remove("windows"); xml.remove("info.footerDevice");
+            xml.keySet().removeIf(key -> key.toString().startsWith("updates."));
+            try (var out=Files.newOutputStream(store.file())) { xml.storeToXML(out,"legacy fixture"); }
+            StateStore.State restored=store.load();
+            check(restored.layout().leaves().size()==1 && !store.loadNotice().isBlank(),"Legacy empty state migrates explicitly to one pane.");
+            check(restored.profiles().equals(state.profiles()),"Migration retains all presets.");
+            xml.remove("version");
+            try (var out=Files.newOutputStream(store.file())) { xml.storeToXML(out,"invalid fixture"); }
+            byte[] original=Files.readAllBytes(store.file());
+            boolean rejected=false;
+            try { store.load(); } catch (java.io.IOException expected) { rejected=true; }
+            check(rejected && Arrays.equals(original,Files.readAllBytes(store.file())),"Corrupt state is rejected and preserved.");
+        }
+    }
+    public static void main(String[] args) throws Exception {
+        Path directory=Files.createTempDirectory(Path.of("build"),"fish-smoke-");
+        CountDownLatch closed=new CountDownLatch(1);
+        List<Throwable> errors=new CopyOnWriteArrayList<>();
+        Thread.setDefaultUncaughtExceptionHandler((thread,error) -> { errors.add(error); error.printStackTrace(); });
+        DemoHost host=new DemoHost();
+        StateStore store=new StateStore(directory);
+        Workspace window=null;
+        try {
+            migration(directory);
+            Ui.install();
+            iconChecks();
+            layouts();
+            solePane(directory);
+            Workspace workspace=edt(() -> {
+                Workspace w=new Workspace(store,Main.demoState(host.port()),Path.of("scripts","credential-store.ps1"),true);
+                w.onClosed(closed::countDown);
+                FxTestSupport.layout(w); w.connectAll();
+                return w;
+            });
+            window=workspace;
+            await(() -> edt(() -> workspace.sessionPanes().stream().allMatch(SessionPane::connected)),"Three independent loopback sessions connect.");
+            List<SessionPane> original=edt(workspace::sessionPanes);
+            edt(() -> {
+                clipboardChecks(workspace,original.getFirst(),host);
+                fluxChecks(workspace,original.getFirst());
+                return null;
+            });
+            edt(() -> {
+                check(workspace.stage().getTitle().startsWith("Fish") && workspace.stage().getStyle()==StageStyle.EXTENDED,
+                        "Fish uses JavaFX StageStyle.EXTENDED unified chrome.");
+                check(workspace.stage().getIcons().size()>=6,"Runtime fish icons include small and large resolutions.");
+                TerminalView view=original.getFirst().view();
+                BufferedImage terminal=paint(view,1.5);
+                ImageIO.write(terminal,"png",Path.of("build","fish-terminal-150.png").toFile());
+                check(view.visibleText().contains("Main Menu"),"The screenshot contains real host data.");
+                for (String metric:List.of("baseWidth","baseHeight","ascent")) {
+                    double value=(double)field(view,metric);
+                    check(value==Math.rint(value),"Physical "+metric+" is an integer pixel metric.");
+                }
+                Object cached=field(view,"rendered");
+                paint(view,1.5);
+                check(cached==field(view,"rendered"),"Same-size repaint reuses final-resolution glyphs.");
+                for (String effect:Profile.EFFECTS) {
+                    workspace.putProfile(original.getFirst().profile().withDisplay("Phosphor",effect));
+                    paint(view,1.5);
+                }
+                workspace.putProfile(original.getFirst().profile().withDisplay("Phosphor","None"));
+                workspace.dock(original.getFirst().id(),original.get(1).id(),Layout.Dock.CENTER);
+                check(workspace.sessionPanes().get(1)==original.getFirst(),"Center drop swaps live panes.");
+                workspace.setSize(1200,740); FxTestSupport.layout(workspace);
+                check(original.stream().allMatch(p -> p.connected() && p.screen().getColumns()==80),"Swap/resize preserve sessions and host dimensions.");
+                return null;
+            });
+            edt(() -> { original.getFirst().send(KeyMnemonic.PF5); return null; });
+            await(() -> edt(() -> original.getFirst().screen().getColumns()==132),"Host switching to 27x132 still works.");
+            edt(() -> { original.getFirst().send(KeyMnemonic.PF6); return null; });
+            await(() -> edt(() -> original.getFirst().screen().getColumns()==80),"Host switching back to 24x80 still works.");
+            edt(() -> {
+                for (int n=4;n<=8;n++) {
+                    workspace.split(n%2==0);
+                    check(workspace.sessionPanes().size()==n,"Addition creates exactly "+n+" bounded slots.");
+                    check(original.stream().allMatch(p -> workspace.sessionPanes().contains(p) && p.connected()),"Reflow retains existing session objects/sockets.");
+                }
+                workspace.split(true);
+                check(workspace.sessionPanes().size()==8,"Direct addition is capped at eight.");
+                AppCommand add=workspace.commands().stream().filter(c -> c.title.equals("Add pane")).findFirst().orElseThrow();
+                check(!add.isEnabled(),"All shared Add pane controls are disabled at eight.");
+                check(add.matches("add window") && add.matches("new session") && add.matches("split"),"Command aliases share bounded addition.");
+                int closedPanes=0;
+                for (SessionPane pane:workspace.sessionPanes()) {
+                    Button close=FxTestSupport.children(pane).stream().filter(c -> c instanceof Button b
+                            && b.getAccessibleText()!=null && b.getAccessibleText().startsWith("Close pane"))
+                            .map(c -> (Button)c).findFirst().orElseThrow();
+                    close.fire();
+                    check(!pane.busy() && pane.screen()==null && workspace.sessionPanes().size()==Math.max(1,8-++closedPanes),
+                            "X disconnects and removes its tile, except the final tile.");
+                }
+                check(Window.getWindows().stream().noneMatch(Window::isShowing),"No smoke check shows or focuses the desktop.");
+                check(add.isEnabled(),"Closing tiles enables Add pane again.");
+                workspace.active().connect();
+                return null;
+            });
+            await(() -> edt(() -> workspace.active().connected()),"A retained empty tile reconnects normally.");
+            edt(() -> {
+                workspace.close(false);
+                return null;
+            });
+            check(closed.await(5,TimeUnit.SECONDS),"State save/lock release finish after immediate close.");
+            try (StateStore reopened=new StateStore(directory)) {
+                check(reopened.load().layout().leaves().size()==1,"The remaining one-pane layout persists.");
+            }
+            check(errors.isEmpty(),"No asynchronous failures: "+errors);
+            check(host.failures().isEmpty(),"No synthetic host failures: "+host.failures());
+            System.out.println("PASS Fish: "+checks+" focused checks; no foreground input or credential access.");
+        } finally {
+            if (window!=null && closed.getCount()>0) {
+                Workspace w=window;
+                edt(() -> { w.close(true); return null; });
+                closed.await(5,TimeUnit.SECONDS);
+            } else if (window==null) store.close();
+            host.close();
+            FxTestSupport.closeAllWindows();
+            FxTestSupport.deleteTree(directory);
+        }
+        Ui.finishTestRun();
+    }
+}

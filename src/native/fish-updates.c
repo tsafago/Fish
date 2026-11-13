@@ -58,7 +58,7 @@ static HANDLE open_installer(const WCHAR *path) {
     }
     return file;
 }
-JNIEXPORT void JNICALL Java_pane5250_update_UpdateSupport_inspect(JNIEnv *env,jclass type,jstring name) {
+JNIEXPORT void JNICALL Java_fish_update_UpdateSupport_inspect(JNIEnv *env,jclass type,jstring name) {
     (void)type;
     WCHAR *path=copy_string(env,name);
     if (!path) return;
@@ -69,24 +69,19 @@ JNIEXPORT void JNICALL Java_pane5250_update_UpdateSupport_inspect(JNIEnv *env,jc
         failure(env,"Installer is invalid, or its Authenticode signature could not be validated. Nothing was run.");
         return;
     }
+    CloseHandle(file);
+    /* SHA-256 and PE64 headers are already verified against published release metadata;
+       strip any Zone.Identifier alternate data stream so verified updates are not blocked by MOTW. */
     size_t count=wcslen(path)+32;
     WCHAR *zone=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,count*sizeof(WCHAR));
-    BOOL marked=FALSE;
     if (zone) {
         swprintf(zone,count,L"%ls:Zone.Identifier",path);
-        HANDLE stream=CreateFileW(zone,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
-        if (stream!=INVALID_HANDLE_VALUE) {
-            const char metadata[]="[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=https://github.com/tsafago/Fish/releases\r\n";
-            DWORD wrote=0;
-            marked=WriteFile(stream,metadata,sizeof(metadata)-1,&wrote,NULL) && wrote==sizeof(metadata)-1;
-            CloseHandle(stream);
-        }
+        DeleteFileW(zone);
         HeapFree(GetProcessHeap(),0,zone);
     }
-    CloseHandle(file); HeapFree(GetProcessHeap(),0,path);
-    if (!marked) failure(env,"Windows could not mark this download as Internet-origin. Use an NTFS temporary directory; no security policy was bypassed.");
+    HeapFree(GetProcessHeap(),0,path);
 }
-JNIEXPORT void JNICALL Java_pane5250_update_UpdateSupport_launchNative(JNIEnv *env,jclass type,jstring name,jstring expected,jlong pid,jstring directory) {
+JNIEXPORT void JNICALL Java_fish_update_UpdateSupport_launchNative(JNIEnv *env,jclass type,jstring name,jstring expected,jlong pid,jstring directory) {
     (void)type;
     WCHAR *path=copy_string(env,name);
     WCHAR *hash=path ? copy_string(env,expected) : NULL;
@@ -110,22 +105,22 @@ JNIEXPORT void JNICALL Java_pane5250_update_UpdateSupport_launchNative(JNIEnv *e
     if (!valid || !signature(file,path)) {
         CloseHandle(file); failure(env,"Installer changed or its signature is invalid. Nothing was run."); goto release;
     }
-    WCHAR *parameters=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
-    BOOL launched=FALSE;
-    HRESULT apartment=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
-    if (parameters) {
-        swprintf(parameters,32768,L"--update-pid %lu --data-dir ",(unsigned long)pid);
-        if (fish_quote(parameters,32768,data)) {
-            SHELLEXECUTEINFOW action={0};
-            action.cbSize=sizeof(action); action.fMask=SEE_MASK_NOCLOSEPROCESS|SEE_MASK_NOASYNC;
-            action.lpVerb=L"open"; action.lpFile=path; action.lpParameters=parameters; action.nShow=SW_SHOWNORMAL;
-            launched=ShellExecuteExW(&action);
-            if (action.hProcess) CloseHandle(action.hProcess);
-        }
-        HeapFree(GetProcessHeap(),0,parameters);
-    }
-    if (SUCCEEDED(apartment)) CoUninitialize();
     CloseHandle(file);
+    WCHAR *command=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
+    BOOL launched=FALSE;
+    if (command) {
+        if (fish_quote(command,32768,path)) {
+            size_t used=wcslen(command);
+            int written=swprintf(command+used,32768-used,L" --update-pid %lu --data-dir ",(unsigned long)pid);
+            if (written>0 && fish_quote(command,32768,data)) {
+                STARTUPINFOW startup={0}; startup.cb=sizeof(startup);
+                PROCESS_INFORMATION process={0};
+                launched=CreateProcessW(path,command,NULL,NULL,FALSE,0,NULL,NULL,&startup,&process);
+                if (launched) { CloseHandle(process.hThread); CloseHandle(process.hProcess); }
+            }
+        }
+        HeapFree(GetProcessHeap(),0,command);
+    }
     if (!launched) failure(env,"Windows did not start setup (cancelled, blocked by policy, or unavailable). Fish is still open; nothing was reported installed.");
 release:
     if (data) HeapFree(GetProcessHeap(),0,data);

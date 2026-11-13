@@ -44,10 +44,9 @@ secondary; there are no promotional surfaces, dashboard cards or AI controls.
 OLED Amber, High Contrast, High Contrast Light, Lagoon, Afterglow and Eye Saver token sets;
 `ColorRole` inventories every semantic UI, host, effect and logo RGB role.
 `ColorTheme` supplies complete named maps; `Ui` applies them to every owned UI route.
-The Theme Designer previews transactionally and saves reusable workspace themes.
+The Theme Designer previews transactionally with visual color swatches and exact hex inputs, and saves reusable workspace themes.
 Custom values are exact, with advisory contrast warnings rather than forced corrections.
-`FlatControls` shares flat delegates
-for buttons, combos, tabs, scrollbars and split dividers. `HostPalette` defines
+`Ui` generates live JavaFX CSS stylesheets (`data:text/css;base64,...`) from semantic color tokens for all scenes, controls, popups, scrollbars and split dividers. `HostPalette` defines
 sixteen host colors independently, including darker foregrounds for Paper.
 Never collapse host color, reverse, underline, blink or non-display distinctions
 into an application accent. Twelve workstation palettes alter restrained
@@ -111,19 +110,9 @@ No logo shimmer remains.
 The titlebar is 31 logical pixels tall, with all controls centered in its actual
 layout; native hit regions follow those bounds and scale to current client pixels.
 Pane controls use transparent resting surfaces and the same type/rhythm
-as menus, with modest monochrome icons, hover/pressed feedback and keyboard focus.
+as menus, with crisp vector `SVGPath` icons, hover/pressed feedback and keyboard focus.
 They must not appear as persistent filled chips against the titlebar.
-The Fish-owned native bridge preserves standard overlapped resize/maximize
-styles while consuming nonclient painting. Hit testing returns caption, edge
-or maximize codes only for the corresponding targets, allowing OS snap/move
-loops off the EDT and Windows 11 maximize hit testing. Inactive windows must
-not acquire a second native caption. Narrow windows collapse menus/tool labels.
-AWT refreshes native icons when changing monitors. WM_SETICON/WM_SETTEXT default
-handlers can draw a classic caption directly without WM_NCPAINT. Temporarily
-clearing WS_VISIBLE only around their synchronous forwarding suppresses that
-draw without dropping the actual icon/title update or altering move/snap styles.
-The bridge is reattached after peer recreation; normal DPI messages still reach
-AWT, and hit regions are mapped from logical layout against current client size.
+JavaFX 25 `StageStyle.EXTENDED` and `HeaderBar` (`HeaderDragType.DRAGGABLE` and `HeaderButtonType.ICONIFY` / `MAXIMIZE` / `CLOSE`) provide native Windows 10/11 window framing, DWM Snap Layouts on maximize, Aero Snap, and per-monitor DPI transitions directly through OpenJFX Glass without custom Win32 `WNDPROC` subclassing. Narrow windows collapse menus into a compact overflow menu button.
 
 ## Elevation & Depth
 
@@ -165,20 +154,14 @@ native character spacing. The accepted shortcut manager layout is unchanged.
 
 ## Shapes
 
-Rectangular panes and shared flat Swing controls. Hairline borders and the visible
-focus underline provide structure without rounded containers or ornamental chrome.
-Structural edges are exactly one physical device pixel, including at 150% DPI.
-`Hairline` uses Swing's fractional-device endpoint rule and never enlarges dirty clips; no bevel,
-compound perimeter, native shadow or rounded/cut corner is added.
-Root panes share the corresponding dialog/menu/workspace surface color so
-fractional-DPI inset gaps cannot reveal an unthemed inner strip.
+Rectangular panes and clean flat JavaFX CSS controls. Crisp 1px CSS borders and the visible
+focus underline provide structure without ornamental chrome.
+Scene roots share the corresponding dialog/menu/workspace surface color so
+fractional-DPI transitions never reveal an unthemed inner strip.
 The optional whole-window perimeter is on by default, independent of active
-pane outline/tint, and configured only under Appearance > More settings >
-Window and focus. Native move/resize/snap does not depend on a visible outline.
-A rectangular native window region removes classic caption corner clipping
-without losing resize/snap styles. Known remaining defect: maximize/restore
-still offsets/clips the native inset-dependent drawing surface, hiding the
-outer perimeter. This path failed real 100%/150% monitor checks; it is not signed off.
+pane outline/tint, and configured under Settings > Appearance.
+Native move/resize/snap is handled by OpenJFX `StageStyle.EXTENDED` + `HeaderBar`,
+eliminating the legacy Swing/JNI `WM_NCCALCSIZE` maximize/restore perimeter clipping defect.
 
 ## Components
 

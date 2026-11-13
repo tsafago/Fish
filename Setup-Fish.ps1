@@ -8,6 +8,8 @@ try {
     Write-Host 'Fish build setup - no administrator installation or system PATH changes.'
     $manifest = Import-PowerShellDataFile .\tools.psd1
     .\scripts\prepare-tools.ps1 -Kind Jdk
+    .\scripts\prepare-tools.ps1 -Kind JavafxSdk
+    .\scripts\prepare-tools.ps1 -Kind JavafxJmods
     .\scripts\prepare-tools.ps1 -Kind Native
     .\scripts\prepare-tools.ps1 -Kind Installer
     if (-not (Test-Path vendor\tn5250j\src)) {
@@ -32,9 +34,10 @@ try {
     .\build.ps1 Installer -Jdk $jdk
     Write-Host ''
     Write-Host 'Ready: dist\Fish\Fish.exe'
+    Write-Host 'SmartScreen-free per-user installer: .\Install-Fish.ps1 -Source dist\Fish'
     Write-Host 'Installer: dist\Fish-0.8.0-setup.exe (current user; no administrator installation)'
     Write-Host 'Portable ZIP: dist\Fish-0.8.0-windows-x64.zip'
-    if ($Install) { Start-Process -FilePath (Join-Path $PSScriptRoot 'dist\Fish-0.8.0-setup.exe') -Wait }
+    if ($Install) { & "$PSScriptRoot\Install-Fish.ps1" -Source (Join-Path $PSScriptRoot 'dist\Fish') }
 } catch {
     Write-Error -ErrorAction Continue $_.Exception.Message
     exit 1

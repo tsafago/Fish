@@ -1,0 +1,907 @@
+package fish.ui;
+
+import java.awt.Font;
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.collections.FXCollections;
+import javafx.geometry.*;
+import javafx.scene.AccessibleRole;
+import javafx.scene.Cursor;
+import javafx.scene.Node;
+import javafx.scene.canvas.Canvas;
+import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.*;
+import javafx.scene.input.*;
+import javafx.scene.layout.*;
+import javafx.scene.shape.ArcType;
+import javafx.scene.shape.StrokeLineCap;
+import javafx.stage.Stage;
+import javafx.util.Duration;
+import org.tn5250j.Session5250;
+import org.tn5250j.event.ScreenListener;
+import org.tn5250j.framework.tn5250.Screen5250;
+import org.tn5250j.framework.tn5250.ScreenField;
+import org.tn5250j.keyboard.KeyMnemonic;
+import fish.model.*;
+import fish.net.NetworkSession;
+import fish.security.Kerberos;
+import static org.tn5250j.TN5250jConstants.*;
+
+public final class SessionPane extends BorderPane {
+    private final Workspace workspace;
+    private final UUID id;
+    private Profile profile;
+    private Keymap keys;
+    private final BorderPane header=new BorderPane();
+    private final HBox headerControls=new HBox(4);
+    private final BorderPane footer=new BorderPane();
+    private final Button reset,close;
+    private final Label title=new Label(),connection=new Label(),oia=new Label("Disconnected");
+    private TerminalView view;
+    private final ScrollPane scroll=new ScrollPane();
+    private final StackPane body=new StackPane();
+    private final HBox empty=new HBox();
+    private final StackPane loading=new StackPane();
+    private final Region dragZone=new Region();
+    private final Pane stage=new Pane() {
+        @Override protected void layoutChildren() {
+            double w=getWidth(),h=getHeight();
+            body.resizeRelocate(0,0,w,h);
+            double closeH=Math.max(24,close.prefHeight(-1));
+            double closeW=Math.max(25,close.prefWidth(-1));
+            dragZone.resizeRelocate(0,0,Math.max(0,w-(close.getParent()==this && close.isVisible() ? closeW : 0)),Math.min(h,closeH));
+            if (close.getParent()==this && close.isVisible()) {
+                close.resizeRelocate(Math.max(0,w-closeW),0,Math.min(closeW,w),closeH);
+            }
+            if (noticeOverlay.isVisible()) {
+                double reserved=close.getParent()==this && close.isVisible() ? closeW : 0;
+                double nw=Math.max(0,Math.min(noticeOverlay.prefWidth(-1),w-16-reserved));
+                double nh=noticeOverlay.prefHeight(nw);
+                noticeOverlay.resizeRelocate(8,8,nw,nh);
+            }
+            if (reset.getParent()==this && reset.isVisible()) {
+                double rw=reset.prefWidth(-1),rh=reset.prefHeight(-1);
+                boolean bottom=screen()==null || screen().getCurrentRow()<screen().getRows()/2;
+                double top=close.getParent()==this && close.isVisible() ? closeH+4 : 10;
+                if (noticeOverlay.isVisible()) top=Math.max(top,noticeOverlay.getHeight()+14);
+                reset.resizeRelocate(Math.max(4,w-rw-10),bottom ? Math.max(4,h-rh-10) : top,Math.min(rw,Math.max(0,w-8)),rh);
+            }
+        }
+    };
+    private final TransientNotice noticeOverlay;
+    private final ConnectionSpinner spinner=new ConnectionSpinner();
+    private final ComboBox<Profile> presets=new ComboBox<>();
+    private final Button connectButton;
+    private boolean updatingPresets;
+    private NetworkSession network;
+    private Session5250 core;
+    private boolean connecting,disposed;
+    private boolean attempted;
+    private int credentialOperations;
+    private Kerberos.Provider kerberosProvider=Kerberos::ticket;
+    private Kerberos.Resolver kerberosResolver=Kerberos::resolve;
+    private Timeline kerberosDeadline;
+    private long generation;
+    private String notice="Disconnected";
+    private String lastProblem="";
+    private String connectionDetails="";
+    private String shownCard="";
+    private java.awt.Color surfaceColor=Ui.BACKGROUND;
+
+    public SessionPane(Workspace workspace,UUID id,Profile profile) {
+        this.workspace=workspace;
+        this.id=id;
+        this.profile=profile;
+        this.noticeOverlay=new TransientNotice(this::focusTerminal);
+        refreshKeys();
+        setMinSize(70,70);
+        setAccessibleText(profile.name());
+
+        header.setMinHeight(25);
+        header.setPrefHeight(25);
+        header.setMaxHeight(25);
+        title.setPadding(new Insets(0,0,0,8));
+        connection.setPadding(new Insets(0,4,0,0));
+        connection.setStyle("-fx-font-size: 11px;");
+        header.setLeft(title);
+        BorderPane.setAlignment(title,Pos.CENTER_LEFT);
+
+        close=Ui.iconButton("Close pane "+profile.name(),"close",ColorRole.HEADER_MUTED,() -> workspace.closePane(this));
+        close.setTooltip(new Tooltip("Close and disconnect; keep the last pane"));
+        headerControls.setAlignment(Pos.CENTER_RIGHT);
+        headerControls.getChildren().addAll(connection,close);
+        header.setRight(headerControls);
+        setTop(header);
+
+        view=new TerminalView(this);
+        wireScrollViewport();
+        scroll.setContent(view);
+        scroll.setPannable(false);
+
+        presets.setMinSize(60,30);
+        presets.setMaxWidth(Double.MAX_VALUE);
+        presets.setAccessibleText("Reconnect profile");
+        presets.setTooltip(new Tooltip("Workstation preset"));
+        presets.valueProperty().addListener((obs,oldV,newV) -> {
+            if (!updatingPresets && !busy() && newV!=null) {
+                activate();
+                workspace.selectProfile(this,newV);
+            }
+        });
+        presets.focusedProperty().addListener((o,a,f) -> { if (f) activate(); });
+        HBox.setHgrow(presets,Priority.ALWAYS);
+
+        connectButton=Ui.iconButton("Reconnect selected profile","connect",ColorRole.TEXT,() -> {
+            activate();
+            connect();
+            workspace.tutorialAction("Connect / disconnect");
+        });
+        connectButton.getStyleClass().remove("fish-icon-button");
+        connectButton.setMinSize(32,30);
+        connectButton.setPrefSize(32,30);
+
+        HBox choices=new HBox(8,presets,connectButton);
+        choices.setAlignment(Pos.CENTER);
+        choices.setMinWidth(100);
+        choices.setPrefWidth(265);
+        choices.setMaxWidth(285);
+        empty.setAlignment(Pos.CENTER);
+        empty.setPadding(new Insets(0,8,0,8));
+        empty.getChildren().add(choices);
+
+        loading.getChildren().add(spinner);
+        body.getChildren().addAll(scroll,empty,loading);
+
+        refreshPresets();
+
+        oia.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px;");
+        oia.setPadding(new Insets(2,8,2,8));
+        footer.setLeft(oia);
+        BorderPane.setAlignment(oia,Pos.CENTER_LEFT);
+
+        reset=Ui.button("Reset",() -> {
+            activate();
+            send(KeyMnemonic.RESET);
+            focusTerminal();
+        });
+        reset.setTooltip(new Tooltip("Recover this input error without sending Enter (default key: Ctrl+R)"));
+        reset.setAccessibleText("Reset input error");
+        reset.setStyle("-fx-padding: 2 8 2 8;");
+        reset.setVisible(false);
+        reset.setManaged(false);
+        footer.setRight(reset);
+        BorderPane.setAlignment(reset,Pos.CENTER_RIGHT);
+        setBottom(footer);
+
+        dragZone.setId("pane-top-drag-zone");
+        dragZone.setCursor(Cursor.MOVE);
+        Tooltip.install(dragZone,new Tooltip("Drag to an edge to split, or the center to swap"));
+
+        stage.getChildren().addAll(body,dragZone,noticeOverlay);
+        setCenter(stage);
+
+        view.setFit(profile.zoom()==1);
+        installDrag();
+        themeChanged();
+    }
+
+    public void syncScrollViewport() {
+        if (view==null) return;
+        Bounds vp=scroll.getViewportBounds();
+        double vpW=vp!=null && vp.getWidth()>0 ? vp.getWidth() : scroll.getWidth();
+        double vpH=vp!=null && vp.getHeight()>0 ? vp.getHeight() : scroll.getHeight();
+        if (view.isFit()) {
+            scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+            scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+            scroll.setFitToWidth(true);
+            scroll.setFitToHeight(true);
+        } else {
+            scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+            scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+            double pw=view.prefWidth(-1),ph=view.prefHeight(-1);
+            scroll.setFitToWidth(vpW<=0 || pw<=vpW);
+            scroll.setFitToHeight(vpH<=0 || ph<=vpH);
+        }
+    }
+
+    private void wireScrollViewport() {
+        scroll.viewportBoundsProperty().addListener((o,a,b) -> syncScrollViewport());
+        scroll.widthProperty().addListener((o,a,b) -> syncScrollViewport());
+        scroll.heightProperty().addListener((o,a,b) -> syncScrollViewport());
+        syncScrollViewport();
+        view.setScrollRevealCallback(() -> {
+            java.awt.Rectangle r=view.currentCursorLogicalBounds();
+            Bounds vp=scroll.getViewportBounds();
+            if (r==null || vp==null) return;
+            double cw=view.getWidth(),ch=view.getHeight();
+            if (cw>vp.getWidth()) scroll.setHvalue(Math.max(0,Math.min(1,(r.x-vp.getWidth()/2.0)/(cw-vp.getWidth()))));
+            if (ch>vp.getHeight()) scroll.setVvalue(Math.max(0,Math.min(1,(r.y-vp.getHeight()/2.0)/(ch-vp.getHeight()))));
+        });
+    }
+
+    public void replaceTerminalView(TerminalView replacement) {
+        if (view!=null) view.dispose();
+        view=replacement;
+        wireScrollViewport();
+        scroll.setContent(view);
+        updateHeader();
+    }
+
+    public UUID id() { return id; }
+    public Profile profile() { return profile; }
+    public Screen5250 screen() { return core==null ? null : core.getScreen(); }
+    public Keymap keys() { return keys; }
+    public void refreshKeys() { keys=Keymap.global(workspace.shortcutOverrides()); }
+    public TerminalView view() { return view; }
+    public Font workspaceFont() { return workspace.terminalFont(); }
+    public boolean connected() { return network!=null && network.isConnected(); }
+    public boolean busy() { return connecting || connected(); }
+    public boolean pristine() { return !attempted && !busy() && core==null; }
+    public void activate() { workspace.activate(this); }
+    public ContextMenu clipboardMenu() { return workspace.clipboardMenu(this); }
+    public java.awt.Color paneSurfaceColor() { return surfaceColor; }
+
+    public Button closeButton() { return close; }
+    public Button connectButton() { return connectButton; }
+    public Button resetButton() { return reset; }
+    public ComboBox<Profile> presetsCombo() { return presets; }
+    public Label titleLabel() { return title; }
+    public Label oiaLabel() { return oia; }
+    public TransientNotice noticeOverlay() { return noticeOverlay; }
+    public String shownCard() { return shownCard; }
+
+    public void focusTerminal() {
+        view.restartCursor();
+        if (connecting && close.isVisible()) close.requestFocus();
+        else if (core==null) presets.requestFocus();
+        else view.requestFocus();
+    }
+
+    public void refreshPresets() {
+        updatingPresets=true;
+        try {
+            presets.setItems(FXCollections.observableArrayList(workspace.profileList()));
+            presets.setValue(profile);
+        } finally { updatingPresets=false; }
+    }
+
+    public void updateProfile(Profile value) {
+        Profile previous=profile;
+        profile=value;
+        if (!previous.id().equals(value.id()) || previous.zoom()!=value.zoom()) view.clearSavedZoom();
+        if (!previous.keymap().equals(value.keymap())) refreshKeys();
+        refreshPresets();
+        updateHeader();
+        if (!previous.id().equals(value.id()) || !previous.codePage().equals(value.codePage())) view.screenChanged();
+        else if (!previous.theme().equals(value.theme()) || !previous.effect().equals(value.effect())) view.displayChanged();
+        if (previous.zoom()!=value.zoom()) { syncScrollViewport(); view.requestLayout(); view.requestRender(); }
+    }
+
+    Appearance.CursorStyle cursorStyle() { return workspace.appearanceSettings().cursorStyle(); }
+
+    public void updateHeader() {
+        boolean isActive=workspace.active()==this;
+        Appearance.PaneInfo info=workspace.appearanceSettings().info();
+        title.setText(info.profile() ? profile.name() : "");
+        String titleColor=Ui.hex(isActive ? ColorRole.HEADER_TEXT : ColorRole.HEADER_MUTED);
+        title.setStyle("-fx-text-fill: "+titleColor+";");
+        connection.setStyle("-fx-font-size: 11px; -fx-text-fill: "+titleColor+";");
+
+        surfaceColor=Ui.paneBackground(isActive && workspace.highlightActive());
+        String surfaceHex=Ui.hex(surfaceColor);
+        String headerBg=!Ui.customTheme() && isActive && workspace.highlightActive() ? surfaceHex : Ui.hex(ColorRole.HEADER);
+        String footerBg=!Ui.customTheme() && isActive && workspace.highlightActive() ? surfaceHex : Ui.hex(ColorRole.FOOTER);
+
+        boolean showOutline=workspace.appearanceSettings().outline() && isActive;
+        if (showOutline) {
+            setStyle("-fx-background-color: "+surfaceHex+"; -fx-border-color: "+Ui.hex(ColorRole.DIVIDER)+"; -fx-border-width: 1;");
+        } else {
+            setStyle("-fx-background-color: "+surfaceHex+"; -fx-border-width: 0;");
+        }
+        header.setStyle("-fx-background-color: "+headerBg+";");
+        footer.setStyle("-fx-background-color: "+footerBg+";");
+        body.setStyle("-fx-background-color: "+surfaceHex+";");
+        empty.setStyle("-fx-background-color: "+surfaceHex+";");
+        loading.setStyle("-fx-background-color: "+surfaceHex+";");
+
+        java.awt.Color terminalSurface=Ui.customTheme() && !(isActive && workspace.highlightActive())
+                ? Ui.color(ColorRole.HOST_0) : surfaceColor;
+        view.setTerminalBackground(terminalSurface);
+
+        List<String> parts=new ArrayList<>();
+        if (info.connection()) parts.add(connecting ? "Connecting" : connected() ? "Connected" : "Disconnected");
+        if (info.host() && !profile.host().isEmpty()) parts.add(profile.host());
+        if (info.device() && !profile.device().isEmpty()) parts.add(profile.device());
+        connection.setText(String.join("  ",parts));
+
+        boolean showHeader=info.header() && (!title.getText().isBlank() || !connection.getText().isBlank());
+        header.setVisible(showHeader);
+        header.setManaged(showHeader);
+        dragZone.setVisible(!showHeader && workspace.hasMultiplePanes());
+
+        Pane desiredCloseParent=showHeader ? headerControls : stage;
+        if (close.getParent()!=desiredCloseParent) {
+            if (close.getParent() instanceof Pane old) old.getChildren().remove(close);
+            desiredCloseParent.getChildren().add(close);
+        }
+        title.setVisible(info.profile()); title.setManaged(info.profile());
+        connection.setVisible(!connection.getText().isEmpty()); connection.setManaged(!connection.getText().isEmpty());
+
+        close.setAccessibleText("Close pane "+profile.name());
+        boolean restoreFocus=close.isFocused() && "connecting".equals(shownCard);
+        boolean closeVis=busy() || workspace.hasMultiplePanes();
+        close.setVisible(closeVis);
+        close.setManaged(showHeader && closeVis);
+
+        String closeKey=workspace.shortcutLabel("Close pane");
+        close.setTooltip(new Tooltip("Close and disconnect; keep the last pane"+(closeKey.isEmpty() ? "" : " ("+closeKey+")")));
+        String resetKey=workspace.shortcutLabel("RESET");
+        reset.setTooltip(new Tooltip("Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")")));
+        Tooltip.install(header,new Tooltip("Drag onto another pane to swap or split. Ctrl+Alt+D swaps with the keyboard."));
+        header.setCursor(workspace.hasMultiplePanes() ? Cursor.MOVE : Cursor.DEFAULT);
+
+        presets.setDisable(busy() || credentialOperations>0);
+        connectButton.setDisable(busy() || credentialOperations>0);
+
+        String card=connecting ? "connecting" : core!=null && connected() ? "terminal" : "offline";
+        if (!card.equals(shownCard)) {
+            shownCard=card;
+            scroll.setVisible("terminal".equals(card)); scroll.setManaged("terminal".equals(card));
+            empty.setVisible("offline".equals(card)); empty.setManaged("offline".equals(card));
+            loading.setVisible("connecting".equals(card)); loading.setManaged("connecting".equals(card));
+        }
+        spinner.updateAnimation();
+        if (restoreFocus && !connecting) focusTerminal();
+        setAccessibleText(profile.name());
+        stage.requestLayout();
+        updateOia();
+    }
+
+    public void themeChanged() {
+        updateHeader();
+        view.themeChanged();
+        updateOia();
+        spinner.repaint();
+    }
+
+    public boolean recoverableInputError() {
+        return connected() && screen()!=null && screen().getOIA().isKeyBoardLocked()
+                && core.recoverableInputError();
+    }
+
+    public void connect() { connect(true); }
+    void connectOnStartup() { if (!busy()) connect(false); }
+
+    private void connect(boolean interactive) {
+        if (busy()) { disconnect(); return; }
+        attempted=true;
+        if (credentialOperations>0) { problem("The previous Windows sign-in lookup is still finishing. Please wait before reconnecting."); return; }
+        Profile connectionProfile=workspace.connectionProfile(profile);
+        if (profile.host().isEmpty() || connectionProfile.automaticSignOn() && connectionProfile.username().isEmpty()) {
+            if (interactive) workspace.profiles();
+            else startupGuidance("Finish this profile in Edit > Settings > Profiles, then Reconnect.");
+            return;
+        }
+        if (!interactive && connectionProfile.automaticSignOn() && !connectionProfile.rememberPassword()) {
+            startupGuidance("Reconnect to enter a password, or enable Save password in Edit > Settings > Profiles.");
+            return;
+        }
+        if (interactive) workspace.rememberProfile(profile);
+        long token=++generation;
+        if (connectionProfile.authentication()==Profile.Authentication.KERBEROS) {
+            kerberosConnect(token,connectionProfile,interactive); return;
+        }
+        if (!connectionProfile.automaticSignOn()) { begin(new char[0],token,connectionProfile,interactive); return; }
+        connecting=true;
+        updateHeader();
+        Profile target=workspace.loginProfile(profile);
+        credentialOperations++;
+        CompletableFuture.supplyAsync(() -> {
+            try { return target.rememberPassword() ? workspace.credentials().read(target) : Optional.<char[]>empty(); }
+            catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+        }).whenComplete((saved,err) -> Ui.runLater(() -> {
+            try {
+                if (err!=null) throw err;
+                if (token!=generation || disposed) { saved.ifPresent(p -> Arrays.fill(p,'\0')); return; }
+                char[] password;
+                if (saved.isPresent()) password=saved.get();
+                else {
+                    if (!interactive) {
+                        startupGuidance("No saved password. Reconnect to sign in.");
+                        disconnectNetwork();
+                        return;
+                    }
+                    PasswordField input=new PasswordField();
+                    input.setPromptText("Password");
+                    VBox panel=new VBox(8,new Label("Plain TCP: the password and session are not encrypted."),Ui.revealablePassword(input));
+                    if (!Ui.form(workspace.stage(),"Sign on as "+connectionProfile.username(),panel,"Connect")) { disconnect(); return; }
+                    password=input.getText().toCharArray();
+                    input.clear();
+                }
+                if (token!=generation || disposed) { Arrays.fill(password,'\0'); return; }
+                if (target.rememberPassword() && saved.isEmpty()) rememberAndBegin(password,token,target,connectionProfile,interactive);
+                else begin(password,token,connectionProfile,interactive);
+            } catch (Throwable e) {
+                if (token==generation && !disposed) { problem("Credential lookup failed: "+message(e)); disconnectNetwork(); }
+                else System.err.println("Canceled credential lookup failed: "+message(e));
+            } finally {
+                credentialOperations--;
+                updateHeader();
+            }
+        }));
+    }
+
+    private void kerberosConnect(long token,Profile connectionProfile,boolean interactive) {
+        connecting=true;
+        credentialOperations++;
+        notice="Getting a Windows Kerberos ticket - no password or NTLM fallback";
+        updateHeader();
+        kerberosDeadline=new Timeline(new KeyFrame(Duration.seconds(20),e -> kerberosTimedOut(token,interactive)));
+        kerberosDeadline.play();
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                String principal=Kerberos.principal(connectionProfile.host(),connectionProfile.kerberosServer(),kerberosResolver);
+                return kerberosProvider.ticket(principal);
+            } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+        }).whenComplete((ticket,err) -> Ui.runLater(() -> {
+            try {
+                if (err!=null) throw err;
+                if (token!=generation || disposed) return;
+                if (ticket==null || ticket.length==0 || ticket.length>Kerberos.MAX_TOKEN)
+                    throw new IOException("Windows returned an invalid or oversized Kerberos token (TN5250 limit: 16384 bytes).");
+                begin(new char[0],token,connectionProfile,interactive,ticket);
+            } catch (Throwable e) {
+                if (token==generation && !disposed) {
+                    disconnectNetwork();
+                    String failure="Kerberos sign-in failed: "+message(e);
+                    if (interactive) problem(failure); else startupGuidance(failure);
+                } else System.err.println("Canceled Kerberos sign-in failed: "+message(e));
+            } finally {
+                if (ticket!=null) Arrays.fill(ticket,(byte)0);
+                if (kerberosDeadline!=null) { kerberosDeadline.stop(); kerberosDeadline=null; }
+                credentialOperations--;
+                updateHeader();
+            }
+        }));
+    }
+
+    private void kerberosTimedOut(long token) { kerberosTimedOut(token,true); }
+    private void kerberosTimedOut(long token,boolean interactive) {
+        if (token!=generation || disposed) return;
+        generation++;
+        disconnectNetwork();
+        String failure="Kerberos timed out. Check domain/VPN connectivity and the server DNS name. Windows may still be finishing its lookup; no connection or fallback will follow.";
+        if (interactive) problem(failure); else startupGuidance(failure);
+    }
+
+    private void rememberAndBegin(char[] password,long token,Profile target,Profile connectionProfile,boolean interactive) {
+        credentialOperations++;
+        CompletableFuture.runAsync(() -> {
+            try { workspace.credentials().write(target,password); }
+            catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+        }).whenComplete((unused,err) -> Ui.runLater(() -> {
+            try {
+                if (err!=null) throw err;
+                if (token==generation && !disposed) begin(password,token,connectionProfile,interactive);
+                else Arrays.fill(password,'\0');
+            } catch (Throwable e) {
+                Arrays.fill(password,'\0');
+                if (token==generation && !disposed) { problem("Password was not remembered: "+message(e)); disconnectNetwork(); }
+                else System.err.println("Canceled password save failed: "+message(e));
+            } finally {
+                credentialOperations--;
+                updateHeader();
+            }
+        }));
+    }
+
+    private void begin(char[] password,long token,Profile connectionProfile,boolean interactive) {
+        begin(password,token,connectionProfile,interactive,null);
+    }
+
+    private void begin(char[] password,long token,Profile connectionProfile,boolean interactive,byte[] kerberosTicket) {
+        try {
+            Map<String,String> environment=connectionProfile.environment(password);
+            connecting=true;
+            notice="Connecting to "+connectionProfile.host()+":"+connectionProfile.port()+" - plain TCP";
+            network=new NetworkSession(record -> {
+                if (generation==token && !disposed) {
+                    core.accept(record);
+                    view.screenChanged();
+                    updateOia();
+                }
+            },text -> Ui.runLater(() -> {
+                if (generation==token && !disposed) {
+                    notice=text;
+                    if (text.startsWith("Connected") && network!=null) connectionDetails=network.connectionDetails();
+                    if (text.startsWith("Connected") || text.startsWith("Disconnected")) connecting=false;
+                    if (text.startsWith("Disconnected")) {
+                        generation++; disconnectNetwork(); startupGuidance(text+" Reconnect to retry.");
+                    }
+                    updateHeader();
+                    updateOia();
+                    view.screenChanged();
+                    if (text.startsWith("Connected") && workspace.active()==this && workspace.stage().isFocused()) focusTerminal();
+                }
+            }));
+            core=new Session5250(connectionProfile.name(),connectionProfile.codePage(),network.output(),this::problem);
+            core.getScreen().addScreenListener(new ScreenListener() {
+                @Override public void onScreenChanged(int u,int r,int c,int er,int ec) { view.screenChanged(); updateOia(); }
+                @Override public void onScreenSizeChanged(int r,int c) { view.resetSelection(); view.screenChanged(); }
+            });
+            core.getScreen().getOIA().addOIAListener((o,change) -> updateOia());
+            network.connect(connectionProfile.host(),connectionProfile.port(),environment,kerberosTicket);
+            environment.clear();
+            updateHeader();
+            updateOia();
+            if (interactive) focusTerminal();
+        } catch (RuntimeException e) {
+            disconnectNetwork();
+            problem("Connection failed: "+e.getMessage());
+        } finally {
+            Arrays.fill(password,'\0');
+            if (kerberosTicket!=null) Arrays.fill(kerberosTicket,(byte)0);
+        }
+    }
+
+    public void disconnect() { attempted=true; stopConnection(); }
+    void disconnectForProfileChange() { stopConnection(); }
+
+    private void stopConnection() {
+        generation++;
+        disconnectNetwork();
+        notice="Disconnected";
+        updateOia();
+    }
+
+    private void disconnectNetwork() {
+        if (kerberosDeadline!=null) { kerberosDeadline.stop(); kerberosDeadline=null; }
+        if (network!=null) network.close();
+        network=null;
+        connecting=false;
+        core=null;
+        view.resetSelection();
+        updateHeader();
+        view.screenChanged();
+    }
+
+    public void reconnect() { disconnect(); connect(); }
+    public void dispose() { disposed=true; noticeOverlay.dispose(); spinner.stop(); disconnect(); view.dispose(); }
+
+    public final class ConnectionSpinner extends StackPane {
+        private final Canvas canvas=new Canvas(36,36);
+        private double angle;
+        private final Timeline clock=new Timeline(new KeyFrame(Duration.millis(40),e -> {
+            angle=(System.nanoTime()%1_200_000_000L)*360.0/1_200_000_000L;
+            repaint();
+        }));
+
+        ConnectionSpinner() {
+            setMinSize(36,36); setPrefSize(36,36); setMaxSize(36,36);
+            getChildren().add(canvas);
+            setAccessibleRole(AccessibleRole.PROGRESS_INDICATOR);
+            setAccessibleText("Connecting to workstation");
+            clock.setCycleCount(Timeline.INDEFINITE);
+            visibleProperty().addListener((o,a,b) -> updateAnimation());
+            sceneProperty().addListener((o,a,b) -> updateAnimation());
+            repaint();
+        }
+
+        public boolean isRunning() { return clock.getStatus()==javafx.animation.Animation.Status.RUNNING; }
+        public void setAngle(double value) { this.angle=value; repaint(); }
+        void stop() { clock.stop(); }
+
+        void updateAnimation() {
+            boolean winShowing=getScene()!=null && getScene().getWindow()!=null && getScene().getWindow().isShowing()
+                    && !(getScene().getWindow() instanceof Stage st && st.isIconified());
+            if (connecting && !disposed && isVisible() && winShowing) {
+                if (!isRunning()) clock.play();
+            } else clock.stop();
+        }
+
+        void repaint() {
+            GraphicsContext gc=canvas.getGraphicsContext2D();
+            gc.clearRect(0,0,36,36);
+            double size=28,x=4,y=4;
+            gc.setLineWidth(2.25);
+            gc.setLineCap(StrokeLineCap.ROUND);
+            gc.setStroke(Ui.fxColor(ColorRole.DIVIDER));
+            gc.strokeOval(x,y,size,size);
+            gc.setStroke(Ui.fxColor(ColorRole.FOCUS));
+            gc.strokeArc(x,y,size,size,-angle,100,ArcType.OPEN);
+        }
+    }
+
+    public void problem(String message) {
+        if (!javafx.application.Platform.isFxApplicationThread() && Ui.isFxStarted()) {
+            Ui.runLater(() -> problem(message));
+            return;
+        }
+        notice=message;
+        lastProblem=message;
+        updateOia();
+        oia.setTooltip(new Tooltip(message));
+        oia.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-text-fill: "+Ui.hex(ColorRole.STATUS_ERROR)+";");
+        if (!footer.isVisible() || !workspace.appearanceSettings().info().status()) {
+            noticeOverlay.setErrorStyle(true);
+            noticeOverlay.showMessage(message,true);
+            stage.requestLayout();
+        }
+    }
+
+    private void startupGuidance(String message) {
+        notice=message; lastProblem=message; updateOia();
+        if (!footer.isVisible() || !workspace.appearanceSettings().info().status()) {
+            noticeOverlay.setErrorStyle(false);
+            noticeOverlay.showMessage(message,false);
+            stage.requestLayout();
+        }
+    }
+
+    public void showLastNotice() {
+        String details=(lastProblem.isEmpty() ? "No input or connection errors in this pane." : lastProblem)
+                +(connectionDetails.isEmpty() ? "" : "\n\nConnection diagnostics: "+connectionDetails);
+        Ui.message(workspace.stage(),details,"Last pane notice");
+    }
+
+    private void updateOia() {
+        if (!javafx.application.Platform.isFxApplicationThread() && Ui.isFxStarted()) {
+            Ui.runLater(this::updateOia);
+            return;
+        }
+        Screen5250 screen=screen();
+        Appearance.PaneInfo info=workspace.appearanceSettings().info();
+        String dimensions=screen==null ? "" : (info.dimensions() ? "  "+screen.getRows()+"x"+screen.getColumns() : "")
+                +(info.cursor() ? "  "+screen.getCurrentRow()+":"+screen.getCurrentCol() : "");
+        String state=screen==null || !connected() ? notice : screen.getOIA().isKeyBoardLocked()
+                ? recoverableInputError() ? "Input error - Enter or Reset to continue" : "Waiting for host - input inhibited"
+                : notice;
+        if (screen!=null && screen.getOIA().getInhibitedText()!=null && screen.getOIA().isKeyBoardLocked())
+            state+="  "+screen.getOIA().getInhibitedText();
+        String text=(info.status() ? state : "")+dimensions
+                +(info.footerDevice() && network!=null && !network.allocatedDevice().isEmpty() ? "  "+network.allocatedDevice() : "")
+                +(screen!=null && info.insert() && screen.getOIA().isInsertMode() ? "  INS" : "");
+        oia.setText(text.strip());
+        boolean showFooter=info.footer() && !text.isBlank();
+        footer.setVisible(showFooter);
+        footer.setManaged(showFooter);
+        oia.setTooltip(new Tooltip(state+dimensions));
+        ColorRole statusRole=recoverableInputError() || notice.startsWith("Disconnected -") ? ColorRole.STATUS_ERROR
+                : screen!=null && screen.getOIA().isKeyBoardLocked() ? ColorRole.STATUS_WAIT : ColorRole.FOOTER_TEXT;
+        oia.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-text-fill: "+Ui.hex(statusRole)+";");
+
+        if (showFooter) {
+            if (reset.getParent()!=footer) {
+                if (reset.getParent() instanceof Pane p) p.getChildren().remove(reset);
+                footer.setRight(reset);
+            }
+        } else {
+            if (reset.getParent()!=stage) {
+                if (reset.getParent()==footer) footer.setRight(null);
+                else if (reset.getParent() instanceof Pane p) p.getChildren().remove(reset);
+                stage.getChildren().add(reset);
+            }
+        }
+        boolean rec=recoverableInputError();
+        reset.setVisible(rec);
+        reset.setManaged(showFooter && rec);
+        stage.requestLayout();
+        workspace.refreshCommands();
+    }
+
+    public boolean send(KeyMnemonic key) {
+        view.restartCursor();
+        if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
+        if (key==KeyMnemonic.ENTER && recoverableInputError()) key=KeyMnemonic.RESET;
+        if (key==KeyMnemonic.RESET && screen().getOIA().isKeyBoardLocked() && !recoverableInputError()) {
+            problem("Waiting for host. Reset cannot clear host-busy inhibition."); return false;
+        }
+        if (screen().getOIA().isKeyBoardLocked() && key!=KeyMnemonic.RESET
+                && key!=KeyMnemonic.ATTN && key!=KeyMnemonic.SYSREQ) {
+            problem(recoverableInputError() ? "Input error. Press Enter or Reset; no keys were queued."
+                    : "Waiting for host. Attention / System Request available; no keys were queued.");
+            return false;
+        }
+        try {
+            screen().sendKeys(key);
+            notice="Connected";
+            updateOia();
+            view.screenChanged(); view.restartCursor();
+            return true;
+        } catch (RuntimeException e) { problem("Host key failed: "+e.getMessage()); return false; }
+    }
+
+    public boolean type(char character) {
+        view.restartCursor();
+        if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
+        if (screen().getOIA().isKeyBoardLocked()) {
+            problem("Input inhibited. No characters were queued.");
+            return false;
+        }
+        if (!profile.charset().newEncoder().canEncode(character)) {
+            problem("Character is not representable in code page "+profile.codePage()+".");
+            return false;
+        }
+        String text=character=='[' ? "[[" : character==']' ? "]]" : String.valueOf(character);
+        try {
+            screen().sendKeys(text);
+            notice="Connected";
+            updateOia(); view.screenChanged(); view.restartCursor();
+            return !screen().getOIA().isKeyBoardLocked();
+        } catch (RuntimeException e) { problem("Input failed: "+e.getMessage()); return false; }
+    }
+
+    public boolean paste(String text) {
+        view.restartCursor();
+        if (text.length()>32768) { problem("Paste exceeds the 32768-character safety limit; nothing pasted."); return false; }
+        text=text.replace("\r\n","\n").replace('\r','\n');
+        var encoder=profile.charset().newEncoder();
+        for (int i=0;i<text.length();i++) {
+            char c=text.charAt(i);
+            if (c!='\n' && c!='\t' && (c<32 || c==127 || !encoder.canEncode(c))) {
+                problem("Paste contains an unsupported character at position "+(i+1)+"; nothing pasted.");
+                return false;
+            }
+        }
+        for (int i=0;i<text.length();i++) {
+            if (!connected() || screen().getOIA().isKeyBoardLocked()) {
+                problem("Paste stopped at input inhibition after "+i+" characters.");
+                return false;
+            }
+            char c=text.charAt(i);
+            boolean accepted=c=='\n' ? send(KeyMnemonic.NEW_LINE) : c=='\t' ? send(KeyMnemonic.TAB) : type(c);
+            if (!accepted) return false;
+        }
+        return true;
+    }
+
+    public static void checkPasswordField(Screen5250 screen,int length) {
+        if (screen==null || screen.getOIA().isKeyBoardLocked())
+            throw new IllegalArgumentException("Password input is inhibited; nothing inserted.");
+        int cursor=screen.getCurrentPos()-1;
+        ScreenField field=screen.getScreenFields().getCurrentField();
+        if (field==null || !field.withinField(cursor) || field.isBypassField())
+            throw new IllegalArgumentException("Place the cursor in an input password field; nothing inserted.");
+        if (length>field.endPos()-cursor+1)
+            throw new IllegalArgumentException("Password exceeds the remaining field length; nothing inserted.");
+        char[] attributes=new char[screen.getScreenLength()+1];
+        screen.GetScreen(attributes,attributes.length,PLANE_EXTENDED);
+        for (int i=cursor;i<cursor+Math.max(1,length);i++) {
+            if ((attributes[i]&EXTENDED_5250_NON_DSP)==0)
+                throw new IllegalArgumentException("Password field focus changed or is visible; nothing inserted.");
+        }
+    }
+
+    public void sendPassword() {
+        if (workspace.connectionProfile(profile).authentication()==Profile.Authentication.KERBEROS) {
+            problem("Kerberos uses Windows sign-in; there is no remembered password to insert."); return;
+        }
+        if (!connected()) { problem("Connect before inserting a password."); return; }
+        if (!workspace.loginProfile(profile).rememberPassword()) { problem("This login does not use a saved password."); return; }
+        char[] extended=new char[screen().getScreenLength()+1];
+        screen().GetScreen(extended,extended.length,PLANE_EXTENDED);
+        if ((extended[screen().getCurrentPos()-1]&EXTENDED_5250_NON_DSP)==0) {
+            problem("Place the cursor in a non-display password field before inserting a remembered password.");
+            return;
+        }
+        long token=generation;
+        Profile target=workspace.loginProfile(profile);
+        CompletableFuture.supplyAsync(() -> {
+            try { return workspace.credentials().read(target); }
+            catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+        }).whenComplete((value,err) -> Ui.runLater(() -> {
+            try {
+                if (err!=null) throw err;
+                if (value.isEmpty()) { problem("No remembered password for this profile."); return; }
+                char[] password=value.get();
+                try {
+                    if (token==generation && connected()) {
+                        Profile current=workspace.loginProfile(profile);
+                        if (!current.rememberPassword() || !target.credentialTarget().equals(current.credentialTarget()))
+                            throw new IllegalArgumentException("The selected login changed during lookup; nothing inserted.");
+                        checkPasswordField(screen(),password.length);
+                        for (char c:password)
+                            if (c<32 || c==127) throw new IllegalArgumentException("Password contains control characters; nothing inserted.");
+                        paste(new String(password));
+                    }
+                } finally { Arrays.fill(password,'\0'); }
+            } catch (Throwable e) { problem("Password insertion failed: "+message(e)); }
+        }));
+    }
+
+    Node tutorialConnectionTarget() { return connectButton.isVisible() && !busy() ? connectButton : close.isVisible() ? close : this; }
+    Node tutorialCloseTarget() { return close.isVisible() ? close : this; }
+    boolean connecting() { return connecting || credentialOperations>0; }
+    Node tutorialDragTarget() { return header.isVisible() ? header : dragZone.isVisible() ? dragZone : this; }
+
+    public static Layout.Dock direction(java.awt.Point p,java.awt.Dimension d) {
+        return direction(p.x,p.y,d.width,d.height);
+    }
+
+    public static Layout.Dock direction(double px,double py,double w,double h) {
+        if (px<0 || py<0 || px>=w || py>=h) throw new IllegalArgumentException("Outside this pane.");
+        double x=px/Math.max(1,w),y=py/Math.max(1,h);
+        if (x>=.25 && x<=.75 && y>=.25 && y<=.75) return Layout.Dock.CENTER;
+        double nearest=Math.min(Math.min(x,1-x),Math.min(y,1-y));
+        if (nearest==y) return Layout.Dock.TOP;
+        if (nearest==1-y) return Layout.Dock.BOTTOM;
+        return nearest==x ? Layout.Dock.LEFT : Layout.Dock.RIGHT;
+    }
+
+    private void installDrag() {
+        for (Node source:List.of(header,dragZone)) {
+            source.setOnMousePressed(e -> {
+                activate();
+                if (e.getButton()==MouseButton.SECONDARY) {
+                    workspace.paneMenu(this).show(source,e.getScreenX(),e.getScreenY());
+                    e.consume();
+                }
+            });
+            source.setOnDragDetected(e -> {
+                if (e.getButton()==MouseButton.PRIMARY && workspace.hasMultiplePanes()) {
+                    Dragboard db=source.startDragAndDrop(TransferMode.MOVE);
+                    ClipboardContent cc=new ClipboardContent();
+                    cc.putString(id.toString());
+                    db.setContent(cc);
+                    e.consume();
+                }
+            });
+            source.setOnDragDone(e -> workspace.clearPreviews());
+        }
+        view.setOnDragDetected(e -> {
+            if (e.getButton()==MouseButton.PRIMARY && e.isAltDown() && workspace.hasMultiplePanes()) {
+                Dragboard db=view.startDragAndDrop(TransferMode.MOVE);
+                ClipboardContent cc=new ClipboardContent();
+                cc.putString(id.toString());
+                db.setContent(cc);
+                e.consume();
+            }
+        });
+        view.setOnDragDone(e -> workspace.clearPreviews());
+
+        setOnDragOver(e -> {
+            try {
+                if (!e.getDragboard().hasString()) { workspace.clearPreviews(); return; }
+                UUID sourcePane=SavedLayout.reference(e.getDragboard().getString());
+                Workspace.DockTarget placement=workspace.dropTarget(id,this,e.getX(),e.getY());
+                if (placement!=null && workspace.previewDock(sourcePane,id,placement.dock(),placement.scope())) {
+                    e.acceptTransferModes(TransferMode.MOVE);
+                    e.consume();
+                    return;
+                }
+            } catch (IllegalArgumentException ignored) {}
+            workspace.clearPreviews();
+        });
+        setOnDragExited(e -> workspace.clearPreviews());
+        setOnDragDropped(e -> {
+            boolean completed=false;
+            try {
+                if (e.getDragboard().hasString()) {
+                    UUID sourcePane=SavedLayout.reference(e.getDragboard().getString());
+                    Workspace.DockTarget placement=workspace.dropTarget(id,this,e.getX(),e.getY());
+                    if (placement!=null && workspace.planDock(sourcePane,id,placement.dock(),placement.scope())!=null) {
+                        workspace.dock(sourcePane,id,placement.dock(),placement.scope());
+                        completed=true;
+                    }
+                }
+            } catch (IllegalArgumentException error) {
+                problem("Panes not moved: "+error.getMessage());
+            } finally {
+                workspace.clearPreviews();
+                e.setDropCompleted(completed);
+                e.consume();
+            }
+        });
+    }
+
+    public void clearPreview() { workspace.clearPreviews(); }
+
+    private static String message(Throwable e) {
+        Throwable cause=e.getCause()==null ? e : e.getCause();
+        if (cause instanceof java.io.UncheckedIOException uio && uio.getCause()!=null) cause=uio.getCause();
+        return cause.getMessage()==null ? cause.getClass().getSimpleName() : cause.getMessage();
+    }
+}

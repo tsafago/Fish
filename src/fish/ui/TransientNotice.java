@@ -1,0 +1,76 @@
+package fish.ui;
+
+import javafx.animation.FadeTransition;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.geometry.Pos;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.control.Tooltip;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.util.Duration;
+import fish.model.ColorRole;
+
+public final class TransientNotice extends BorderPane {
+    public static final int LIFETIME=2800;
+    private final Label text=new Label();
+    private final HBox actions=new HBox(4);
+    private final Timeline timer=new Timeline(new KeyFrame(Duration.millis(LIFETIME),e -> dismiss()));
+    private final Button close;
+
+    public TransientNotice(Runnable returnFocus) {
+        getStyleClass().add("fish-notice");
+        actions.setAlignment(Pos.CENTER_RIGHT);
+        close=Ui.iconButton("Dismiss notice","close",ColorRole.FOOTER_TEXT,() -> {
+            boolean focused=isCloseFocused();
+            dismiss();
+            if (focused) returnFocus.run();
+        });
+        actions.getChildren().add(close);
+        setCenter(text);
+        setRight(actions);
+        BorderPane.setAlignment(text,Pos.CENTER_LEFT);
+        setVisible(false);
+        setManaged(false);
+    }
+
+    private boolean isCloseFocused() { return close.isFocused(); }
+
+    public void setErrorStyle(boolean error) {
+        text.setStyle("-fx-text-fill: "+(error ? Ui.hex(ColorRole.STATUS_ERROR) : Ui.hex(ColorRole.FOOTER_TEXT))+";");
+    }
+
+    public Button closeButton() { return close; }
+    public String messageText() { return text.getText(); }
+
+    public Button action(String title,Runnable run) {
+        Button button=Ui.button(title,run);
+        button.setStyle("-fx-padding: 3 7 3 7;");
+        actions.getChildren().add(actions.getChildren().size()-1,button);
+        return button;
+    }
+
+    public void showMessage(String value,boolean transientMessage) {
+        text.setText(value);
+        text.setTooltip(new Tooltip(value));
+        setVisible(true);
+        setManaged(true);
+        timer.stop();
+        FadeTransition fade=new FadeTransition(Duration.millis(150),this);
+        fade.setFromValue(0.0);
+        fade.setToValue(1.0);
+        fade.play();
+        if (transientMessage) timer.playFromStart();
+    }
+
+    public void dismiss() {
+        timer.stop();
+        setVisible(false);
+        setManaged(false);
+    }
+
+    public void dispose() {
+        timer.stop();
+    }
+}

@@ -10,8 +10,8 @@
     }
 
     public void acceptRecord(byte[] record) {
-        if (!javax.swing.SwingUtilities.isEventDispatchThread())
-            throw new IllegalStateException("Core records must be processed on the EDT.");
+        if (!javafx.application.Platform.isFxApplicationThread())
+            throw new IllegalStateException("Core records must be processed on the JavaFX Application Thread.");
         bk.initialize(record);
         screen52.setCursorActive(false);
         switch (bk.getOpCode()) {

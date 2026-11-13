@@ -1,4 +1,4 @@
-param([ValidateSet('Jdk','Native','Installer','Core')][string]$Kind = 'Jdk')
+param([ValidateSet('Jdk','JavafxSdk','JavafxJmods','Native','Installer','Core')][string]$Kind = 'Jdk')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $tools = Join-Path $root '.tools'

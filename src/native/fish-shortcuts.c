@@ -11,25 +11,26 @@ static void failure(JNIEnv *env,const char *message) {
     jclass type=(*env)->FindClass(env,"java/io/IOException");
     if (type) (*env)->ThrowNew(env,type,message);
 }
-static WCHAR *text(JNIEnv *env,jstring value) {
+static WCHAR *text_arg(JNIEnv *env,jstring value,BOOL allow_empty) {
     if (!value) { failure(env,"Missing Windows shortcut value."); return NULL; }
     jsize size=(*env)->GetStringLength(env,value);
-    if (!size || size>32700) { failure(env,"Windows shortcut value is empty or too long."); return NULL; }
+    if ((!allow_empty && !size) || size<0 || size>32700) { failure(env,"Windows shortcut value is empty or too long."); return NULL; }
     WCHAR *copy=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,((size_t)size+1)*sizeof(WCHAR));
     if (!copy) { failure(env,"Windows shortcut allocation failed."); return NULL; }
-    (*env)->GetStringRegion(env,value,0,size,(jchar *)copy);
+    if (size>0) (*env)->GetStringRegion(env,value,0,size,(jchar *)copy);
     for (jsize n=0;n<size;n++) if (copy[n]<32) {
         HeapFree(GetProcessHeap(),0,copy); failure(env,"Invalid Windows shortcut value."); return NULL;
     }
     return copy;
 }
-JNIEXPORT jstring JNICALL Java_pane5250_LayoutShortcuts_executable0(JNIEnv *env,jclass type) {
+static WCHAR *text(JNIEnv *env,jstring value) { return text_arg(env,value,FALSE); }
+JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_executable0(JNIEnv *env,jclass type) {
     (void)type;
     WCHAR path[32768]; DWORD size=GetModuleFileNameW(NULL,path,32768);
     if (!size || size>=32768) { failure(env,"Cannot locate the running Fish executable."); return NULL; }
     return (*env)->NewString(env,(jchar *)path,(jsize)size);
 }
-JNIEXPORT jstring JNICALL Java_pane5250_LayoutShortcuts_desktop0(JNIEnv *env,jclass type) {
+JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_desktop0(JNIEnv *env,jclass type) {
     (void)type;
     PWSTR path=NULL;
     if (FAILED(SHGetKnownFolderPath(&FOLDERID_Desktop,0,NULL,&path))) {
@@ -37,9 +38,17 @@ JNIEXPORT jstring JNICALL Java_pane5250_LayoutShortcuts_desktop0(JNIEnv *env,jcl
     }
     jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
 }
-JNIEXPORT void JNICALL Java_pane5250_LayoutShortcuts_create0(JNIEnv *env,jclass type,jstring destination,jstring target,jstring arguments,jstring directory) {
+JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_startMenu0(JNIEnv *env,jclass type) {
     (void)type;
-    WCHAR *file=text(env,destination),*exe=file ? text(env,target) : NULL,*args=exe ? text(env,arguments) : NULL,*cwd=args ? text(env,directory) : NULL;
+    PWSTR path=NULL;
+    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Programs,0,NULL,&path))) {
+        failure(env,"Cannot locate your Start Menu Programs folder."); return NULL;
+    }
+    jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
+}
+JNIEXPORT void JNICALL Java_fish_LayoutShortcuts_create0(JNIEnv *env,jclass type,jstring destination,jstring target,jstring arguments,jstring directory) {
+    (void)type;
+    WCHAR *file=text(env,destination),*exe=file ? text(env,target) : NULL,*args=exe ? text_arg(env,arguments,TRUE) : NULL,*cwd=args ? text(env,directory) : NULL;
     if (!cwd) goto done;
     HRESULT init=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
     if (FAILED(init) && init!=RPC_E_CHANGED_MODE) { failure(env,"Windows Shell initialization failed."); goto done; }
@@ -62,7 +71,7 @@ done:
     if (args) HeapFree(GetProcessHeap(),0,args);
     if (cwd) HeapFree(GetProcessHeap(),0,cwd);
 }
-JNIEXPORT jobjectArray JNICALL Java_pane5250_LayoutShortcuts_inspect0(JNIEnv *env,jclass type,jstring shortcut) {
+JNIEXPORT jobjectArray JNICALL Java_fish_LayoutShortcuts_inspect0(JNIEnv *env,jclass type,jstring shortcut) {
     (void)type;
     WCHAR *file=text(env,shortcut); if (!file) return NULL;
     HRESULT init=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);

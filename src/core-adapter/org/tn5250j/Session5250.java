@@ -3,7 +3,7 @@ package org.tn5250j;
 import java.awt.Toolkit;
 import java.util.Properties;
 import java.util.function.Consumer;
-import pane5250.ui.Ui;
+import fish.ui.Ui;
 import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.framework.tn5250.tnvt;
 

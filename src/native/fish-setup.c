@@ -317,7 +317,7 @@ static void start_install(void) {
     else { busy=FALSE; wcscpy(status,L"Setup could not start. Close and try again."); EnableWindow(cancel,TRUE); EnableWindow(install,TRUE); }
     InvalidateRect(window,NULL,FALSE);
 }
-static void launch_app(void) {
+static BOOL launch_app(void) {
     WCHAR *command=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
     WCHAR *path=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
     if (!command || !path) goto failed;
@@ -330,12 +330,33 @@ static void launch_app(void) {
     STARTUPINFOW startup={0}; startup.cb=sizeof(startup); PROCESS_INFORMATION process={0};
     if (valid && CreateProcessW(path,command,NULL,NULL,FALSE,0,NULL,destination,&startup,&process)) {
         CloseHandle(process.hThread); CloseHandle(process.hProcess);
-        HeapFree(GetProcessHeap(),0,command); HeapFree(GetProcessHeap(),0,path); return;
+        HeapFree(GetProcessHeap(),0,command); HeapFree(GetProcessHeap(),0,path); return TRUE;
     }
 failed:
     if (command) HeapFree(GetProcessHeap(),0,command);
     if (path) HeapFree(GetProcessHeap(),0,path);
     wcscpy(status,L"Installed, but Fish could not open. Use its Start menu shortcut.");
+    return FALSE;
+}
+static BOOL finish_launch(DWORD result,BOOL update,BOOL requested,BOOL (*launch)(void)) {
+    if (result!=ERROR_SUCCESS || (!update && !requested)) return FALSE;
+    BOOL started=launch();
+    return update && started;
+}
+static int completion_attempts;
+static BOOL completion_success;
+static BOOL completion_launch(void) { completion_attempts++; return completion_success; }
+static BOOL completion_test(void) {
+    completion_attempts=0; completion_success=TRUE;
+    DWORD failures[]={ERROR_INSTALL_FAILURE,ERROR_INSTALL_USEREXIT,ERROR_SUCCESS_REBOOT_REQUIRED,ERROR_INSTALL_ALREADY_RUNNING,ERROR_PRODUCT_VERSION};
+    for (int i=0;i<5;i++) if (finish_launch(failures[i],TRUE,TRUE,completion_launch)) return FALSE;
+    if (completion_attempts || finish_launch(ERROR_SUCCESS,FALSE,FALSE,completion_launch) || completion_attempts) return FALSE;
+    if (finish_launch(ERROR_SUCCESS,FALSE,TRUE,completion_launch) || completion_attempts!=1) return FALSE;
+    if (!finish_launch(ERROR_SUCCESS,TRUE,FALSE,completion_launch) || completion_attempts!=2) return FALSE;
+    completion_success=FALSE;
+    if (finish_launch(ERROR_SUCCESS,TRUE,TRUE,completion_launch) || completion_attempts!=3) return FALSE;
+    completion_success=TRUE;
+    return finish_launch(ERROR_SUCCESS,TRUE,TRUE,completion_launch) && completion_attempts==4;
 }
 static void browse(void) {
     IFileDialog *picker=NULL;
@@ -440,12 +461,15 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             return 0;
         case PHASE: wcscpy(status,L"Installing Fish and its private runtime..."); InvalidateRect(hwnd,NULL,FALSE); return 0;
         case RESULT:
+            if (completed) return 0;
             busy=FALSE; EnableWindow(cancel,TRUE);
             if (wp==ERROR_SUCCESS || wp==ERROR_SUCCESS_REBOOT_REQUIRED) {
                 completed=TRUE; reboot=wp==ERROR_SUCCESS_REBOOT_REQUIRED;
                 wcscpy(status,reboot ? L"Installed. Restart Windows before opening Fish." : L"Fish " FISH_VERSION L" is installed.");
                 SetWindowTextW(cancel,L"Close"); SetWindowTextW(install,L"Open Fish"); EnableWindow(install,!reboot);
-                if (!reboot && SendMessageW(open_app,BM_GETCHECK,0,0)==BST_CHECKED) launch_app();
+                if (finish_launch((DWORD)wp,updating,SendMessageW(open_app,BM_GETCHECK,0,0)==BST_CHECKED,launch_app)) {
+                    DestroyWindow(hwnd); return 0;
+                }
             } else {
                 if (wp==ERROR_INSTALL_ALREADY_RUNNING) wcscpy(status,L"Fish is running, or its install path could not be checked. Close that copy and Retry. No process was stopped.");
                 else if (wp==ERROR_DIR_NOT_EMPTY) wcscpy(status,L"Choose an empty local folder or an existing Fish installation.");
@@ -455,7 +479,12 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             InvalidateRect(hwnd,NULL,FALSE); return 0;
         case WM_COMMAND:
             switch (LOWORD(wp)) {
-                case INSTALL: if (completed) launch_app(); else start_install(); break;
+                case INSTALL:
+                    if (completed) {
+                        if (finish_launch(reboot ? ERROR_SUCCESS_REBOOT_REQUIRED : ERROR_SUCCESS,updating,TRUE,launch_app))
+                            DestroyWindow(hwnd);
+                    } else start_install();
+                    break;
                 case CANCEL: SendMessageW(hwnd,WM_CLOSE,0,0); break;
                 case CHANGE: browse(); break;
             }
@@ -534,7 +563,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     if (count==2 && !wcscmp(args[1],L"--self-test")) {
         WCHAR quote[100]=L"";
         BOOL valid=fish_quote(quote,100,L"C:\\path with space\\") && !wcscmp(quote,L"\"C:\\path with space\\\\\"");
-        valid=valid && !fish_quote(quote,4,L"too long") && location_test(); LocalFree(args); return valid ? 0 : 1;
+        valid=valid && !fish_quote(quote,4,L"too long") && location_test() && completion_test(); LocalFree(args); return valid ? 0 : 1;
     }
     if (count==2 && !wcscmp(args[1],L"--verify-payload")) {
         WCHAR self[32768]; GetModuleFileNameW(NULL,self,32768);
@@ -587,6 +616,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
         } else if (GetLastError()!=ERROR_INVALID_PARAMETER) { DestroyWindow(window); CoUninitialize(); return 3; }
         waiting_since=GetTickCount64(); wcscpy(status,L"Waiting for Fish to close; your workspace has been saved...");
         EnableWindow(install,FALSE); EnableWindow(change,FALSE);
+        SetWindowTextW(open_app,L"Reopen Fish after a successful update"); EnableWindow(open_app,FALSE);
         if (!parent_process) start_install();
     }
     ShowWindow(window,show); UpdateWindow(window);

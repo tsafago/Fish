@@ -121,7 +121,7 @@ public final class Ui {
         UIManager.put("Spinner.arrowButtonBorder",BorderFactory.createEmptyBorder());
         UIManager.put("ScrollBar.width",12);
         for (Window window : Window.getWindows()) {
-            SwingUtilities.updateComponentTreeUI(window);
+            if (!window.isDisplayable() && window.getOwnedWindows().length==0 && window.getWidth()==0) continue;
             refresh(window);
             window.validate();
             window.repaint();
@@ -131,6 +131,7 @@ public final class Ui {
         if (component instanceof JRootPane root && !(SwingUtilities.getWindowAncestor(root) instanceof Workspace))
             root.setBorder(SwingUtilities.getWindowAncestor(root) instanceof JDialog ? Hairline.perimeter() : BorderFactory.createEmptyBorder());
         if (component instanceof JComponent c) {
+            refreshColors(c);
             if ("muted".equals(c.getClientProperty("theme.role"))) c.setForeground(MUTED);
             if ("error".equals(c.getClientProperty("theme.role"))) c.setForeground(ERROR);
             if (c.getClientProperty("theme.foreground") instanceof ColorRole role) c.setForeground(color(role));
@@ -144,6 +145,33 @@ public final class Ui {
         if (component instanceof MarkdownView markdown) markdown.themeChanged();
         if (component instanceof Container parent)
             for (Component child : parent.getComponents()) refresh(child);
+    }
+    private static void refreshColors(JComponent c) {
+        String prefix=c.getUIClassID().replaceFirst("UI$","");
+        Color background=UIManager.getColor(prefix+".background"),foreground=UIManager.getColor(prefix+".foreground");
+        if (background!=null && (c.getBackground()==null || c.getBackground() instanceof UIResource)) c.setBackground(background);
+        if (foreground!=null && (c.getForeground()==null || c.getForeground() instanceof UIResource)) c.setForeground(foreground);
+        if (c instanceof javax.swing.text.JTextComponent text) {
+            if (text.getCaretColor() instanceof UIResource) text.setCaretColor(FOCUS);
+            if (text.getSelectionColor() instanceof UIResource) text.setSelectionColor(SELECTION);
+            if (text.getSelectedTextColor() instanceof UIResource) text.setSelectedTextColor(color(ColorRole.SELECTION_TEXT));
+            if (text.getDisabledTextColor() instanceof UIResource) text.setDisabledTextColor(color(ColorRole.DISABLED));
+        }
+        if (c instanceof JList<?> list) {
+            if (list.getSelectionBackground() instanceof UIResource) list.setSelectionBackground(SELECTION);
+            if (list.getSelectionForeground() instanceof UIResource) list.setSelectionForeground(color(ColorRole.SELECTION_TEXT));
+        }
+        if (c instanceof JTable table) {
+            if (table.getSelectionBackground() instanceof UIResource) table.setSelectionBackground(SELECTION);
+            if (table.getSelectionForeground() instanceof UIResource) table.setSelectionForeground(color(ColorRole.SELECTION_TEXT));
+            if (table.getGridColor() instanceof UIResource) table.setGridColor(LINE);
+        }
+        if (c instanceof JTree tree && tree.getCellRenderer() instanceof javax.swing.tree.DefaultTreeCellRenderer renderer) {
+            renderer.setBackgroundNonSelectionColor(FIELD); renderer.setTextNonSelectionColor(TEXT);
+            renderer.setBackgroundSelectionColor(SELECTION); renderer.setTextSelectionColor(color(ColorRole.SELECTION_TEXT));
+            renderer.setBorderSelectionColor(FOCUS);
+        }
+        if (c instanceof JRadioButtonMenuItem) c.updateUI();
     }
     public static void role(JComponent component,String role) {
         component.putClientProperty("theme.role",role);

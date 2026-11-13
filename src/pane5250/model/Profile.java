@@ -28,7 +28,7 @@ public record Profile(UUID id, String name, String host, int port, String device
     public static final List<String> CODE_PAGES = List.of("37", "273", "277", "278", "280",
             "284", "285", "297", "500", "870", "871", "1140", "1141", "1147", "1148");
     public static final List<String> THEMES = List.of("Phosphor", "Cool", "Warm", "Amber", "Ice", "Orchid", "High contrast",
-            "IBM vivid", "Mint", "Rose", "OLED green", "OLED amber");
+            "IBM vivid", "Mint", "Rose", "OLED green", "OLED amber", "Azure vivid", "Crimson vivid");
     public static final String FLUX="Flux (animated)";
     public static final List<String> EFFECTS = List.of("None", "Soft glow", "Prism",FLUX);
 

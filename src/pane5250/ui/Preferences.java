@@ -29,6 +29,8 @@ final class Preferences {
     private UUID displayProfile;
     private boolean loading,saving,ended,syncing,applying,unsaved,closeRequested,conflict,editPending;
     private final javax.swing.Timer edits=new javax.swing.Timer(300,e -> apply());
+    private final javax.swing.Timer writes=new javax.swing.Timer(200,e -> persist());
+    private long generation;
     private String validation="",saveFailure="";
     private String ignored;
     private final KeyboardEditor keyboard;
@@ -55,7 +57,7 @@ final class Preferences {
         dialog=new JDialog(workspace,"Settings",false) {
             @Override public void dispose() {
                 if (!workspace.closing() && !requestClose()) return;
-                ended=true; edits.stop(); editPending=false; workspace.updateController().detach(this); profiles.discard();
+                ended=true; edits.stop(); writes.stop(); editPending=false; workspace.updateController().detach(this); profiles.discard();
                 super.dispose(); workspace.preferencesClosed(Preferences.this);
             }
         };
@@ -106,6 +108,7 @@ final class Preferences {
             if (navigation.getSelectedValue().equals("Updates")) workspace.updateController().ensureCheck();
         });
         edits.setRepeats(false);
+        writes.setRepeats(false);
         closeButton=Ui.button("Close",KeyEvent.VK_C,dialog::dispose);
         retryButton=Ui.button("Retry save",KeyEvent.VK_R,() -> { saveFailure=""; apply(); });
         reloadButton=Ui.button("Reload saved values",0,this::reload);
@@ -127,10 +130,15 @@ final class Preferences {
             @Override public void windowOpened(WindowEvent e) { navigation.requestFocusInWindow(); workspace.tutorialChanged(); }
         });
         saved=draft(); baseline=currentShared();
-        for (Component control:List.of(startup,window,pane,tint,checkUpdates,theme,palette,effect,cursorStyle,family,fontPath,channel))
-            Ui.observeEdits(control,this::edited);
-        info.forEach(control -> Ui.observeEdits(control,this::edited));
-        keyboard.addPropertyChangeListener("preferences.draft",e -> edited());
+        for (Component control:List.of(startup,window,pane,tint,checkUpdates,theme,palette,effect,cursorStyle,family,channel)) {
+            if (control instanceof AbstractButton button) button.addItemListener(e -> edited(false));
+            if (control instanceof JComboBox<?> combo) combo.addItemListener(e -> {
+                if (e.getStateChange()==ItemEvent.SELECTED) edited(false);
+            });
+        }
+        Ui.observeEdits(fontPath,() -> edited(true));
+        info.forEach(control -> control.addItemListener(e -> edited(false)));
+        keyboard.addPropertyChangeListener("preferences.draft",e -> edited(true));
         profiles.addPropertyChangeListener("settings.draft",e -> {
             syncProfiles(); refresh();
             if (closeRequested && !saving && !profiles.saving()) SwingUtilities.invokeLater(dialog::dispose);
@@ -141,7 +149,7 @@ final class Preferences {
     boolean ended() { return ended; }
     void focus() { navigation.requestFocusInWindow(); }
     void syncProfiles() {
-        if (saving || syncing || applying || saved==null) return;
+        if (syncing || applying || saved==null) return;
         syncing=true;
         try {
             Map<UUID,Display> baseline=new LinkedHashMap<>(saved.displays());
@@ -163,7 +171,7 @@ final class Preferences {
             loading=false; loadDisplay(); profiles.rebaseDisplay();
         } finally { syncing=false; }
     }
-    boolean saving() { return saving || editPending || profiles.saving(); }
+    boolean saving() { return saving || unsaved && saveFailure.isEmpty() || editPending || profiles.saving(); }
     boolean customPalette() { return theme.getSelectedItem() instanceof ColorTheme; }
     String category() { return navigation.getSelectedValue(); }
     void select(String category) {
@@ -272,7 +280,7 @@ final class Preferences {
         settings.add(note("Preview: patches in this minor version. Stable: releases in this major version. No downgrade, reinstall, or automatic new experimental minor."));
         JLabel hidden=new JLabel(ignored.isEmpty() ? "No hidden version" : "Hidden on startup: "+ignored);
         JPanel visibility=new JPanel(new BorderLayout(8,0)); visibility.add(hidden,BorderLayout.CENTER);
-        visibility.add(Ui.button("Show hidden updates",0,() -> { ignored=""; hidden.setText("No hidden version"); edited(); }),BorderLayout.EAST);
+        visibility.add(Ui.button("Show hidden updates",0,() -> { ignored=""; hidden.setText("No hidden version"); edited(false); }),BorderLayout.EAST);
         settings.add(visibility); body.add(settings,BorderLayout.NORTH);
         body.add(workspace.updateController().panel(dialog,() -> dirty() || saving() || profiles.dirty(),
                 () -> (UpdateSettings.Channel)channel.getSelectedItem()),BorderLayout.CENTER);
@@ -317,9 +325,11 @@ final class Preferences {
                 new UpdateSettings(checkUpdates.isSelected(),(UpdateSettings.Channel)channel.getSelectedItem(),ignored),keyboard.draft(),Map.copyOf(displays));
     }
     private boolean dirty() { try { return unsaved || conflict || !draft().equals(saved); } catch (IllegalArgumentException e) { return true; } }
-    private void edited() {
+    private void edited(boolean typing) {
         if (saved==null || ended || loading || syncing || applying) return;
-        editPending=true; edits.restart(); refresh();
+        if (displayProfile!=null) displays.put(displayProfile,new Display((String)palette.getSelectedItem(),(String)effect.getSelectedItem()));
+        if (typing) { editPending=true; edits.restart(); refresh(); }
+        else apply();
     }
     private void refresh() {
         if (saved==null || closeButton==null) return;
@@ -342,7 +352,6 @@ final class Preferences {
     private boolean apply(boolean finish) {
         if (ended || applying) return false;
         edits.stop(); editPending=false;
-        if (saving) { editPending=true; edits.restart(); return false; }
         try {
             if (!Objects.equals(baseline,currentShared())) { conflict=true; refresh(); return false; }
             if (conflict) { refresh(); return false; }
@@ -379,32 +388,43 @@ final class Preferences {
                 Appearance previous=workspace.appearanceSettings();
                 Appearance value=new Appearance(next.pane(),next.window(),next.info(),next.font(),
                         next.theme() instanceof ColorTheme custom ? custom.name() : "",previous.themes(),previous.retiredShortcuts(),next.cursorStyle());
-                workspace.applyShortcuts(next.keys());
-                if (next.theme() instanceof AppTheme app) workspace.applyTheme(app);
-                workspace.appearanceSettings(value); workspace.highlightActive(next.tint());
-                workspace.connectOnStartup(next.startup()); workspace.updateSettings(next.updates());
+                workspace.beginSettings();
+                try {
+                if (!next.keys().equals(saved.keys())) workspace.applyShortcuts(next.keys());
+                if (!value.equals(previous)) workspace.appearanceSettings(value);
+                if (next.theme() instanceof AppTheme app && (Ui.theme()!=app || Ui.customTheme())) workspace.applyTheme(app);
+                if (next.tint()!=workspace.highlightActive()) workspace.highlightActive(next.tint());
+                if (next.startup()!=workspace.connectOnStartup()) workspace.connectOnStartup(next.startup());
+                if (!next.updates().equals(workspace.updateSettings())) workspace.updateSettings(next.updates());
                 for (var entry:next.displays().entrySet()) if (!entry.getValue().equals(originalDisplays.get(entry.getKey()))) {
                     Profile profile=workspace.profileList().stream().filter(p -> p.id().equals(entry.getKey())).findFirst().orElseThrow();
                     workspace.putProfile(profile.withDisplay(entry.getValue().palette(),entry.getValue().effect()));
                 }
+                } finally { workspace.endSettings(); }
                 originalDisplays.clear(); originalDisplays.putAll(next.displays());
-                saved=next; baseline=currentShared(); unsaved=true;
+                saved=next; baseline=currentShared(); unsaved=true; generation++;
             }
             applying=false;
-            if (unsaved) {
-                saving=true; refresh();
-                workspace.persistSettings(() -> {
-                    saving=false; unsaved=false; saveFailure=""; refresh(); workspace.tutorialAction("settings-applied");
-                    if (closeRequested) dialog.dispose();
-                },message -> {
-                    saving=false; closeRequested=false; saveFailure=message; refresh();
-                });
-            }
+            if (unsaved) writes.restart();
             refresh();
             return true;
         } catch (IllegalArgumentException e) {
             applying=false; validation=e.getMessage(); refresh(); return false;
         }
+    }
+    private void persist() {
+        writes.stop();
+        if (saving || !unsaved || ended) return;
+        long written=generation; saving=true; refresh();
+        workspace.persistSettings(() -> {
+            saving=false; saveFailure=""; unsaved=written!=generation;
+            refresh(); workspace.tutorialAction("settings-applied");
+            if (unsaved) writes.restart();
+            else if (closeRequested) dialog.dispose();
+        },message -> {
+            saving=false; closeRequested=false; saveFailure=message; refresh();
+            if (written!=generation) writes.restart();
+        });
     }
     private boolean requestClose() {
         profiles.flush();
@@ -416,13 +436,12 @@ final class Preferences {
                     +"Cancel to keep this recovery state open and fix the error before Retry save.","Settings not saved");
         }
         apply();
-        if (saving) { closeRequested=true; return false; }
+        if (saving || unsaved) { closeRequested=true; persist(); return false; }
         if ((conflict || !validation.isEmpty() || profiles.dirty()) && !Ui.confirm(dialog,
                 "Some edits could not be saved or need an explicit profile/login action.\nClose and discard only those edits? Already saved changes stay applied.","Unsaved edits")) return false;
         closeRequested=false; return true;
     }
     private void reload() {
-        if (saving) return;
         edits.stop(); editPending=false; loading=true;
         try {
             Appearance a=workspace.appearanceSettings();
@@ -444,7 +463,10 @@ final class Preferences {
     void sharedChanged() {
         if (saved==null || applying || syncing || ended) return;
         if (!Objects.equals(baseline,currentShared())) {
-            if (!dirty() && !saving()) reload();
+            boolean pending;
+            try { pending=conflict || !draft().equals(saved); }
+            catch (IllegalArgumentException e) { pending=true; }
+            if (!pending) reload();
             else { conflict=true; edits.stop(); editPending=false; refresh(); }
         }
     }

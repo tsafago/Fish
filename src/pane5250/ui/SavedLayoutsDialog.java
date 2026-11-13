@@ -48,20 +48,27 @@ final class SavedLayoutsDialog extends JDialog {
         super(workspace,"Saved layouts / shortcuts",false);
         this.workspace=workspace; this.shortcutExport=shortcutExport;
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
-        JPanel body=new JPanel(new BorderLayout(0,16)); body.setBorder(Ui.padding(18));
-        JPanel current=new JPanel(new BorderLayout(0,10));
-        JLabel heading=new JLabel("Shortcut for this window"); heading.setFont(heading.getFont().deriveFont(Font.BOLD,16f));
+        JPanel body=new JPanel(new BorderLayout(0,20)); body.setBorder(Ui.padding(24));
+        JPanel current=new JPanel(new BorderLayout(0,16));
+        JLabel heading=new JLabel("Shortcut for this window"); heading.setFont(heading.getFont().deriveFont(Font.BOLD,20f));
+        context.setFont(context.getFont().deriveFont(14f));
         JPanel introduction=new JPanel(new BorderLayout(0,6)); introduction.add(heading,BorderLayout.NORTH);
         introduction.add(context,BorderLayout.CENTER); current.add(introduction,BorderLayout.NORTH);
         name.setText(workspace.sessionPanes().size()==1 ? workspace.active().profile().name() : "Work layout");
+        name.setFont(UIManager.getFont("TextField.font").deriveFont(14f));
         name.getAccessibleContext().setAccessibleName("New shortcut layout name");
         Ui.observeEdits(name,() -> {
-            name.setFont(Ui.textFont(UIManager.getFont("TextField.font"),name.getText()));
+            name.setFont(Ui.textFont(UIManager.getFont("TextField.font").deriveFont(14f),name.getText()));
             if (!refreshing && !name.getText().isBlank()) workspace.tutorialAction("layout-named");
         });
-        current.add(row("Name",name),BorderLayout.CENTER);
-        JPanel primary=new JPanel(new FlowLayout(FlowLayout.LEFT,8,0));
+        JPanel naming=new JPanel(new BorderLayout(0,4));
+        JLabel nameLabel=new JLabel("Name"); nameLabel.setLabelFor(name);
+        nameLabel.setFont(nameLabel.getFont().deriveFont(14f));
+        naming.add(nameLabel,BorderLayout.NORTH); naming.add(name,BorderLayout.CENTER);
+        current.add(naming,BorderLayout.CENTER);
+        JPanel primary=new JPanel(new FlowLayout(FlowLayout.LEFT,0,0));
         create=Ui.button("Create desktop shortcut...",0,() -> chooseShortcut(true));
+        create.setFont(create.getFont().deriveFont(14f));
         Dimension createSize=create.getPreferredSize();
         create.setPreferredSize(new Dimension(createSize.width+16,createSize.height));
         save=Ui.button("Save layout only",0,() -> act(() -> {
@@ -73,12 +80,15 @@ final class SavedLayoutsDialog extends JDialog {
                 working=false; refresh(); showMessage("Not saved: "+error+" Layout kept here for retry.");
             });
         }));
-        primary.add(create); primary.add(save); current.add(primary,BorderLayout.SOUTH);
+        primary.add(create); primary.add(Box.createHorizontalStrut(8)); primary.add(save); current.add(primary,BorderLayout.SOUTH);
+        save.setFont(save.getFont().deriveFont(14f));
         body.add(current,BorderLayout.NORTH);
         JPanel existing=new JPanel(new BorderLayout(0,10));
         manage.setHorizontalAlignment(SwingConstants.LEFT); manage.setIcon(Ui.symbol("right"));
+        manage.setFont(manage.getFont().deriveFont(14f)); manage.setIconTextGap(10);
         manage.addActionListener(e -> { library.setVisible(manage.isSelected()); manage.setIcon(Ui.symbol(manage.isSelected() ? "down" : "right")); pack(); });
         existing.add(manage,BorderLayout.NORTH); existing.add(library,BorderLayout.CENTER); library.setVisible(false);
+        Ui.observeEdits(existingName,() -> existingName.setFont(Ui.textFont(UIManager.getFont("TextField.font"),existingName.getText())));
         JPanel fields=new JPanel(new GridLayout(0,1,0,8));
         fields.add(row("Saved layout",layouts)); fields.add(row("Rename to",existingName)); library.add(fields,BorderLayout.NORTH);
         JPanel actions=new JPanel(new GridLayout(2,3,8,8));
@@ -104,9 +114,10 @@ final class SavedLayoutsDialog extends JDialog {
         }));
         actions.add(open); actions.add(export); actions.add(replace); actions.add(rename); actions.add(delete);
         library.add(actions,BorderLayout.CENTER); body.add(existing,BorderLayout.CENTER);
-        JPanel footer=new JPanel(new BorderLayout(12,10)); Ui.role(message,"muted");
+        JPanel footer=new JPanel(new BorderLayout(12,10)); footer.setBorder(BorderFactory.createEmptyBorder(10,0,0,0)); Ui.role(message,"muted");
         message.getAccessibleContext().setAccessibleName("Shortcut creation status");
-        footer.add(message,BorderLayout.CENTER); footer.add(Ui.button("Close",0,this::dispose),BorderLayout.EAST); body.add(footer,BorderLayout.SOUTH);
+        JButton close=Ui.button("Close",0,this::dispose); close.setFont(close.getFont().deriveFont(14f));
+        footer.add(message,BorderLayout.CENTER); footer.add(close,BorderLayout.EAST); body.add(footer,BorderLayout.SOUTH);
         layouts.addActionListener(e -> {
             if (!refreshing && layouts.getSelectedItem() instanceof SavedLayout value) {
                 workspace.selectSavedLayout(value.id()); existingName.setText(value.name());
@@ -115,7 +126,7 @@ final class SavedLayoutsDialog extends JDialog {
         setContentPane(body); Ui.decorate(this,this::dispose);
         getRootPane().setDefaultButton(create);
         getRootPane().registerKeyboardAction(e -> dispose(),KeyStroke.getKeyStroke("ESCAPE"),JComponent.WHEN_IN_FOCUSED_WINDOW);
-        refresh(); pack(); setMinimumSize(new Dimension(640,getPreferredSize().height)); setLocationRelativeTo(workspace);
+        refresh(); pack(); setMinimumSize(new Dimension(760,getPreferredSize().height)); setLocationRelativeTo(workspace);
     }
     private static JPanel row(String text,JComponent control) {
         JPanel row=new JPanel(new BorderLayout(12,0)); JLabel label=new JLabel(text); label.setLabelFor(control);

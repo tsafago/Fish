@@ -243,6 +243,16 @@
     {
       "default": "",
       "hostAction": null,
+      "title": "Theme: Light"
+    },
+    {
+      "default": "",
+      "hostAction": null,
+      "title": "Theme: Slate"
+    },
+    {
+      "default": "",
+      "hostAction": null,
       "title": "Theme: OLED"
     },
     {
@@ -676,7 +686,7 @@
       "title": "Host NEW LINE"
     }
   ],
-  "catalogVersion": 8,
+  "catalogVersion": 9,
   "cursorStyles": {
     "FILLED": "Filled block in both modes.",
     "IBM": "Underline in replace mode; filled block in Insert. IBM-documented mode-aware style, not a verified ACS default.",
@@ -851,7 +861,9 @@
         "Mint",
         "Rose",
         "OLED green",
-        "OLED amber"
+        "OLED amber",
+        "Azure vivid",
+        "Crimson vivid"
       ]
     },
     "username": {
@@ -881,6 +893,8 @@
         "Graphite",
         "Midnight",
         "Paper",
+        "Light",
+        "Slate",
         "OLED",
         "OLED_Amber",
         "High_Contrast",
@@ -941,7 +955,7 @@
       "type": "local-font-path"
     },
     "height": {
-      "constraints": "260..10000 logical pixels.",
+      "constraints": "260..10000 logical pixels in stored state; live pane and titlebar minimums also apply.",
       "default": 850,
       "type": "integer"
     },
@@ -1062,14 +1076,14 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "18",
+      "default": "19",
       "type": "enum",
       "values": [
-        "18"
+        "19"
       ]
     },
     "width": {
-      "constraints": "330..10000 logical pixels.",
+      "constraints": "330..10000 logical pixels in stored state. Restored/programmatic windows clamp to actual titlebar/pane control minimums.",
       "default": 1360,
       "type": "integer"
     },
@@ -1099,7 +1113,7 @@
       "type": "uuid"
     },
     "height": {
-      "constraints": "260..10000 logical pixels.",
+      "constraints": "260..10000 logical pixels in stored state; live pane and titlebar minimums also apply.",
       "default": 850,
       "type": "integer"
     },
@@ -1127,7 +1141,7 @@
       ]
     },
     "width": {
-      "constraints": "330..10000 logical pixels.",
+      "constraints": "330..10000 logical pixels in stored state. Restored/programmatic windows clamp to actual titlebar/pane control minimums.",
       "default": 1360,
       "type": "integer"
     }
@@ -1136,8 +1150,10 @@
   "savedLayoutPrefix": "savedLayout.{listed-layout-uuid}.",
   "semantics": "Full snapshots, not partial resets. Apply only while Fish is closed, with matching revision and exclusive workspace.lock. Configuration apply performs no connections/transactions/credential operations. Normal startup follows the saved startup preference; only new/factory workspaces default on.",
   "settingsEditing": "Valid Settings edits apply immediately after a short coalescing pause and persist through the existing exclusive/revision-checked writer. Saved acknowledges disk success. Invalid partial groups retain their previous usable state; stale edits require reload, failed saves retain Retry. New profiles, password-store operations, destructive actions and file exports require explicit actions. No setting edit connects a session.",
+  "settingsPersistence": "Valid discrete settings apply in the interaction before coalesced asynchronous disk writes. Typing validates after a short pause; incomplete/conflicting groups remain editable. Saved acknowledges the current generation's disk write; failures retain Retry recovery. Creation/credentials/destruction/exports stay explicit.",
   "shortcutPrefix": "binding.{exact-action-title}",
   "shortcutValue": "Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.",
+  "startupRecovery": "Unreadable/unsupported workspaces offer Exit, bounded explicit Retry and confirmed factory recovery under the exclusive workspace lock. Recovery first preserves the exact original workspace-recovery-UUID.xml; credentials/fonts/other files stay untouched. A future version may require upgrading Fish, not resetting.",
   "storage": "All values are XML strings; types below describe their logical values. Use export, edit, validate, apply.",
   "themeFields": {
     "ACTIVE_TINT": {
@@ -1455,7 +1471,7 @@
       "type": "uuid"
     },
     "height": {
-      "constraints": "260..10000 logical pixels.",
+      "constraints": "260..10000 logical pixels in stored state; live pane and titlebar minimums also apply.",
       "default": 850,
       "type": "integer"
     },
@@ -1470,12 +1486,12 @@
       "type": "layout"
     },
     "width": {
-      "constraints": "330..10000 logical pixels.",
+      "constraints": "330..10000 logical pixels in stored state. Restored/programmatic windows clamp to actual titlebar/pane control minimums.",
       "default": 1360,
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.7.9. Format 18 / recipe 3 retains simple pane families and adds a typed cursor style. Formats through 17 gain IBM (underline replace / filled Insert). Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Formats 15/16 and recipes 1/2 migrate deliberately; do not relabel. Downgrade to Fish 0.7.8 or earlier requires restoring the matching backup.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.8.0 beta. Format 19 / recipe 3 retains simple pane families/cursor preferences and adds Light/Slate and vivid text choices. Formats through 18 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.7.9 or earlier requires the matching backup.",
   "windowPrefix": "window.{zero-based-index}.",
-  "workspaceVersion": "18"
+  "workspaceVersion": "19"
 }

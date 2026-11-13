@@ -265,7 +265,7 @@ public class TerminalView extends JComponent implements Scrollable {
     }
     public void displayChanged() { sharedPalette=null; litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); repaint(); }
     public void themeChanged() {
-        setBackground(Ui.customTheme() ? Ui.color(ColorRole.HOST_0) : pane.getBackground()); screenChanged();
+        setBackground(Ui.customTheme() ? Ui.color(ColorRole.HOST_0) : pane.getBackground()); displayChanged();
     }
     public void fontChanged() {
         face=pane.workspaceFont();

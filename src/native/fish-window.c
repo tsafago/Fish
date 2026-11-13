@@ -15,6 +15,7 @@ typedef struct {
     WNDPROC previous;
     RECT drag, maximize;
     int width, height;
+    int minimum_width, minimum_height;
     JavaVM *vm;
     jobject bridge;
     jmethodID hover;
@@ -117,6 +118,14 @@ static LRESULT CALLBACK fish_proc(HWND window, UINT message, WPARAM wparam, LPAR
     ReleaseSRWLockShared(&state_lock);
     if (!snapshot.previous) return DefWindowProcW(window, message, wparam, lparam);
     switch (message) {
+        case WM_GETMINMAXINFO: {
+            LRESULT result=CallWindowProcW(snapshot.previous,window,message,wparam,lparam);
+            MINMAXINFO *info=(MINMAXINFO *)lparam;
+            int dpi=(int)GetDpiForWindow(window);
+            info->ptMinTrackSize.x=max(info->ptMinTrackSize.x,MulDiv(snapshot.minimum_width,dpi,96));
+            info->ptMinTrackSize.y=max(info->ptMinTrackSize.y,MulDiv(snapshot.minimum_height,dpi,96));
+            return result;
+        }
         case WM_WINDOWPOSCHANGED:
             square_frame(window);
             break;
@@ -270,15 +279,16 @@ JNIEXPORT jlong JNICALL Java_pane5250_ui_NativeWindow_install0(JNIEnv *env, jcla
 JNIEXPORT jboolean JNICALL Java_pane5250_ui_NativeWindow_regions0(JNIEnv *env, jclass type, jlong handle,
         jint width, jint height, jintArray rectangles) {
     (void)type;
-    jint values[8];
-    if ((*env)->GetArrayLength(env, rectangles) != 8 || width <= 0 || height <= 0) return JNI_FALSE;
-    (*env)->GetIntArrayRegion(env, rectangles, 0, 8, values);
+    jint values[10];
+    if ((*env)->GetArrayLength(env, rectangles) != 10 || width <= 0 || height <= 0) return JNI_FALSE;
+    (*env)->GetIntArrayRegion(env, rectangles, 0, 10, values);
     if ((*env)->ExceptionCheck(env)) return JNI_FALSE;
     HWND window = (HWND)(intptr_t)handle;
     AcquireSRWLockExclusive(&state_lock);
     FishWindow *state = (FishWindow *)GetPropW(window, PROPERTY);
     if (state) {
         state->width = width; state->height = height;
+        state->minimum_width=values[8]; state->minimum_height=values[9];
         RECT *areas[2] = {&state->drag, &state->maximize};
         for (int i = 0; i < 2; i++) {
             areas[i]->left = values[i*4];
@@ -295,6 +305,16 @@ JNIEXPORT void JNICALL Java_pane5250_ui_NativeWindow_move0(JNIEnv *env, jclass t
     HWND window = (HWND)(intptr_t)handle;
     ReleaseCapture();
     PostMessageW(window, WM_NCLBUTTONDOWN, HTCAPTION, GetMessagePos());
+}
+JNIEXPORT jintArray JNICALL Java_pane5250_ui_NativeWindow_minimum0(JNIEnv *env,jclass type,jlong handle) {
+    (void)type;
+    HWND window=(HWND)(intptr_t)handle;
+    MINMAXINFO info={0};
+    SendMessageW(window,WM_GETMINMAXINFO,0,(LPARAM)&info);
+    jint values[3]={info.ptMinTrackSize.x,info.ptMinTrackSize.y,(jint)GetDpiForWindow(window)};
+    jintArray result=(*env)->NewIntArray(env,3);
+    if (result) (*env)->SetIntArrayRegion(env,result,0,3,values);
+    return result;
 }
 JNIEXPORT void JNICALL Java_pane5250_ui_NativeWindow_maximize0(JNIEnv *env, jclass type, jlong handle) {
     (void)env; (void)type;

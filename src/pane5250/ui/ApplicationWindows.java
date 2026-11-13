@@ -12,10 +12,12 @@ import pane5250.model.*;
 /** EDT-owned shared settings and independent frames; only this owner writes the workspace. */
 public final class ApplicationWindows {
     @FunctionalInterface interface Factory { Workspace create(StateStore store,StateStore.State state,Path helper,boolean demo); }
+    @FunctionalInterface interface Writer { void save(StateStore.State state) throws IOException; }
     private final StateStore store;
     private final Path helper;
     private final boolean demonstration,visible;
     private final Factory factory;
+    private final Writer writer;
     private final List<Workspace> windows=new ArrayList<>();
     private final ExecutorService persistence=Executors.newSingleThreadExecutor(r -> new Thread(r,"fish-save"));
     private final javax.swing.Timer saveTimer;
@@ -29,7 +31,11 @@ public final class ApplicationWindows {
                 (owner,message) -> Ui.confirm(owner,message,"Update Fish"),false));
     }
     ApplicationWindows(StateStore store,Path helper,boolean demo,boolean visible,Factory factory) {
+        this(store,helper,demo,visible,factory,store::save);
+    }
+    ApplicationWindows(StateStore store,Path helper,boolean demo,boolean visible,Factory factory,Writer writer) {
         this.store=store; this.helper=helper; demonstration=demo; this.visible=visible; this.factory=factory;
+        this.writer=writer;
         saveTimer=new javax.swing.Timer(500,e -> saveAsync()); saveTimer.setRepeats(false);
     }
     public void onClosed(Runnable callback) { afterClose=callback; }
@@ -149,7 +155,7 @@ public final class ApplicationWindows {
         saveTimer.stop();
         StateStore.State value=snapshot();
         persistence.submit(() -> {
-            try { store.save(value); action.run(); SwingUtilities.invokeLater(done); }
+            try { writer.save(value); action.run(); SwingUtilities.invokeLater(done); }
             catch (IOException | RuntimeException e) { SwingUtilities.invokeLater(() -> failed.accept(e.getMessage())); }
         });
     }
@@ -157,7 +163,7 @@ public final class ApplicationWindows {
         if (closing) return;
         StateStore.State snapshot=snapshot();
         persistence.submit(() -> {
-            try { store.save(snapshot); }
+            try { writer.save(snapshot); }
             catch (IOException e) { reportSave(e); }
         });
     }
@@ -169,7 +175,11 @@ public final class ApplicationWindows {
     }
     void closeWindow(Workspace window) {
         if (closing || window.closing()) return;
-        if (saving()) { Ui.error(window,"Wait for the profile save to finish before closing."); return; }
+        if (saving()) {
+            if (visible) Ui.error(window,"Wait for the profile save to finish before closing.");
+            else System.err.println("Wait for the profile save to finish before closing.");
+            return;
+        }
         if (!window.closeSettings()) return;
         if (windows.size()==1) { quit(); return; }
         windows.remove(window); window.finishWindow(); changed(windows.getFirst());
@@ -183,7 +193,7 @@ public final class ApplicationWindows {
         closing=true; saveTimer.stop();
         windows.forEach(Workspace::finishWindow);
         persistence.submit(() -> {
-            try { store.save(saved); } catch (IOException e) { reportSave(e); }
+            try { writer.save(saved); } catch (IOException e) { reportSave(e); }
             release();
         });
     }
@@ -200,7 +210,7 @@ public final class ApplicationWindows {
         persistence.submit(() -> {
             try {
                 if (reset) store.factoryReset();
-                else { store.save(saved); action.run(); }
+                else { writer.save(saved); action.run(); }
             } catch (IOException | RuntimeException e) {
                 SwingUtilities.invokeLater(() -> {
                     closing=false; windows.forEach(w -> w.setEnabled(true)); failed.accept(e.getMessage());

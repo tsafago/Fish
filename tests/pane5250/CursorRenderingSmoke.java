@@ -83,8 +83,9 @@ public final class CursorRenderingSmoke {
     }
     private static Rectangle cell(View view,double scale,double translation,int position) throws Exception {
         int width=(int)(double)field(view,"baseWidth"),height=(int)(double)field(view,"baseHeight");
-        return new Rectangle((int)Math.rint(translation+(double)field(view,"originX")*scale)+(position%80)*width,
-                (int)Math.rint(translation+(double)field(view,"originY")*scale)+(position/80)*height,width,height);
+        int columns=((SessionPane)field(view,"pane")).screen().getColumns();
+        return new Rectangle((int)Math.rint(translation+(double)field(view,"originX")*scale)+(position%columns)*width,
+                (int)Math.rint(translation+(double)field(view,"originY")*scale)+(position/columns)*height,width,height);
     }
     private static int outside(BufferedImage first,BufferedImage next,Rectangle cell) {
         int count=0;
@@ -103,17 +104,22 @@ public final class CursorRenderingSmoke {
     private static void evidence(BufferedImage image,String name) throws Exception {
         if (evidence!=null) ImageIO.write(image,"png",evidence.resolve(name+".png").toFile());
     }
-    private static void rendering(Workspace w,SessionPane pane,View view) throws Exception {
+    private static void rendering(Workspace w,SessionPane pane,View view,boolean wide) throws Exception {
+        w.appearanceSettings(w.appearanceSettings().withCursorStyle(Appearance.CursorStyle.IBM));
+        w.putProfile(pane.profile().withDisplay(pane.profile().theme(),"None"));
         java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();
-        DemoScreens.command(out,4,0x40,4,0x11,0,8);
+        if (wide) DemoScreens.command(out,4,0x20,0); else DemoScreens.command(out,4,0x40);
+        DemoScreens.command(out,4,0x11,0,8);
         DemoScreens.at(out,1,1,0x32,"DB");
-        for (int row:new int[]{2,13,24}) {
+        int rows=wide ? 27 : 24,columns=wide ? 132 : 80;
+        for (int row:new int[]{2,13,rows}) {
             DemoScreens.at(out,row,1,0x32,"Restart.. DB 0123456789 abcdefghijklmnopqrstuvwxyz");
-            DemoScreens.at(out,row,79,0x32,"M");
+            DemoScreens.at(out,row,columns-1,0x32,"M");
         }
         DemoScreens.command(out,4,0x42,0,0);
         ((Session5250)field(pane,"core")).accept(DemoScreens.gds(3,out.toByteArray()));
         var screen=pane.screen();
+        if (screen.getOIA().isInsertMode()) pane.send(KeyMnemonic.INSERT);
         screen.setCursorActive(true);
         view.screenChanged();
         AbstractButton logo=(AbstractButton)field(field(w,"chrome"),"caption");
@@ -123,13 +129,16 @@ public final class CursorRenderingSmoke {
                 BufferedImage before=paint(view,scale,translation,null,null);
                 List<Object> metrics=geometry(view);
                 view.dirty.clear();
-                for (int position:new int[]{0,1,80,80*12+40,80*23,80*24-1}) {
-                    screen.moveCursor(position); view.dirty.clear(); view.restartCursor(); view.focused=true;
+                for (int requested:new int[]{0,1,columns,columns*12+40,columns*(rows-1),columns*rows-1}) {
+                    screen.moveCursor(requested); int position=screen.getCurrentPos()-1;
+                    view.dirty.clear(); view.restartCursor(); view.focused=true;
                     check(view.dirty.stream().allMatch(r -> r.width<100 && r.height<100),"Cursor paths remain local, not a full-screen workaround");
                     BufferedImage fresh=paint(view,scale,translation,null,null);
                     Rectangle rectangle=cell(view,scale,translation,position);
                     check(fresh.getRGB(rectangle.x,rectangle.y+rectangle.height-1)==Ui.color(ColorRole.CURSOR).getRGB(),
-                            "Cursor origin shares the glyph device grid at "+scale+"/"+translation);
+                            "Cursor origin shares the glyph device grid at "+rows+"x"+columns+"/"+scale+"/"+translation+"/"+position
+                                    +"/"+screen.getCurrentPos()+"/"+screen.getOIA().isInsertMode()+"/"+field(view,"cursorPhase")
+                                    +": "+Integer.toHexString(fresh.getRGB(rectangle.x,rectangle.y+rectangle.height-1)));
                     check(outside(before,fresh,rectangle)==0,"Cursor never shifts/changes a pixel outside its exact device cell");
                     for (Rectangle dirty:view.dirty) paint(view,scale,translation,before,dirty);
                     check(differences(before,fresh)==0,"Cursor-only dirty repaint equals full paint: "+fit+"/"+scale+"/"+translation+"/"+position+" ("+differences(before,fresh)+" pixels)");
@@ -163,8 +172,8 @@ public final class CursorRenderingSmoke {
                 if (screen.getOIA().isInsertMode()!=insert) pane.send(KeyMnemonic.INSERT);
                 check(screen.getOIA().isInsertMode()==insert,"Actual Insert host key selects rendering mode");
                 view.setFit(false); view.setSize(1001,641); set(view,"fluxPhase",.25);
-                for (int position:new int[]{1,81,80*12+70,80*24-1}) {
-                    screen.moveCursor(position); view.focused=false;
+                for (int requested:new int[]{1,81,80*12+70,80*24-1}) {
+                    screen.moveCursor(requested); int position=screen.getCurrentPos()-1; view.focused=false;
                     BufferedImage back=paint(view,scale,.75,null,null);
                     view.dirty.clear(); view.restartCursor(); view.focused=true;
                     BufferedImage on=paint(view,scale,.75,null,null);
@@ -188,10 +197,11 @@ public final class CursorRenderingSmoke {
                 }
             }
         w.appearanceSettings(w.appearanceSettings().withCursorStyle(Appearance.CursorStyle.IBM));
-        for (AppTheme theme:new AppTheme[]{AppTheme.Charcoal,AppTheme.Paper,AppTheme.High_Contrast})
+        for (AppTheme theme:new AppTheme[]{AppTheme.Charcoal,AppTheme.Paper,AppTheme.High_Contrast,AppTheme.Light,AppTheme.Slate})
+            for (String paletteName:List.of("Phosphor","Azure vivid","Crimson vivid"))
             for (String effect:List.of("None",Profile.FLUX)) for (double scale:new double[]{1,1.5}) {
             w.applyTheme(theme);
-            w.putProfile(pane.profile().withDisplay(pane.profile().theme(),effect));
+            w.putProfile(pane.profile().withDisplay(paletteName,effect));
             if (!screen.getOIA().isInsertMode()) pane.send(KeyMnemonic.INSERT);
             for (int attribute:new int[]{0x20,0x21,0x27,0x2a,0x22}) {
                 byte[] first=attributes(attribute,"D");
@@ -240,7 +250,7 @@ public final class CursorRenderingSmoke {
             w.putProfile(pane.profile().withDisplay(pane.profile().theme(),"None"));
             w.setSize(1121,761); layout(w);
             AbstractButton logo=(AbstractButton)field(field(w,"chrome"),"caption");
-            for (boolean fit:new boolean[]{true,false}) for (double scale:new double[]{1,1.25,1.5,1.75}) {
+            for (boolean fit:new boolean[]{true,false})             for (double scale:new double[]{1,1.25,1.5,1.75,2}) {
                 view.setFit(fit); layout(w); paint(view,scale,.75,null,null);
                 List<Object> before=geometry(view);
                 List<Rectangle> bounds=new ArrayList<>();
@@ -275,7 +285,7 @@ public final class CursorRenderingSmoke {
             SavedLayoutsDialog dialog=new SavedLayoutsDialog(w);
             JTextField name=(JTextField)field(dialog,"name");
             Insets padding=name.getInsets(); Dimension minimum=dialog.getMinimumSize();
-            Font nativeFont=UIManager.getFont("TextField.font");
+            Font nativeFont=UIManager.getFont("TextField.font").deriveFont(14f);
             for (String text:List.of("Office layout","Wide W / thin iii","Layout \u5317 \u0394","Office layout")) {
                 name.selectAll(); name.replaceSelection(text); dialog.pack(); layout(dialog);
                 check(name.getFont().canDisplayUpTo(text)<0,"Actual name control supports Unicode");
@@ -295,6 +305,7 @@ public final class CursorRenderingSmoke {
                     evidence(image,"shortcut-name-"+theme+"-"+scale);
                 }
             }
+            name.getCaret().setVisible(false); name.getCaret().setBlinkRate(0);
             w.applyTheme(AppTheme.Charcoal); dialog.dispose();
             Preferences current=w.tutorialPreferences();
             if (evidence!=null) {
@@ -344,7 +355,7 @@ public final class CursorRenderingSmoke {
                 TerminalView old=pane.view(); JViewport viewport=(JViewport)old.getParent();
                 old.dispose(); View result=new View(pane); set(pane,"view",result); viewport.setView(result); pane.updateHeader(); layout(w); return result;
             });
-            edt(() -> { rendering(w,pane,view); return null; });
+            edt(() -> { rendering(w,pane,view,false); rendering(w,pane,view,true); return null; });
             controls(fixture,w,pane,view);
             check(host.failures().isEmpty(),"No synthetic host/session failures");
             check(Arrays.stream(Window.getWindows()).noneMatch(Window::isShowing),"No shared desktop exposure");

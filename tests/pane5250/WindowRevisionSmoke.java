@@ -33,7 +33,13 @@ public final class WindowRevisionSmoke {
         Field f=owner.getClass().getDeclaredField(name); f.setAccessible(true); f.set(owner,value);
     }
     private static <T> T edt(Callable<T> action) throws Exception {
-        FutureTask<T> work=new FutureTask<>(action); SwingUtilities.invokeAndWait(work); return work.get();
+        FutureTask<T> work=new FutureTask<>(action); SwingUtilities.invokeLater(work);
+        try { return work.get(20,TimeUnit.SECONDS); }
+        catch (TimeoutException stalled) {
+            for (var entry:Thread.getAllStackTraces().entrySet()) if (entry.getKey().getName().startsWith("AWT-EventQueue"))
+                for (StackTraceElement frame:entry.getValue()) System.err.println(frame);
+            throw stalled;
+        }
     }
     private static void await(Callable<Boolean> condition,String message) throws Exception {
         long end=System.nanoTime()+TimeUnit.SECONDS.toNanos(10);
@@ -155,18 +161,22 @@ public final class WindowRevisionSmoke {
             set(first,"preferences",editor);
             check(second.preferencesDialog("General")==editor.dialog(),"Other windows reuse the same Settings editor");
             ((JCheckBox)field(editor,"startup")).setSelected(!first.connectOnStartup());
+            ((JTextField)field(editor,"fontPath")).setText("synthetic-missing-font.ttf");
             second.highlightActive(false);
             Method apply=Preferences.class.getDeclaredMethod("apply",boolean.class); apply.setAccessible(true); apply.invoke(editor,false);
             check(((JLabel)field(editor,"error")).getText().contains("Changed elsewhere"),"Stale app-global draft is rejected rather than overwriting another window");
             ((JButton)field(editor,"reloadButton")).doClick(0);
+            check(!(boolean)field(editor,"conflict") && field(editor,"validation").equals("") && !editor.profiles.dirty(),
+                    "Reload repairs actual pending draft before never-shown disposal");
             editor.dialog().dispose();
             Preferences colors=new Preferences(first,"Appearance"); set(first,"preferences",colors);
             ((JComboBox<?>)field(colors,"palette")).setSelectedItem("Amber");
             Profile concurrent=second.active().profile();
             second.putProfile(concurrent.withDisplay(concurrent.theme(),Profile.FLUX));
             apply.invoke(colors,false);
-            check(((JLabel)field(colors,"error")).getText().contains("Terminal colors/effect changed"),"Stale profile palette/effect draft cannot overwrite another window's live change");
-            check(first.active().profile().effect().equals(Profile.FLUX),"Concurrent profile effect remains intact after rejected Apply");
+            check(!((JLabel)field(colors,"error")).getText().contains("changed"),"Clean applied palette choice rebases a concurrent effect instead of reporting a stale draft");
+            check(first.active().profile().theme().equals("Amber") && first.active().profile().effect().equals(Profile.FLUX),
+                    "Concurrent effect and immediately applied palette both remain intact");
             ((JButton)field(colors,"reloadButton")).doClick(0);
             colors.dialog().dispose(); first.toggleFlux();
             Profile other=Profile.createKerberos("Other saved profile"); first.putProfile(other);
@@ -182,6 +192,7 @@ public final class WindowRevisionSmoke {
             check(!second.currentLayout().equals(first.currentLayout()),"Sharing settings never replaces another window's layout");
             StateStore.State snapshot=fixture.app.snapshot(); Configuration.validate(snapshot);
             check(snapshot.windows().size()==1 && snapshot.windows().getFirst().layout().leaves().size()==4,"One coherent snapshot includes both four-pane windows");
+            UsabilityIterationSmoke.settle(() -> !fixture.app.saving(),"Immediate settings must finish their separate durable writes before frame-close admission");
             fixture.app.closeWindow(second);
             check(first.sessionPanes().stream().allMatch(SessionPane::connected),"Closing one frame does not disconnect the other's sessions");
             check(fixture.app.windows().size()==1,"Only the selected window closes");

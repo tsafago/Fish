@@ -8,7 +8,7 @@ import pane5250.model.*;
 import pane5250.ui.*;
 
 public final class Main {
-    public static final String VERSION = "0.7.9";
+    public static final String VERSION = "0.8.0";
     private Main() {}
     public static void main(String[] args) {
         if (args.length>0 && args[0].equals("--config")) {
@@ -60,7 +60,10 @@ public final class Main {
             StateStore store=claim.store();
             Ui.install();
             DemoHost host = demonstration ? new DemoHost() : null;
-            StateStore.State state = demonstration ? demoState(Objects.requireNonNull(host).port()) : store.load();
+            StateStore.State state;
+            try { state=demonstration ? demoState(Objects.requireNonNull(host).port()) : WorkspaceRecovery.load(store); }
+            catch (Exception e) { claim.broker().close(); store.close(); if (host!=null) host.close(); throw e; }
+            if (state==null) { claim.broker().close(); store.close(); if (host!=null) host.close(); return; }
             Path location = Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             Path helper = (Files.isDirectory(location) ? Path.of("scripts") : location.getParent()).resolve("credential-store.ps1").toAbsolutePath();
             boolean demo = demonstration;

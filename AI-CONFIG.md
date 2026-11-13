@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.7.9 exposes its complete local configuration without an AI service, network
+Fish 0.8.0 beta exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -74,10 +74,13 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 18 with recoverable keyboard migration
+An exported legacy workspace is migrated to version 19 with recoverable keyboard migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries (including local 0.7.8) cannot read version 18: restore a pre-upgrade backup for a downgrade.
-Do not manually relabel old/future data as version 18. Version-8/9 hosts, sign-in
+save. Older binaries (including 0.7.9) cannot read version 19: restore a pre-upgrade backup for a downgrade.
+Do not manually relabel old/future data as version 19. Interactive startup recovery
+offers an explicitly confirmed factory reset with an exact unique backup, under
+the workspace lock. Offline configuration still rejects bad state without resetting.
+Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
 is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles
 remain PASSWORD, never silently Kerberos. No existing profile is replaced by a seed.

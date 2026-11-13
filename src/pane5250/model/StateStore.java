@@ -7,7 +7,7 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="18";
+    public static final String VERSION="19";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
     public record WindowState(Layout layout,int width,int height,UUID lastProfile,UUID addProfile,Map<UUID,SavedLayout.Display> displays) {
@@ -180,7 +180,16 @@ public final class StateStore implements AutoCloseable {
     public synchronized String revision() { return revision; }
     private String diskRevision() throws IOException {
         if (Files.notExists(file())) return "absent";
-        return digest(readBytes(file()));
+        if (Files.isSymbolicLink(file())) throw new IOException("Workspace must not be a symbolic link.");
+        return fileRevision(file());
+    }
+    private static String fileRevision(Path file) throws IOException {
+        try (InputStream input=Files.newInputStream(file)) {
+            MessageDigest hash=MessageDigest.getInstance("SHA-256");
+            byte[] buffer=new byte[65536]; int size;
+            while ((size=input.read(buffer))!=-1) hash.update(buffer,0,size);
+            return HexFormat.of().formatHex(hash.digest());
+        } catch (NoSuchAlgorithmException e) { throw new IllegalStateException("SHA-256 is required.",e); }
     }
     private static String digest(byte[] data) {
         try {
@@ -211,6 +220,18 @@ public final class StateStore implements AutoCloseable {
     public synchronized void factoryReset() throws IOException {
         save(freshState());
         reset=true;
+    }
+    public synchronized Path recoverFactory() throws IOException {
+        if (!lock.isValid()) throw new InUseException();
+        requireRevision(revision);
+        if (!Files.isRegularFile(file(),LinkOption.NOFOLLOW_LINKS)) throw new IOException("No regular workspace file can be backed up. Nothing was replaced.");
+        Path backup=directory.resolve("workspace-recovery-"+UUID.randomUUID()+".xml");
+        try (InputStream original=Files.newInputStream(file())) { Files.copy(original,backup); }
+        try (FileChannel preserved=FileChannel.open(backup,StandardOpenOption.WRITE)) { preserved.force(true); }
+        if (!fileRevision(backup).equals(revision)) throw new IOException("Workspace changed while its backup was copied. Original was not replaced.");
+        requireRevision(revision);
+        save(freshState());
+        return backup;
     }
     private static byte[] readBytes(Path file) throws IOException {
         try (InputStream in=Files.newInputStream(file)) {
@@ -247,7 +268,8 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17",VERSION).contains(version)) throw new IllegalArgumentException("Unknown workspace version.");
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18",VERSION).contains(version))
+                throw new IllegalArgumentException("Workspace version "+Objects.toString(version,"(missing)")+" is not supported by this Fish version. It may belong to a newer release; restore a matching backup or upgrade Fish, rather than relabeling it.");
             if (Integer.parseInt(version)<18 && properties.containsKey("appearance.cursorStyle"))
                 throw new IllegalArgumentException("Cursor style requires workspace version 18; do not relabel or downgrade it.");
             boolean usability=Integer.parseInt(version)>=8;

@@ -143,7 +143,7 @@ public final class Workspace extends JFrame {
         addProfileSelector.putClientProperty("chrome.control",true);
         addProfileSelector.updateUI();
         addProfileSelector.setPreferredSize(new Dimension(160,27));
-        addProfileSelector.setMinimumSize(new Dimension(45,27));
+        addProfileSelector.setMinimumSize(new Dimension(addProfileSelector.getFontMetrics(addProfileSelector.getFont()).stringWidth("Profile")+40,27));
         addProfileSelector.getAccessibleContext().setAccessibleName("Profile for new pane");
         addProfileSelector.setToolTipText("Choose a profile, then + to add and connect; selection alone changes no session");
         refreshAddProfiles();
@@ -152,11 +152,12 @@ public final class Workspace extends JFrame {
                 addProfile=selected.id(); changed(); tutorialAction("add-profile-selected");
             }
         });
-        tools.add(addProfileSelector);
+        tools.add(chromeSeparator()); tools.add(addProfileSelector); tools.add(chromeSeparator());
         addPane=new JButton(command("Add pane"));
         addPane.setText(""); addPane.setIcon(Ui.symbol("plus"));
         addPane.putClientProperty("chrome.control",true);
         addPane.setPreferredSize(new Dimension(30,27));
+        addPane.setMinimumSize(new Dimension(30,27));
         addPane.setToolTipText("Add and connect selected profile (maximum 8)");
         addPane.getAccessibleContext().setAccessibleName("Add and connect selected profile");
         for (JButton b : List.of(addPane)) {
@@ -186,6 +187,24 @@ public final class Workspace extends JFrame {
         addComponentListener(new ComponentAdapter() {
             @Override public void componentResized(ComponentEvent e) { changed(); }
         });
+    }
+    private static JSeparator chromeSeparator() {
+        JSeparator separator=new JSeparator(SwingConstants.VERTICAL);
+        separator.setPreferredSize(new Dimension(12,16)); separator.setMinimumSize(separator.getPreferredSize());
+        return separator;
+    }
+    @Override public void setBounds(int x,int y,int width,int height) {
+        Dimension minimum=getMinimumSize();
+        super.setBounds(x,y,Math.max(width,minimum.width),Math.max(height,minimum.height));
+    }
+    void constrainWindow() {
+        if (chrome==null || tree==null) return;
+        Dimension paneMinimum=tree.getMinimumSize(),titleMinimum=chrome.getMinimumSize();
+        Insets border=getRootPane().getInsets();
+        setMinimumSize(new Dimension(Math.max(titleMinimum.width,paneMinimum.width)+border.left+border.right,
+                Math.max(260,paneMinimum.height+WindowChrome.HEIGHT+border.top+border.bottom)));
+        if (getExtendedState()==Frame.NORMAL && (getWidth()<getMinimumSize().width || getHeight()<getMinimumSize().height))
+            setSize(Math.max(getWidth(),getMinimumSize().width),Math.max(getHeight(),getMinimumSize().height));
     }
     public SessionPane active() { return active; }
     void application(ApplicationWindows value) { application=value; saveTimer.stop(); }
@@ -377,6 +396,7 @@ public final class Workspace extends JFrame {
             addProfileSelector.setModel(new DefaultComboBoxModel<>(profileList().toArray(Profile[]::new)));
             addProfileSelector.setSelectedItem(profiles.get(addProfile));
         } finally { refreshingAdd=false; }
+        if (chrome!=null) { constrainWindow(); chrome.revalidate(); }
     }
     private void refreshShortcutLabels() {
         if (shortcuts!=null) shortcuts.refreshLabels();
@@ -386,6 +406,7 @@ public final class Workspace extends JFrame {
         content.setBackground(Ui.BACKGROUND);
         if (getContentPane()!=null) getContentPane().setBackground(Ui.BACKGROUND);
         updateWindowOutline();
+        constrainWindow();
     }
     private void updateWindowOutline() {
         Ui.background(getRootPane(),ColorRole.BACKGROUND);
@@ -411,10 +432,14 @@ public final class Workspace extends JFrame {
     public void connectAll() { sessionPanes().forEach(SessionPane::connectOnStartup); }
     public void changed() {
         if (closing) return;
+        if (settingsBatch>0) return;
         if (application!=null) application.changed(this); else saveTimer.restart();
         if (preferences!=null) preferences.sharedChanged();
         if (layoutsDialog!=null) layoutsDialog.refresh();
     }
+    private int settingsBatch;
+    void beginSettings() { settingsBatch++; }
+    void endSettings() { if (--settingsBatch==0) changed(); }
     private List<SessionPane> allPanes() { return application==null ? sessionPanes() : application.panes(); }
 
     private void buildTree() {
@@ -432,8 +457,7 @@ public final class Workspace extends JFrame {
         rebuildingLayout=true;
         try { tree = component(layout); } finally { rebuildingLayout=false; }
         content.add(tree,BorderLayout.CENTER);
-        Dimension minimum=tree.getMinimumSize();
-        setMinimumSize(new Dimension(Math.max(330,minimum.width+4),Math.max(260,minimum.height+35)));
+        constrainWindow();
         if (active == null || !live.contains(active.id())) active = live.isEmpty() ? null : panes.get(layout.leaves().getFirst().pane());
         panes.values().forEach(SessionPane::updateHeader);
         refreshShortcutLabels();

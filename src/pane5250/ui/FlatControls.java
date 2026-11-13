@@ -170,6 +170,7 @@ public final class FlatControls {
                     super.getListCellRendererComponent(list,value,index,selected,focus);
                     setFont(Ui.textFont(list.getFont(),Objects.toString(value,"")));
                     setBorder(BorderFactory.createEmptyBorder(4,8,4,8));
+                    setHorizontalAlignment(chrome() && index<0 ? SwingConstants.CENTER : SwingConstants.LEFT);
                     if (index < 0) { setBackground(Ui.FIELD); setForeground(comboBox.isEnabled() ? Ui.TEXT : Ui.color(ColorRole.DISABLED)); }
                     return this;
                 }

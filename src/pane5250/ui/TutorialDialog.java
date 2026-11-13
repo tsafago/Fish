@@ -42,6 +42,19 @@ final class TutorialDialog extends JDialog {
     };
     private final HierarchyListener showing=e -> refreshTarget();
     private final ChangeListener menus=e -> menuChanged();
+    private final AWTEventListener ownedWindows=event -> {
+        if (event instanceof WindowEvent windowEvent && (windowEvent.getID()==WindowEvent.WINDOW_OPENED
+                || windowEvent.getID()==WindowEvent.WINDOW_ACTIVATED) && related(windowEvent.getWindow()))
+            SwingUtilities.invokeLater(this::raiseRelated);
+    };
+    private boolean related(Window window) {
+        if (window==this) return false;
+        for (Window owner=window;owner!=null;owner=owner.getOwner()) if (owner==workspace) return true;
+        return false;
+    }
+    private void raiseRelated() {
+        if (!ended && isShowing()) { position(); toFront(); }
+    }
 
     TutorialDialog(Workspace workspace,boolean firstRun) { this(workspace,Guide.GETTING_STARTED,firstRun); }
     TutorialDialog(Workspace workspace,Guide guide,boolean firstRun) {
@@ -70,7 +83,8 @@ final class TutorialDialog extends JDialog {
         body.add(heading,BorderLayout.NORTH); body.add(reading,BorderLayout.CENTER); body.add(actions,BorderLayout.SOUTH);
         setContentPane(body); Ui.decorate(this,() -> finish(false)); getRootPane().setDefaultButton(next);
         setMinimumSize(new Dimension(340,245)); setSize(400,275);
-        workspace.addComponentListener(bounds); MenuSelectionManager.defaultManager().addChangeListener(menus); go(0);
+        workspace.addComponentListener(bounds); MenuSelectionManager.defaultManager().addChangeListener(menus);
+        Toolkit.getDefaultToolkit().addAWTEventListener(ownedWindows,AWTEvent.WINDOW_EVENT_MASK); go(0);
     }
     private void menuChanged() {
         if (guide==Guide.GETTING_STARTED && step==steps.size()-1)
@@ -110,10 +124,10 @@ final class TutorialDialog extends JDialog {
                     s("Open Appearance","Open Edit > Settings, then Appearance. Common appearance controls are all on this page; scroll to the sections below.","Appearance","theme","settings-Appearance"),
                     s("Choose application colors","Choose Application theme. Valid settings apply automatically. Watch the Saved / error status below. Custom theme editing is optional.","Appearance","theme","appearance-theme"),
                     s("Choose terminal colors","Check Terminal profile, then choose Text palette. Only that profile and its panes change. Text effect is optional and off by default. Cursor style below chooses underline, outline or filled; Insert fills the cell.","Appearance","palette","appearance-palette"),
-                    s("Choose your font","Choose a monospaced family. A local custom font file is optional; Check font verifies alignment and characters before Apply.","Appearance","font","appearance-font"),
+                    s("Choose your font","Choose a monospaced family. A local custom font file is optional; Check font verifies alignment and characters before using it.","Appearance","font","appearance-font"),
                     s("Set header information","Scroll to Pane information. Show header controls visibility; the checkboxes below select its information.","Appearance","header","appearance-header"),
                     s("Set footer information","Show footer controls connection status, device name, screen size and cursor location. Extra information is optional. Window and focus outlines are just below.","Appearance","footer","appearance-footer"),
-                    s("Check the save status","Valid changes apply automatically and save after a short pause. Saved confirms the disk write; errors stay visible with recovery controls. Close keeps saved changes.","Appearance","apply","settings-applied"));
+                    s("Check the save status","Valid choices take effect immediately. Complete typed edits apply after a short pause; disk writes happen separately. Saved confirms persistence; errors stay visible with recovery controls.","Appearance","apply","settings-applied"));
             case PASSWORD_PROFILE -> List.of(
                     s("Open Profiles","Open Settings > Profiles. The actual workstation editor is here; Session > Profiles remains an operational workflow.","Profiles","list","settings-Profiles"),
                     s("Start a profile","Choose New, or select a saved profile and use Next. New starts a draft; the guide never creates or saves one for you.","Profiles","new","profile-new"),
@@ -128,7 +142,7 @@ final class TutorialDialog extends JDialog {
                     s("Find an action","Type part of an action or key in Find action. The table shows every effective binding, not just the one displayed in a menu.","Keyboard Shortcuts","keyboard-search","keyboard-search"),
                     s("Select the action","Select the action row. Its complete binding list appears below.","Keyboard Shortcuts","keyboard-table","keyboard-action"),
                     s("Edit or record a binding","F5 is a single key. For Ctrl+F5 type ctrl F5; for Ctrl+Shift+F5 type ctrl shift F5 (spaces, not +). Use one alternative per line or Record and add. Allowed keys and actions lists every supported token/action. ENTER@numpad is keypad Enter. Two custom owners conflict.","Keyboard Shortcuts","keyboard-keys","keyboard-binding"),
-                    s("Check saved bindings","Complete conflict-free bindings apply and save after a short pause. Invalid or conflicting entries stay editable without replacing saved keys. Saved confirms persistence; Close keeps it.","Keyboard Shortcuts","apply","settings-applied"));
+                    s("Check saved bindings","Complete conflict-free typed bindings apply after a short pause, with disk writes happening separately. Invalid or conflicting entries stay editable without replacing saved keys. Saved confirms persistence.","Keyboard Shortcuts","apply","settings-applied"));
             case PANES -> List.of(
                     s("Add an independent pane","Choose a profile beside +, then press + to add and connect it. A lone never-used offline tile is reused; later adds create new panes, up to eight.","add","","Add pane"),
                     s("Resize side by side","Drag the highlighted divider horizontally. Panes > Decrease / Increase divider are keyboard equivalents. Pane size scales text, not host dimensions.","divider-horizontal","","divider-horizontal"),
@@ -211,7 +225,7 @@ final class TutorialDialog extends JDialog {
             queued=true; SwingUtilities.invokeLater(() -> {
                 queued=false; if (ended) return;
                 refreshing=true;
-                try { position(); if (editor!=null && editor.isShowing() && isShowing()) toFront(); }
+                try { position(); if (targetWindow!=null && related(targetWindow) && targetWindow.isShowing()) raiseRelated(); }
                 finally { refreshing=false; }
             });
         }
@@ -244,6 +258,7 @@ final class TutorialDialog extends JDialog {
     @Override public void dispose() {
         if (!ended) {
             ended=true; workspace.removeComponentListener(bounds); MenuSelectionManager.defaultManager().removeChangeListener(menus);
+            Toolkit.getDefaultToolkit().removeAWTEventListener(ownedWindows);
             if (targetWindow!=null && targetWindow!=workspace) targetWindow.removeComponentListener(bounds);
             if (anchor!=null) { anchor.removeComponentListener(bounds); anchor.removeHierarchyBoundsListener(ancestors); anchor.removeHierarchyListener(showing); anchor=null; }
             Container parent=highlight.getParent(); if (parent!=null) { parent.remove(highlight); parent.repaint(); }

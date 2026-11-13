@@ -185,7 +185,9 @@ public final class ShortcutRefinementSmoke {
             Ui.applyTheme(theme); w.setSize(1120,760); layout(w);
             check(combo.getInsets().equals(new Insets(0,0,0,0)) && !combo.isOpaque(),"Chrome selector stays borderless across theme refresh: "+theme);
             check(combo.getHeight()==add.getHeight() && combo.getY()==add.getY(),"Profile and plus share menu-row height and alignment: "+theme);
-            check(combo.getX()+combo.getWidth()==add.getX(),"Profile and plus remain a contiguous action group");
+            Component separator=combo.getParent().getComponent(2);
+            check(separator instanceof JSeparator && combo.getX()+combo.getWidth()==separator.getX()
+                    && separator.getX()+separator.getWidth()==add.getX(),"Profile and plus remain aligned with the requested thin separator between them");
             image(chrome,"chrome-"+theme);
             for (int width:new int[]{330,500,680,1120}) {
                 w.setSize(width,760); layout(w);
@@ -224,7 +226,17 @@ public final class ShortcutRefinementSmoke {
             check(Arrays.stream(Window.getWindows()).noneMatch(Window::isShowing),"No test window was ever shown");
         } finally {
             edt(() -> { for (Window w:Window.getWindows()) w.dispose(); return null; });
-            try (var files=Files.walk(root)) { for (Path file:files.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(file); }
+            try (var files=Files.walk(root)) {
+                for (Path file:files.sorted(Comparator.reverseOrder()).toList()) {
+                    for (int attempt=0;;attempt++) {
+                        try { Files.deleteIfExists(file); break; }
+                        catch (java.nio.file.FileSystemException locked) {
+                            if (attempt==9) throw locked;
+                            Thread.sleep(100);
+                        }
+                    }
+                }
+            }
         }
         System.out.println("PASS unified chrome / parser-derived reference / real shortcut tutorial: "+checks);
     }

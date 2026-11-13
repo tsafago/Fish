@@ -67,6 +67,9 @@ public final class UsabilityIterationSmoke {
         final ApplicationWindows app;
         final CountDownLatch closed=new CountDownLatch(1);
         Fixture(Path directory) throws Exception {
+            this(directory,s -> s::save);
+        }
+        Fixture(Path directory,java.util.function.Function<StateStore,ApplicationWindows.Writer> writes) throws Exception {
             store=new StateStore(directory);
             Profile profile=new Profile(UUID.randomUUID(),"Synthetic workstation","",23,"","",false,false,"37","Phosphor","None",1,Map.of(),"");
             StateStore.State state=new StateStore.State(List.of(profile),new Layout.Leaf(UUID.randomUUID(),profile.id()),1120,760,
@@ -80,7 +83,7 @@ public final class UsabilityIterationSmoke {
                                 new Updates.Platform() {
                                     @Override public void inspectAndMark(Path path) { throw new AssertionError("No installer"); }
                                     @Override public void launch(Path path,String hash,long pid,Path data) { throw new AssertionError("No installer"); }
-                                }),(owner,message) -> false,false));
+                                }),(owner,message) -> false,false),writes.apply(store));
                 result.onClosed(closed::countDown); result.restore(state); layout(result.windows().getFirst()); return result;
             });
         }
@@ -155,8 +158,8 @@ public final class UsabilityIterationSmoke {
         edt(() -> {
             check(button(p.dialog(),"Apply")==null && button(p.dialog(),"Done")==null,"Settings has no transaction buttons");
             ((JCheckBox)field(p,"startup")).doClick(0);
-            javax.swing.Timer timer=(javax.swing.Timer)field(p,"edits"); timer.stop();
-            check(p.saving(),"Queued edits remain pending when a one-shot Swing timer stops before its callback");
+            javax.swing.Timer timer=(javax.swing.Timer)field(p,"writes"); timer.stop();
+            check(p.saving() && w.connectOnStartup(),"Discrete edits apply immediately but remain pending until the coalesced write callback");
             timer.restart(); return null;
         });
         await(() -> w.connectOnStartup() && !p.saving() && ((JLabel)field(p,"error")).getText().equals("Saved"),"Valid checkbox did not save automatically");

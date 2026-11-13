@@ -172,8 +172,9 @@ public final class SettingsTutorialSmoke {
         WindowChrome chrome=(WindowChrome)field(w,"chrome");
         JPanel actions=(JPanel)field(chrome,"actions");
         Component tools=actions.getComponent(actions.getComponentCount()-1);
-        check(tools instanceof JPanel panel && panel.getComponentCount()==2 && panel.getComponent(0) instanceof JComboBox<?>
-                && ((JButton)panel.getComponent(1)).getAction() instanceof AppCommand command && command.title.equals("Add pane"),
+        check(tools instanceof JPanel panel && panel.getComponentCount()==4 && panel.getComponent(0) instanceof JSeparator
+                && panel.getComponent(1) instanceof JComboBox<?> && panel.getComponent(2) instanceof JSeparator
+                && ((JButton)panel.getComponent(3)).getAction() instanceof AppCommand command && command.title.equals("Add pane"),
                 "Only profile/+ group follows all menus before reserved drag space and window controls");
         check(Arrays.stream(menus.getMenu(1).getMenuComponents()).filter(JMenuItem.class::isInstance).map(JMenuItem.class::cast)
                 .filter(item -> item.getAction() instanceof AppCommand action && action.title.equals(Shortcuts.SETTINGS)).count()==1,"Exactly one Edit Settings entry");

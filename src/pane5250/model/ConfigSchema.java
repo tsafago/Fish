@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",8); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",9); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -32,8 +32,8 @@ public final class ConfigSchema {
         fields.put("addProfile",field("uuid",null,"This window's titlebar profile selection; must be a listed ID. Old formats initialize it from lastProfile. Selecting alone does not connect."));
         fields.put("savedLayouts",field("comma-separated-uuid-list","","Ordered, unique stable named-layout IDs, at most 64. Empty means none. Names must be unique ignoring case."));
         fields.put("selectedLayout",field("uuid-or-empty","","Empty or an ID from savedLayouts; management selection only, not a launch instruction."));
-        fields.put("width",field("integer",1360,"330..10000 logical pixels."));
-        fields.put("height",field("integer",850,"260..10000 logical pixels."));
+        fields.put("width",field("integer",1360,"330..10000 logical pixels in stored state. Restored/programmatic windows clamp to actual titlebar/pane control minimums."));
+        fields.put("height",field("integer",850,"260..10000 logical pixels in stored state; live pane and titlebar minimums also apply."));
         fields.put("windows",field("integer",0,"Additional independent windows; 0..20000. Total configuration remains at most 2 MB. Primary window uses layout/width/height/lastProfile."));
         fields.put("appTheme",enumeration("Charcoal",Arrays.stream(AppTheme.values()).map(Enum::name).toList()));
         fields.put("highlightActive",field("boolean",true,"true or false; independent active-pane tint."));
@@ -107,7 +107,9 @@ public final class ConfigSchema {
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
         root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-17.");
-        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.7.9. Format 18 / recipe 3 retains simple pane families and adds a typed cursor style. Formats through 17 gain IBM (underline replace / filled Insert). Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Formats 15/16 and recipes 1/2 migrate deliberately; do not relabel. Downgrade to Fish 0.7.8 or earlier requires restoring the matching backup.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.8.0 beta. Format 19 / recipe 3 retains simple pane families/cursor preferences and adds Light/Slate and vivid text choices. Formats through 18 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.7.9 or earlier requires the matching backup.");
+        root.put("startupRecovery","Unreadable/unsupported workspaces offer Exit, bounded explicit Retry and confirmed factory recovery under the exclusive workspace lock. Recovery first preserves the exact original workspace-recovery-UUID.xml; credentials/fonts/other files stay untouched. A future version may require upgrading Fish, not resetting.");
+        root.put("settingsPersistence","Valid discrete settings apply in the interaction before coalesced asynchronous disk writes. Typing validates after a short pause; incomplete/conflicting groups remain editable. Saved acknowledges the current generation's disk write; failures retain Retry recovery. Creation/credentials/destruction/exports stay explicit.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",
                 "ratio","Finite 0.05..0.95 at parse time; current layouts also require each pane's normalized width and height at least 60% of its balanced share. Structural changes reset balanced ratios. Three-strip root ratio measures its first share after both divider widths are excluded.",
                 "shape","1 full; 2 equal-default halves, H or V; 3 equal-default rows/columns (first leaf then same-axis pair), or a half beside an opposite-axis pair, mirrored/rotated; 4 quadrants; 5-8 quadrants each splitting at most once into two. A quadrant grid has opposite-axis pairs under its root; each of four quadrant children is a leaf or one leaf pair. No deeper nesting. Centers swap. Whole-window edges arrange 2-3 panes; matching strip direction yields equal thirds, otherwise a half and pair. Quadrant edges fill available half-slots or swap/reorient existing slots without subdivision. UI drops require at least 70x70 logical pixels per pane."));

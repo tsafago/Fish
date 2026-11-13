@@ -30,7 +30,8 @@ final class NativeWindow {
     void regions(Rectangle drag,Rectangle maximize) {
         if (!window.isDisplayable()) return;
         if (!regions0(handle,window.getWidth(),window.getHeight(),new int[]{
-                drag.x,drag.y,drag.width,drag.height,maximize.x,maximize.y,maximize.width,maximize.height}))
+                drag.x,drag.y,drag.width,drag.height,maximize.x,maximize.y,maximize.width,maximize.height,
+                window.getMinimumSize().width,window.getMinimumSize().height}))
             throw new IllegalStateException("Windows integration lost its window handle.");
     }
     void beginMove() { move0(handle); }
@@ -45,4 +46,5 @@ final class NativeWindow {
     private static native int[] geometry0(long handle);
     private static native int[] frameBounds0(long handle,boolean maximized);
     private static native int[] clientBounds0(Window window);
+    private static native int[] minimum0(long handle);
 }

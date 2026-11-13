@@ -34,9 +34,11 @@ final class ProfilesEditor extends JPanel {
     private final JButton save, done, use, cancel, add, duplicate, up, down, delete;
     private Profile selected;
     private java.util.List<Object> baseline;
-    private boolean loading, dirty, saving,passwordModeInitialized;
+    private boolean loading, dirty, saving,credentialSaving,passwordModeInitialized;
     private final boolean automaticEdits;
     private final javax.swing.Timer edits=new javax.swing.Timer(400,e -> autoSave());
+    private final javax.swing.Timer writes=new javax.swing.Timer(200,e -> persist(() -> {}));
+    private long generation;
     private boolean diskUnsaved,editPending;
     private String saveFailure="";
 
@@ -44,7 +46,7 @@ final class ProfilesEditor extends JPanel {
         super(new BorderLayout());
         this.workspace = workspace;
         this.close=close;
-        automaticEdits=embedded; edits.setRepeats(false);
+        automaticEdits=embedded; edits.setRepeats(false); writes.setRepeats(false);
         workspace.profileList().forEach(model::addElement);
         list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         list.getAccessibleContext().setAccessibleName("Saved workstation profiles");
@@ -149,11 +151,11 @@ final class ProfilesEditor extends JPanel {
             @Override public void changedUpdate(DocumentEvent e) { changed(e); }
         };
         for (JTextComponent text : java.util.List.of(name,host,port,device,username,password,kerberosServer)) text.getDocument().addDocumentListener(changes);
-        codePage.addActionListener(e -> { if (!loading) updateDirty(); });
+        codePage.addActionListener(e -> { if (!loading) { updateDirty(); autoSave(); } });
         automatic.addItemListener(e -> { if (!loading) updateDirty(); }); automatic.setMnemonic(KeyEvent.VK_B);
         remember.addItemListener(e -> { if (!loading) updateDirty(); }); remember.setMnemonic(KeyEvent.VK_R);
-        automatic.addActionListener(e -> workspace.tutorialAction("profile-login-options"));
-        remember.addActionListener(e -> workspace.tutorialAction("profile-login-options"));
+        automatic.addActionListener(e -> { workspace.tutorialAction("profile-login-options"); if (!loading) autoSave(); });
+        remember.addActionListener(e -> { workspace.tutorialAction("profile-login-options"); if (!loading) autoSave(); });
         authentication.addActionListener(e -> {
             if (loading) return;
             if (kerberos()) {
@@ -163,6 +165,7 @@ final class ProfilesEditor extends JPanel {
                 automatic.setSelected(true); remember.setSelected(true);
             }
             updateLoginControls(); updateDirty();
+            autoSave();
             if (!kerberos()) workspace.tutorialAction("profile-password-mode");
         });
         loginFrom.addActionListener(e -> {
@@ -173,6 +176,7 @@ final class ProfilesEditor extends JPanel {
             } else { automatic.setSelected(true); remember.setSelected(true); passwordModeInitialized=true; }
             password.setText("");
             loading=false; updateLoginControls(); updateDirty();
+            autoSave();
         });
         list.addListSelectionListener(e -> {
             if (e.getValueIsAdjusting() || loading || list.getSelectedValue() == null) return;
@@ -187,11 +191,11 @@ final class ProfilesEditor extends JPanel {
     }
     JButton doneButton() { return done; }
     boolean dirty() { return dirty || diskUnsaved; }
-    boolean saving() { return saving || editPending; }
-    void flush() { if (editPending) autoSave(); }
+    boolean saving() { return saving || editPending || diskUnsaved && saveFailure.isEmpty(); }
+    void flush() { if (editPending) autoSave(); if (diskUnsaved && !saving) persist(() -> {}); }
     boolean failedSave() { return !saveFailure.isEmpty(); }
     String error() { return error.getText(); }
-    void discard() { edits.stop(); editPending=false; loading=true; password.setText(""); loading=false; }
+    void discard() { edits.stop(); writes.stop(); editPending=false; loading=true; password.setText(""); loading=false; }
     void rebaseDisplay() {
         if (dirty) return;
         workspace.profileList().stream().filter(p -> p.id().equals(selected.id())).findFirst().ifPresent(current -> {
@@ -293,7 +297,7 @@ final class ProfilesEditor extends JPanel {
                     && (!remember.isSelected() || loginSource()!=null || !selected.username().equals(username.getText().strip())
                     || !selected.host().equals(host.getText().strip()) || !Integer.toString(selected.port()).equals(port.getText().strip()));
             save.setVisible(!saved || loginBoundary || !saveFailure.isEmpty());
-            if (!saving && (dirty || diskUnsaved) && saveFailure.isEmpty()) { editPending=true; edits.restart(); }
+            if (!credentialSaving && dirty && saveFailure.isEmpty()) { editPending=true; edits.restart(); }
         }
         up.setEnabled(!saving && saved && list.getSelectedIndex()>0);
         down.setEnabled(!saving && saved && list.getSelectedIndex()<workspace.profileList().size()-1);
@@ -401,7 +405,7 @@ final class ProfilesEditor extends JPanel {
     }
     private void autoSave() {
         edits.stop(); editPending=false;
-        if (!automaticEdits || loading || saving || !saveFailure.isEmpty()) return;
+        if (!automaticEdits || loading || credentialSaving) return;
         if (workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()))) {
             error.setText("New profile is not saved. Choose Create profile when ready."); firePropertyChange("settings.draft",false,true); return;
         }
@@ -416,28 +420,33 @@ final class ProfilesEditor extends JPanel {
                 }
                 Profile updated=pending.updated;
                 workspace.putProfile(updated);
-                selected=updated; baseline=fields(); dirty=false; diskUnsaved=true;
+                selected=updated; baseline=fields(); dirty=false; diskUnsaved=true; generation++;
                 loading=true;
                 try {
                     int index=list.getSelectedIndex(); if (index>=0) model.set(index,updated);
                 } finally { loading=false; }
             } finally { pending.close(); }
         }
-        if (diskUnsaved) persist(() -> {});
+        if (diskUnsaved) writes.restart();
         else if (!dirty) { error.setText("Saved"); updateDirty(); }
     }
     private void persist(Runnable done) {
+        writes.stop();
+        if (saving || !diskUnsaved) return;
+        long written=generation;
         saving=true; error.setText("Saving profile...");
         firePropertyChange("settings.draft",false,true);
         workspace.persistSettings(() -> {
-            saving=false; diskUnsaved=false; saveFailure="";
-            error.setText(dirty ? "Editing; not saved yet." : "Saved");
+            saving=false; diskUnsaved=written!=generation; saveFailure="";
+            error.setText(dirty ? "Editing; not saved yet." : diskUnsaved ? "Saving profile..." : "Saved");
             updateDirty(); workspace.tutorialAction("profile-saved"); done.run();
+            if (diskUnsaved) writes.restart();
         },message -> {
             saving=false; saveFailure=message; error.setText("Not saved: "+message+" Choose Retry save.");
             error.setToolTipText(error.getText());
             save.setText("Retry save"); save.setVisible(true); save.setEnabled(true);
             firePropertyChange("settings.draft",false,true); workspace.refreshActions();
+            if (written!=generation) writes.restart();
         });
     }
     void commit(Pending pending,Runnable success,java.util.function.Consumer<String> failed) {
@@ -473,7 +482,7 @@ final class ProfilesEditor extends JPanel {
         }.execute();
     }
     private void setSaving(boolean value) {
-        saving = value;
+        saving = value; credentialSaving=value;
         for (JButton button : java.util.List.of(save,done,use,cancel,add,duplicate,up,down,delete)) button.setEnabled(!value);
         for (JComponent input:java.util.List.of(name,host,port,device,username,password,codePage,automatic,remember,loginFrom,authentication,kerberosServer,disclosure))
             input.setEnabled(!value);

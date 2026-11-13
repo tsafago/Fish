@@ -94,6 +94,12 @@ final class WindowChrome extends JPanel {
         if (value) clearControlHover();
         maximize.getModel().setRollover(value);
     }
+    @Override public Dimension getMinimumSize() {
+        int width=caption.getPreferredSize().width+menuButton.getPreferredSize().width+controls.getPreferredSize().width+24;
+        for (Component component:tools.getComponents()) width+=component.getMinimumSize().width;
+        Insets insets=getInsets();
+        return new Dimension(width+2*((BorderLayout)getLayout()).getHgap()+insets.left+insets.right,HEIGHT);
+    }
     @Override public void doLayout() {
         int fullTools=tools.getPreferredSize().width;
         for (Component component:tools.getComponents()) if (component instanceof JButton b) {
@@ -105,7 +111,7 @@ final class WindowChrome extends JPanel {
             if (text.isEmpty() && !full.isEmpty() && b.getIcon()!=null) fullTools+=b.getIconTextGap();
         }
         for (Component component:tools.getComponents()) if (component instanceof JComboBox<?> combo)
-            fullTools+=160-combo.getPreferredSize().width;
+            fullTools+=profileWidth(combo)-combo.getPreferredSize().width;
         Insets insets=getInsets();
         int fullWidth=caption.getPreferredSize().width+menus.getPreferredSize().width+fullTools
                 +controls.getPreferredSize().width+2*((BorderLayout)getLayout()).getHgap()
@@ -123,11 +129,15 @@ final class WindowChrome extends JPanel {
                     +controls.getPreferredSize().width+insets.left+insets.right+32
                     +2*((BorderLayout)getLayout()).getHgap();
             for (Component other:tools.getComponents()) if (other!=combo) fixed+=other.getPreferredSize().width;
-            combo.setPreferredSize(new Dimension(Math.max(45,Math.min(160,getWidth()-fixed)),27));
+            combo.setPreferredSize(new Dimension(Math.max(combo.getMinimumSize().width,Math.min(profileWidth(combo),getWidth()-fixed)),27));
         }
         super.doLayout(); left.doLayout(); actions.doLayout(); controls.doLayout();
         if (nativeWindow!=null) nativeWindow.regions(SwingUtilities.convertRectangle(dragArea.getParent(),dragArea.getBounds(),window),
                 SwingUtilities.convertRectangle(maximize.getParent(),maximize.getBounds(),window));
+    }
+    private static int profileWidth(JComboBox<?> combo) {
+        return Math.max(combo.getMinimumSize().width,Math.min(220,combo.getFontMetrics(combo.getFont())
+                .stringWidth(java.util.Objects.toString(combo.getSelectedItem(),"Profile"))+40));
     }
     void openMenus() { if (menus.isVisible()) menus.getMenu(0).doClick(); else openCompactMenu(); }
     void showSystemMenu() { systemMenu().show(this,0,getHeight()); }

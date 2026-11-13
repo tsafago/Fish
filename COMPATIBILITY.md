@@ -5,6 +5,49 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Fish 0.8.0 beta responsiveness and recovery
+
+No protocol/ACS/SSO compatibility expansion is claimed. All accepted 0.7.9
+cursor preferences, autosaved Settings and canonical eight-pane layouts remain.
+Valid discrete controls update live state synchronously; typing validation and
+generation-sequenced, coalesced disk writes are separate. An injected blocked
+writer demonstrates immediate newer appearance/general/profile propagation and
+clean peer-editor rebase without stale Saved acknowledgements or lost writes.
+Theme changes recolor existing delegates instead of reinstalling them; terminal
+color refresh preserves glyph/frame geometry. One already-painted, connected
+loopback TN5250 production-frame sample measured theme 61.8 ms, palette 10.7 ms,
+font 29.9 ms, outline 5.7 ms, cursor 5.8 ms and general 5.5 ms from actual control
+interaction through paint. The earlier offline production-frame baseline was
+366-407 ms; it is not a paired connected-host benchmark. A first-ever connected
+frame sample included 115.1 ms for theme initialization. These are synthetic
+samples, not physical-monitor or IBM i latency guarantees. Same-handler state
+assertions and the blocked writer establish that neither typing debounce nor
+disk acknowledgement gates valid discrete changes.
+
+Actual never-shown production controls cover collapsed caption minimums,
+programmatic/restored sizes and the native WM_GETMINMAXINFO path at actual
+GetDpiForWindow. Referenced shortcut forms retain recipe/chooser safety. Related
+owned tutorial/dialog/chooser lifecycle excludes unrelated windows and global
+always-on-top. Physical z-order, accessibility and monitor transitions remain
+hands-on acceptance, not conclusions from offscreen images.
+
+Light/Slate and Azure/Crimson vivid retain readable semantic roles and all host
+attribute slots. Fractional physical-grid fixtures cover 24x80 and 27x132,
+100/125/150/175/200%, translated origins, fit/manual zoom, actual logo toggles,
+dirty cursor restore, masks and mode-aware filled Insert. The physical 4K
+one-pixel oddity could not be assessed on physical hardware under the permitted
+offscreen-only conditions, so it is not claimed conclusively fixed.
+
+Startup recovery is explicit and locked: malformed/truncated/future state,
+cancel/one retry/concurrent owner, exact backups and backup/replacement I/O
+failures are tested against private synthetic files. Native installer-result
+diagnostics cover success/reopen/auto-close versus cancellation, errors, reboot
+and reopen failure without installation. Actual installed upgrade remains
+unverified. Portable updates still install a per-user copy. Old 0.7.x preview
+policy does not offer this new-minor beta; a manual first upgrade is required.
+Format19 / recipe3 / catalog9 preserves supported state; downgrade requires a
+pre-upgrade backup. This is unsigned BETA/prerelease, not production-ready.
+
 ## Fish 0.7.9 cursor stability and accepted usability preview
 
 Includes the accepted autosaved Settings, direct shortcut flow and canonical

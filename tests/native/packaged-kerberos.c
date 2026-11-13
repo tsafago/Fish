@@ -10,14 +10,15 @@ int wmain(int argc,wchar_t **argv) {
     BOOL usability=argc==4 && !wcscmp(argv[2],L"--usability");
     BOOL simple=argc==4 && !wcscmp(argv[2],L"--simple");
     BOOL cursor=argc==4 && !wcscmp(argv[2],L"--cursor");
-    if (argc!=2 && !updates && !layouts && !usability && !simple && !cursor) { fputs("Expected complete Fish image directory [--updates|--layouts|--usability|--simple|--cursor TEST_CLASSES].\n",stderr); return 1; }
+    BOOL beta=argc==4 && !wcscmp(argv[2],L"--beta");
+    if (argc!=2 && !updates && !layouts && !usability && !simple && !cursor && !beta) { fputs("Expected complete Fish image directory [--updates|--layouts|--usability|--simple|--cursor|--beta TEST_CLASSES].\n",stderr); return 1; }
     wchar_t image[32768],bin[32768],library[32768],jar[32768];
     DWORD length=GetFullPathNameW(argv[1],32768,image,NULL);
     if (!length || length>32000) return 1;
     swprintf(bin,32768,L"%ls\\runtime\\bin",image);
     swprintf(library,32768,L"%ls\\server\\jvm.dll",bin);
     swprintf(jar,32768,L"%ls\\app\\Fish.jar",image);
-    if (updates || layouts || usability || simple || cursor) {
+    if (updates || layouts || usability || simple || cursor || beta) {
         wchar_t classes[32768];
         DWORD size=GetFullPathNameW(argv[3],32768,classes,NULL);
         if (!size || size>32000 || wcslen(jar)+size+2>=32768) return 1;
@@ -35,13 +36,24 @@ int wmain(int argc,wchar_t **argv) {
     char classpath[65536]="-Djava.class.path=";
     size_t prefix=strlen(classpath);
     if (!WideCharToMultiByte(CP_UTF8,0,jar,-1,classpath+prefix,(int)(sizeof(classpath)-prefix),NULL,NULL)) return 1;
-    JavaVMOption options[3]={{classpath,NULL},{usability || simple || cursor ? "-Djava.awt.headless=false" : "-Djava.awt.headless=true",NULL},{"-Xmx192m",NULL}};
+    JavaVMOption options[3]={{classpath,NULL},{usability || simple || cursor || beta ? "-Djava.awt.headless=false" : "-Djava.awt.headless=true",NULL},{"-Xmx192m",NULL}};
     JavaVMInitArgs args={JNI_VERSION_1_8,3,options,JNI_FALSE};
     JavaVM *vm=NULL;
     JNIEnv *env=NULL;
     if (create(&vm,(void **)&env,&args)!=JNI_OK) { fputs("Private JVM startup failed.\n",stderr); return 1; }
     int result=1;
-    if (updates || layouts || usability || simple || cursor) {
+    if (beta) {
+        const char *classes[]={"pane5250/ui/BetaSettingsSmoke","pane5250/ui/BetaRecoverySmoke","pane5250/ui/BetaUiSmoke"};
+        result=0;
+        for (int n=0;n<3;n++) {
+            jclass type=(*env)->FindClass(env,classes[n]);
+            jmethodID method=type ? (*env)->GetStaticMethodID(env,type,"main","([Ljava/lang/String;)V") : NULL;
+            if (!method) { result=1; break; }
+            jobjectArray empty=(*env)->NewObjectArray(env,0,(*env)->FindClass(env,"java/lang/String"),NULL);
+            (*env)->CallStaticVoidMethod(env,type,method,empty);
+            if ((*env)->ExceptionCheck(env)) { result=1; break; }
+        }
+    } else if (updates || layouts || usability || simple || cursor) {
         jclass type=(*env)->FindClass(env,cursor ? "pane5250/ui/CursorRenderingSmoke" : simple ? "pane5250/ui/SimplePaneSmoke" : usability ? "pane5250/ui/UsabilityIterationSmoke" : layouts ? "pane5250/PackagedLayoutSmoke" : "pane5250/update/PackagedUpdateSmoke");
         jmethodID method=type ? (*env)->GetStaticMethodID(env,type,"main","([Ljava/lang/String;)V") : NULL;
         if (method) {

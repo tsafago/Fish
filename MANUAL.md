@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.7.9 - unsigned experimental preview, including the accepted local usability/simple-pane work.
+Fish 0.8.0 BETA - unsigned experimental prerelease, including accepted cursor/usability/simple-pane work.
 Earlier images/releases remain unchanged. This build requires a format-18 workspace;
 close all Fish windows and back up workspace.xml before first launch.
 
@@ -47,9 +47,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.7.9 prerelease](https://github.com/tsafago/Fish/releases/tag/v0.7.9) includes Fish-0.7.9-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
+The public [v0.8.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.8.0) includes Fish-0.8.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
 
-Alternatively, extract the matching Fish-0.7.9-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.8.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 The binaries are unsigned. Windows SmartScreen or an organization's policy may warn or block them. Verify the SHA256SUMS.txt download against the artifact if required by your administrator. Do not override your organization's security policy.
 
@@ -63,15 +63,15 @@ The script obtains checksum-pinned portable JDK 21, Zig and WiX tools inside .to
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs use 0.7.9 names. The final side-by-side image is at dist\Fish-0.7.9\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
+Default build outputs use 0.8.0 names. The final side-by-side image is at dist\Fish-0.8.0\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.7.9\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.7.9\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.8.0\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.8.0\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -81,7 +81,7 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish, or the retained
 legacy %APPDATA%\Pane5250 directory; a custom --data-dir takes precedence.
-The next save writes configuration version 18 with cursor style, simple layouts and recipe version 3.
+The next save writes configuration version 19 with cursor style, simple layouts, expanded palettes and recipe version 3. Catalog version is 9.
 Older binaries, including local 0.7.8, cannot read it:
 keep the matching pre-upgrade backup for downgrade. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
@@ -89,7 +89,7 @@ or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older workspaces migrate to version 18, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. The cursor initializes to underline replace / filled Insert. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; already supported shapes and reasonable ratios remain unchanged. Format 14 gains an empty recipe library and initializes the selector from each window's last profile; startup stays unchanged. Exact prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.7.8 and earlier require that backup to downgrade. Format 12 settings bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD, then retain choices. Malformed state is preserved, never reset.
+Older workspaces migrate to version 19, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Existing version-18 cursor preferences remain; earlier formats initialize underline replace / filled Insert. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; supported shapes and reasonable ratios are unchanged. Format 14 gains an empty recipe library and initializes each window's selector from its last profile. Prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.7.9 and earlier require that backup for downgrade. Format 12 bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, exact keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD. Malformed/future state is preserved unless you explicitly confirm startup factory recovery.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -99,7 +99,7 @@ Settings > Updates checks the public tsafago/Fish GitHub releases over HTTPS wit
 
 A nonblocking startup check is on by default. Offline/rate-limit failures stay quiet; manual checks show errors and Check again. The small startup notice offers Update, X and Hide version. X only dismisses this notice. Hide remembers that exact version; future eligible versions can notify again, and manual checks still show hidden versions.
 
-Settings > Updates has the actual check/download controls and safely rendered release Markdown; there is no second update-settings launcher in Help. Preview patches stays in 0.7.x; Stable excludes previews and accepts stable minors within this major. No channel silently enters another major or experimental minor. Show hidden updates saves the cleared ignore choice automatically. Checks use the displayed channel and include hidden versions; downloading requires fully saved, valid settings and a check matching that channel.
+Settings > Updates has the actual check/download controls and safely rendered release Markdown; there is no second update-settings launcher in Help. Preview patches stays in the running version's minor (0.8.x for this beta); Stable excludes previews and accepts stable minors within this major. Existing 0.7.x binaries cannot discover v0.8.0 beta through their same-minor preview policy: manually download this release for the first upgrade. No channel silently enters another major or experimental minor. Show hidden updates saves the cleared ignore choice automatically. Checks use the displayed channel and include hidden versions; downloading requires fully saved, valid settings and a check matching that channel.
 
 Update opens the version, release notes and repository link. One explicit confirmation authorizes download, saving every window and ending ALL this workspace's sessions before setup. A check alone never closes any window. A download can be cancelled while Fish remains open. Save/launch failure leaves every window open and re-enabled, with an error and retry. Setup waits for the owning Fish process to exit and refuses to replace an installation still in use; it never kills processes. Independent owners using another data directory must still close their own installation files.
 
@@ -107,9 +107,21 @@ Only the exact release's Windows x64 installer and SHA256SUMS are downloaded. Fi
 
 Installed mode updates the existing registered per-user installation. Portable mode deliberately does not replace portable files: setup installs/updates a per-user copy and opens that installed copy using the same workspace directory. The old portable directory remains unchanged. Source/java launches cannot use the packaged self-update launcher; use the downloaded installer manually. Fish 0.7.0 and earlier require a manual first upgrade.
 
-The native setup reports the actual Windows Installer result and verifies the installed version before offering Open Fish. A required reboot is reported instead of relaunching. Failure is not reported as an update. The verified downloaded setup may remain in the OS temporary directory for recovery; it contains no user state. Live setup/upgrade/relaunch acceptance is not established by synthetic checks.
+After a successful app-triggered update, native setup verifies the installed executable/version, reopens Fish once with the same workspace directory, then closes itself. Standalone installs retain the Open Fish option. Cancellation, install failure, required reboot and reopen failure keep honest status/recovery instead of auto-closing or pretending success. Launch uses only the verified installation's fixed Fish.exe, never a configurable executable. The verified downloaded setup may remain in the OS temporary directory for recovery; it contains no user state. Live installed upgrade/relaunch acceptance is not established by injected-result/native diagnostics.
 
 ## Factory defaults
+
+At startup, an unreadable, malformed or unsupported/future workspace offers safe
+Exit, one Retry and Restore factory settings. A separate confirmation explains
+that a newer format may instead require a matching Fish version. Recovery first
+copies and verifies the exact original bytes to a unique
+`workspace-recovery-UUID.xml` in the workspace directory, then atomically saves
+factory state under the existing exclusive owner lock. It never relabels unknown
+XML, clears credentials/font files or recursively deletes user files.
+Backup/replacement/permission/stale-owner failures remain explicit and preserve
+the original. If the directory cannot be safely opened/locked, recovery cannot
+bypass that failure. Keep the backup for manual restoration with a compatible
+version; do not import unknown-format bytes as a newer-format export.
 
 Open Settings > General and choose Revert to factory defaults. Confirmation explains the removal and active-session shutdown; a single click never resets Fish. Cancel keeps everything.
 
@@ -367,8 +379,10 @@ Appearance combines the workspace app theme, clearly scoped selected-profile
 palette/effect, workspace font, header/footer information, outlines and tint.
 Profiles and Keyboard Shortcuts embed the real editors. Changing the appearance
 profile selector does not switch a pane's profile or recolor every profile.
-Valid edits apply and persist automatically after a short pause (300ms for
-settings, 400ms for existing profiles). Saved confirms the disk write; Saving,
+Valid discrete choices apply immediately in the current interaction. Complete
+typed font/key/profile edits retain a validation pause (300ms for Settings,
+400ms for existing profiles). Separate coalesced asynchronous writes never gate
+visible changes, including while an older write is slow. Saved confirms the latest disk write; Saving,
 Not applied and Not saved distinguish pending, invalid and failed changes.
 Partial invalid fonts/keys/profile fields keep the last usable values and remain
 editable; independent valid groups can still save. Retry save retains recovery
@@ -445,6 +459,12 @@ The Commands window is removed. Session, Edit, Inserts, Panes, View and Host are
 flat task menus; Help contains the meaningful six-guide Tutorials submenu.
 The compact narrow-window menu and configurable shortcuts use the same handlers.
 Disabled actions remain disabled; host keys do not intercept dialog typing.
+The centered profile/chevron stays flat between subtle separators; selection
+alone is harmless and + remains explicit connection intent. Window minimums
+derive from actual retained controls and pane minimums, with native Windows
+resize enforcement plus programmatic/restored-window clamping. Menu collapse
+continues before that boundary; caption buttons and their hit targets never
+shrink away. Physical mixed-monitor caption behavior still needs acceptance.
 
 Right-click a terminal for clipboard, Reset, connection and pane actions, not
 settings launchers. Edit keeps Copy/Paste. Inserts groups profile username and
@@ -457,7 +477,7 @@ Edit > Settings... is the only visible settings entry; Ctrl+, invokes that same 
 
 ## Application themes, OLED and focus
 
-Settings > Appearance changes the complete application theme: Charcoal, Graphite, Midnight, Paper, OLED, OLED Amber, High Contrast, High Contrast Light, Lagoon, Afterglow and Eye Saver. Lagoon is cool teal; Afterglow is a warm violet creative preset. Eye Saver is a muted warm low-glare palette, not a medical promise. Menus, dialogs, fields, disabled/hover/pressed states and window controls share the chosen tokens.
+Settings > Appearance changes the complete application theme: Charcoal, Graphite, Midnight, Light, Paper, Slate, OLED, OLED Amber, High Contrast, High Contrast Light, Lagoon, Afterglow and Eye Saver. Light is conventional neutral light mode, distinct from Paper/High Contrast; Slate is restrained blue-gray. Lagoon is cool teal; Afterglow is a warm violet creative preset. Eye Saver is a muted warm low-glare palette, not a medical promise. Menus, dialogs, fields, disabled/hover/pressed states and window controls share the chosen tokens. Color-only changes preserve existing control UI/font metrics and terminal glyph geometry.
 
 Application themes are independent of host palettes. OLED themes use true-black terminal and chrome surfaces. High-contrast choices favor explicit boundaries and strong foreground contrast; Windows' own accessibility settings may also affect system-owned menus and installers.
 
@@ -511,7 +531,7 @@ With no footer, a recoverable local input error shows a Reset corner overlay, no
 
 ## Host color palettes and text effects
 
-Settings > Appearance selects the target profile and its Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid, Mint, Rose, OLED green or OLED amber palette. Each retains sixteen host color/attribute entries rather than collapsing everything into one decorative color.
+Settings > Appearance selects the target profile and its Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid, Mint, Rose, Azure vivid, Crimson vivid, OLED green or OLED amber palette. Azure vivid and Crimson vivid provide readable vivid hues for light as well as dark backgrounds. Each retains sixteen host color/attribute entries rather than collapsing everything into one decorative color.
 
 Text effects are None, Soft glow, Prism and Flux (animated). None is the default, using crisp final-resolution glyphs. Effects are opt-in and not a workaround for host compatibility. Neon was removed; saved Neon values migrate to None with a load notice.
 

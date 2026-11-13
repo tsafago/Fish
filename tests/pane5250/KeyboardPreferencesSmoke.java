@@ -158,7 +158,7 @@ public final class KeyboardPreferencesSmoke {
         JCheckBox window=(JCheckBox)field(preferences,"window"); boolean before=workspace.appearanceSettings().windowOutline();
         window.setSelected(!before);
         navigation.setSelectedValue("Appearance",true);
-        check(workspace.appearanceSettings().windowOutline()==before,"Rapid edits coalesce rather than writing each event");
+        check(workspace.appearanceSettings().windowOutline()!=before && preferences.saving(),"Discrete UI edits apply immediately; durable writes remain pending");
         UsabilityIterationSmoke.settle(() -> !preferences.saving(),"Autosave did not settle");
         check(workspace.appearanceSettings().windowOutline()!=before && workspace.shortcutOverrides().get("Host F13").contains("ctrl F4"),"Actual valid panes and keyboard controls apply without a button");
         window.setSelected(before); button(dialog,"Close").doClick(0);
@@ -179,7 +179,7 @@ public final class KeyboardPreferencesSmoke {
         workspace.updateSettings(workspace.updateSettings().ignore("0.7.3"));
         Preferences ignored=new Preferences(workspace,"Updates");
         button(ignored.dialog(),"Show hidden updates").doClick(0);
-        check(workspace.updateSettings().ignoredVersion().equals("0.7.3"),"Clearing hidden version coalesces with other edits");
+        check(workspace.updateSettings().ignoredVersion().isEmpty() && ignored.saving(),"Clearing a hidden version applies immediately before persistence");
         UsabilityIterationSmoke.settle(() -> !ignored.saving(),"Hidden update autosave did not settle");
         check(workspace.updateSettings().ignoredVersion().isEmpty(),"Hidden-version edit automatically persists: "+((JLabel)field(ignored,"error")).getText()+"; ignored="+field(ignored,"ignored")); ignored.dialog().dispose();
         ProfilesDialog profiles=new ProfilesDialog(workspace,workspace.profileList().getFirst());

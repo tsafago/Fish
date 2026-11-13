@@ -2,6 +2,8 @@ package fish.ui;
 
 import java.awt.Font;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import javafx.animation.KeyFrame;
@@ -11,6 +13,7 @@ import javafx.geometry.*;
 import javafx.scene.AccessibleRole;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.*;
@@ -71,6 +74,12 @@ public final class SessionPane extends BorderPane {
             }
         }
     };
+    private final Region headerLine=new Region(),footerLine=new Region();
+    private final Region outlineLeft=new Region(),outlineRight=new Region(),outlineBottom=new Region();
+    private final Tooltip closeTooltip=new Tooltip("Close and disconnect; keep the last pane");
+    private final Tooltip resetTooltip=new Tooltip("Recover this input error without sending Enter (default key: Ctrl+R)");
+    private final Tooltip oiaTooltip=new Tooltip("Disconnected");
+    private final Tooltip headerTooltip=new Tooltip("Drag onto another pane to swap or split. Ctrl+Alt+D swaps with the keyboard.");
     private final TransientNotice noticeOverlay;
     private final ConnectionSpinner spinner=new ConnectionSpinner();
     private final ComboBox<Profile> presets=new ComboBox<>();
@@ -78,7 +87,7 @@ public final class SessionPane extends BorderPane {
     private boolean updatingPresets;
     private NetworkSession network;
     private Session5250 core;
-    private boolean connecting,disposed;
+    private boolean connecting,disposed,pasting;
     private boolean attempted;
     private int credentialOperations;
     private Kerberos.Provider kerberosProvider=Kerberos::ticket;
@@ -90,6 +99,11 @@ public final class SessionPane extends BorderPane {
     private String connectionDetails="";
     private String shownCard="";
     private java.awt.Color surfaceColor=Ui.BACKGROUND;
+    private Charset cachedCharset;
+    private CharsetEncoder cachedEncoder;
+    private double altDragStartX,altDragStartY;
+    private boolean altDragActive;
+    private int lastCommandState=-1;
 
     public SessionPane(Workspace workspace,UUID id,Profile profile) {
         this.workspace=workspace;
@@ -98,19 +112,26 @@ public final class SessionPane extends BorderPane {
         this.noticeOverlay=new TransientNotice(this::focusTerminal);
         refreshKeys();
         setMinSize(70,70);
+        setSnapToPixel(true);
         setAccessibleText(profile.name());
 
-        header.setMinHeight(25);
-        header.setPrefHeight(25);
-        header.setMaxHeight(25);
+        for (Region edge:List.of(headerLine,footerLine,outlineLeft,outlineRight,outlineBottom)) {
+            edge.setManaged(false);
+            edge.setMouseTransparent(true);
+            edge.setSnapToPixel(false);
+            edge.setVisible(false);
+        }
+
+        updateBarHeights(1.0);
         title.setPadding(new Insets(0,0,0,8));
         connection.setPadding(new Insets(0,4,0,0));
         connection.setStyle("-fx-font-size: 11px;");
         header.setLeft(title);
         BorderPane.setAlignment(title,Pos.CENTER_LEFT);
+        Tooltip.install(header,headerTooltip);
 
         close=Ui.iconButton("Close pane "+profile.name(),"close",ColorRole.HEADER_MUTED,() -> workspace.closePane(this));
-        close.setTooltip(new Tooltip("Close and disconnect; keep the last pane"));
+        close.setTooltip(closeTooltip);
         headerControls.setAlignment(Pos.CENTER_RIGHT);
         headerControls.getChildren().addAll(connection,close);
         header.setRight(headerControls);
@@ -159,6 +180,7 @@ public final class SessionPane extends BorderPane {
 
         oia.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px;");
         oia.setPadding(new Insets(2,8,2,8));
+        oia.setTooltip(oiaTooltip);
         footer.setLeft(oia);
         BorderPane.setAlignment(oia,Pos.CENTER_LEFT);
 
@@ -167,9 +189,9 @@ public final class SessionPane extends BorderPane {
             send(KeyMnemonic.RESET);
             focusTerminal();
         });
-        reset.setTooltip(new Tooltip("Recover this input error without sending Enter (default key: Ctrl+R)"));
+        reset.setTooltip(resetTooltip);
         reset.setAccessibleText("Reset input error");
-        reset.setStyle("-fx-padding: 2 8 2 8;");
+        reset.setStyle("-fx-padding: 1 8 1 8; -fx-font-size: 11px;");
         reset.setVisible(false);
         reset.setManaged(false);
         footer.setRight(reset);
@@ -182,10 +204,147 @@ public final class SessionPane extends BorderPane {
 
         stage.getChildren().addAll(body,dragZone,noticeOverlay);
         setCenter(stage);
+        getChildren().addAll(headerLine,footerLine,outlineLeft,outlineRight,outlineBottom);
 
         view.setFit(profile.zoom()==1);
         installDrag();
         themeChanged();
+    }
+
+    private void updateBarHeights(double scale) {
+        double s=scale>0 ? scale : 1.0;
+        double hh=Math.round(25.0*s)/s;
+        header.setMinHeight(hh);
+        header.setPrefHeight(hh);
+        header.setMaxHeight(hh);
+        double fh=Math.round(22.0*s)/s;
+        footer.setMinHeight(fh);
+        footer.setPrefHeight(fh);
+        footer.setMaxHeight(fh);
+    }
+
+    @Override protected void layoutChildren() {
+        double s=Ui.scaleFor(this);
+        double hh=Math.round(25.0*s)/s;
+        if (Math.abs(header.getPrefHeight()-hh)>1e-4) updateBarHeights(s);
+        double w=getWidth(),h=getHeight();
+        Point2D origin=localToScene(0,0);
+        double sceneY0=origin==null ? 0 : origin.getY();
+        double topH=0;
+        if (header.isVisible() && header.isManaged() && h>0) {
+            double devHeaderBot=Math.round(sceneY0*s)+Math.round(25.0*s);
+            topH=Math.max(0,Math.min(h,devHeaderBot/s-sceneY0));
+            header.resizeRelocate(0,0,w,topH);
+        }
+        double botY=h;
+        if (footer.isVisible() && footer.isManaged() && h>topH) {
+            double devPaneBot=Math.round((sceneY0+h)*s);
+            double devFooterTop=Math.max(Math.round((sceneY0+topH)*s),devPaneBot-Math.round(22.0*s));
+            botY=Math.max(topH,Math.min(h,devFooterTop/s-sceneY0));
+            footer.resizeRelocate(0,botY,w,Math.max(0,h-botY));
+        }
+        stage.resizeRelocate(0,topH,w,Math.max(0,botY-topH));
+        disableScrollBitmapCache(scroll);
+        view.snapToDeviceGridNow();
+        layoutBarLines(s);
+        layoutActiveOutline(s);
+    }
+
+    private void disableScrollBitmapCache(Node node) {
+        if (node==null || node==view) return;
+        if (node.isCache()) node.setCache(false);
+        if (node instanceof Parent p) {
+            for (Node child:p.getChildrenUnmodifiable()) disableScrollBitmapCache(child);
+        }
+    }
+
+    private void layoutBarLines(double s) {
+        double w=getWidth(),h=getHeight();
+        double px=Ui.hairline(s);
+        String lineStyle="-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";";
+        boolean showH=header.isVisible() && header.getHeight()>0 && w>0;
+        headerLine.setVisible(showH);
+        if (showH) {
+            Ui.setStyleIfChanged(headerLine,lineStyle);
+            double hy=header.getLayoutY()+header.getHeight();
+            Point2D sp=localToScene(0,hy);
+            double ly=hy-px;
+            if (sp!=null) {
+                double dev=Math.max(0,Math.round(sp.getY()*s)-1);
+                ly=hy+(dev/s-sp.getY());
+            }
+            headerLine.resizeRelocate(0,ly,w,px);
+            headerLine.toFront();
+        }
+        boolean showF=footer.isVisible() && footer.getHeight()>0 && w>0 && h>0;
+        footerLine.setVisible(showF);
+        if (showF) {
+            Ui.setStyleIfChanged(footerLine,lineStyle);
+            double fy=footer.getLayoutY();
+            Point2D sp=localToScene(0,fy);
+            double ly=fy;
+            if (sp!=null) {
+                double dev=Math.round(sp.getY()*s);
+                ly=fy+(dev/s-sp.getY());
+            }
+            footerLine.resizeRelocate(0,ly,w,px);
+            footerLine.toFront();
+        }
+    }
+
+    private void layoutActiveOutline(double s) {
+        boolean show=workspace.appearanceSettings().outline() && workspace.active()==this;
+        if (!show) {
+            outlineLeft.setVisible(false);
+            outlineRight.setVisible(false);
+            outlineBottom.setVisible(false);
+            return;
+        }
+        boolean frame=workspace.appearanceSettings().windowOutline();
+        Region content=workspace.contentPane();
+        double w=getWidth(),h=getHeight();
+        boolean drawLeft=false,drawRight=false,drawBottom=false;
+        if (!frame && content!=null && w>0 && h>0) {
+            Point2D topLeft=content.sceneToLocal(localToScene(0,0));
+            Point2D bottomRight=content.sceneToLocal(localToScene(w,h));
+            if (topLeft!=null && bottomRight!=null) {
+                drawLeft=Math.abs(topLeft.getX())<=1.0;
+                drawRight=Math.abs(bottomRight.getX()-content.getWidth())<=1.0;
+                drawBottom=Math.abs(bottomRight.getY()-content.getHeight())<=1.0;
+            }
+        }
+        double px=Ui.hairline(s);
+        String style="-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";";
+        outlineLeft.setVisible(drawLeft);
+        if (drawLeft) {
+            Ui.setStyleIfChanged(outlineLeft,style);
+            outlineLeft.resizeRelocate(0,0,px,h);
+            outlineLeft.toFront();
+        }
+        outlineRight.setVisible(drawRight);
+        if (drawRight) {
+            Ui.setStyleIfChanged(outlineRight,style);
+            Point2D rightScene=localToScene(w,0);
+            double rx=w-px;
+            if (rightScene!=null) {
+                double devRight=Math.round(rightScene.getX()*s);
+                rx=Math.max(0,Math.min(w-px,w-(rightScene.getX()-(devRight-1.0)/s)));
+            }
+            outlineRight.resizeRelocate(rx,0,px,h);
+            outlineRight.toFront();
+        }
+        outlineBottom.setVisible(drawBottom);
+        if (drawBottom) {
+            Ui.setStyleIfChanged(outlineBottom,style);
+            Point2D botScene=localToScene(0,h);
+            double by=h-px;
+            if (botScene!=null) {
+                double devBot=Math.round(botScene.getY()*s);
+                by=Math.max(0,Math.min(h-px,h-(botScene.getY()-(devBot-1.0)/s)));
+            }
+            outlineBottom.resizeRelocate(0,by,w,px);
+            outlineBottom.toFront();
+        }
     }
 
     public void syncScrollViewport() {
@@ -208,6 +367,8 @@ public final class SessionPane extends BorderPane {
     }
 
     private void wireScrollViewport() {
+        scroll.setCache(false);
+        scroll.skinProperty().addListener((o,a,b) -> disableScrollBitmapCache(scroll));
         scroll.viewportBoundsProperty().addListener((o,a,b) -> syncScrollViewport());
         scroll.widthProperty().addListener((o,a,b) -> syncScrollViewport());
         scroll.heightProperty().addListener((o,a,b) -> syncScrollViewport());
@@ -285,66 +446,69 @@ public final class SessionPane extends BorderPane {
     public void updateHeader() {
         boolean isActive=workspace.active()==this;
         Appearance.PaneInfo info=workspace.appearanceSettings().info();
-        title.setText(info.profile() ? profile.name() : "");
-        String titleColor=Ui.hex(isActive ? ColorRole.HEADER_TEXT : ColorRole.HEADER_MUTED);
-        title.setStyle("-fx-text-fill: "+titleColor+";");
-        connection.setStyle("-fx-font-size: 11px; -fx-text-fill: "+titleColor+";");
+        Ui.setTextIfChanged(title,info.profile() ? profile.name() : "");
+        ColorRole inkRole=isActive ? ColorRole.HEADER_TEXT : ColorRole.HEADER_MUTED;
+        String titleColor=Ui.hex(inkRole);
+        Ui.setStyleIfChanged(title,"-fx-text-fill: "+titleColor+";");
+        Ui.setStyleIfChanged(connection,"-fx-font-size: 11px; -fx-text-fill: "+titleColor+";");
+        Ui.updateIcon(close.getGraphic(),"close",inkRole);
 
         surfaceColor=Ui.paneBackground(isActive && workspace.highlightActive());
         String surfaceHex=Ui.hex(surfaceColor);
         String headerBg=!Ui.customTheme() && isActive && workspace.highlightActive() ? surfaceHex : Ui.hex(ColorRole.HEADER);
         String footerBg=!Ui.customTheme() && isActive && workspace.highlightActive() ? surfaceHex : Ui.hex(ColorRole.FOOTER);
 
-        boolean showOutline=workspace.appearanceSettings().outline() && isActive;
-        if (showOutline) {
-            setStyle("-fx-background-color: "+surfaceHex+"; -fx-border-color: "+Ui.hex(ColorRole.DIVIDER)+"; -fx-border-width: 1;");
-        } else {
-            setStyle("-fx-background-color: "+surfaceHex+"; -fx-border-width: 0;");
-        }
-        header.setStyle("-fx-background-color: "+headerBg+";");
-        footer.setStyle("-fx-background-color: "+footerBg+";");
-        body.setStyle("-fx-background-color: "+surfaceHex+";");
-        empty.setStyle("-fx-background-color: "+surfaceHex+";");
-        loading.setStyle("-fx-background-color: "+surfaceHex+";");
+        Ui.setStyleIfChanged(this,"-fx-background-color: "+surfaceHex+"; -fx-border-width: 0; -fx-padding: 0;");
+        Ui.setStyleIfChanged(header,"-fx-background-color: "+headerBg+";");
+        Ui.setStyleIfChanged(footer,"-fx-background-color: "+footerBg+";");
+        Ui.setStyleIfChanged(body,"-fx-background-color: "+surfaceHex+";");
+        Ui.setStyleIfChanged(empty,"-fx-background-color: "+surfaceHex+";");
+        Ui.setStyleIfChanged(loading,"-fx-background-color: "+surfaceHex+";");
+        layoutActiveOutline(Ui.scaleFor(this));
 
         java.awt.Color terminalSurface=Ui.customTheme() && !(isActive && workspace.highlightActive())
                 ? Ui.color(ColorRole.HOST_0) : surfaceColor;
         view.setTerminalBackground(terminalSurface);
 
-        List<String> parts=new ArrayList<>();
+        List<String> parts=new ArrayList<>(3);
         if (info.connection()) parts.add(connecting ? "Connecting" : connected() ? "Connected" : "Disconnected");
         if (info.host() && !profile.host().isEmpty()) parts.add(profile.host());
         if (info.device() && !profile.device().isEmpty()) parts.add(profile.device());
-        connection.setText(String.join("  ",parts));
+        Ui.setTextIfChanged(connection,String.join("  ",parts));
 
         boolean showHeader=info.header() && (!title.getText().isBlank() || !connection.getText().isBlank());
-        header.setVisible(showHeader);
-        header.setManaged(showHeader);
-        dragZone.setVisible(!showHeader && workspace.hasMultiplePanes());
+        if (header.isVisible()!=showHeader) header.setVisible(showHeader);
+        if (header.isManaged()!=showHeader) header.setManaged(showHeader);
+        boolean showDragZone=!showHeader && workspace.hasMultiplePanes();
+        if (dragZone.isVisible()!=showDragZone) dragZone.setVisible(showDragZone);
 
         Pane desiredCloseParent=showHeader ? headerControls : stage;
         if (close.getParent()!=desiredCloseParent) {
             if (close.getParent() instanceof Pane old) old.getChildren().remove(close);
             desiredCloseParent.getChildren().add(close);
         }
-        title.setVisible(info.profile()); title.setManaged(info.profile());
-        connection.setVisible(!connection.getText().isEmpty()); connection.setManaged(!connection.getText().isEmpty());
+        if (title.isVisible()!=info.profile()) title.setVisible(info.profile());
+        if (title.isManaged()!=info.profile()) title.setManaged(info.profile());
+        boolean connVis=!connection.getText().isEmpty();
+        if (connection.isVisible()!=connVis) connection.setVisible(connVis);
+        if (connection.isManaged()!=connVis) connection.setManaged(connVis);
 
         close.setAccessibleText("Close pane "+profile.name());
         boolean restoreFocus=close.isFocused() && "connecting".equals(shownCard);
         boolean closeVis=busy() || workspace.hasMultiplePanes();
-        close.setVisible(closeVis);
-        close.setManaged(showHeader && closeVis);
+        if (close.isVisible()!=closeVis) close.setVisible(closeVis);
+        boolean closeManaged=showHeader && closeVis;
+        if (close.isManaged()!=closeManaged) close.setManaged(closeManaged);
 
         String closeKey=workspace.shortcutLabel("Close pane");
-        close.setTooltip(new Tooltip("Close and disconnect; keep the last pane"+(closeKey.isEmpty() ? "" : " ("+closeKey+")")));
+        Ui.setTooltipText(close,closeTooltip,"Close and disconnect; keep the last pane"+(closeKey.isEmpty() ? "" : " ("+closeKey+")"));
         String resetKey=workspace.shortcutLabel("RESET");
-        reset.setTooltip(new Tooltip("Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")")));
-        Tooltip.install(header,new Tooltip("Drag onto another pane to swap or split. Ctrl+Alt+D swaps with the keyboard."));
+        Ui.setTooltipText(reset,resetTooltip,"Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
         header.setCursor(workspace.hasMultiplePanes() ? Cursor.MOVE : Cursor.DEFAULT);
 
-        presets.setDisable(busy() || credentialOperations>0);
-        connectButton.setDisable(busy() || credentialOperations>0);
+        boolean disableControls=busy() || credentialOperations>0;
+        if (presets.isDisabled()!=disableControls) presets.setDisable(disableControls);
+        if (connectButton.isDisabled()!=disableControls) connectButton.setDisable(disableControls);
 
         String card=connecting ? "connecting" : core!=null && connected() ? "terminal" : "offline";
         if (!card.equals(shownCard)) {
@@ -357,6 +521,7 @@ public final class SessionPane extends BorderPane {
         if (restoreFocus && !connecting) focusTerminal();
         setAccessibleText(profile.name());
         stage.requestLayout();
+        lastCommandState=-1;
         updateOia();
     }
 
@@ -510,8 +675,6 @@ public final class SessionPane extends BorderPane {
             network=new NetworkSession(record -> {
                 if (generation==token && !disposed) {
                     core.accept(record);
-                    view.screenChanged();
-                    updateOia();
                 }
             },text -> Ui.runLater(() -> {
                 if (generation==token && !disposed) {
@@ -522,17 +685,23 @@ public final class SessionPane extends BorderPane {
                         generation++; disconnectNetwork(); startupGuidance(text+" Reconnect to retry.");
                     }
                     updateHeader();
-                    updateOia();
                     view.screenChanged();
                     if (text.startsWith("Connected") && workspace.active()==this && workspace.stage().isFocused()) focusTerminal();
                 }
             }));
             core=new Session5250(connectionProfile.name(),connectionProfile.codePage(),network.output(),this::problem);
             core.getScreen().addScreenListener(new ScreenListener() {
-                @Override public void onScreenChanged(int u,int r,int c,int er,int ec) { view.screenChanged(); updateOia(); }
-                @Override public void onScreenSizeChanged(int r,int c) { view.resetSelection(); view.screenChanged(); }
+                @Override public void onScreenChanged(int u,int r,int c,int er,int ec) {
+                    if (!pasting) { view.screenChanged(); updateOia(); }
+                }
+                @Override public void onScreenSizeChanged(int r,int c) {
+                    view.resetSelection();
+                    if (!pasting) view.screenChanged();
+                }
             });
-            core.getScreen().getOIA().addOIAListener((o,change) -> updateOia());
+            core.getScreen().getOIA().addOIAListener((o,change) -> {
+                if (!pasting) updateOia();
+            });
             network.connect(connectionProfile.host(),connectionProfile.port(),environment,kerberosTicket);
             environment.clear();
             updateHeader();
@@ -623,8 +792,8 @@ public final class SessionPane extends BorderPane {
         notice=message;
         lastProblem=message;
         updateOia();
-        oia.setTooltip(new Tooltip(message));
-        oia.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-text-fill: "+Ui.hex(ColorRole.STATUS_ERROR)+";");
+        Ui.setTooltipText(oia,oiaTooltip,message);
+        Ui.setStyleIfChanged(oia,"-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-text-fill: "+Ui.hex(ColorRole.STATUS_ERROR)+";");
         if (!footer.isVisible() || !workspace.appearanceSettings().info().status()) {
             noticeOverlay.setErrorStyle(true);
             noticeOverlay.showMessage(message,true);
@@ -664,36 +833,59 @@ public final class SessionPane extends BorderPane {
         String text=(info.status() ? state : "")+dimensions
                 +(info.footerDevice() && network!=null && !network.allocatedDevice().isEmpty() ? "  "+network.allocatedDevice() : "")
                 +(screen!=null && info.insert() && screen.getOIA().isInsertMode() ? "  INS" : "");
-        oia.setText(text.strip());
+        Ui.setTextIfChanged(oia,text.strip());
         boolean showFooter=info.footer() && !text.isBlank();
-        footer.setVisible(showFooter);
-        footer.setManaged(showFooter);
-        oia.setTooltip(new Tooltip(state+dimensions));
+        boolean layoutDirty=false;
+        if (footer.isVisible()!=showFooter) { footer.setVisible(showFooter); layoutDirty=true; }
+        if (footer.isManaged()!=showFooter) { footer.setManaged(showFooter); layoutDirty=true; }
+        Ui.setTooltipText(oia,oiaTooltip,state+dimensions);
         ColorRole statusRole=recoverableInputError() || notice.startsWith("Disconnected -") ? ColorRole.STATUS_ERROR
                 : screen!=null && screen.getOIA().isKeyBoardLocked() ? ColorRole.STATUS_WAIT : ColorRole.FOOTER_TEXT;
-        oia.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-text-fill: "+Ui.hex(statusRole)+";");
+        Ui.setStyleIfChanged(oia,"-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-text-fill: "+Ui.hex(statusRole)+";");
 
         if (showFooter) {
             if (reset.getParent()!=footer) {
                 if (reset.getParent() instanceof Pane p) p.getChildren().remove(reset);
                 footer.setRight(reset);
+                layoutDirty=true;
             }
         } else {
             if (reset.getParent()!=stage) {
                 if (reset.getParent()==footer) footer.setRight(null);
                 else if (reset.getParent() instanceof Pane p) p.getChildren().remove(reset);
                 stage.getChildren().add(reset);
+                layoutDirty=true;
             }
         }
         boolean rec=recoverableInputError();
-        reset.setVisible(rec);
-        reset.setManaged(showFooter && rec);
-        stage.requestLayout();
-        workspace.refreshCommands();
+        if (reset.isVisible()!=rec) { reset.setVisible(rec); layoutDirty=true; }
+        boolean resetManaged=showFooter && rec;
+        if (reset.isManaged()!=resetManaged) { reset.setManaged(resetManaged); layoutDirty=true; }
+        if (layoutDirty) { stage.requestLayout(); requestLayout(); }
+        int cmdState=(connected() ? 1 : 0)
+                | (busy() ? 2 : 0)
+                | (recoverableInputError() ? 4 : 0)
+                | (workspace.active()==this ? 8 : 0)
+                | (workspace.paneCount()<<4);
+        if (cmdState!=lastCommandState) {
+            lastCommandState=cmdState;
+            workspace.refreshCommands();
+        }
+    }
+
+    private CharsetEncoder encoder() {
+        Charset cs=profile.charset();
+        if (cachedEncoder==null || !cs.equals(cachedCharset)) {
+            cachedCharset=cs;
+            cachedEncoder=cs.newEncoder();
+        } else {
+            cachedEncoder.reset();
+        }
+        return cachedEncoder;
     }
 
     public boolean send(KeyMnemonic key) {
-        view.restartCursor();
+        if (!pasting) view.restartCursor();
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
         if (key==KeyMnemonic.ENTER && recoverableInputError()) key=KeyMnemonic.RESET;
         if (key==KeyMnemonic.RESET && screen().getOIA().isKeyBoardLocked() && !recoverableInputError()) {
@@ -706,30 +898,35 @@ public final class SessionPane extends BorderPane {
             return false;
         }
         try {
-            screen().sendKeys(key);
             notice="Connected";
-            updateOia();
-            view.screenChanged(); view.restartCursor();
+            screen().sendKeys(key);
+            if (!pasting) {
+                updateOia();
+                view.restartCursor();
+            }
             return true;
         } catch (RuntimeException e) { problem("Host key failed: "+e.getMessage()); return false; }
     }
 
     public boolean type(char character) {
-        view.restartCursor();
+        if (!pasting) view.restartCursor();
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
         if (screen().getOIA().isKeyBoardLocked()) {
             problem("Input inhibited. No characters were queued.");
             return false;
         }
-        if (!profile.charset().newEncoder().canEncode(character)) {
+        if (!encoder().canEncode(character)) {
             problem("Character is not representable in code page "+profile.codePage()+".");
             return false;
         }
         String text=character=='[' ? "[[" : character==']' ? "]]" : String.valueOf(character);
         try {
-            screen().sendKeys(text);
             notice="Connected";
-            updateOia(); view.screenChanged(); view.restartCursor();
+            screen().sendKeys(text);
+            if (!pasting) {
+                updateOia();
+                view.restartCursor();
+            }
             return !screen().getOIA().isKeyBoardLocked();
         } catch (RuntimeException e) { problem("Input failed: "+e.getMessage()); return false; }
     }
@@ -738,24 +935,37 @@ public final class SessionPane extends BorderPane {
         view.restartCursor();
         if (text.length()>32768) { problem("Paste exceeds the 32768-character safety limit; nothing pasted."); return false; }
         text=text.replace("\r\n","\n").replace('\r','\n');
-        var encoder=profile.charset().newEncoder();
+        var enc=encoder();
         for (int i=0;i<text.length();i++) {
             char c=text.charAt(i);
-            if (c!='\n' && c!='\t' && (c<32 || c==127 || !encoder.canEncode(c))) {
+            if (c!='\n' && c!='\t' && (c<32 || c==127 || !enc.canEncode(c))) {
                 problem("Paste contains an unsupported character at position "+(i+1)+"; nothing pasted.");
                 return false;
             }
         }
-        for (int i=0;i<text.length();i++) {
-            if (!connected() || screen().getOIA().isKeyBoardLocked()) {
-                problem("Paste stopped at input inhibition after "+i+" characters.");
-                return false;
+        pasting=true;
+        try {
+            for (int i=0;i<text.length();i++) {
+                if (!connected() || screen().getOIA().isKeyBoardLocked()) {
+                    pasting=false;
+                    view.screenChanged();
+                    updateOia();
+                    problem("Paste stopped at input inhibition after "+i+" characters.");
+                    return false;
+                }
+                char c=text.charAt(i);
+                boolean accepted=c=='\n' ? send(KeyMnemonic.NEW_LINE) : c=='\t' ? send(KeyMnemonic.TAB) : type(c);
+                if (!accepted) return false;
             }
-            char c=text.charAt(i);
-            boolean accepted=c=='\n' ? send(KeyMnemonic.NEW_LINE) : c=='\t' ? send(KeyMnemonic.TAB) : type(c);
-            if (!accepted) return false;
+            return true;
+        } finally {
+            if (pasting) {
+                pasting=false;
+                view.screenChanged();
+                updateOia();
+                view.restartCursor();
+            }
         }
-        return true;
     }
 
     public static void checkPasswordField(Screen5250 screen,int length) {
@@ -831,70 +1041,75 @@ public final class SessionPane extends BorderPane {
         return nearest==x ? Layout.Dock.LEFT : Layout.Dock.RIGHT;
     }
 
+    void beginAltDrag(MouseEvent event) {
+        activate();
+        altDragStartX=event.getSceneX();
+        altDragStartY=event.getSceneY();
+        altDragActive=false;
+    }
+
+    void updateAltDrag(MouseEvent event) {
+        if (!workspace.hasMultiplePanes()) return;
+        if (!altDragActive) {
+            if (Math.hypot(event.getSceneX()-altDragStartX,event.getSceneY()-altDragStartY)<4.0) return;
+            altDragActive=true;
+            view.setCursor(Cursor.MOVE);
+        }
+        workspace.previewDockAtScene(id,event.getSceneX(),event.getSceneY());
+    }
+
+    void finishAltDrag(MouseEvent event) {
+        view.setCursor(Cursor.DEFAULT);
+        if (!altDragActive) return;
+        altDragActive=false;
+        try {
+            workspace.commitDockAtScene(id,event.getSceneX(),event.getSceneY());
+        } catch (IllegalArgumentException error) {
+            problem("Panes not moved: "+error.getMessage());
+        } finally {
+            workspace.clearPreviews();
+        }
+    }
+
     private void installDrag() {
         for (Node source:List.of(header,dragZone)) {
+            double[] pressScene={0,0};
+            boolean[] activeDrag={false};
             source.setOnMousePressed(e -> {
                 activate();
                 if (e.getButton()==MouseButton.SECONDARY) {
                     workspace.paneMenu(this).show(source,e.getScreenX(),e.getScreenY());
                     e.consume();
-                }
-            });
-            source.setOnDragDetected(e -> {
-                if (e.getButton()==MouseButton.PRIMARY && workspace.hasMultiplePanes()) {
-                    Dragboard db=source.startDragAndDrop(TransferMode.MOVE);
-                    ClipboardContent cc=new ClipboardContent();
-                    cc.putString(id.toString());
-                    db.setContent(cc);
-                    e.consume();
-                }
-            });
-            source.setOnDragDone(e -> workspace.clearPreviews());
-        }
-        view.setOnDragDetected(e -> {
-            if (e.getButton()==MouseButton.PRIMARY && e.isAltDown() && workspace.hasMultiplePanes()) {
-                Dragboard db=view.startDragAndDrop(TransferMode.MOVE);
-                ClipboardContent cc=new ClipboardContent();
-                cc.putString(id.toString());
-                db.setContent(cc);
-                e.consume();
-            }
-        });
-        view.setOnDragDone(e -> workspace.clearPreviews());
-
-        setOnDragOver(e -> {
-            try {
-                if (!e.getDragboard().hasString()) { workspace.clearPreviews(); return; }
-                UUID sourcePane=SavedLayout.reference(e.getDragboard().getString());
-                Workspace.DockTarget placement=workspace.dropTarget(id,this,e.getX(),e.getY());
-                if (placement!=null && workspace.previewDock(sourcePane,id,placement.dock(),placement.scope())) {
-                    e.acceptTransferModes(TransferMode.MOVE);
-                    e.consume();
                     return;
                 }
-            } catch (IllegalArgumentException ignored) {}
-            workspace.clearPreviews();
-        });
-        setOnDragExited(e -> workspace.clearPreviews());
-        setOnDragDropped(e -> {
-            boolean completed=false;
-            try {
-                if (e.getDragboard().hasString()) {
-                    UUID sourcePane=SavedLayout.reference(e.getDragboard().getString());
-                    Workspace.DockTarget placement=workspace.dropTarget(id,this,e.getX(),e.getY());
-                    if (placement!=null && workspace.planDock(sourcePane,id,placement.dock(),placement.scope())!=null) {
-                        workspace.dock(sourcePane,id,placement.dock(),placement.scope());
-                        completed=true;
-                    }
+                if (e.getButton()==MouseButton.PRIMARY) {
+                    pressScene[0]=e.getSceneX();
+                    pressScene[1]=e.getSceneY();
+                    activeDrag[0]=false;
                 }
-            } catch (IllegalArgumentException error) {
-                problem("Panes not moved: "+error.getMessage());
-            } finally {
-                workspace.clearPreviews();
-                e.setDropCompleted(completed);
+            });
+            source.setOnMouseDragged(e -> {
+                if (!e.isPrimaryButtonDown() || !workspace.hasMultiplePanes()) return;
+                if (!activeDrag[0]) {
+                    if (Math.hypot(e.getSceneX()-pressScene[0],e.getSceneY()-pressScene[1])<4.0) return;
+                    activeDrag[0]=true;
+                }
+                workspace.previewDockAtScene(id,e.getSceneX(),e.getSceneY());
                 e.consume();
-            }
-        });
+            });
+            source.setOnMouseReleased(e -> {
+                if (e.getButton()!=MouseButton.PRIMARY || !activeDrag[0]) return;
+                activeDrag[0]=false;
+                try {
+                    workspace.commitDockAtScene(id,e.getSceneX(),e.getSceneY());
+                } catch (IllegalArgumentException error) {
+                    problem("Panes not moved: "+error.getMessage());
+                } finally {
+                    workspace.clearPreviews();
+                    e.consume();
+                }
+            });
+        }
     }
 
     public void clearPreview() { workspace.clearPreviews(); }

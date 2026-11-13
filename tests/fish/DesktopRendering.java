@@ -88,6 +88,7 @@ public final class DesktopRendering {
         require(clean,"Opaque terminal redraw is independent of every previous pixel in the shared buffer.");
         edt(() -> {
             SessionPane pane = window.sessionPanes().getFirst();
+            pane.view().restartCursor();
             BufferedImage before = render(pane.view(),Ui.BACKGROUND);
             require(pane.type('7'),"Field-aware input remains available with the cached renderer.");
             BufferedImage after = render(pane.view(),Ui.BACKGROUND);

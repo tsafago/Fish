@@ -6,6 +6,7 @@
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <objbase.h>
+#include <dwmapi.h>
 
 static void failure(JNIEnv *env,const char *message) {
     jclass type=(*env)->FindClass(env,"java/io/IOException");
@@ -99,3 +100,48 @@ JNIEXPORT jobjectArray JNICALL Java_fish_LayoutShortcuts_inspect0(JNIEnv *env,jc
     if (SUCCEEDED(init)) CoUninitialize();
     HeapFree(GetProcessHeap(),0,file); return output;
 }
+
+typedef struct {
+    DWORD pid;
+    BOOL workspace_outline;
+    COLORREF divider_color;
+    int updated;
+} border_update_ctx;
+
+#ifndef DWMWA_BORDER_COLOR
+#define DWMWA_BORDER_COLOR 34
+#endif
+#ifndef DWMWA_COLOR_NONE
+#define DWMWA_COLOR_NONE 0xFFFFFFFEu
+#endif
+
+static BOOL CALLBACK apply_dwm_border_proc(HWND hwnd,LPARAM lparam) {
+    border_update_ctx *ctx=(border_update_ctx *)lparam;
+    DWORD pid=0;
+    GetWindowThreadProcessId(hwnd,&pid);
+    if (pid!=ctx->pid || !IsWindowVisible(hwnd)) return TRUE;
+    WCHAR cls[128];
+    int len=GetClassNameW(hwnd,cls,128);
+    if (len<=0 || wcsncmp(cls,L"GlassWndClass",13)!=0) return TRUE;
+    LONG_PTR ex=GetWindowLongPtrW(hwnd,GWL_EXSTYLE);
+    if ((ex & WS_EX_TOOLWINDOW)!=0) return TRUE;
+    BOOL is_owned=GetWindow(hwnd,GW_OWNER)!=NULL;
+    BOOL show_border=is_owned ? !IsZoomed(hwnd) : (ctx->workspace_outline && !IsZoomed(hwnd));
+    COLORREF value=show_border ? ctx->divider_color : (COLORREF)DWMWA_COLOR_NONE;
+    HRESULT hr=DwmSetWindowAttribute(hwnd,DWMWA_BORDER_COLOR,&value,sizeof(value));
+    if (SUCCEEDED(hr)) ctx->updated++;
+    return TRUE;
+}
+
+JNIEXPORT jboolean JNICALL Java_fish_ui_WindowBorder_syncProcessWindows0(JNIEnv *env,jclass type,jboolean workspace_outline,jint rgb) {
+    (void)env; (void)type;
+    border_update_ctx ctx;
+    ctx.pid=GetCurrentProcessId();
+    ctx.workspace_outline=workspace_outline ? TRUE : FALSE;
+    DWORD r=(DWORD)((rgb>>16)&0xff),g=(DWORD)((rgb>>8)&0xff),b=(DWORD)(rgb&0xff);
+    ctx.divider_color=(COLORREF)(r | (g<<8) | (b<<16));
+    ctx.updated=0;
+    EnumWindows(apply_dwm_border_proc,(LPARAM)&ctx);
+    return ctx.updated>0 ? JNI_TRUE : JNI_FALSE;
+}
+

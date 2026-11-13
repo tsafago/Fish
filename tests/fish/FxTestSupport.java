@@ -194,17 +194,37 @@ public final class FxTestSupport {
     }
 
     public static BufferedImage snapshot(Node node,double scale) {
-        if (node instanceof Parent p) {
-            layout(p);
-            for (Node child:children(p)) if (child instanceof TerminalView tv) tv.forceSurfaceRender();
-        } else if (node instanceof TerminalView tv) {
-            tv.forceSurfaceRender();
+        double targetScale=scale>0 ? scale : 1.0;
+        double previousOverride=Ui.scaleOverride();
+        Ui.setScaleOverride(targetScale);
+        try {
+            Scene scene=node.getScene();
+            if (scene!=null) Ui.syncSceneStylesheet(scene);
+            if (node instanceof Parent p) {
+                Ui.requestScaleLayout(p);
+                layout(p);
+                Ui.requestScaleLayout(p);
+                layout(p);
+                for (Node child:children(p)) if (child instanceof TerminalView tv) tv.forceSurfaceRender();
+            } else if (node instanceof TerminalView tv) {
+                tv.forceSurfaceRender();
+            }
+            SnapshotParameters params=new SnapshotParameters();
+            if (targetScale!=1.0) params.setTransform(Transform.scale(targetScale,targetScale));
+            params.setFill(Ui.fxColor(fish.model.ColorRole.BACKGROUND));
+            WritableImage fxImage=node.snapshot(params,null);
+            return SwingFXUtils.fromFXImage(fxImage,null);
+        } finally {
+            Ui.setScaleOverride(previousOverride);
+            Scene scene=node.getScene();
+            if (scene!=null) {
+                Ui.syncSceneStylesheet(scene);
+                if (node instanceof Parent p) {
+                    Ui.requestScaleLayout(p);
+                    layout(p);
+                }
+            }
         }
-        SnapshotParameters params=new SnapshotParameters();
-        if (scale!=1.0) params.setTransform(Transform.scale(scale,scale));
-        params.setFill(Ui.fxColor(fish.model.ColorRole.BACKGROUND));
-        WritableImage fxImage=node.snapshot(params,null);
-        return SwingFXUtils.fromFXImage(fxImage,null);
     }
 
     public static void writeSnapshot(Node node,double scale,Path destination) throws IOException {

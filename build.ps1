@@ -121,6 +121,8 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     if ($LASTEXITCODE -ne 0) { throw 'Chrome consistency smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.RefinementSmoke
     if ($LASTEXITCODE -ne 0) { throw 'Interaction refinement smoke checks failed.' }
+    & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.DpiAndLatencySmoke
+    if ($LASTEXITCODE -ne 0) { throw 'DPI 1px border and latency smoke checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }

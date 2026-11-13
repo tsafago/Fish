@@ -4,6 +4,7 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import fish.ui.Ui;
 
@@ -11,6 +12,8 @@ import fish.ui.Ui;
 public final class NetworkSession implements AutoCloseable {
     private final Socket socket = new Socket();
     private final ArrayBlockingQueue<byte[]> outbound = new ArrayBlockingQueue<>(128);
+    private final ArrayBlockingQueue<byte[]> inbound = new ArrayBlockingQueue<>(256);
+    private final AtomicBoolean drainScheduled = new AtomicBoolean();
     private final Consumer<byte[]> records;
     private final Consumer<String> status;
     private volatile boolean closed;
@@ -70,9 +73,11 @@ public final class NetworkSession implements AutoCloseable {
                 socket.setSoTimeout(20000);
                 startWriter();
                 TelnetCodec prepared;
+                BufferedInputStream bufferedInput;
                 synchronized (NetworkSession.this) {
                     if (closed) return;
-                    prepared=new TelnetCodec(socket.getInputStream(),queued,copy,message -> {
+                    bufferedInput = new BufferedInputStream(socket.getInputStream(), 16384);
+                    prepared=new TelnetCodec(bufferedInput,queued,copy,message -> {
                         String detail=connectionDetails+(connectionDetails.isEmpty() ? "" : "\n")+message;
                         connectionDetails=detail.substring(Math.max(0,detail.length()-4096));
                         System.getLogger(NetworkSession.class.getName()).log(System.Logger.Level.DEBUG,message);
@@ -86,9 +91,7 @@ public final class NetworkSession implements AutoCloseable {
                     while (!closed) {
                         byte[] record = codec.readRecord();
                         if (closed) return;
-                        Ui.dispatchSessionRecord(() -> !closed, () -> {
-                            if (!closed) records.accept(record);
-                        });
+                        enqueueInbound(record);
                         if (first) {
                             socket.setSoTimeout(0);
                             connected = true;
@@ -110,6 +113,37 @@ public final class NetworkSession implements AutoCloseable {
                 close();
             }
         });
+    }
+
+    private void enqueueInbound(byte[] record) throws InterruptedException {
+        if (!Ui.isFxStarted()) {
+            if (!closed) records.accept(record);
+            return;
+        }
+        while (!closed && !inbound.offer(record, 40, TimeUnit.MILLISECONDS)) {
+            scheduleDrain();
+        }
+        if (!closed) scheduleDrain();
+    }
+
+    private void scheduleDrain() {
+        if (drainScheduled.compareAndSet(false, true)) {
+            Ui.runLater(this::drainInbound);
+        }
+    }
+
+    private void drainInbound() {
+        try {
+            int processed = 0;
+            byte[] record;
+            while (!closed && processed < 64 && (record = inbound.poll()) != null) {
+                records.accept(record);
+                processed++;
+            }
+        } finally {
+            drainScheduled.set(false);
+            if (!closed && !inbound.isEmpty()) scheduleDrain();
+        }
     }
 
     private synchronized void startWriter() {

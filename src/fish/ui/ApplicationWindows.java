@@ -160,6 +160,11 @@ public final class ApplicationWindows {
         saveTimer.playFromStart();
     }
 
+    void scheduleSave() {
+        if (closing || syncing) return;
+        saveTimer.playFromStart();
+    }
+
     void refreshActions() { windows.forEach(Workspace::refreshCommands); }
 
     public StateStore.State snapshot() {

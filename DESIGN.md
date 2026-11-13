@@ -85,8 +85,10 @@ Binary containers are implementation details, never unrestricted subdivisions.
 A shaded projected result precedes a valid drop; invalid/minimum-size/self/outside
 drops do not move anything. Preview labels distinguish Window and Pane, and shade
 the actual reflow. Arrange pane offers both target scopes; Undo restores moves.
-A divider has a
-4px draggable target but paints a 1px line. Headers are 25px high with 8px
+A divider places sibling panes flush (0px gap) with a
+6px transparent draggable hit target and paints a single device-pixel-snapped 1-physical-pixel hairline.
+In-scene mouse press/drag/release drives live dock previews without Win32 OLE modal drag loops.
+Headers are 25px high with 8px
 horizontal insets. Display origins retain at least 12px horizontal and 10px
 vertical padding. Resizing does not resize the host's presentation space.
 The main window is undecorated: one 31px dark title/menu row replaces the native
@@ -138,8 +140,15 @@ One coalescing
 eligible, including minimized windows. Host blink, secrecy, selection and
 cursor remain independent. None is still the default and immediate stop control.
 
-Text and cursor use the same snapped device-space transform. Cell fills/edges
-disable inherited shape antialiasing; glyph masks retain their LCD coverage.
+Text and cursor use the same snapped device-space transform, and `TerminalView`'s
+`ImageView` surface snaps `localToScene(0, 0)` to integer device pixels with
+`ScrollPaneSkin` bitmap caching disabled so 1px 5250 underlines and LCD glyphs
+never blur across fractional-DPI scanlines. `TerminalView` coalesces render
+requests onto a single JavaFX frame pulse, caches LCD `GlyphMask`s in a bounded
+LRU keyed by `(Font, String)` across screen updates, and double-buffers Java2D
+into an offscreen work image before copying completed rows inside
+`PixelBuffer.updateBuffer` so `QuantumRenderer` never observes partial frames.
+Cell fills/edges disable inherited shape antialiasing; glyph masks retain their LCD coverage.
 Dirty cursor painting honors the existing clip, never substitutes a full-screen
 repaint. Replace mode defaults to a one-physical-pixel underline; Insert fills
 the cell with a contrasting, identically positioned glyph. Outline replace or
@@ -154,12 +163,15 @@ native character spacing. The accepted shortcut manager layout is unchanged.
 
 ## Shapes
 
-Rectangular panes and clean flat JavaFX CSS controls. Crisp 1px CSS borders and the visible
-focus underline provide structure without ornamental chrome.
+Rectangular panes and clean flat JavaFX CSS controls. Scale-aware 1-physical-pixel
+borders (`Ui.hairline(scale)`) and device-snapped bar/divider hairlines provide
+strictly 1-physical-pixel structure at 100%–200% DPI without ornamental chrome.
 Scene roots share the corresponding dialog/menu/workspace surface color so
 fractional-DPI transitions never reveal an unthemed inner strip.
 The optional whole-window perimeter is on by default, independent of active
-pane outline/tint, and configured under Settings > Appearance.
+pane outline/tint, and configured under Settings > Appearance; on Windows 11,
+`WindowBorder` drives the native 1px DWM border (`DWMWA_BORDER_COLOR`) so
+`StageStyle.EXTENDED` never draws a doubled outer frame.
 Native move/resize/snap is handled by OpenJFX `StageStyle.EXTENDED` + `HeaderBar`,
 eliminating the legacy Swing/JNI `WM_NCCALCSIZE` maximize/restore perimeter clipping defect.
 

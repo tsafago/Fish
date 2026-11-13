@@ -52,6 +52,7 @@ public final class AppShortcuts {
         overrides=KeyBindings.normalize(values); bindings=next;
         unbound=Set.copyOf(KeyChord.list(overrides.getOrDefault(KeyBindings.UNBOUND,"")));
         claimed.clear(); suppressTyped=false;
+        if (workspace.chrome()!=null) workspace.chrome().invalidateMenuWidth();
     }
 
     private void filterSceneEvent(KeyEvent event) {
@@ -69,6 +70,12 @@ public final class AppShortcuts {
     }
 
     public boolean dispatchKey(Node source,KeyEvent event,int location) {
+        boolean inTerminal=isTerminalNode(source);
+        if (inTerminal && (event.getCode()==KeyCode.ALT || event.getCode()==KeyCode.ALT_GRAPH)) {
+            if (event.getEventType()==KeyEvent.KEY_PRESSED || event.getEventType()==KeyEvent.KEY_RELEASED) {
+                return true;
+            }
+        }
         if (event.getEventType()==KeyEvent.KEY_RELEASED) {
             if (event.getCode()==null) return false;
             return claimed.remove(new PhysicalKey(event.getCode().getCode(),location));
@@ -79,7 +86,6 @@ public final class AppShortcuts {
         if (event.getEventType()==KeyEvent.KEY_PRESSED) {
             if (!KeyChord.actionKey(event.getCode())) return false;
             suppressTyped=false;
-            boolean inTerminal=isTerminalNode(source);
             if (inTerminal && event.getCode()==KeyCode.ENTER
                     && !event.isControlDown() && !event.isShiftDown() && !event.isAltDown() && !event.isMetaDown()
                     && workspace.active()!=null && workspace.active().recoverableInputError()) {
@@ -121,6 +127,7 @@ public final class AppShortcuts {
     }
     void refreshLabels() {
         for (AppCommand command:commands) command.setStroke(strokes(command,bindings,overrides));
+        if (workspace.chrome()!=null) workspace.chrome().invalidateMenuWidth();
     }
     private static String strokes(AppCommand command,Map<KeyChord,String> effective,Map<String,String> overrides) {
         List<KeyChord> order=overrides.containsKey(command.title) ? KeyChord.list(overrides.get(command.title))

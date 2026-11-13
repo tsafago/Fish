@@ -9,7 +9,7 @@ $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $root '.tools\zig-cache'
     ("-I" + (Join-Path $Jdk 'include')) ("-I" + (Join-Path $Jdk 'include\win32')) `
     (Join-Path $root 'src\native\fish-kerberos.c') `
     (Join-Path $root 'src\native\fish-updates.c') (Join-Path $root 'src\native\fish-shortcuts.c') `
-    -lsecur32 -lbcrypt -lwintrust -lole32 -lshell32 -luuid -o (Join-Path $root 'build\fish-native.dll')
+    -lsecur32 -lbcrypt -lwintrust -lole32 -lshell32 -luuid -ldwmapi -luser32 -o (Join-Path $root 'build\fish-native.dll')
 if ($LASTEXITCODE -ne 0) { throw 'Windows integration compilation failed.' }
 if ($Test) {
     $fixture=Join-Path $root 'build\kerberos-native-smoke.exe'

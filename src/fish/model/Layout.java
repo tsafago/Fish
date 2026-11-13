@@ -105,11 +105,10 @@ public sealed interface Layout permits Layout.Empty, Layout.Leaf, Layout.Split {
         return firstPixels(split,extent,split.ratio);
     }
     static int firstPixels(Split split,int extent,double ratio) {
-        // A three-strip root must reserve both divider gaps before dividing its first share.
-        return (int)Math.round(Math.max(0,extent-4-(threeStrips(split) ? 4 : 0))*ratio);
+        return (int)Math.round(Math.max(0,extent)*ratio);
     }
     static double dividerRatio(boolean threeStrips,int location,int extent) {
-        return location/(double)Math.max(1,extent-4-(threeStrips ? 4 : 0));
+        return location/(double)Math.max(1,extent);
     }
     static boolean isThreeStrips(Layout layout) { return threeStrips(layout); }
     default String arrangement() {

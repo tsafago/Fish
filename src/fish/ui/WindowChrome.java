@@ -4,6 +4,7 @@ import java.util.*;
 import javafx.event.EventHandler;
 import javafx.geometry.*;
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.*;
 import javafx.scene.input.*;
@@ -27,7 +28,10 @@ public final class WindowChrome extends HeaderBar {
     private final BorderPane dragArea;
     private final HBox controls;
     private final Button menuButton;
+    private final Region bottomLine=new Region();
+    private final Tooltip maximizeTooltip=new Tooltip("Maximize window");
     private Boolean compact;
+    private double cachedMenusWidth=-1;
     private Rectangle2D normalBounds;
     private Rectangle2D keyboardStart;
     private Node keyboardFocus;
@@ -39,11 +43,17 @@ public final class WindowChrome extends HeaderBar {
         this.stage=stage;
         this.menus=menus;
         this.tools=tools;
-        getStyleClass().add("fish-header-bar");
-        setMinHeight(HEIGHT);
-        setPrefHeight(HEIGHT);
-        setMaxHeight(HEIGHT);
+        menus.setFocusTraversable(false);
+        getStyleClass().addAll("fish-header-bar","fish-workspace-header");
+        setSnapToPixel(true);
+        updateChromeHeight(1.0);
         HeaderBar.setPrefButtonHeight(stage,0);
+
+        bottomLine.setManaged(false);
+        bottomLine.setMouseTransparent(true);
+        bottomLine.setSnapToPixel(false);
+        bottomLine.setStyle("-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";");
+        getChildren().add(bottomLine);
 
         caption=new LogoButton(toggleFlux);
         menuButton=Ui.iconButton("Application menus","down",ColorRole.CHROME_TEXT,this::openCompactMenu);
@@ -70,6 +80,7 @@ public final class WindowChrome extends HeaderBar {
         HeaderBar.setButtonType(minimizeBtn,HeaderButtonType.ICONIFY);
         minimizeBtn.setFocusTraversable(true);
         maximizeBtn=windowControlButton("Maximize window","maximize",false,this::toggleMaximize);
+        maximizeBtn.setTooltip(maximizeTooltip);
         HeaderBar.setButtonType(maximizeBtn,HeaderButtonType.MAXIMIZE);
         maximizeBtn.setFocusTraversable(true);
         closeBtn=windowControlButton("Close window","close",true,this::requestClose);
@@ -83,8 +94,17 @@ public final class WindowChrome extends HeaderBar {
         stage.maximizedProperty().addListener((obs,was,max) -> {
             String label=max ? "Restore window" : "Maximize window";
             maximizeBtn.setAccessibleText(label);
-            maximizeBtn.setTooltip(new Tooltip(label));
-            maximizeBtn.setGraphic(Ui.icon(max ? "restore" : "maximize",ColorRole.CHROME_TEXT));
+            Ui.setTooltipText(maximizeBtn,maximizeTooltip,label);
+            ColorRole ink=stage.isFocused() ? ColorRole.CHROME_TEXT : ColorRole.CHROME_INACTIVE;
+            Ui.updateIcon(maximizeBtn.getGraphic(),max ? "restore" : "maximize",ink);
+        });
+        stage.outputScaleXProperty().addListener((o,a,scale) -> {
+            updateChromeHeight(scale==null ? 1.0 : scale.doubleValue());
+            requestLayout();
+        });
+        stage.renderScaleXProperty().addListener((o,a,scale) -> {
+            updateChromeHeight(Ui.scaleFor(this));
+            requestLayout();
         });
         stage.xProperty().addListener((o,a,b) -> rememberNormal());
         stage.yProperty().addListener((o,a,b) -> rememberNormal());
@@ -94,6 +114,19 @@ public final class WindowChrome extends HeaderBar {
             if (!focused) finishKeyboard(true);
             themeChanged();
         });
+    }
+
+    private void updateChromeHeight(double scale) {
+        double s=scale>0 ? scale : 1.0;
+        double snapped=Math.round(HEIGHT*s)/s;
+        setMinHeight(snapped);
+        setPrefHeight(snapped);
+        setMaxHeight(snapped);
+    }
+
+    public void invalidateMenuWidth() {
+        cachedMenusWidth=-1;
+        requestLayout();
     }
 
     private Button windowControlButton(String accessibleName,String iconKind,boolean closeButton,Runnable action) {
@@ -124,10 +157,18 @@ public final class WindowChrome extends HeaderBar {
     }
 
     @Override protected void layoutChildren() {
+        double s=Ui.scaleFor(this);
+        double snappedH=Math.round(HEIGHT*s)/s;
+        if (Math.abs(getPrefHeight()-snappedH)>1e-4) {
+            updateChromeHeight(s);
+        }
         double available=getWidth();
         if (available>0) {
-            menus.applyCss();
-            double menusW=Math.max(240,menus.prefWidth(-1));
+            if (cachedMenusWidth<=0) {
+                double measured=menus.prefWidth(-1);
+                if (measured>40) cachedMenusWidth=measured;
+            }
+            double menusW=Math.max(240,cachedMenusWidth>0 ? cachedMenusWidth : menus.prefWidth(-1));
             double toolsBase=0;
             ComboBox<?> selector=null;
             for (Node n:tools.getChildren()) {
@@ -147,10 +188,22 @@ public final class WindowChrome extends HeaderBar {
             if (selector!=null) {
                 double fixed=48+(narrow ? 32 : menusW)+toolsBase+controls.prefWidth(-1)+36;
                 double w=Math.max(68,Math.min(desiredCombo,available-fixed));
-                selector.setPrefWidth(w);
+                if (Math.abs(selector.getPrefWidth()-w)>0.5) selector.setPrefWidth(w);
             }
         }
+        for (Node n:tools.getChildren()) if (n instanceof Parent p) p.requestLayout();
         super.layoutChildren();
+        for (Node n:tools.getChildren()) if (n instanceof Parent p) p.layout();
+        double h=getHeight();
+        double px=Ui.hairline(s);
+        Point2D bottomScene=localToScene(0,h);
+        double targetY=h-px;
+        if (bottomScene!=null) {
+            double devBottom=Math.round(bottomScene.getY()*s);
+            targetY=h-(bottomScene.getY()-(devBottom-1.0)/s);
+        }
+        bottomLine.resizeRelocate(0,targetY,Math.max(0,available),px);
+        bottomLine.toFront();
     }
 
     private static double profileWidth(ComboBox<?> combo) {
@@ -296,12 +349,14 @@ public final class WindowChrome extends HeaderBar {
     }
 
     public void themeChanged() {
+        cachedMenusWidth=-1;
         caption.repaintMark();
         ColorRole ink=stage.isFocused() ? ColorRole.CHROME_TEXT : ColorRole.CHROME_INACTIVE;
-        minimizeBtn.setGraphic(Ui.icon("minimize",ink));
-        maximizeBtn.setGraphic(Ui.icon(stage.isMaximized() ? "restore" : "maximize",ink));
-        closeBtn.setGraphic(Ui.icon("close",ink));
-        keyboardHint.setStyle("-fx-text-fill: "+Ui.hex(ColorRole.CHROME_INACTIVE)+"; -fx-padding: 0 8 0 8;");
+        Ui.updateIcon(minimizeBtn.getGraphic(),"minimize",ink);
+        Ui.updateIcon(maximizeBtn.getGraphic(),stage.isMaximized() ? "restore" : "maximize",ink);
+        Ui.updateIcon(closeBtn.getGraphic(),"close",ink);
+        Ui.setStyleIfChanged(bottomLine,"-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";");
+        Ui.setStyleIfChanged(keyboardHint,"-fx-text-fill: "+Ui.hex(ColorRole.CHROME_INACTIVE)+"; -fx-padding: 0 8 0 8;");
     }
 
     private final class LogoButton extends Button {
@@ -367,9 +422,10 @@ public final class WindowChrome extends HeaderBar {
 
         private void updateFocusBar() {
             if (isFocused() && keyFocused) {
-                setStyle("-fx-background-color: transparent; -fx-padding: 0; -fx-border-color: transparent transparent "+Ui.hex(ColorRole.FOCUS)+" transparent; -fx-border-width: 0 0 1 0;");
+                String px=Ui.px(Ui.hairline(Ui.scaleFor(this)));
+                Ui.setStyleIfChanged(this,"-fx-background-color: transparent; -fx-padding: 0; -fx-border-color: transparent transparent "+Ui.hex(ColorRole.FOCUS)+" transparent; -fx-border-width: 0 0 "+px+" 0;");
             } else {
-                setStyle("-fx-background-color: transparent; -fx-padding: 0;");
+                Ui.setStyleIfChanged(this,"-fx-background-color: transparent; -fx-padding: 0;");
             }
         }
     }

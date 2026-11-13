@@ -16,6 +16,7 @@ import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Cursor;
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -48,7 +49,8 @@ public final class Workspace {
         private final Layout.Split modelSplit;
         private final Node first,second;
         private final Region divider=new Region();
-        private boolean hovered;
+        private final Region seam=new Region();
+        private boolean hovered,draggingDivider;
 
         WorkspaceSplit(Workspace owner,Layout.Split split,Node first,Node second) {
             this.modelSplit=split;
@@ -57,28 +59,40 @@ public final class Workspace {
             this.userRatio=split.ratio();
             this.first=first;
             this.second=second;
+            setSnapToPixel(false);
+            divider.setPickOnBounds(true);
+            divider.setSnapToPixel(false);
+            divider.setStyle("-fx-background-color: transparent;");
             divider.setCursor(horizontal ? Cursor.H_RESIZE : Cursor.V_RESIZE);
+            seam.setManaged(false);
+            seam.setMouseTransparent(true);
+            seam.setSnapToPixel(false);
             divider.setOnMouseEntered(e -> { hovered=true; styleDivider(); });
             divider.setOnMouseExited(e -> { hovered=false; styleDivider(); });
             int[] startLoc={0};
             divider.setOnMousePressed(e -> {
                 startLoc[0]=getDividerLocation();
+                draggingDivider=true;
+                styleDivider();
             });
             divider.setOnMouseDragged(e -> {
                 Point2D local=sceneToLocal(e.getSceneX(),e.getSceneY());
                 if (local!=null) {
-                    int target=(int)Math.round(horizontal ? local.getX()-2 : local.getY()-2);
-                    owner.resizeDivider(this,target);
+                    int target=(int)Math.round(horizontal ? local.getX() : local.getY());
+                    owner.resizeDividerLive(this,target);
                 }
                 e.consume();
             });
             divider.setOnMouseReleased(e -> {
+                draggingDivider=false;
+                styleDivider();
                 if (startLoc[0]!=getDividerLocation()) {
+                    owner.changed();
                     owner.tutorialAction(horizontal ? "divider-horizontal" : "divider-vertical");
                 }
             });
             styleDivider();
-            getChildren().addAll(first,second,divider);
+            getChildren().addAll(first,second,seam,divider);
         }
 
         public boolean isHorizontal() { return horizontal; }
@@ -96,23 +110,18 @@ public final class Workspace {
         }
 
         void styleDivider() {
-            String bg=Ui.hex(ColorRole.DIVIDER_BACKGROUND);
-            String line=Ui.hex(hovered ? ColorRole.FOCUS : ColorRole.DIVIDER);
-            if (horizontal) {
-                divider.setStyle("-fx-background-color: "+bg+", "+line+"; -fx-background-insets: 0, 0 1 0 2;");
-            } else {
-                divider.setStyle("-fx-background-color: "+bg+", "+line+"; -fx-background-insets: 0, 2 0 1 0;");
-            }
+            String line=Ui.hex(hovered || draggingDivider ? ColorRole.FOCUS : ColorRole.DIVIDER);
+            Ui.setStyleIfChanged(seam,"-fx-background-color: "+line+";");
         }
 
         @Override protected double computeMinWidth(double height) {
             double a=first.minWidth(-1),b=second.minWidth(-1);
-            return horizontal ? a+b+4 : Math.max(a,b);
+            return horizontal ? a+b : Math.max(a,b);
         }
 
         @Override protected double computeMinHeight(double width) {
             double a=first.minHeight(-1),b=second.minHeight(-1);
-            return horizontal ? Math.max(a,b) : a+b+4;
+            return horizontal ? Math.max(a,b) : a+b;
         }
 
         @Override protected void layoutChildren() {
@@ -121,15 +130,55 @@ public final class Workspace {
             Rectangle[] areas=partition(modelSplit,new Rectangle(0,0,w,h),userRatio);
             first.resizeRelocate(areas[0].x,areas[0].y,areas[0].width,areas[0].height);
             second.resizeRelocate(areas[1].x,areas[1].y,areas[1].width,areas[1].height);
+            if (first instanceof Parent p) p.requestLayout();
+            if (second instanceof Parent p) p.requestLayout();
             int loc=horizontal ? areas[0].width : areas[0].height;
-            if (horizontal) divider.resizeRelocate(loc,0,4,h);
-            else divider.resizeRelocate(0,loc,w,4);
+            double s=Ui.scaleFor(this);
+            double px=Ui.hairline(s);
+            if (horizontal) {
+                Point2D sp=localToScene(loc,0);
+                double seamX=loc;
+                if (sp!=null) {
+                    double dev=Math.min(Math.max(0,Math.round(sp.getX()*s)),Math.max(0,Math.round((sp.getX()-loc+w)*s)-1));
+                    seamX=loc+(dev/s-sp.getX());
+                }
+                seam.resizeRelocate(seamX,0,px,h);
+                divider.resizeRelocate(loc-3,0,6,h);
+            } else {
+                Point2D sp=localToScene(0,loc);
+                double seamY=loc;
+                if (sp!=null) {
+                    double dev=Math.min(Math.max(0,Math.round(sp.getY()*s)),Math.max(0,Math.round((sp.getY()-loc+h)*s)-1));
+                    seamY=loc+(dev/s-sp.getY());
+                }
+                seam.resizeRelocate(0,seamY,w,px);
+                divider.resizeRelocate(0,loc-3,w,6);
+            }
+            seam.toFront();
+            divider.toFront();
         }
     }
 
     private final Stage stage;
     private final Scene scene;
-    private final BorderPane shell=new BorderPane();
+    private final Region windowTop=windowOutlineBar(),windowBottom=windowOutlineBar(),
+            windowLeft=windowOutlineBar(),windowRight=windowOutlineBar();
+    private boolean showFallbackOutline;
+    private final BorderPane shell=new BorderPane() {
+        @Override protected void layoutChildren() {
+            double s=Ui.scaleFor(this);
+            double w=getWidth(),h=getHeight();
+            double topH=0;
+            if (chrome!=null && chrome.isManaged() && chrome.isVisible()) {
+                topH=Math.min(h,Math.round(WindowChrome.HEIGHT*s)/s);
+                chrome.resizeRelocate(0,0,w,topH);
+            }
+            if (centerHost!=null) {
+                centerHost.resizeRelocate(0,topH,w,Math.max(0,h-topH));
+            }
+            layoutWindowOutline();
+        }
+    };
     private final StateStore store;
     private final CredentialStore credentials;
     private final LinkedHashMap<UUID,Profile> profiles=new LinkedHashMap<>();
@@ -156,10 +205,16 @@ public final class Workspace {
     private Appearance appearance;
     private Font terminalFont;
     private String fontNotice="";
+    private record PreviewKey(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope) {}
     private final AppShortcuts shortcuts;
     private final WindowChrome chrome;
     private final Button addPane;
+    private final Tooltip addPaneTooltip=new Tooltip("Add and connect selected profile (maximum 8)");
+    private final List<Region> chromeSeparatorBars=new ArrayList<>(2);
     private final ComboBox<Profile> addProfileSelector=new ComboBox<>();
+    private PreviewKey lastPreviewKey;
+    private boolean lastPreviewValid;
+    private long stateBuildCount;
     private boolean refreshingAdd,exportingLayout;
     private SavedLayoutsDialog layoutsDialog;
     private ApplicationWindows application;
@@ -219,6 +274,7 @@ public final class Workspace {
         logicalHeight=Math.max(260,Math.min(state.height(),screenBounds.getHeight()));
 
         shell.getStyleClass().add("fish-window-shell");
+        shell.getChildren().addAll(windowTop,windowBottom,windowLeft,windowRight);
         updateWindowOutline();
 
         menuBar=buildMenus();
@@ -246,13 +302,14 @@ public final class Workspace {
         addPane.setPrefSize(30,27);
         addPane.disableProperty().bind(addCmd.enabledProperty().not());
         addPane.setAccessibleText("Add and connect selected profile");
-        addPane.setTooltip(new Tooltip("Add and connect selected profile (maximum 8)"));
+        addPane.setTooltip(addPaneTooltip);
         addPane.setOnAction(e -> addCmd.execute());
 
         HBox tools=new HBox(2,chromeSeparator(),addProfileSelector,chromeSeparator(),addPane);
         tools.setAlignment(Pos.CENTER_LEFT);
 
         chrome=new WindowChrome(this,stage,menuBar,tools,this::toggleFlux);
+        chrome.setViewOrder(-1.0);
         shell.setTop(chrome);
 
         dropOverlay.setMouseTransparent(true);
@@ -315,21 +372,65 @@ public final class Workspace {
         stage.focusedProperty().addListener((o,a,focused) -> {
             if (focused && active!=null) active.view().restartCursor();
         });
+        stage.showingProperty().addListener((o,a,showing) -> {
+            Ui.syncSceneStylesheet(scene);
+            updateWindowOutline();
+            layoutNow();
+            if (showing) Ui.runLater(() -> {
+                Ui.syncSceneStylesheet(scene);
+                updateWindowOutline();
+                layoutNow();
+            });
+        });
+        stage.maximizedProperty().addListener((o,a,max) -> updateWindowOutline());
         stage.widthProperty().addListener((o,a,w) -> {
-            if (w.doubleValue()>0) { logicalWidth=w.doubleValue(); changed(); }
+            if (w.doubleValue()>0) { logicalWidth=w.doubleValue(); windowGeometryChanged(); }
         });
         stage.heightProperty().addListener((o,a,h) -> {
-            if (h.doubleValue()>0) { logicalHeight=h.doubleValue(); changed(); }
+            if (h.doubleValue()>0) { logicalHeight=h.doubleValue(); windowGeometryChanged(); }
         });
         Ui.onThemeChanged(themeListener);
         constrainWindow();
         layoutNow();
     }
 
-    private static Separator chromeSeparator() {
-        Separator sep=new Separator(Orientation.VERTICAL);
-        sep.setPrefSize(10,16);
-        sep.setMaxHeight(16);
+    private Separator chromeSeparator() {
+        Region bar=new Region();
+        bar.setManaged(false);
+        bar.setMouseTransparent(true);
+        bar.setSnapToPixel(false);
+        bar.getStyleClass().add("fish-chrome-separator-bar");
+        bar.setStyle("-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";");
+        chromeSeparatorBars.add(bar);
+        Separator sep=new Separator(Orientation.VERTICAL) {
+            private boolean added;
+            @Override protected void layoutChildren() {
+                super.layoutChildren();
+                for (Node child:getChildren()) {
+                    if (child!=bar) { child.setVisible(false); child.setManaged(false); }
+                }
+                if (!added) { added=true; getChildren().add(bar); }
+                double s=Ui.scaleFor(this);
+                double px=Ui.hairline(s);
+                double w=getWidth(),h=getHeight();
+                Point2D sp=localToScene(w*0.5,0);
+                double bx=(w-px)*0.5;
+                if (sp!=null) {
+                    double dev=Math.round(sp.getX()*s);
+                    bx=w*0.5+(dev/s-sp.getX());
+                }
+                double bh=Math.min(h,Math.round(14.0*s)/s);
+                double by=(h-bh)*0.5;
+                bar.resizeRelocate(bx,by,px,bh);
+            }
+        };
+        sep.getStyleClass().add("fish-chrome-separator");
+        sep.setFocusTraversable(false);
+        sep.setMouseTransparent(true);
+        sep.setSnapToPixel(false);
+        sep.setMinSize(9,16);
+        sep.setPrefSize(9,16);
+        sep.setMaxSize(9,16);
         return sep;
     }
 
@@ -379,7 +480,7 @@ public final class Workspace {
         stage.setHeight(h);
         shell.resize(w,h);
         layoutNow();
-        changed();
+        windowGeometryChanged();
     }
 
     public void layoutNow() {
@@ -594,8 +695,11 @@ public final class Workspace {
 
     public void refreshCommands() {
         commands.forEach(AppCommand::refresh);
-        if (addPane!=null) addPane.setTooltip(new Tooltip(panes.size()>=Layout.MAX_PANES ? "Eight panes open; close one before adding"
-                : "Add and connect "+Objects.toString(profiles.get(addProfile),"selected profile")));
+        if (addPane!=null) {
+            Ui.setTooltipText(addPane,addPaneTooltip,panes.size()>=Layout.MAX_PANES
+                    ? "Eight panes open; close one before adding"
+                    : "Add and connect "+Objects.toString(profiles.get(addProfile),"selected profile"));
+        }
     }
 
     private void refreshAddProfiles() {
@@ -614,6 +718,9 @@ public final class Workspace {
 
     public void themeChanged() {
         chrome.themeChanged();
+        Ui.updateIcon(addPane.getGraphic(),"plus",ColorRole.CHROME_TEXT);
+        String sepStyle="-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";";
+        for (Region bar:chromeSeparatorBars) Ui.setStyleIfChanged(bar,sepStyle);
         updateWindowOutline();
         refreshSplitStyles(tree);
         panes.values().forEach(SessionPane::themeChanged);
@@ -629,11 +736,54 @@ public final class Workspace {
         }
     }
 
+    public int paneCount() { return panes.size(); }
+
+    private static Region windowOutlineBar() {
+        Region r=new Region();
+        r.setManaged(false);
+        r.setMouseTransparent(true);
+        r.setSnapToPixel(false);
+        r.setViewOrder(-2.0);
+        r.setVisible(false);
+        return r;
+    }
+
+    private void layoutWindowOutline() {
+        boolean vis=showFallbackOutline && shell.getWidth()>0 && shell.getHeight()>0;
+        windowTop.setVisible(vis);
+        windowBottom.setVisible(vis);
+        windowLeft.setVisible(vis);
+        windowRight.setVisible(vis);
+        if (!vis) return;
+        double s=Ui.scaleFor(shell);
+        double px=Ui.hairline(s);
+        double w=shell.getWidth(),h=shell.getHeight();
+        double rightX=Math.max(0,(Math.ceil(w*s-1e-6)-1.0)/s);
+        double bottomY=Math.max(0,(Math.ceil(h*s-1e-6)-1.0)/s);
+        String style="-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";";
+        for (Region r:List.of(windowTop,windowBottom,windowLeft,windowRight)) Ui.setStyleIfChanged(r,style);
+        windowTop.resizeRelocate(0,0,rightX+px,px);
+        windowBottom.resizeRelocate(0,bottomY,rightX+px,px);
+        windowLeft.resizeRelocate(0,0,px,bottomY+px);
+        windowRight.resizeRelocate(rightX,0,px,bottomY+px);
+    }
+
     private void updateWindowOutline() {
-        shell.getStyleClass().remove("fish-window-outlined");
-        if (appearance!=null && appearance.windowOutline()) {
-            shell.getStyleClass().add("fish-window-outlined");
-        }
+        boolean wantOutline=appearance!=null && appearance.windowOutline();
+        boolean hasClass=shell.getStyleClass().contains("fish-window-outlined");
+        if (wantOutline && !hasClass) shell.getStyleClass().add("fish-window-outlined");
+        else if (!wantOutline && hasClass) shell.getStyleClass().remove("fish-window-outlined");
+
+        boolean appliedDwm=stage.isShowing() && WindowBorder.isWindows11()
+                && WindowBorder.sync(wantOutline && !stage.isMaximized());
+        boolean suppressCssBorder=stage.isMaximized() || appliedDwm;
+        boolean hasDwmClass=shell.getStyleClass().contains("fish-dwm-border");
+        if (suppressCssBorder && !hasDwmClass) shell.getStyleClass().add("fish-dwm-border");
+        else if (!suppressCssBorder && hasDwmClass) shell.getStyleClass().remove("fish-dwm-border");
+
+        showFallbackOutline=wantOutline && !suppressCssBorder;
+        layoutWindowOutline();
+        for (SessionPane p:panes.values()) p.requestLayout();
     }
 
     public void applyTheme(AppTheme theme) {
@@ -658,6 +808,14 @@ public final class Workspace {
 
     public void onClosed(Runnable action) { afterClose=action; }
     public void connectAll() { sessionPanes().forEach(SessionPane::connectOnStartup); }
+
+    public void windowGeometryChanged() {
+        if (closing || settingsBatch>0) return;
+        if (application!=null) application.scheduleSave();
+        else saveTimer.playFromStart();
+    }
+
+    public long stateBuildCountForTest() { return stateBuildCount; }
 
     public void changed() {
         if (closing) return;
@@ -708,8 +866,18 @@ public final class Workspace {
         return new WorkspaceSplit(this,split,buildComponent(split.first()),buildComponent(split.second()));
     }
 
+    void resizeDividerLive(WorkspaceSplit split,int targetLocation) {
+        if (!applyDividerLocation(split,targetLocation)) return;
+        windowGeometryChanged();
+    }
+
     public void resizeDivider(WorkspaceSplit split,int targetLocation) {
-        if (adjustingDividers || rebuildingLayout || tree==null) return;
+        if (!applyDividerLocation(split,targetLocation)) return;
+        changed();
+    }
+
+    private boolean applyDividerLocation(WorkspaceSplit split,int targetLocation) {
+        if (adjustingDividers || rebuildingLayout || tree==null) return false;
         adjustingDividers=true;
         double previousRatio=split.userRatio();
         try {
@@ -728,7 +896,7 @@ public final class Workspace {
         } finally {
             adjustingDividers=false;
         }
-        changed();
+        return true;
     }
 
     private Layout capture(Node node) {
@@ -742,6 +910,7 @@ public final class Workspace {
     public Layout currentLayout() { layout=capture(tree); return layout; }
 
     public StateStore.State state() {
+        stateBuildCount++;
         return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
                 shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings,keyboardRecovery,
                 List.of(),addProfile,savedLayouts,selectedLayout,displayState());
@@ -837,11 +1006,11 @@ public final class Workspace {
     }
 
     public static Rectangle[] partition(Layout.Split split,Rectangle r,double ratio) {
-        int length=Math.max(0,(split.horizontal() ? r.width : r.height)-4);
-        int first=Layout.firstPixels(split,(split.horizontal() ? r.width : r.height),ratio);
+        int extent=Math.max(0,split.horizontal() ? r.width : r.height);
+        int first=Layout.firstPixels(split,extent,ratio);
         Rectangle a=new Rectangle(r),b=new Rectangle(r);
-        if (split.horizontal()) { a.width=first; b.x+=first+4; b.width=length-first; }
-        else { a.height=first; b.y+=first+4; b.height=length-first; }
+        if (split.horizontal()) { a.width=first; b.x+=first; b.width=extent-first; }
+        else { a.height=first; b.y+=first; b.height=extent-first; }
         return new Rectangle[]{a,b};
     }
 
@@ -867,13 +1036,52 @@ public final class Workspace {
     }
 
     public boolean previewDock(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope) {
-        clearPreviews();
+        PreviewKey key=new PreviewKey(source,target,dock,scope);
+        if (key.equals(lastPreviewKey)) return lastPreviewValid;
         dropPlan=planDock(source,target,dock,scope);
-        if (dropPlan==null) return false;
+        lastPreviewKey=key;
+        lastPreviewValid=dropPlan!=null;
+        if (dropPlan==null) {
+            dropOverlay.setVisible(false);
+            return false;
+        }
         dropOverlay.setVisible(true);
         centerHost.requestLayout();
         paintDropOverlay();
         return true;
+    }
+
+    public DockTarget dropTargetAtScene(double sceneX,double sceneY) {
+        Point2D cp=content.sceneToLocal(sceneX,sceneY);
+        if (cp==null) return null;
+        int px=(int)Math.round(cp.getX()),py=(int)Math.round(cp.getY());
+        int cw=(int)Math.round(content.getWidth()),ch=(int)Math.round(content.getHeight());
+        if (px<0 || py<0 || px>=cw || py>=ch) return null;
+        for (SessionPane candidate:panes.values()) {
+            Point2D lp=candidate.sceneToLocal(sceneX,sceneY);
+            if (lp!=null && lp.getX()>=0 && lp.getY()>=0 && lp.getX()<=candidate.getWidth() && lp.getY()<=candidate.getHeight()) {
+                return dropTarget(candidate.id(),px,py);
+            }
+        }
+        return null;
+    }
+
+    public boolean previewDockAtScene(UUID source,double sceneX,double sceneY) {
+        DockTarget placement=dropTargetAtScene(sceneX,sceneY);
+        if (placement!=null && previewDock(source,placement.pane(),placement.dock(),placement.scope())) {
+            return true;
+        }
+        clearPreviews();
+        return false;
+    }
+
+    public boolean commitDockAtScene(UUID source,double sceneX,double sceneY) {
+        DockTarget placement=dropTargetAtScene(sceneX,sceneY);
+        if (placement!=null && planDock(source,placement.pane(),placement.dock(),placement.scope())!=null) {
+            dock(source,placement.pane(),placement.dock(),placement.scope());
+            return true;
+        }
+        return false;
     }
 
     private void paintDropOverlay() {
@@ -948,6 +1156,8 @@ public final class Workspace {
 
     public void clearPreviews() {
         dropPlan=null;
+        lastPreviewKey=null;
+        lastPreviewValid=false;
         dropOverlay.setVisible(false);
     }
 
@@ -985,7 +1195,7 @@ public final class Workspace {
         Node parent=active==null ? null : active.getParent();
         if (parent instanceof WorkspaceSplit split) {
             int before=split.getDividerLocation();
-            int length=(int)Math.round(split.isHorizontal() ? split.getWidth() : split.getHeight())-4;
+            int length=(int)Math.round(split.isHorizontal() ? split.getWidth() : split.getHeight());
             int next=(int)Math.round(length*Math.max(.05,Math.min(.95,before/(double)Math.max(1,length)+delta)));
             resizeDivider(split,next);
             if (before!=split.getDividerLocation()) tutorialAction(split.isHorizontal() ? "divider-horizontal" : "divider-vertical");

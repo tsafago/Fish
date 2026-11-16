@@ -47,7 +47,9 @@ public final class BetaRecoverySmoke {
             Decisions reset=new Decisions();
             StateStore.State fresh=WorkspaceRecovery.load(store,reset);
             check(fresh!=null && fresh.profiles().size()==1 && fresh.savedLayouts().isEmpty() && fresh.shortcuts().isEmpty()
-                    && fresh.appearance().cursorStyle()==Appearance.CursorStyle.IBM && fresh.tutorial()==StateStore.Tutorial.NEW,
+                    && fresh.appearance().cursorStyle()==Appearance.CursorStyle.OUTLINE
+                    && !fresh.appearance().reducedMotion()
+                    && fresh.tutorial()==StateStore.Tutorial.NEW,
                     "Confirmed recovery saves actual factory invariants");
             List<Path> retained=backups(directory);
             check(retained.size()==1 && Arrays.equals(bytes,Files.readAllBytes(retained.getFirst())),"Exact failed/future input is recoverable, not relabeled");

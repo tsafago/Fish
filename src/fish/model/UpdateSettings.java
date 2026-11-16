@@ -6,7 +6,7 @@ public record UpdateSettings(boolean startup, Channel channel, String ignoredVer
     public enum Channel {
         PREVIEW_PATCHES, STABLE;
         @Override public String toString() {
-            return this==PREVIEW_PATCHES ? "Preview patches (this minor version)" : "Stable releases (this major version)";
+            return this==PREVIEW_PATCHES ? "All releases (including betas)" : "Stable releases";
         }
     }
     public UpdateSettings {

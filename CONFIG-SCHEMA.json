@@ -686,11 +686,11 @@
       "title": "Host NEW LINE"
     }
   ],
-  "catalogVersion": 9,
+  "catalogVersion": 10,
   "cursorStyles": {
     "FILLED": "Filled block in both modes.",
-    "IBM": "Underline in replace mode; filled block in Insert. IBM-documented mode-aware style, not a verified ACS default.",
-    "OUTLINE": "Outline in replace mode; filled block in Insert."
+    "IBM": "Underline in replace mode; filled block in Insert. IBM-documented mode-aware style.",
+    "OUTLINE": "Outline in replace mode; filled block in Insert (default)."
   },
   "displayFields": {
     "fit": {
@@ -906,7 +906,7 @@
     },
     "appearance.cursorStyle": {
       "constraints": "Exact case-sensitive value.",
-      "default": "IBM",
+      "default": "OUTLINE",
       "type": "enum",
       "values": [
         "IBM",
@@ -917,6 +917,11 @@
     "appearance.outline": {
       "constraints": "Active-pane outline; shared internal edges have one owner.",
       "default": true,
+      "type": "boolean"
+    },
+    "appearance.reducedMotion": {
+      "constraints": "true or false; disables subtle UI micro-animations and pauses animated terminal text effects.",
+      "default": false,
       "type": "boolean"
     },
     "appearance.retired": {
@@ -1065,7 +1070,7 @@
       ]
     },
     "updates.ignoredVersion": {
-      "constraints": "Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES permits this installed major/minor only; STABLE permits non-prereleases in this installed major. Neither channel installs a new major.",
+      "constraints": "Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES selects the latest newer release (including betas) across patch, minor, and major versions; STABLE selects the latest newer non-prerelease across all versions.",
       "default": "",
       "type": "numeric-version-or-empty"
     },
@@ -1076,10 +1081,10 @@
     },
     "version": {
       "constraints": "Exact case-sensitive value.",
-      "default": "19",
+      "default": "20",
       "type": "enum",
       "values": [
-        "19"
+        "20"
       ]
     },
     "width": {
@@ -1491,7 +1496,7 @@
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.8.0 beta. Format 19 / recipe 3 retains simple pane families/cursor preferences and adds Light/Slate and vivid text choices. Formats through 18 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.7.9 or earlier requires the matching backup.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.9.0 beta. Format 20 / recipe 3 retains simple pane families/cursor preferences, adds appearance.reducedMotion, defaults fresh cursorStyle to OUTLINE, and allows updates across minor and major versions. Formats through 19 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.",
   "windowPrefix": "window.{zero-based-index}.",
-  "workspaceVersion": "19"
+  "workspaceVersion": "20"
 }

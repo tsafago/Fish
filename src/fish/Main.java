@@ -7,7 +7,7 @@ import fish.model.*;
 import fish.ui.*;
 
 public final class Main {
-    public static final String VERSION = "0.8.0";
+    public static final String VERSION = "0.9.0";
     private Main() {}
     public static void main(String[] args) {
         System.setProperty("javafx.enablePreview", "true");

@@ -188,8 +188,8 @@ public final class UpdateController implements AutoCloseable {
                 offeredChannel=requestedChannel;
                 status.setText(found.isEmpty() ? "Fish "+Main.VERSION+" is up to date in this channel."
                         : "Fish "+offered.version()+(offered.preview() ? " - experimental preview" : "")+" is available");
-                notes.markdown(found.isEmpty() ? "No newer eligible Windows x64 release. The selected channel controls eligibility.\n"
-                        +"Preview patches stay in this minor version; stable releases stay in this major version."
+                notes.markdown(found.isEmpty() ? "No newer eligible Windows x64 release in the selected channel.\n"
+                        +"All releases includes experimental betas across minor and major versions; Stable selects non-prerelease versions."
                         : "**Verified current-user update:** SHA-256 checksums and PE64 headers are verified before direct launch without Mark-of-the-Web SmartScreen prompts.\n\n"
                         +"Updates install Fish for this Windows user. Portable folders are kept; the installed copy opens afterward with this workspace.\n\n"
                         +offered.notes());

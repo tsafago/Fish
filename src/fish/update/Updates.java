@@ -85,9 +85,8 @@ public final class Updates implements AutoCloseable {
             try {
                 Release release=release(value);
                 Version version=release.version;
-                if (version.compareTo(current)<=0 || version.major!=current.major) continue;
-                if (channel==UpdateSettings.Channel.PREVIEW_PATCHES && version.minor!=current.minor) continue;
-                if (release.preview && (channel==UpdateSettings.Channel.STABLE || version.minor!=current.minor)) continue;
+                if (version.compareTo(current)<=0) continue;
+                if (release.preview && channel==UpdateSettings.Channel.STABLE) continue;
                 if (newest==null || version.compareTo(newest.version)>0
                         || version.equals(newest.version) && newest.preview && !release.preview) newest=release;
             } catch (IllegalArgumentException | ArithmeticException e) {

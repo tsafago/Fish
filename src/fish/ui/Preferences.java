@@ -27,7 +27,7 @@ public final class Preferences {
     private final ListView<String> navigation=new ListView<>(FXCollections.observableArrayList(CATEGORIES));
     private final StackPane pages=new StackPane();
     private final Map<String,Node> pageMap=new LinkedHashMap<>();
-    private final CheckBox startup,window,pane,tint,checkUpdates;
+    private final CheckBox startup,window,pane,tint,reducedMotion,checkUpdates;
     private final List<CheckBox> info=new ArrayList<>();
     private final ComboBox<Object> theme=new ComboBox<>();
     private final ComboBox<Profile> scope=new ComboBox<>();
@@ -61,9 +61,9 @@ public final class Preferences {
                 workspace.updateSettings(),workspace.shortcutOverrides());
     }
     private record Display(String palette,String effect) {}
-    private record Draft(boolean startup,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,
+    private record Draft(boolean startup,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,boolean reducedMotion,
                          Appearance.PaneInfo info,Appearance.CursorStyle cursorStyle,UpdateSettings updates,Map<String,String> keys,Map<UUID,Display> displays) {
-        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,theme,font,window,pane,tint,info,cursorStyle,updates,keys,Map.copyOf(value)); }
+        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,theme,font,window,pane,tint,reducedMotion,info,cursorStyle,updates,keys,Map.copyOf(value)); }
     }
 
     public Preferences(Workspace workspace,String category) {
@@ -75,6 +75,8 @@ public final class Preferences {
         window=new CheckBox("Show whole-window outline"); window.setSelected(a.windowOutline());
         pane=new CheckBox("Outline active pane"); pane.setSelected(a.outline());
         tint=new CheckBox("Tint active pane background"); tint.setSelected(workspace.highlightActive());
+        reducedMotion=new CheckBox("Reduce motion"); reducedMotion.setSelected(a.reducedMotion());
+        reducedMotion.setTooltip(new Tooltip("Skips subtle popup/dialog animations and pauses animated terminal text effects."));
         checkUpdates=new CheckBox("Check for updates at startup"); checkUpdates.setSelected(workspace.updateSettings().startup());
         ignored=workspace.updateSettings().ignoredVersion();
         channel.setValue(workspace.updateSettings().channel());
@@ -128,11 +130,14 @@ public final class Preferences {
         navigation.getStyleClass().add("fish-sidebar");
         navigation.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
         navigation.setFixedCellSize(34);
-        navigation.setPrefWidth(172);
+        navigation.setMinWidth(184);
+        navigation.setPrefWidth(192);
         navigation.setAccessibleText("Settings categories");
         navigation.getSelectionModel().selectedItemProperty().addListener((obs,oldV,newV) -> {
             if (newV==null) return;
             pageMap.forEach((k,node) -> { boolean match=k.equals(newV); node.setVisible(match); node.setManaged(match); });
+            Node activePage=pageMap.get(newV);
+            if (oldV!=null && activePage!=null) Ui.animateSubtle(activePage,0.65,0.0,75);
             workspace.tutorialAction("settings-"+newV);
             workspace.tutorialChanged();
             if (newV.equals("Updates")) workspace.updateController().ensureCheck();
@@ -170,7 +175,7 @@ public final class Preferences {
         startup.selectedProperty().addListener((o,oldV,newV) -> {
             if (!loading) { edited(false); workspace.tutorialAction("startup-changed"); }
         });
-        for (CheckBox cb:List.of(window,pane,tint,checkUpdates)) {
+        for (CheckBox cb:List.of(window,pane,tint,reducedMotion,checkUpdates)) {
             cb.selectedProperty().addListener((o,oldV,newV) -> edited(false));
         }
         for (int idx=0;idx<info.size();idx++) {
@@ -205,6 +210,7 @@ public final class Preferences {
     public CheckBox windowOutlineCheck() { return window; }
     public CheckBox paneOutlineCheck() { return pane; }
     public CheckBox tintCheck() { return tint; }
+    public CheckBox reducedMotionCheck() { return reducedMotion; }
     public Label errorLabel() { return error; }
     public Button reloadButton() { return reloadButton; }
     public Button retryButton() { return retryButton; }
@@ -438,7 +444,7 @@ public final class Preferences {
         body.getChildren().add(columns);
 
         body.getChildren().add(section("Window and focus"));
-        body.getChildren().addAll(window,pane,tint);
+        body.getChildren().addAll(window,pane,tint,reducedMotion);
         targets.put("outline",window);
         return body;
     }
@@ -502,7 +508,7 @@ public final class Preferences {
         settings.getChildren().addAll(
                 checkUpdates,
                 row("Update channel",channel),
-                note("Preview: patches in this minor version. Stable: releases in this major version. No downgrade, reinstall, or automatic new experimental minor."));
+                note("All releases includes experimental beta builds across minor and major versions. Stable selects non-prerelease versions across all versions. Never downgrades or reinstalls."));
         Label hidden=new Label(ignored.isEmpty() ? "No hidden version" : "Hidden on startup: "+ignored);
         Button showHidden=Ui.button("Show hidden updates",() -> {
             ignored="";
@@ -568,7 +574,7 @@ public final class Preferences {
     }
 
     private Draft draft() {
-        return new Draft(startup.isSelected(),theme.getValue(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),
+        return new Draft(startup.isSelected(),theme.getValue(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),
                 new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                         info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                 cursorStyle.getValue(),
@@ -634,7 +640,7 @@ public final class Preferences {
             Map<String,String> keys=saved.keys();
             try { keys=keyboard.draft(); }
             catch (IllegalArgumentException e) { validation=e.getMessage(); }
-            Draft next=new Draft(startup.isSelected(),theme.getValue(),font,window.isSelected(),pane.isSelected(),tint.isSelected(),
+            Draft next=new Draft(startup.isSelected(),theme.getValue(),font,window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),
                     new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                             info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                     cursorStyle.getValue(),
@@ -672,7 +678,7 @@ public final class Preferences {
             if (!next.equals(saved)) {
                 Appearance previous=workspace.appearanceSettings();
                 Appearance value=new Appearance(next.pane(),next.window(),next.info(),next.font(),
-                        next.theme() instanceof ColorTheme custom ? custom.name() : "",previous.themes(),previous.retiredShortcuts(),next.cursorStyle());
+                        next.theme() instanceof ColorTheme custom ? custom.name() : "",previous.themes(),previous.retiredShortcuts(),next.cursorStyle(),next.reducedMotion());
                 workspace.beginSettings();
                 try {
                     if (!next.keys().equals(saved.keys())) workspace.applyShortcuts(next.keys());
@@ -736,7 +742,7 @@ public final class Preferences {
             Appearance a=workspace.appearanceSettings();
             cursorStyle.setValue(a.cursorStyle());
             startup.setSelected(workspace.connectOnStartup()); window.setSelected(a.windowOutline()); pane.setSelected(a.outline());
-            tint.setSelected(workspace.highlightActive()); checkUpdates.setSelected(workspace.updateSettings().startup());
+            tint.setSelected(workspace.highlightActive()); reducedMotion.setSelected(a.reducedMotion()); checkUpdates.setSelected(workspace.updateSettings().startup());
             channel.setValue(workspace.updateSettings().channel()); ignored=workspace.updateSettings().ignoredVersion();
             loadThemes(); family.setValue(a.font().family()); fontPath.setText(a.font().file());
             Ui.markInvalid(fontPath,false);

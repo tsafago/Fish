@@ -7,7 +7,7 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="19";
+    public static final String VERSION="20";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
     public record WindowState(Layout layout,int width,int height,UUID lastProfile,UUID addProfile,Map<UUID,SavedLayout.Display> displays) {
@@ -268,7 +268,7 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18",VERSION).contains(version))
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19",VERSION).contains(version))
                 throw new IllegalArgumentException("Workspace version "+Objects.toString(version,"(missing)")+" is not supported by this Fish version. It may belong to a newer release; restore a matching backup or upgrade Fish, rather than relabeling it.");
             if (Integer.parseInt(version)<18 && properties.containsKey("appearance.cursorStyle"))
                 throw new IllegalArgumentException("Cursor style requires workspace version 18; do not relabel or downgrade it.");
@@ -350,7 +350,7 @@ public final class StateStore implements AutoCloseable {
                 String old=shortcuts.remove("Search commands...");
                 if (!old.isBlank()) retired.add(old);
                 appearance=new Appearance(appearance.outline(),appearance.windowOutline(),appearance.info(),appearance.font(),appearance.selectedTheme(),
-                        appearance.themes(),retired,appearance.cursorStyle());
+                        appearance.themes(),retired,appearance.cursorStyle(),appearance.reducedMotion());
                 notice("Commands window removed; its former shortcut is reserved until explicitly reassigned. All actions remain in menus/shortcuts.");
             }
             if (!usability) {
@@ -477,10 +477,14 @@ public final class StateStore implements AutoCloseable {
             Set<String> retired=new HashSet<>();
             for (String value:required(p,"appearance.retired").split("\n")) if (!value.isBlank()) retired.add(value);
             boolean windowOutline=!"5".equals(version) && bool(p,"appearance.windowOutline");
+            boolean reducedMotion=Integer.parseInt(version)>=20
+                    ? bool(p,"appearance.reducedMotion")
+                    : (p.containsKey("appearance.reducedMotion") && bool(p,"appearance.reducedMotion"));
             return new Appearance(bool(p,"appearance.outline"),Integer.parseInt(version)<7 || windowOutline,info,
                     new Appearance.FontChoice(required(p,"font.family"),required(p,"font.file")),
                     required(p,"appearance.selected"),themes,retired,Integer.parseInt(version)>=18
-                            ? Appearance.CursorStyle.valueOf(required(p,"appearance.cursorStyle")) : Appearance.CursorStyle.IBM);
+                            ? Appearance.CursorStyle.valueOf(required(p,"appearance.cursorStyle")) : Appearance.CursorStyle.IBM,
+                    reducedMotion);
     }
 
     private static String required(Properties properties, String key) {
@@ -541,6 +545,7 @@ public final class StateStore implements AutoCloseable {
         Appearance a=state.appearance;
         properties.setProperty("appearance.outline",Boolean.toString(a.outline()));
         properties.setProperty("appearance.windowOutline",Boolean.toString(a.windowOutline()));
+        properties.setProperty("appearance.reducedMotion",Boolean.toString(a.reducedMotion()));
         properties.setProperty("appearance.cursorStyle",a.cursorStyle().name());
         properties.setProperty("font.family",a.font().family()); properties.setProperty("font.file",a.font().file());
         properties.setProperty("appearance.selected",a.selectedTheme());

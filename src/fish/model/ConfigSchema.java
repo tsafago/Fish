@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",9); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",10); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -40,12 +40,13 @@ public final class ConfigSchema {
         fields.put("connectOnStartup",field("boolean",true,"Ordinary restored-window startup only. New/factory default on; existing off stays off. Explicit Add, New window, Restore profile layout and --layout connect their intended panes once asynchronously even when off. No automatic retries after failure/disconnect; incomplete login stays offline with Reconnect guidance. Kerberos still requires IBM i/domain setup."));
         fields.put("updates.startup",field("boolean",true,"Bounded nonblocking public GitHub release check. Errors stay quiet on startup. Download/install always requires explicit consent."));
         fields.put("updates.channel",enumeration("PREVIEW_PATCHES",Arrays.stream(UpdateSettings.Channel.values()).map(Enum::name).toList()));
-        fields.put("updates.ignoredVersion",field("numeric-version-or-empty","","Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES permits this installed major/minor only; STABLE permits non-prereleases in this installed major. Neither channel installs a new major."));
+        fields.put("updates.ignoredVersion",field("numeric-version-or-empty","","Exact X.Y.Z hidden only from startup notices; future versions notify again. Manual checks ignore this preference. PREVIEW_PATCHES selects the latest newer release (including betas) across patch, minor, and major versions; STABLE selects the latest newer non-prerelease across all versions."));
         fields.put("appearance.outline",field("boolean",true,"Active-pane outline; shared internal edges have one owner."));
         fields.put("appearance.windowOutline",field("boolean",true,"true or false; optional 1px whole-window perimeter outline."));
-        fields.put("appearance.cursorStyle",enumeration("IBM",Arrays.stream(Appearance.CursorStyle.values()).map(Enum::name).toList()));
-        root.put("cursorStyles",Map.of("IBM","Underline in replace mode; filled block in Insert. IBM-documented mode-aware style, not a verified ACS default.",
-                "OUTLINE","Outline in replace mode; filled block in Insert.","FILLED","Filled block in both modes."));
+        fields.put("appearance.reducedMotion",field("boolean",false,"true or false; disables subtle UI micro-animations and pauses animated terminal text effects."));
+        fields.put("appearance.cursorStyle",enumeration("OUTLINE",Arrays.stream(Appearance.CursorStyle.values()).map(Enum::name).toList()));
+        root.put("cursorStyles",Map.of("IBM","Underline in replace mode; filled block in Insert. IBM-documented mode-aware style.",
+                "OUTLINE","Outline in replace mode; filled block in Insert (default).","FILLED","Filled block in both modes."));
         fields.put("appearance.selected",field("text","","Empty for builtin appTheme, otherwise exact custom theme name."));
         fields.put("appearance.themes",field("integer",0,"0..32; all theme indices 0 through count-1 must be complete."));
         fields.put("appearance.retired",field("newline-separated-strokes","ctrl alt K","Former reserved shortcuts; only valid non-typing application strokes."));
@@ -107,7 +108,7 @@ public final class ConfigSchema {
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
         root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-17.");
-        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.8.0 beta. Format 19 / recipe 3 retains simple pane families/cursor preferences and adds Light/Slate and vivid text choices. Formats through 18 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.7.9 or earlier requires the matching backup.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.9.0 beta. Format 20 / recipe 3 retains simple pane families/cursor preferences, adds appearance.reducedMotion, defaults fresh cursorStyle to OUTLINE, and allows updates across minor and major versions. Formats through 19 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.");
         root.put("startupRecovery","Unreadable/unsupported workspaces offer Exit, bounded explicit Retry and confirmed factory recovery under the exclusive workspace lock. Recovery first preserves the exact original workspace-recovery-UUID.xml; credentials/fonts/other files stay untouched. A future version may require upgrading Fish, not resetting.");
         root.put("settingsPersistence","Valid discrete settings apply in the interaction before coalesced asynchronous disk writes. Typing validates after a short pause; incomplete/conflicting groups remain editable. Saved acknowledges the current generation's disk write; failures retain Retry recovery. Creation/credentials/destruction/exports stay explicit.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",

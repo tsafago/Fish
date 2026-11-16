@@ -129,8 +129,18 @@ public class TerminalView extends Region {
     private Runnable scrollRevealCallback;
 
     private static final float[] FLUX_STOPS={0,.2f,.4f,.6f,.8f,1};
+    private static final Set<TerminalView> ALL_VIEWS=Collections.newSetFromMap(new WeakHashMap<>());
     private static final Set<TerminalView> ANIMATED=new HashSet<>();
     private static final Timeline ANIMATION=createFluxTimeline();
+    static {
+        Runnable syncMotion=() -> {
+            for (TerminalView view:new ArrayList<>(ALL_VIEWS)) view.updateAnimation();
+        };
+        Ui.onMotionChanged(() -> {
+            if (javafx.application.Platform.isFxApplicationThread()) syncMotion.run();
+            else Ui.runLater(syncMotion);
+        });
+    }
 
     private static Timeline createFluxTimeline() {
         Timeline t=new Timeline(new KeyFrame(Duration.millis(50),event -> {
@@ -150,6 +160,7 @@ public class TerminalView extends Region {
 
     public TerminalView(SessionPane pane) {
         this.pane=pane;
+        ALL_VIEWS.add(this);
         fontChanged();
         surface.setSmooth(false);
         surface.setManaged(false);
@@ -435,7 +446,7 @@ public class TerminalView extends Region {
     }
 
     private boolean canAnimate() {
-        return isTerminalShowing() && pane.connected() && pane.profile().effect().equals(Profile.FLUX);
+        return !Ui.reducedMotion() && isTerminalShowing() && pane.connected() && pane.profile().effect().equals(Profile.FLUX);
     }
 
     private static double fluxTime() {

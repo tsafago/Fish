@@ -155,11 +155,11 @@ public final class SettingsTutorialSmoke {
         check(visible==0,"No top-level Settings button");
         WindowChrome chrome=(WindowChrome)field(w,"chrome");
         HBox tools=(HBox)field(chrome,"tools");
-        check(tools.getChildren().size()==4 && tools.getChildren().get(0) instanceof Separator
-                && tools.getChildren().get(1) instanceof ComboBox<?> && tools.getChildren().get(2) instanceof Separator
-                && tools.getChildren().get(3) instanceof Button addBtn
+        check(tools.getChildren().size()==3
+                && tools.getChildren().get(0) instanceof ComboBox<?> && tools.getChildren().get(1) instanceof Separator
+                && tools.getChildren().get(2) instanceof Button addBtn
                 && addBtn.getProperties().get("fish.command") instanceof AppCommand cmd && cmd.title.equals("Add pane"),
-                "Only profile/+ group follows all menus before reserved drag space and window controls");
+                "Only profile/+ split-pill follows all menus without a leading separator before reserved drag space and window controls");
         check(menus.getMenus().get(1).getItems().stream()
                 .filter(item -> item.getProperties().get("fish.command") instanceof AppCommand action && action.title.equals(Shortcuts.SETTINGS)).count()==1,
                 "Exactly one Edit Settings entry");

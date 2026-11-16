@@ -36,6 +36,9 @@ public final class Ui {
     private static final Set<Stage> STAGES = Collections.newSetFromMap(new WeakHashMap<>());
     private static final Set<Window> SCALED_WINDOWS = Collections.newSetFromMap(new WeakHashMap<>());
     private static final List<Runnable> THEME_LISTENERS = new CopyOnWriteArrayList<>();
+    private static final List<Runnable> MOTION_LISTENERS = new CopyOnWriteArrayList<>();
+    private static volatile boolean reducedMotion;
+    private static boolean popupAnimationsInstalled;
 
     private Ui() {}
 
@@ -248,7 +251,95 @@ public final class Ui {
     public static void onThemeChanged(Runnable listener) { THEME_LISTENERS.add(listener); }
     public static void removeThemeListener(Runnable listener) { THEME_LISTENERS.remove(listener); }
 
+    public static boolean reducedMotion() { return reducedMotion; }
+    public static void onMotionChanged(Runnable listener) { MOTION_LISTENERS.add(listener); }
+    public static void setReducedMotion(boolean value) {
+        boolean changed = reducedMotion != value;
+        reducedMotion = value;
+        if (value && FxBoot.fxStarted && Platform.isFxApplicationThread()) {
+            for (Window w : Window.getWindows()) {
+                if (w.getScene() != null) resetMotion(w.getScene().getRoot());
+            }
+        }
+        if (changed) {
+            for (Runnable listener : MOTION_LISTENERS) listener.run();
+        }
+    }
+
+    public static boolean canAnimate(Node node) {
+        return !reducedMotion && node != null
+                && node.getScene() != null
+                && node.getScene().getWindow() != null
+                && node.getScene().getWindow().isShowing();
+    }
+
+    public static void resetMotion(Node node) {
+        if (node == null) return;
+        if (node.getProperties().remove("fish.motionAnim") instanceof javafx.animation.Animation running) {
+            running.stop();
+        }
+        node.setOpacity(1.0);
+        node.setTranslateY(0.0);
+    }
+
+    public static void animateSubtle(Node node, double fromOpacity, double fromTranslateY, double durationMs) {
+        if (node == null) return;
+        if (node.getProperties().remove("fish.motionAnim") instanceof javafx.animation.Animation running) {
+            running.stop();
+        }
+        if (!canAnimate(node)) {
+            node.setOpacity(1.0);
+            node.setTranslateY(0.0);
+            return;
+        }
+        node.setOpacity(fromOpacity);
+        node.setTranslateY(fromTranslateY);
+        javafx.animation.Timeline timeline = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.millis(durationMs),
+                        new javafx.animation.KeyValue(node.opacityProperty(), 1.0, javafx.animation.Interpolator.EASE_OUT),
+                        new javafx.animation.KeyValue(node.translateYProperty(), 0.0, javafx.animation.Interpolator.EASE_OUT)));
+        timeline.setOnFinished(e -> {
+            node.setOpacity(1.0);
+            node.setTranslateY(0.0);
+            node.getProperties().remove("fish.motionAnim", timeline);
+        });
+        node.getProperties().put("fish.motionAnim", timeline);
+        timeline.play();
+    }
+
+    private static void installPopupAnimations() {
+        if (popupAnimationsInstalled || !Platform.isFxApplicationThread()) return;
+        popupAnimationsInstalled = true;
+        java.util.function.Consumer<Window> attach = w -> {
+            if (w instanceof PopupControl popup && !(popup instanceof Tooltip)
+                    && popup.getProperties().putIfAbsent("fish.popupMotion", Boolean.TRUE) == null) {
+                popup.addEventHandler(WindowEvent.WINDOW_SHOWN, e -> {
+                    if (popup.getScene() != null) {
+                        syncSceneStylesheet(popup.getScene());
+                        animateSubtle(popup.getScene().getRoot(), 0.0, -2.5, 80);
+                    }
+                });
+                popup.addEventHandler(WindowEvent.WINDOW_HIDDEN, e -> {
+                    if (popup.getScene() != null) resetMotion(popup.getScene().getRoot());
+                });
+                if (popup.isShowing() && popup.getScene() != null) {
+                    syncSceneStylesheet(popup.getScene());
+                    animateSubtle(popup.getScene().getRoot(), 0.0, -2.5, 80);
+                }
+            }
+        };
+        for (Window w : Window.getWindows()) attach.accept(w);
+        Window.getWindows().addListener((javafx.collections.ListChangeListener<Window>) change -> {
+            while (change.next()) {
+                if (change.wasAdded()) {
+                    for (Window w : change.getAddedSubList()) attach.accept(w);
+                }
+            }
+        });
+    }
+
     public static void registerStage(Stage stage) {
+        installPopupAnimations();
         STAGES.add(stage);
         stage.getIcons().setAll(FishIcon.fxImages());
     }
@@ -337,6 +428,7 @@ public final class Ui {
     }
 
     public static Scene styleScene(Scene scene) {
+        installPopupAnimations();
         SCENES.add(scene);
         scene.setFill(fxColor(ColorRole.BACKGROUND));
         syncSceneStylesheet(scene);
@@ -765,11 +857,23 @@ public final class Ui {
             .menu-item:focused > .label, .menu-item:hover > .label {
                 -fx-text-fill: -fish-menu-selected-text;
             }
+            .menu-item > .accelerator-text,
+            .menu-item:focused > .accelerator-text,
+            .menu-item:hover > .accelerator-text {
+                -fx-text-fill: -fish-muted;
+                -fx-font-size: 11px;
+                -fx-padding: 0 0 0 22;
+            }
             .menu-item:disabled {
                 -fx-opacity: 1.0;
             }
             .menu-item:disabled > .label {
                 -fx-text-fill: -fish-disabled;
+            }
+            .menu-item:disabled > .accelerator-text {
+                -fx-text-fill: -fish-disabled;
+                -fx-font-size: 11px;
+                -fx-padding: 0 0 0 22;
             }
             .separator > .line {
                 -fx-border-color: -fish-divider transparent transparent transparent;
@@ -815,7 +919,10 @@ public final class Ui {
             .fish-sidebar .list-cell {
                 -fx-background-color: transparent;
                 -fx-background-radius: 5;
-                -fx-padding: 7 12 7 12;
+                -fx-min-height: 32;
+                -fx-pref-height: 32;
+                -fx-padding: 0 12 0 12;
+                -fx-alignment: center-left;
             }
             .fish-sidebar .list-cell:filled:hover {
                 -fx-background-color: -fish-hover;
@@ -823,11 +930,7 @@ public final class Ui {
             .fish-sidebar .list-cell:filled:selected {
                 -fx-background-color: -fish-selection;
                 -fx-background-radius: 5;
-                -fx-border-color: transparent transparent transparent -fish-focus;
-                -fx-border-width: 0 0 0 2.5;
-                -fx-border-insets: 6 0 6 0;
                 -fx-text-fill: -fish-selection-text;
-                -fx-font-weight: bold;
             }
             .fish-settings-footer {
                 -fx-border-color: -fish-divider transparent transparent transparent;
@@ -882,6 +985,16 @@ public final class Ui {
             }
             .scroll-pane > .viewport {
                 -fx-background-color: transparent;
+            }
+            .fish-markdown-view.scroll-pane {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, __PX__;
+                -fx-background-radius: 4, 3;
+                -fx-padding: __PX__;
+            }
+            .fish-markdown-view.scroll-pane > .viewport {
+                -fx-background-color: -fish-field;
+                -fx-background-radius: 3;
             }
             .scroll-bar {
                 -fx-background-color: -fish-panel;
@@ -1193,6 +1306,8 @@ public final class Ui {
                 shell.getStyleClass().remove("fish-dwm-border");
             }
         });
+        dialog.addEventHandler(WindowEvent.WINDOW_SHOWN, e -> animateSubtle(shell, 0.0, 3.0, 90));
+        dialog.addEventHandler(WindowEvent.WINDOW_HIDDEN, e -> resetMotion(shell));
         shell.applyCss();
         return scene;
     }

@@ -86,9 +86,10 @@ try {
             if (-not $Quiet) { Write-Host 'Downloading latest verified Fish portable release from GitHub...' }
             $tempExtract = Join-Path ([IO.Path]::GetTempPath()) ('Fish-install-' + [guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Force -Path $tempExtract | Out-Null
-            $releaseJson = & curl.exe --fail --location --silent --show-error 'https://api.github.com/repos/tsafago/Fish/releases/latest' | Out-String
-            if ($LASTEXITCODE -ne 0 -or -not $releaseJson) { throw 'Could not query GitHub releases. Build locally with .\Setup-Fish.ps1 or pass -Source.' }
-            $release = $releaseJson | ConvertFrom-Json
+            $releasesJson = & curl.exe --fail --location --silent --show-error 'https://api.github.com/repos/tsafago/Fish/releases?per_page=10' | Out-String
+            if ($LASTEXITCODE -ne 0 -or -not $releasesJson) { throw 'Could not query GitHub releases. Build locally with .\Setup-Fish.ps1 or pass -Source.' }
+            $release = @($releasesJson | ConvertFrom-Json) | Where-Object { -not $_.draft } | Select-Object -First 1
+            if (-not $release) { throw 'No published GitHub release found for tsafago/Fish.' }
             $zipAsset = $release.assets | Where-Object { $_.name -match '^Fish-.*-windows-x64\.zip$' } | Select-Object -First 1
             $sumAsset = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' } | Select-Object -First 1
             if (-not $zipAsset -or -not $sumAsset) { throw 'Latest GitHub release is missing portable ZIP or SHA256SUMS.txt.' }
@@ -144,7 +145,7 @@ try {
     }
 
     $version = (Get-Item -LiteralPath $targetExe).VersionInfo.ProductVersion
-    if (-not $version) { $version = '0.8.0' }
+    if (-not $version) { $version = '0.9.0' }
     $sizeBytes = (Get-ChildItem -LiteralPath $targetDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
     $sizeKb = [int][Math]::Ceiling($sizeBytes / 1024.0)
     $uninstallScript = Join-Path $targetDir 'Uninstall-Fish.ps1'

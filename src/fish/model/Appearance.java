@@ -4,7 +4,7 @@ import java.util.*;
 
 /** Workspace-wide appearance; profiles retain their host palette and effect. */
 public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
-                         Set<String> retiredShortcuts,CursorStyle cursorStyle) {
+                         Set<String> retiredShortcuts,CursorStyle cursorStyle,boolean reducedMotion) {
     public enum CursorStyle {
         IBM("Underline / filled Insert"),OUTLINE("Outline / filled Insert"),FILLED("Filled");
         private final String label;
@@ -12,8 +12,12 @@ public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,Fon
         @Override public String toString() { return label; }
     }
     public Appearance(boolean outline,boolean windowOutline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
+                      Set<String> retiredShortcuts,CursorStyle cursorStyle) {
+        this(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,cursorStyle,false);
+    }
+    public Appearance(boolean outline,boolean windowOutline,PaneInfo info,FontChoice font,String selectedTheme,List<ColorTheme> themes,
                       Set<String> retiredShortcuts) {
-        this(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,CursorStyle.IBM);
+        this(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,CursorStyle.OUTLINE,false);
     }
     public record PaneInfo(boolean header,boolean footer,boolean profile,boolean connection,
                            boolean host,boolean device,boolean status,boolean dimensions,boolean cursor,boolean insert,boolean footerDevice) {
@@ -42,10 +46,11 @@ public record Appearance(boolean outline,boolean windowOutline,PaneInfo info,Fon
     public static Appearance defaults() {
         return new Appearance(true,true,PaneInfo.defaults(),FontChoice.defaults(),"",List.of(),Set.of("ctrl alt K"));
     }
-    public Appearance withTheme(String selected,List<ColorTheme> values) { return new Appearance(outline,windowOutline,info,font,selected,values,retiredShortcuts,cursorStyle); }
-    public Appearance withLayout(boolean border,PaneInfo values) { return new Appearance(border,windowOutline,values,font,selectedTheme,themes,retiredShortcuts,cursorStyle); }
-    public Appearance withWindowOutline(boolean value) { return new Appearance(outline,value,info,font,selectedTheme,themes,retiredShortcuts,cursorStyle); }
-    public Appearance withFont(FontChoice value) { return new Appearance(outline,windowOutline,info,value,selectedTheme,themes,retiredShortcuts,cursorStyle); }
-    public Appearance withCursorStyle(CursorStyle value) { return new Appearance(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,value); }
+    public Appearance withTheme(String selected,List<ColorTheme> values) { return new Appearance(outline,windowOutline,info,font,selected,values,retiredShortcuts,cursorStyle,reducedMotion); }
+    public Appearance withLayout(boolean border,PaneInfo values) { return new Appearance(border,windowOutline,values,font,selectedTheme,themes,retiredShortcuts,cursorStyle,reducedMotion); }
+    public Appearance withWindowOutline(boolean value) { return new Appearance(outline,value,info,font,selectedTheme,themes,retiredShortcuts,cursorStyle,reducedMotion); }
+    public Appearance withFont(FontChoice value) { return new Appearance(outline,windowOutline,info,value,selectedTheme,themes,retiredShortcuts,cursorStyle,reducedMotion); }
+    public Appearance withCursorStyle(CursorStyle value) { return new Appearance(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,value,reducedMotion); }
+    public Appearance withReducedMotion(boolean value) { return new Appearance(outline,windowOutline,info,font,selectedTheme,themes,retiredShortcuts,cursorStyle,value); }
     public Optional<ColorTheme> custom() { return themes.stream().filter(t -> t.name().equals(selectedTheme)).findFirst(); }
 }

@@ -67,15 +67,34 @@ public final class AppCommand {
         item.setOnAction(e -> execute());
         return item;
     }
+    static final class DisplayAccelerator extends javafx.scene.input.KeyCombination {
+        private final MenuItem owner;
+        private final String display;
+        DisplayAccelerator(MenuItem owner,String display) {
+            this.owner=owner;
+            this.display=Objects.requireNonNull(display);
+        }
+        @Override public boolean match(javafx.scene.input.KeyEvent event) { return false; }
+        @Override public String getDisplayText() { return display; }
+        @Override public String getName() { return display; }
+        @Override public boolean equals(Object obj) {
+            return obj instanceof DisplayAccelerator other && owner==other.owner && display.equals(other.display);
+        }
+        @Override public int hashCode() {
+            return System.identityHashCode(owner)*31+display.hashCode();
+        }
+    }
+
     private void bindMenuItem(MenuItem item,String displayText) {
         item.getProperties().put("fish.command",this);
         item.getProperties().put("fish.title",title);
         item.disableProperty().bind(enabled.not());
-        Runnable updateText=() -> {
+        item.setText(displayText);
+        Runnable updateAccel=() -> {
             String accel=primaryShortcut.get();
-            item.setText(accel.isEmpty() ? displayText : displayText+"   "+accel);
+            item.setAccelerator(accel.isEmpty() ? null : new DisplayAccelerator(item,accel));
         };
-        primaryShortcut.addListener((obs,oldV,newV) -> updateText.run());
-        updateText.run();
+        primaryShortcut.addListener((obs,oldV,newV) -> updateAccel.run());
+        updateAccel.run();
     }
 }

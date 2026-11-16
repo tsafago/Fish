@@ -1,7 +1,7 @@
 # Fish manual
 
-Fish 0.8.0 BETA - unsigned experimental prerelease, including accepted cursor/usability/simple-pane work.
-Earlier images/releases remain unchanged. This build requires a format-18 workspace;
+Fish 0.9.0 BETA - unsigned experimental prerelease, including accepted cursor/usability/simple-pane work.
+Earlier images/releases remain unchanged. This build writes a format-20 workspace;
 close all Fish windows and back up workspace.xml before first launch.
 
 Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
@@ -46,9 +46,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.8.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.8.0) includes Fish-0.8.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
+The public [v0.9.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.9.0) includes Fish-0.9.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
 
-Alternatively, extract the matching Fish-0.8.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.9.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 For SmartScreen-free per-user installation without administrator privileges, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1` from a portable folder or release directory (or choose **Edit > Settings > General > Install for current user...** directly inside a portable Fish launch). Both install into `%LOCALAPPDATA%\Programs\Fish`, strip Internet `Zone.Identifier` streams on hash/source-verified files, create Start Menu and optional Desktop `.lnk` shortcuts, and register Fish under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish` (`Uninstall-Fish.ps1` removes the installation while keeping `%APPDATA%\Fish\workspace.xml` and saved Windows credentials).
 
@@ -64,15 +64,15 @@ The script obtains checksum-pinned portable JDK 25, OpenJFX 25, Zig and WiX tool
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs use 0.8.0 names. The final side-by-side image is at dist\Fish-0.8.0\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
+Default build outputs use 0.9.0 names. The final side-by-side image is at dist\Fish-0.9.0\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.8.0\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.8.0\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.9.0\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.9.0\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -81,15 +81,15 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish; a custom --data-dir takes precedence.
-The next save writes configuration version 19 with cursor style, simple layouts, expanded palettes and recipe version 3. Catalog version is 9.
-Older binaries, including local 0.7.8, cannot read it:
+The next save writes configuration version 20 with cursor style, reduced-motion preference, simple layouts, expanded palettes and recipe version 3. Catalog version is 10.
+Older binaries, including 0.8.0, cannot read it:
 keep the matching pre-upgrade backup for downgrade. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
 Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
 
-Older workspaces migrate to version 19, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Existing version-18 cursor preferences remain; earlier formats initialize underline replace / filled Insert. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; supported shapes and reasonable ratios are unchanged. Format 14 gains an empty recipe library and initializes each window's selector from its last profile. Prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.7.9 and earlier require that backup for downgrade. Format 12 bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, exact keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD. Malformed/future state is preserved unless you explicitly confirm startup factory recovery.
+Older workspaces migrate to version 20, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Existing version-18/19 cursor preferences remain; earlier formats initialize underline replace / filled Insert, while fresh workspaces default to Outline / filled Insert. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; supported shapes and reasonable ratios are unchanged. Format 14 gains an empty recipe library and initializes each window's selector from its last profile. Prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.8.0 and earlier require that backup for downgrade. Format 12 bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, exact keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD. Malformed/future state is preserved unless you explicitly confirm startup factory recovery.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 
@@ -99,7 +99,7 @@ Settings > Updates checks the public tsafago/Fish GitHub releases over HTTPS wit
 
 A nonblocking startup check is on by default. Offline/rate-limit failures stay quiet; manual checks show errors and Check again. The small startup notice offers Update, X and Hide version. X only dismisses this notice. Hide remembers that exact version; future eligible versions can notify again, and manual checks still show hidden versions.
 
-Settings > Updates has the actual check/download controls and safely rendered release Markdown; there is no second update-settings launcher in Help. Preview patches stays in the running version's minor (0.8.x for this beta); Stable excludes previews and accepts stable minors within this major. Existing 0.7.x binaries cannot discover v0.8.0 beta through their same-minor preview policy: manually download this release for the first upgrade. No channel silently enters another major or experimental minor. Show hidden updates saves the cleared ignore choice automatically. Checks use the displayed channel and include hidden versions; downloading requires fully saved, valid settings and a check matching that channel.
+Settings > Updates has the actual check/download controls and live-themed release Markdown; there is no second update-settings launcher in Help. All releases (including betas) selects the latest newer release across all patch, minor and major versions; Stable releases excludes previews and accepts any newer stable patch, minor or major release. Show hidden updates saves the cleared ignore choice automatically. Checks use the displayed channel and include hidden versions; downloading requires fully saved, valid settings and a check matching that channel.
 
 Update opens the version, release notes and repository link. One explicit confirmation authorizes download, saving every window and ending ALL this workspace's sessions before setup. A check alone never closes any window. A download can be cancelled while Fish remains open. Save/launch failure leaves every window open and re-enabled, with an error and retry. Setup waits for the owning Fish process to exit and refuses to replace an installation still in use; it never kills processes. Independent owners using another data directory must still close their own installation files.
 
@@ -481,7 +481,7 @@ Settings > Appearance changes the complete application theme: Charcoal, Graphite
 
 Application themes are independent of host palettes. OLED themes use true-black terminal and chrome surfaces. High-contrast choices favor explicit boundaries and strong foreground contrast; Windows' own accessibility settings may also affect system-owned menus and installers.
 
-Settings > Appearance controls whole-pane tint, active-pane outline and the separate default-on whole-window outline. Valid changes apply/save automatically; Close keeps them. All enabled outlines use the shared one-physical-pixel Divider color; shared dividers/titlebar edges are never duplicated by a pane outline. Focusing a pane never changes its layout insets. Pane close is independent of every header information choice: with no header content it becomes an upper-right overlay, without reserving space or overlapping Reset.
+Settings > Appearance controls whole-pane tint, active-pane outline, the separate default-on whole-window outline, and Reduce motion. When Reduce motion is off (default), menus, popups, dialogs and transient notices use subtle sub-90 ms transitions while panes and dividers remain instantaneous; enabling Reduce motion disables UI transitions and pauses Flux animation. Valid changes apply/save automatically; Close keeps them. All enabled outlines use the shared one-physical-pixel Divider color; shared dividers/titlebar edges are never duplicated by a pane outline. Focusing a pane never changes its layout insets. Pane close is independent of every header information choice: with no header content it becomes an upper-right overlay, without reserving space or overlapping Reset.
 
 Settings theme choices apply/save automatically. Configured direct preset shortcuts and the logo's Flux action remain immediate. Neither reconnects sessions or alters host dimensions.
 
@@ -514,9 +514,8 @@ terminal focus, switching panes/windows, Reset and Insert restart the cursor
 visibly for a full 550 ms on interval. Normal blinking resumes afterward. Insert
 fills the complete physical cell and redraws its glyph in a contrasting color,
 without revealing non-display/blink-off text or changing font weight.
-Settings > Appearance > Cursor style defaults to **Underline / filled Insert**.
-**Outline / filled Insert** uses a box in replace mode; **Filled** uses a block in
-both modes. All changes apply and save automatically across windows.
+Settings > Appearance > Cursor style defaults to **Outline / filled Insert** (box in replace mode, solid block in Insert mode).
+**Underline / filled Insert** and **Filled** (block in both modes) remain available. All changes apply and save automatically across windows.
 IBM documents underline-replace/block-insert for its Linux 5250 emulator
 ([emulator resources](https://www.ibm.com/docs/en/i/7.1.0?topic=emulation-emulator-resources));
 this is IBM-style behavior, not a demonstrated ACS factory default.

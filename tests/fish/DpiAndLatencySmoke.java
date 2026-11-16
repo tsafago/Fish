@@ -112,6 +112,7 @@ public final class DpiAndLatencySmoke {
                 verifyClickInPaneFocusCursorAndImmediateInput(workspace);
                 verifyTutorialsHighlightAndPositioning(workspace);
                 verifySmoothCrispContinuousResize(workspace);
+                verifyPolish090Features(workspace, root);
             } finally {
                 fx(() -> {
                     Ui.setScaleOverride(0);
@@ -125,9 +126,9 @@ public final class DpiAndLatencySmoke {
             Ui.setScaleOverride(0);
             FxTestSupport.closeAllWindows();
             FxTestSupport.deleteTree(root);
+            Ui.finishTestRun();
         }
-        System.out.println("PASS DPI & latency: " + checks + " 1px-border, 150%-scanline, 0px-shift, and latency checks.");
-        Ui.finishTestRun();
+        System.out.println("PASS DPI & latency: " + checks + " 1px-border, 150%-scanline, 0px-shift, 0.9.0 polish, and latency checks.");
     }
 
     private static void verifyStrictOnePixelBordersAndUnderlines(
@@ -161,10 +162,10 @@ public final class DpiAndLatencySmoke {
                 assertSinglePixelHorizontalTransition(snap, probeX, chromeBotDev,
                         "WindowChrome bottom border (" + label + "@" + scale + "x)");
 
-                // 2. WindowChrome vertical toolbar separators: strictly 1 physical pixel each.
+                // 2. WindowChrome split-pill join separator: strictly 1 physical pixel, with no separator before Profile selector.
                 @SuppressWarnings("unchecked")
                 List<Region> sepBars = (List<Region>) FxTestSupport.field(w, "chromeSeparatorBars");
-                check(sepBars.size() == 2, "Workspace has two chrome separator hairlines.");
+                check(sepBars.size() == 1, "Workspace has only the single split-pill join separator hairline.");
                 for (int i = 0; i < sepBars.size(); i++) {
                     Region bar = sepBars.get(i);
                     Bounds bs = bar.localToScene(bar.getBoundsInLocal());
@@ -867,5 +868,313 @@ public final class DpiAndLatencySmoke {
             FxTestSupport.layout(w);
             return null;
         });
+    }
+
+    private static void verifyPolish090Features(Workspace w, Path root) throws Exception {
+        // 5. Default CursorStyle is OUTLINE ("Outline / filled Insert") and reducedMotion defaults to false.
+        check(Appearance.defaults().cursorStyle() == Appearance.CursorStyle.OUTLINE,
+                "Fresh Appearance.defaults().cursorStyle() is CursorStyle.OUTLINE.");
+        check(!Appearance.defaults().reducedMotion(),
+                "Fresh Appearance.defaults().reducedMotion() is false.");
+
+        // 3a. Updates.select allows cross-minor and cross-major updates cleanly.
+        String sampleReleasesJson = fish.model.ConfigSchema.json(List.of(
+                fish.update.MaintenanceSmoke.release("0.9.0", true),
+                fish.update.MaintenanceSmoke.release("0.10.2", false),
+                fish.update.MaintenanceSmoke.release("1.3.0", false),
+                fish.update.MaintenanceSmoke.release("2.0.0", true)));
+        byte[] sampleBytes = sampleReleasesJson.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        var currentVer = fish.update.Updates.Version.parse("0.9.0");
+        var allSelected = fish.update.Updates.select(sampleBytes, currentVer, fish.model.UpdateSettings.Channel.PREVIEW_PATCHES);
+        check(allSelected.isPresent() && allSelected.get().version().equals(fish.update.Updates.Version.parse("2.0.0")),
+                "PREVIEW_PATCHES ('All releases (including betas)') selects 2.0.0 across major versions.");
+        var stableSelected = fish.update.Updates.select(sampleBytes, currentVer, fish.model.UpdateSettings.Channel.STABLE);
+        check(stableSelected.isPresent() && stableSelected.get().version().equals(fish.update.Updates.Version.parse("1.3.0")),
+                "STABLE ('Stable releases') selects 1.3.0 across major versions while skipping 2.0.0 preview.");
+
+        // 6a. StateStore format 20 round-trips reducedMotion=true and migrates format 19 cleanly.
+        Path rmDir = Files.createDirectory(root.resolve("rm-store"));
+        try (StateStore rmStore = new StateStore(rmDir)) {
+            StateStore.State s0 = rmStore.load();
+            check(s0.appearance().cursorStyle() == Appearance.CursorStyle.OUTLINE && !s0.appearance().reducedMotion(),
+                    "Fresh StateStore.load() uses OUTLINE cursor and reducedMotion=false.");
+            rmStore.save(new StateStore.State(
+                    s0.profiles(), s0.layout(), s0.width(), s0.height(), s0.appTheme(), s0.lastProfile(),
+                    s0.shortcuts(), s0.highlightActive(), s0.appearance().withReducedMotion(true),
+                    s0.tutorial(), s0.connectOnStartup(), s0.updates(), s0.keyboardRecovery(),
+                    s0.windows(), s0.addProfile(), s0.savedLayouts(), s0.selectedLayout(), s0.displays()));
+            StateStore.State loaded = rmStore.load();
+            check(loaded.appearance().reducedMotion(), "StateStore round-trips appearance.reducedMotion=true in format 20.");
+
+            java.util.Properties v19 = StateStore.properties(s0);
+            v19.setProperty("version", "19");
+            v19.remove("appearance.reducedMotion");
+            StateStore.State migrated19 = rmStore.decode(v19);
+            check(!migrated19.appearance().reducedMotion(), "Format 19 without appearance.reducedMotion migrates cleanly to false.");
+        }
+
+        fx(() -> {
+            // 1. No vertical separator line between Help menu and Profile selector; split-pill join separator intact.
+            javafx.scene.layout.HBox tools = (javafx.scene.layout.HBox) FxTestSupport.field(w.chrome(), "tools");
+            check(tools.getChildren().size() == 3
+                    && tools.getChildren().get(0) instanceof javafx.scene.control.ComboBox<?>
+                    && tools.getChildren().get(1) instanceof javafx.scene.control.Separator
+                    && tools.getChildren().get(2) instanceof Button,
+                    "Top-bar tools has 3 children [ComboBox, join Separator, + Button] without leading vertical line.");
+
+            // 7. Menu bar shortcut hints use DisplayAccelerator (match()==false), 11px muted .accelerator-text, right-justified.
+            javafx.scene.control.Menu editMenu = w.chrome().menuBar().getMenus().get(1);
+            javafx.scene.control.MenuItem settingsItem = editMenu.getItems().stream()
+                    .filter(it -> it.getProperties().get("fish.command") instanceof AppCommand cmd && cmd.title.equals("Settings..."))
+                    .findFirst().orElseThrow();
+            check("Settings...".equals(settingsItem.getText()),
+                    "MenuItem text is pure action label ('Settings...') without inline spaces+shortcut: " + settingsItem.getText());
+            AppCommand settingsCmd = (AppCommand) settingsItem.getProperties().get("fish.command");
+            check(settingsItem.getAccelerator() != null
+                    && !settingsCmd.primaryShortcut().isBlank()
+                    && settingsCmd.primaryShortcut().equals(settingsItem.getAccelerator().getDisplayText()),
+                    "MenuItem DisplayAccelerator exposes primaryShortcut ('" + settingsCmd.primaryShortcut() + "') display text.");
+            KeyEvent ctrlComma = new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.COMMA, false, true, false, false);
+            check(!settingsItem.getAccelerator().match(ctrlComma),
+                    "DisplayAccelerator.match() returns false so Scene.getAccelerators() never double-fires.");
+
+            javafx.scene.control.ContextMenu popup = w.paneMenu(w.active());
+            popup.show(w.stage(), w.stage().getX() + 80, w.stage().getY() + 80);
+            try {
+                Scene popScene = popup.getScene();
+                popScene.getRoot().applyCss();
+                popScene.getRoot().layout();
+                List<Node> accelNodes = new ArrayList<>(popScene.getRoot().lookupAll(".accelerator-text"));
+                check(!accelNodes.isEmpty(), "ContextMenu renders dedicated .accelerator-text nodes.");
+                Double commonRightEdge = null;
+                for (Node acc : accelNodes) {
+                    if (!acc.isVisible()) continue;
+                    if (acc instanceof javafx.scene.control.Labeled lbl) {
+                        if (lbl.getText() == null || lbl.getText().isBlank()) continue;
+                        check(Math.abs(lbl.getFont().getSize() - 11.0) < 0.25,
+                                "Menu shortcut hint font size is 11px, got " + lbl.getFont().getSize());
+                    } else if (acc instanceof javafx.scene.text.Text txt) {
+                        if (txt.getText() == null || txt.getText().isBlank()) continue;
+                        check(Math.abs(txt.getFont().getSize() - 11.0) < 0.25,
+                                "Menu shortcut hint Text font size is 11px, got " + txt.getFont().getSize());
+                    }
+                    Bounds b = acc.localToScene(acc.getBoundsInLocal());
+                    if (b.getWidth() <= 1) continue;
+                    ParentRowBounds row = findMenuItemLabelBounds(acc);
+                    if (row != null) {
+                        check(b.getMinX() >= row.labelMaxX + 14.0,
+                                "Accelerator column is separated to the right of action label (labelMaxX="
+                                        + row.labelMaxX + ", accelMinX=" + b.getMinX() + ").");
+                    }
+                    if (commonRightEdge == null) commonRightEdge = b.getMaxX();
+                    else check(Math.abs(b.getMaxX() - commonRightEdge) <= 1.5,
+                            "Menu shortcut hints right-align to a shared column (expected right=" + commonRightEdge + ", got=" + b.getMaxX() + ").");
+                }
+                check(commonRightEdge != null, "Verified at least one visible right-aligned .accelerator-text node.");
+            } finally {
+                popup.hide();
+            }
+
+            // 2 & 3b & 6b. Preferences sidebar unclipped/0px-shift, Updates MarkdownView live-theming, Reduce motion + Flux pause.
+            Stage pStage = w.preferencesDialog("Appearance");
+            Preferences prefs = w.tutorialPreferences();
+            try {
+                for (double scale : List.of(1.0, 1.5)) {
+                    Ui.setScaleOverride(scale);
+                    Ui.syncSceneStylesheet(pStage.getScene());
+                    Region pRoot = (Region) pStage.getScene().getRoot();
+                    pRoot.resize(860, 620);
+                    pRoot.applyCss();
+                    pRoot.layout();
+
+                    @SuppressWarnings("unchecked")
+                    javafx.scene.control.ListView<String> nav = (javafx.scene.control.ListView<String>) FxTestSupport.field(prefs, "navigation");
+                    check(nav.getWidth() >= 184.0, "Settings navigation width >= 184px: " + nav.getWidth());
+
+                    java.util.Map<String, Double> unselectedTextX = new java.util.HashMap<>();
+                    nav.getSelectionModel().select("Appearance");
+                    pRoot.applyCss();
+                    pRoot.layout();
+                    for (Node n : nav.lookupAll(".list-cell")) {
+                        if (n instanceof javafx.scene.control.ListCell<?> cell && !cell.isEmpty() && cell.getItem() instanceof String item) {
+                            Node txt = cell.lookup(".text");
+                            check(txt != null, "Sidebar cell has .text node for " + item);
+                            String rendered = (txt instanceof javafx.scene.text.Text t) ? t.getText() : cell.getText();
+                            check(!rendered.contains("\u2026") && !rendered.contains("..."),
+                                    "Sidebar category text is unclipped/untruncated for '" + item + "': got '" + rendered + "'.");
+                            Bounds tb = txt.localToParent(txt.getBoundsInLocal());
+                            if (!cell.isSelected()) unselectedTextX.put(item, tb.getMinX());
+                            check(tb.getMinY() >= 3.5 && tb.getMaxY() <= cell.getHeight() - 3.5,
+                                    "Sidebar cell text vertically centered without clipping at scale=" + scale + " for '" + item
+                                            + "': minY=" + tb.getMinY() + ", maxY=" + tb.getMaxY() + ", cellH=" + cell.getHeight());
+                        }
+                    }
+
+                    // Select every category and verify 0px horizontal shift and zero vertical clipping when selected.
+                    for (String cat : List.of("Profiles", "Keyboard Shortcuts", "General", "Updates")) {
+                        nav.getSelectionModel().select(cat);
+                        pRoot.applyCss();
+                        pRoot.layout();
+                        for (Node n : nav.lookupAll(".list-cell")) {
+                            if (n instanceof javafx.scene.control.ListCell<?> cell && !cell.isEmpty() && cat.equals(cell.getItem())) {
+                                check(cell.isSelected(), "Cell '" + cat + "' is marked selected.");
+                                Node txt = cell.lookup(".text");
+                                Bounds tb = txt.localToParent(txt.getBoundsInLocal());
+                                Double beforeX = unselectedTextX.get(cat);
+                                if (beforeX != null) {
+                                    check(Math.abs(tb.getMinX() - beforeX) < 0.1,
+                                            "Selected sidebar cell '" + cat + "' has 0px horizontal offset shift (before="
+                                                    + beforeX + ", selected=" + tb.getMinX() + ").");
+                                }
+                                check(tb.getMinY() >= 3.5 && tb.getMaxY() <= cell.getHeight() - 3.5,
+                                        "Selected sidebar cell '" + cat + "' is unclipped vertically (minY="
+                                                + tb.getMinY() + ", maxY=" + tb.getMaxY() + ", h=" + cell.getHeight() + ").");
+                            }
+                        }
+                    }
+                }
+                Ui.setScaleOverride(0);
+                Ui.syncSceneStylesheet(pStage.getScene());
+
+                // 3b. Updates release notes MarkdownView live-theming across Charcoal -> Paper -> Charcoal.
+                @SuppressWarnings("unchecked")
+                javafx.scene.control.ListView<String> navAll = (javafx.scene.control.ListView<String>) FxTestSupport.field(prefs, "navigation");
+                navAll.getSelectionModel().select("Updates");
+                Region pRoot = (Region) pStage.getScene().getRoot();
+                pRoot.applyCss();
+                pRoot.layout();
+                MarkdownView notes = (MarkdownView) pRoot.lookup(".fish-markdown-view");
+                check(notes != null, "Updates pane contains a .fish-markdown-view release notes component.");
+                notes.markdown("## Fish 0.9.0 Notes\n\n- Cross-major updates enabled\n- `Fish.aot` cache");
+                pRoot.applyCss();
+                pRoot.layout();
+                String charcoalFieldHex = hexOf(Ui.color(ColorRole.FIELD));
+                check(notes.contentBox().getStyle().contains(charcoalFieldHex),
+                        "Updates MarkdownView content uses Charcoal FIELD background (" + charcoalFieldHex + ").");
+                Ui.applyTheme(AppTheme.Paper);
+                pRoot.applyCss();
+                pRoot.layout();
+                String paperFieldHex = hexOf(Ui.color(ColorRole.FIELD));
+                check(!paperFieldHex.equals(charcoalFieldHex) && notes.contentBox().getStyle().contains(paperFieldHex),
+                        "Switching to Paper live-themes Updates MarkdownView immediately to " + paperFieldHex
+                                + ", style=" + notes.contentBox().getStyle());
+                Ui.applyTheme(AppTheme.Charcoal);
+                pRoot.applyCss();
+                pRoot.layout();
+                check(notes.contentBox().getStyle().contains(charcoalFieldHex),
+                        "Switching back to Charcoal restores Updates MarkdownView background immediately.");
+
+                // 6b. Reduce motion checkbox toggles Ui.reducedMotion() and Appearance immediately.
+                navAll.getSelectionModel().select("Appearance");
+                pRoot.applyCss();
+                pRoot.layout();
+                javafx.scene.control.CheckBox rmCheck = prefs.reducedMotionCheck();
+                check(!rmCheck.isSelected() && !Ui.reducedMotion(), "Reduce motion starts unchecked/false.");
+
+                rmCheck.fire();
+                pRoot.layout();
+                check(rmCheck.isSelected() && Ui.reducedMotion() && w.appearanceSettings().reducedMotion(),
+                        "Checking Reduce motion updates Appearance and Ui.reducedMotion() immediately.");
+
+                Node testBanner = w.chrome();
+                Ui.animateSubtle(testBanner, 0.0, -2.5, 85);
+                check(testBanner.getOpacity() == 1.0 && testBanner.getTranslateY() == 0.0,
+                        "Ui.animateSubtle skips transitions immediately when Reduce motion is enabled.");
+
+                rmCheck.fire();
+                pRoot.layout();
+                check(!rmCheck.isSelected() && !Ui.reducedMotion() && !w.appearanceSettings().reducedMotion(),
+                        "Unchecking Reduce motion restores subtle motion.");
+            } finally {
+                Ui.setScaleOverride(0);
+                Ui.setReducedMotion(false);
+                prefs.forceDispose();
+            }
+
+            // Verify TerminalView Flux animation clock pauses immediately when Reduce motion is enabled and resumes when disabled.
+            SessionPane pane0 = w.sessionPanes().getFirst();
+            w.putProfile(pane0.profile().withDisplay(pane0.profile().theme(), fish.model.Profile.FLUX));
+            TerminalView offscreenFluxView = new TerminalView(pane0) {
+                @Override protected boolean isTerminalShowing() { return true; }
+            };
+            Stage fluxHolder = new Stage();
+            fluxHolder.setScene(new Scene(offscreenFluxView, 320, 200));
+            try {
+                offscreenFluxView.updateAnimation();
+                check(TerminalView.fluxAnimationClock().getStatus() == javafx.animation.Animation.Status.RUNNING,
+                        "Flux animation clock runs when Flux effect is active and Reduce motion is off.");
+                Ui.setReducedMotion(true);
+                check(TerminalView.fluxAnimationClock().getStatus() != javafx.animation.Animation.Status.RUNNING,
+                        "Enabling Reduce motion immediately pauses TerminalView Flux animation clock.");
+                Ui.setReducedMotion(false);
+                check(TerminalView.fluxAnimationClock().getStatus() == javafx.animation.Animation.Status.RUNNING,
+                        "Disabling Reduce motion resumes TerminalView Flux animation clock.");
+            } finally {
+                Ui.setReducedMotion(false);
+                offscreenFluxView.dispose();
+                w.putProfile(pane0.profile().withDisplay(pane0.profile().theme(), "None"));
+            }
+
+            // 4. AI-CONFIG.md table column 1 renders cleanly without character-per-newline vertical crushing.
+            String aiConfigMd = Files.readString(Path.of("AI-CONFIG.md"));
+            MarkdownView docView = new MarkdownView("Configuration guide");
+            docView.markdown(aiConfigMd);
+            Stage docStage = new Stage();
+            Ui.decorateDialog(docStage, docView, docStage::close, 680, 520);
+            docView.resize(680, 520);
+            docView.applyCss();
+            docView.layout();
+            javafx.scene.layout.GridPane areaTable = FxTestSupport.children(docView).stream()
+                    .filter(javafx.scene.layout.GridPane.class::isInstance)
+                    .map(javafx.scene.layout.GridPane.class::cast)
+                    .filter(gp -> gp.getColumnConstraints().size() == 2)
+                    .findFirst().orElse(null);
+            check(areaTable != null, "AI-CONFIG.md renders 2-column GridPane table.");
+            check(areaTable.getColumnConstraints().get(0).getMinWidth() >= 110.0,
+                    "AI-CONFIG.md table column 0 has minWidth >= 110px: " + areaTable.getColumnConstraints().get(0).getMinWidth());
+            int checkedCol0Cells = 0;
+            for (Node cellNode : areaTable.getChildren()) {
+                Integer colIdx = javafx.scene.layout.GridPane.getColumnIndex(cellNode);
+                if (colIdx != null && colIdx == 0 && cellNode instanceof Region cellReg) {
+                    checkedCol0Cells++;
+                    check(cellReg.getWidth() >= 110.0 && cellReg.getHeight() <= 54.0,
+                            "AI-CONFIG.md column 0 cell renders horizontally without per-char wrapping (w="
+                                    + cellReg.getWidth() + ", h=" + cellReg.getHeight() + ").");
+                }
+            }
+            check(checkedCol0Cells >= 12, "Verified all " + checkedCol0Cells + " column-0 cells in AI-CONFIG.md table.");
+            return null;
+        });
+    }
+
+    private record ParentRowBounds(double labelMaxX) {}
+
+    private static String hexOf(java.awt.Color c) {
+        return String.format("#%02X%02X%02X", c.getRed(), c.getGreen(), c.getBlue());
+    }
+
+    private static ParentRowBounds findMenuItemLabelBounds(Node accelNode) {
+        Node parent = accelNode.getParent();
+        if (parent == null) return null;
+        for (Node sibling : parent.lookupAll(".label")) {
+            if (sibling == accelNode || accelNode.equals(sibling)) continue;
+            Bounds sb = sibling.localToScene(sibling.getBoundsInLocal());
+            if (sb.getWidth() > 1) return new ParentRowBounds(sb.getMaxX());
+        }
+        return null;
+    }
+
+    private static String sampleReleaseJson(String version, boolean prerelease) {
+        String sha = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        return "{\"draft\":false,\"prerelease\":" + prerelease
+                + ",\"tag_name\":\"v" + version + "\",\"name\":\"Fish " + version + "\""
+                + ",\"html_url\":\"https://github.com/tsafago/Fish/releases/tag/v" + version + "\""
+                + ",\"body\":\"Release notes " + version + "\""
+                + ",\"assets\":["
+                + "{\"name\":\"Fish-" + version + "-setup.exe\",\"size\":4096,\"digest\":\"sha256:" + sha + "\","
+                + "\"browser_download_url\":\"https://github.com/tsafago/Fish/releases/download/v" + version + "/Fish-" + version + "-setup.exe\"},"
+                + "{\"name\":\"SHA256SUMS.txt\",\"size\":256,\"digest\":\"sha256:" + sha + "\","
+                + "\"browser_download_url\":\"https://github.com/tsafago/Fish/releases/download/v" + version + "/SHA256SUMS.txt\"}"
+                + "]}";
     }
 }

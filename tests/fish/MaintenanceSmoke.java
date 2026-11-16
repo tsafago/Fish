@@ -49,9 +49,13 @@ public final class MaintenanceSmoke {
         var channel=UpdateSettings.Channel.PREVIEW_PATCHES;
         check(select(List.of(release("0.7.1",true),release("0.7.0",true)),channel).isEmpty(),"No same-version install/downgrade");
         check(select(List.of(release("0.7.2",true),release("0.7.10",true)),channel).orElseThrow().version().patch()==10,"Preview patches included and sorted");
-        check(select(List.of(release("0.8.0",true),release("1.0.0",false),release("0.8.1",false)),channel).isEmpty(),"Default channel never changes minor/major");
-        check(select(List.of(release("0.7.2",true)),UpdateSettings.Channel.STABLE).isEmpty(),"Stable channel excludes previews");
-        check(select(List.of(release("0.8.1",false)),UpdateSettings.Channel.STABLE).isPresent(),"Explicit stable channel permits same-major stable minor");
+        check(select(List.of(release("0.8.0",true),release("1.0.0",false),release("2.0.0",true),release("0.8.1",false)),channel)
+                .orElseThrow().version().equals(Updates.Version.parse("2.0.0")),
+                "All-releases channel selects highest newer version across minor and major releases");
+        check(select(List.of(release("0.7.2",true),release("2.0.0",true)),UpdateSettings.Channel.STABLE).isEmpty(),"Stable channel excludes previews across minor/major");
+        check(select(List.of(release("0.8.1",false),release("1.2.0",false),release("2.0.0",true)),UpdateSettings.Channel.STABLE)
+                .orElseThrow().version().equals(Updates.Version.parse("1.2.0")),
+                "Stable channel permits newer stable minor and major releases");
         for (String property:List.of("draft","html_url","tag_name","assets")) {
             Map<String,Object> malformed=release("0.7.3",true);
             malformed.put(property,switch (property) { case "draft" -> true; case "html_url" -> "https://evil.invalid/release";

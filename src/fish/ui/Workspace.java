@@ -257,7 +257,10 @@ public final class Workspace {
         addProfile=state.addProfile();
         savedLayouts=state.savedLayouts();
         selectedLayout=state.selectedLayout();
-        if (initializeTheme) Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
+        if (initializeTheme) {
+            Ui.setReducedMotion(appearance.reducedMotion());
+            Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
+        }
 
         this.store=store;
         this.demonstration=demonstration;
@@ -311,8 +314,29 @@ public final class Workspace {
         addPane.setTooltip(addPaneTooltip);
         addPane.setOnAction(e -> addCmd.execute());
 
-        HBox tools=new HBox(0,chromeSeparator(false),addProfileSelector,chromeSeparator(true),addPane);
-        tools.setPadding(new Insets(0,4,0,0));
+        Separator pillJoin=chromeSeparator(true);
+        HBox tools=new HBox(0,addProfileSelector,pillJoin,addPane) {
+            @Override protected void layoutChildren() {
+                double s=Ui.scaleFor(this);
+                double px=Ui.hairline(s);
+                Point2D origin=localToScene(0,0);
+                double sceneX=origin==null ? 0.0 : origin.getX();
+                double sceneY=origin==null ? 0.0 : origin.getY();
+                double pillH=Math.round(24.0*s)/s;
+                double y0=Math.round((sceneY+(getHeight()-pillH)*0.5)*s)/s-sceneY;
+                double x0=Math.round((sceneX+6.0)*s)/s-sceneX;
+                double avail=Math.max(0.0,getWidth()-x0-4.0);
+                double addW=Math.min(Math.round(30.0*s)/s,avail);
+                double comboTarget=Math.max(addProfileSelector.minWidth(-1),
+                        Math.min(addProfileSelector.prefWidth(-1),Math.max(0.0,avail-addW-px)));
+                double comboW=Math.round(comboTarget*s)/s;
+                addProfileSelector.resizeRelocate(x0,y0,comboW,pillH);
+                pillJoin.resizeRelocate(x0+comboW,y0,px,pillH);
+                addPane.resizeRelocate(x0+comboW+px,y0,addW,pillH);
+            }
+        };
+        tools.setSnapToPixel(false);
+        tools.setPadding(new Insets(0,4,0,6));
         tools.setAlignment(Pos.CENTER_LEFT);
 
         chrome=new WindowChrome(this,stage,menuBar,tools,this::toggleFlux);
@@ -428,6 +452,10 @@ public final class Workspace {
                 double s=Ui.scaleFor(this);
                 double px=Ui.hairline(s);
                 double w=getWidth(),h=getHeight();
+                if (pillJoin) {
+                    bar.resizeRelocate(0,0,px,h);
+                    return;
+                }
                 Point2D sp=localToScene(w*0.5,0);
                 double bx=(w-px)*0.5;
                 if (sp!=null) {
@@ -638,6 +666,7 @@ public final class Workspace {
     public void appearanceSettings(Appearance value) {
         Appearance previous=appearance;
         appearance=value;
+        Ui.setReducedMotion(value.reducedMotion());
         boolean font=!previous.font().equals(value.font());
         if (font) resolveFont();
         if (!previous.custom().equals(value.custom())

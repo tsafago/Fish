@@ -5,7 +5,7 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.8.0 beta responsiveness and recovery
+## Fish 0.9.0 beta responsiveness, polish and recovery
 
 No protocol/ACS/SSO compatibility expansion is claimed. All accepted 0.7.9
 cursor preferences, autosaved Settings and canonical eight-pane layouts remain.
@@ -43,9 +43,12 @@ cancel/one retry/concurrent owner, exact backups and backup/replacement I/O
 failures are tested against private synthetic files. Native installer-result
 diagnostics cover success/reopen/auto-close versus cancellation, errors, reboot
 and reopen failure without installation. Actual installed upgrade remains
-unverified. Portable updates still install a per-user copy. Old 0.7.x preview
-policy does not offer this new-minor beta; a manual first upgrade is required.
-Format19 / recipe3 / catalog9 preserves supported state; downgrade requires a
+unverified. Portable updates still install a per-user copy. `PREVIEW_PATCHES`
+("All releases (including betas)") and `STABLE` ("Stable releases") now allow
+updating to any newer release across patch, minor and major versions without
+same-minor or same-major blocks.
+Format20 / recipe3 / catalog10 preserves supported state, adds `appearance.reducedMotion`,
+and defaults fresh workspaces to `OUTLINE` cursor style; downgrade to 0.8.0 or earlier requires a
 pre-upgrade backup. This is unsigned BETA/prerelease, not production-ready.
 
 ## Fish 0.7.9 cursor stability and accepted usability preview

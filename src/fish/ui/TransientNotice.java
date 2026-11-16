@@ -1,6 +1,5 @@
 package fish.ui;
 
-import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.geometry.Pos;
@@ -57,15 +56,13 @@ public final class TransientNotice extends BorderPane {
         setVisible(true);
         setManaged(true);
         timer.stop();
-        FadeTransition fade=new FadeTransition(Duration.millis(150),this);
-        fade.setFromValue(0.0);
-        fade.setToValue(1.0);
-        fade.play();
+        Ui.animateSubtle(this,0.0,-2.0,85);
         if (transientMessage) timer.playFromStart();
     }
 
     public void dismiss() {
         timer.stop();
+        Ui.resetMotion(this);
         setVisible(false);
         setManaged(false);
     }

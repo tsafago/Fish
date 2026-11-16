@@ -2,11 +2,13 @@ package fish.ui;
 
 import java.awt.Desktop;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.net.URI;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.regex.*;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
@@ -21,14 +23,28 @@ public final class MarkdownView extends ScrollPane {
     private String rawMarkdown="";
     private String htmlCache="";
     private String highlightQuery="";
+    private String sectionDocTitle;
+    private List<ManualDialog.Topic> sectionTopics;
     private Consumer<String> internalAnchorHandler=this::scrollToAnchor;
 
     public MarkdownView(String accessibleName) {
+        getStyleClass().add("fish-markdown-view");
         setAccessibleText(accessibleName);
         setFitToWidth(true);
         setHbarPolicy(ScrollBarPolicy.NEVER);
         container.setPadding(new Insets(14));
         setContent(container);
+        WeakReference<MarkdownView> ref=new WeakReference<>(this);
+        Ui.onThemeChanged(new Runnable() {
+            @Override public void run() {
+                MarkdownView view=ref.get();
+                if (view==null) Ui.removeThemeListener(this);
+                else view.themeChanged();
+            }
+        });
+        sceneProperty().addListener((obs,oldS,newS) -> {
+            if (newS!=null) themeChanged();
+        });
         themeChanged();
     }
 
@@ -43,6 +59,9 @@ public final class MarkdownView extends ScrollPane {
 
     public void markdown(String value) {
         if (value.length()>200_000) throw new IllegalArgumentException("Release notes exceed the display limit.");
+        sectionDocTitle=null;
+        sectionTopics=null;
+        anchors.clear();
         rawMarkdown=value;
         htmlCache=Markdown.render(value);
         rebuild();
@@ -93,19 +112,30 @@ public final class MarkdownView extends ScrollPane {
     }
 
     public void themeChanged() {
+        double v=getVvalue();
         container.setStyle("-fx-background-color: "+Ui.hex(ColorRole.FIELD)+";");
-        setStyle("-fx-background-color: "+Ui.hex(ColorRole.FIELD)+";");
-        rebuild();
+        if (sectionDocTitle!=null && sectionTopics!=null) {
+            renderSections(sectionDocTitle,sectionTopics);
+        } else {
+            rebuild();
+        }
+        setVvalue(v);
     }
 
     public VBox contentBox() { return container; }
 
     public void setSections(String docTitle,List<ManualDialog.Topic> topics,String query) {
         this.highlightQuery=query==null ? "" : query.strip().toLowerCase(Locale.ROOT);
+        this.sectionDocTitle=docTitle;
+        this.sectionTopics=List.copyOf(topics);
         StringBuilder fullMd=new StringBuilder("# "+docTitle+"\n\n");
         for (ManualDialog.Topic t:topics) fullMd.append("## ").append(t.title()).append("\n").append(t.text()).append("\n\n");
         this.rawMarkdown=fullMd.toString();
         this.htmlCache=Markdown.render(rawMarkdown);
+        renderSections(docTitle,this.sectionTopics);
+    }
+
+    private void renderSections(String docTitle,List<ManualDialog.Topic> topics) {
         container.getChildren().clear();
         anchors.clear();
 
@@ -127,7 +157,10 @@ public final class MarkdownView extends ScrollPane {
     }
 
     private void rebuild() {
-        if (!anchors.isEmpty()) return; // Managed via setSections in ManualDialog
+        if (sectionDocTitle!=null && sectionTopics!=null) {
+            renderSections(sectionDocTitle,sectionTopics);
+            return;
+        }
         container.getChildren().clear();
         renderBlocksInto(rawMarkdown,container);
         setVvalue(0);
@@ -195,21 +228,51 @@ public final class MarkdownView extends ScrollPane {
             }
             if (i+1<lines.length && lines[i+1].replace(" ","").matches("\\|?:?-+:?(\\|:?-+:?)+\\|?")) {
                 flushParagraph.run(); flushList.run();
+                String px=Ui.px(Ui.hairline(Ui.scaleFor(this)));
                 GridPane grid=new GridPane();
-                grid.setStyle("-fx-border-color: "+Ui.hex(ColorRole.DIVIDER)+"; -fx-border-width: 1 0 0 1;");
+                grid.setMaxWidth(Double.MAX_VALUE);
+                grid.setStyle("-fx-border-color: "+Ui.hex(ColorRole.DIVIDER)+"; -fx-border-width: "+px+" 0 0 "+px+";");
                 List<String> headers=cells(line);
-                for (int c=0;c<headers.size();c++) {
-                    StackPane cell=tableCell(headers.get(c),true);
-                    grid.add(cell,c,0);
-                }
+                List<List<String>> rows=new ArrayList<>();
                 i++;
-                int rowIdx=1;
                 while (i+1<lines.length && lines[i+1].strip().startsWith("|")) {
-                    List<String> rowCells=cells(lines[++i]);
-                    for (int c=0;c<rowCells.size();c++) {
-                        grid.add(tableCell(rowCells.get(c),false),c,rowIdx);
+                    rows.add(cells(lines[++i]));
+                }
+                int colCount=headers.size();
+                for (List<String> r:rows) colCount=Math.max(colCount,r.size());
+                int[] maxChars=new int[colCount];
+                for (int c=0;c<headers.size();c++) maxChars[c]=Math.max(maxChars[c],visibleLength(headers.get(c)));
+                for (List<String> r:rows) {
+                    for (int c=0;c<r.size();c++) maxChars[c]=Math.max(maxChars[c],visibleLength(r.get(c)));
+                }
+                for (int c=0;c<colCount;c++) {
+                    ColumnConstraints cc=new ColumnConstraints();
+                    cc.setFillWidth(true);
+                    if (colCount==1) {
+                        cc.setHgrow(Priority.ALWAYS);
+                    } else if (c<colCount-1) {
+                        double w=colCount==2
+                                ? Math.clamp(maxChars[c]*7.5+24.0,112.0,236.0)
+                                : Math.clamp(maxChars[c]*7.0+20.0,88.0,178.0);
+                        cc.setMinWidth(w);
+                        cc.setPrefWidth(w);
+                        cc.setHgrow(Priority.NEVER);
+                    } else {
+                        cc.setMinWidth(120.0);
+                        cc.setHgrow(Priority.ALWAYS);
                     }
-                    rowIdx++;
+                    grid.getColumnConstraints().add(cc);
+                }
+                for (int c=0;c<colCount;c++) {
+                    String hText=c<headers.size() ? headers.get(c) : "";
+                    grid.add(tableCell(hText,true,px),c,0);
+                }
+                for (int rIdx=0;rIdx<rows.size();rIdx++) {
+                    List<String> rowCells=rows.get(rIdx);
+                    for (int c=0;c<colCount;c++) {
+                        String cText=c<rowCells.size() ? rowCells.get(c) : "";
+                        grid.add(tableCell(cText,false,px),c,rIdx+1);
+                    }
                 }
                 out.getChildren().add(grid);
                 continue;
@@ -246,13 +309,25 @@ public final class MarkdownView extends ScrollPane {
         flushList.run();
     }
 
-    private StackPane tableCell(String content,boolean header) {
+    private static int visibleLength(String markdownCell) {
+        if (markdownCell==null || markdownCell.isEmpty()) return 0;
+        String stripped=markdownCell
+                .replaceAll("!?\\[([^\\]]*)]\\([^)]*\\)","$1")
+                .replace("`","")
+                .replace("**","")
+                .replace("*","");
+        return stripped.strip().length();
+    }
+
+    private StackPane tableCell(String content,boolean header,String px) {
         TextFlow flow=buildInlineFlow(content,12);
         if (header) for (Node n:flow.getChildren()) if (n instanceof Text t) t.setStyle(t.getStyle()+" -fx-font-weight: bold;");
         StackPane box=new StackPane(flow);
+        StackPane.setAlignment(flow,Pos.TOP_LEFT);
+        box.setMaxWidth(Double.MAX_VALUE);
         box.setPadding(new Insets(5,8,5,8));
         box.setStyle("-fx-background-color: "+(header ? Ui.hex(ColorRole.PANEL) : Ui.hex(ColorRole.FIELD))
-                +"; -fx-border-color: "+Ui.hex(ColorRole.DIVIDER)+"; -fx-border-width: 0 1 1 0;");
+                +"; -fx-border-color: "+Ui.hex(ColorRole.DIVIDER)+"; -fx-border-width: 0 "+px+" "+px+" 0;");
         return box;
     }
 

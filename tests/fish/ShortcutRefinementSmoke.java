@@ -172,8 +172,8 @@ public final class ShortcutRefinementSmoke {
             Ui.applyTheme(theme); w.setSize(1120,760); layout(w);
             check(combo.getStyleClass().contains("fish-chrome-combo"),"Chrome selector stays borderless across theme refresh: "+theme);
             HBox tools=(HBox)combo.getParent();
-            check(tools.getChildren().size()==4 && tools.getChildren().get(2) instanceof Separator && tools.getChildren().get(3)==add,
-                    "Profile and plus remain aligned with the thin separator between them: "+theme);
+            check(tools.getChildren().size()==3 && tools.getChildren().get(1) instanceof Separator && tools.getChildren().get(2)==add,
+                    "Profile and plus remain aligned with only the inner pill join separator between them: "+theme);
             image(chrome,"chrome-"+theme);
             for (int width:new int[]{330,500,680,1120}) {
                 w.setSize(width,760); layout(w);

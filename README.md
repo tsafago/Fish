@@ -10,9 +10,9 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.8.0 beta
+## Fish 0.9.0 beta
 
-[Download v0.8.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.8.0):
+[Download v0.9.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.9.0):
 current-user setup, portable image, complete corresponding source/licenses and checksums.
 This is an unsigned prerelease, not a stable or ACS-compatible release.
 
@@ -22,25 +22,22 @@ validation pauses and explicit creation/password boundaries. **Saved** acknowled
 the latest durable generation, not merely a visible change. Theme changes recolor
 existing controls instead of rebuilding their UI, fonts or terminal glyph grid.
 
-The centered flat profile selector is separated from its neighbors, with explicit
-**+** connection intent. Collapsing menus remain; real control-derived minimums
-are enforced by Swing and Windows native resizing. Saved layouts/shortcuts uses
-the referenced name-above-full-width-field hierarchy and left-aligned creation
-actions. Tutorial helpers follow related owned dialogs without global always-on-top.
-**Light** and **Slate**, plus **Azure vivid** and **Crimson vivid** text palettes,
-retain semantic host colors and readable control states.
+The unified `[Profile | +]` split-pill sits cleanly beside the menu bar with right-aligned
+secondary shortcut hints on menus, unclipped Settings sidebar navigation, live-themed
+Markdown release notes and external-tool tables, **Outline / filled Insert** as the default cursor style,
+and an optional **Reduce motion** preference controlling subtle `<90 ms` popup/dialog transitions.
 
 An app-triggered successful installed update reopens verified Fish once and
 closes setup; failure, cancellation, reboot-required and launch errors remain
 visible. Portable updating still installs a per-user copy, not a replacement
-portable folder. **0.7.x cannot automatically discover this new-minor beta** with
-its same-minor preview policy: download and upgrade manually. Stable excludes beta.
+portable folder. **All releases (including betas)** and **Stable releases** allow updating
+to the latest release across patch, minor and major versions.
 
 Unreadable/future workspace startup offers Exit, one Retry and explicitly
 confirmed Restore factory settings. Recovery keeps an exact unique
 `workspace-recovery-UUID.xml` backup before atomic replacement under the existing
 exclusive lock, without clearing credentials, fonts or other user files.
-Format **19** requires a pre-upgrade workspace backup to downgrade to 0.7.9 or earlier.
+Format **20** requires a pre-upgrade workspace backup to downgrade to 0.8.0 or earlier.
 Synthetic fractional-grid checks are not proof that the physical 4K jump is gone;
 physical monitor/native upgrade/IBM i/ACS/SSO acceptance remains unverified.
 
@@ -221,9 +218,9 @@ Windows saved passwords, actual font files and other workspaces are kept.
 
 **Settings > Updates** checks public GitHub releases asynchronously, with
 no account/token/gh dependency. A quiet startup check offers Update, X or
-Hide version; hiding applies only to that version. Default preview updates stay
-within 0.7.x. The optional stable channel accepts stable releases within the same
-major version; neither channel silently enters a newer experimental minor/major.
+Hide version; hiding applies only to that version. **All releases (including betas)**
+offers any newer release across patch, minor and major versions; **Stable releases**
+accepts any newer non-preview release across patch, minor and major versions.
 Download/install needs explicit consent. Size, SHA-256, GitHub origin and Windows
 signature policy are checked before setup starts. Checksums are **not signing**.
 The installed app updates in place; portable mode installs/opens a per-user copy
@@ -303,7 +300,7 @@ That 0.5.3 preview used
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-In this 0.8.0 beta, valid discrete Settings choices apply immediately and autosave separately; pane scale/layout
+In this 0.9.0 beta, valid discrete Settings choices apply immediately and autosave separately; pane scale/layout
 actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
@@ -361,15 +358,15 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.8.0-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.8.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.8.0), then run the
+Download `Fish-0.9.0-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.9.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.9.0), then run the
 installer for your Windows user. It creates
 Start menu/desktop shortcuts without a system-wide Java installation or
 administrator installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract the matching `Fish-0.8.0-windows-x64.zip` and open
+For a portable copy, extract the matching `Fish-0.9.0-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 
@@ -385,9 +382,9 @@ Any unsigned `.exe` or `.msi` downloaded directly by a web browser receives Wind
 3. **SmartScreen-Free In-App Self-Update**: SHA-256-verified updates strip `Zone.Identifier` ADS and launch via `CreateProcessW` rather than `ShellExecuteExW`. Checksums accompany every package; do not bypass organizational IT policy.
 
 **Back up before upgrading:** close ALL Fish windows normally and copy `workspace.xml`
-outside the application folder before first launching 0.8.0 beta. The default location
+outside the application folder before first launching 0.9.0 beta. The default location
 is `%APPDATA%\Fish`, and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 19** if needed. Fish 0.7.9 and earlier cannot read
+to **version 20** if needed. Fish 0.8.0 and earlier cannot read
 it. Keep a pre-upgrade backup for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
@@ -402,8 +399,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.8.0-setup.exe` | Current-user native installer with bundled runtime |
-| `dist\Fish-0.8.0-windows-x64.zip` | Portable image, alongside matching source and checksums |
+| `dist\Fish-0.9.0-setup.exe` | Current-user native installer with bundled runtime |
+| `dist\Fish-0.9.0-windows-x64.zip` | Portable image, alongside matching source and checksums |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -414,16 +411,16 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching package is **Fish 0.8.0 BETA**, an unsigned experimental prerelease.
+The matching package is **Fish 0.9.0 BETA**, an unsigned experimental prerelease.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.8.0\Fish` to Package.
-This delivery is at `dist\Fish-0.8.0\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.9.0\Fish` to Package.
+This delivery is at `dist\Fish-0.9.0\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
 ```powershell
-.\dist\Fish-0.8.0\Fish\Fish.exe
-.\dist\Fish-0.8.0\Fish\Fish.exe --demo
+.\dist\Fish-0.9.0\Fish\Fish.exe
+.\dist\Fish-0.9.0\Fish\Fish.exe --demo
 ```
 
 The packaged application includes a private Java runtime; no installed Java,

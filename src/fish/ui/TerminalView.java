@@ -46,10 +46,10 @@ public class TerminalView extends Region {
     private PixelBuffer<IntBuffer> pixelBuffer;
     private WritableImage fxImage;
     private int[] fxPixels;
+    private int surfaceW,surfaceH;
     private BufferedImage workImage;
     private int[] workPixels;
-    private BufferedImage scratchMaskImage;
-    private int[] scratchMaskPixels;
+    private final ScratchMask scratchMask=new ScratchMask();
     private boolean renderScheduled;
     private boolean fullRenderPending;
     private Rectangle dirtyRenderPending;
@@ -62,35 +62,51 @@ public class TerminalView extends Region {
     };
 
     private Font face;
+    private static final int FONT_SUBSTEPS=16;
     private static final FontRenderContext TEXT_CONTEXT=new FontRenderContext(null,
             RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+    private static final FontRenderContext METRICS_CONTEXT=new FontRenderContext(null,
+            RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB,RenderingHints.VALUE_FRACTIONALMETRICS_ON);
     private Font inkFace;
     private int fontPixels;
+    private int lastPrewarmHalfPx=-100;
     private final Map<Integer,InkMetrics> fontMetrics=new HashMap<>();
-    private EffectLayer litEffect,dimEffect;
-    private int effectResolution;
-    private Color effectBackground;
-    private int effectAnchor,effectEnd;
+    private final Map<Integer,Font> strikeFonts=new HashMap<>();
+    private final Map<Font,Float> strikeAscents=new HashMap<>();
     private double nominalWidth,nominalHeight;
     private double baseWidth,baseHeight,ascent;
     private RenderFrame rendered;
     private Screen5250 renderedScreen;
-    private static final int MAX_GLYPH_MASKS=4096;
-    private final Map<GlyphKey,GlyphMask> glyphMasks=new LinkedHashMap<>(256,0.75f,false) {
-        @Override protected boolean removeEldestEntry(Map.Entry<GlyphKey,GlyphMask> eldest) {
-            return size()>MAX_GLYPH_MASKS;
+    private static final int MAX_CHAR_MASKS=8192;
+    private record StrikeKey(Font base,int halfPx) {}
+    private static final Map<StrikeKey,Font> GLOBAL_STRIKE_FONTS=new java.util.concurrent.ConcurrentHashMap<>(128);
+    private static final Map<CharGlyphKey,GlyphMask> GLOBAL_GLYPH_MASKS=new java.util.concurrent.ConcurrentHashMap<>(2048);
+    private static final ThreadLocal<ScratchMask> WARMER_SCRATCH=ThreadLocal.withInitial(ScratchMask::new);
+    private static volatile long activeResizeUntilNanos;
+    private static final java.util.concurrent.ExecutorService GLYPH_WARMER=java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+        Thread t=new Thread(r,"fish-glyph-warmer");
+        t.setDaemon(true);
+        t.setPriority(Thread.NORM_PRIORITY-1);
+        return t;
+    });
+    private final Map<CharGlyphKey,GlyphMask> glyphMasks=new LinkedHashMap<>(256,0.75f,false) {
+        @Override protected boolean removeEldestEntry(Map.Entry<CharGlyphKey,GlyphMask> eldest) {
+            return size()>MAX_CHAR_MASKS;
         }
     };
     private BufferedImage sharedInk;
     private RenderFrame sharedFrame;
     private Rectangle sharedBounds;
+    private int sharedFontPixels;
+    private String sharedEffect;
+    private int sharedCustomHash;
     private Color[] sharedPalette;
     private Color sharedBackground,sharedSelection;
     private int sharedAnchor,sharedEnd;
     private boolean sharedPhase;
     private double sharedFlux=Double.NaN;
     private double cellWidth=9,cellHeight=18,originX=12,originY=10;
-    private int geometryWidth=-1,geometryHeight;
+    private double geometryWidth=-1,geometryHeight=-1;
     private double geometryDpiX=1,geometryDpiY=1,geometryZoom;
     private boolean geometryFit,revealQueued;
     private int anchor=-1,end=-1,pressCell=-1;
@@ -208,16 +224,20 @@ public class TerminalView extends Region {
         double[] pressPt={0,0};
         setOnMousePressed(event -> {
             if (event.getButton()==MouseButton.SECONDARY) {
+                pane.activate();
+                requestFocus();
                 pane.clipboardMenu().show(this,event.getScreenX(),event.getScreenY());
                 event.consume();
                 return;
             }
             if (event.getButton()!=MouseButton.PRIMARY) return;
+            pane.activate();
             requestFocus();
-            restartCursor();
             paneDrag[0]=event.isAltDown();
             if (paneDrag[0]) {
+                restartCursor();
                 pane.beginAltDrag(event);
+                event.consume();
                 return;
             }
             pressPt[0]=event.getX();
@@ -228,9 +248,24 @@ public class TerminalView extends Region {
                 anchor=end=-1;
                 requestRender();
             }
+            if (pane.connected() && pane.screen()!=null) {
+                Screen5250 screen=pane.screen();
+                char[] guiPlane=plane(screen,PLANE_EXTENDED_GRAPHIC);
+                int gui=pressCell>=0 && pressCell<guiPlane.length ? guiPlane[pressCell] : 0;
+                boolean hotspot=gui>=BUTTON_LEFT && gui<=BUTTON_LAST;
+                if (!hotspot) {
+                    repaintCursor();
+                    screen.moveCursor(pressCell);
+                    if (!screen.isCursorActive()) screen.setCursorActive(true);
+                    pane.updateOia();
+                }
+            }
+            restartCursor();
+            event.consume();
         });
         setOnMouseDragged(event -> {
             if (!event.isPrimaryButtonDown()) return;
+            event.consume();
             if (paneDrag[0]) {
                 pane.updateAltDrag(event);
                 return;
@@ -249,19 +284,28 @@ public class TerminalView extends Region {
             requestRender();
         });
         setOnMouseReleased(event -> {
-            if (event.getButton()==MouseButton.SECONDARY) return;
+            if (event.getButton()==MouseButton.SECONDARY) { event.consume(); return; }
             if (event.getButton()!=MouseButton.PRIMARY) return;
+            event.consume();
             if (paneDrag[0]) {
                 paneDrag[0]=false;
                 pane.finishAltDrag(event);
                 return;
             }
             if (!dragging && pane.screen()!=null && pane.connected()) {
+                Screen5250 screen=pane.screen();
                 int target=pressCell>=0 ? pressCell : position(event.getX(),event.getY());
+                char[] guiPlane=plane(screen,PLANE_EXTENDED_GRAPHIC);
+                int gui=target>=0 && target<guiPlane.length ? guiPlane[target] : 0;
+                boolean hotspot=gui>=BUTTON_LEFT && gui<=BUTTON_LAST;
                 repaintCursor();
-                pane.screen().moveCursor(target);
+                if (hotspot || screen.getCurrentPos()-1!=target) {
+                    screen.moveCursor(target);
+                }
+                if (!screen.isCursorActive()) screen.setCursorActive(true);
                 anchor=end=-1;
                 restartCursor();
+                pane.updateOia();
             }
             pressCell=-1;
             dragging=false;
@@ -310,7 +354,14 @@ public class TerminalView extends Region {
     public long glyphMaskHits() { return glyphHits; }
     public long glyphMaskMisses() { return glyphMisses; }
     public void resetGlyphStats() { glyphHits=0; glyphMisses=0; }
-    public int[] surfacePixelsForTest() { return fxPixels; }
+    public int[] surfacePixelsForTest() {
+        if (fxPixels==null || pixelBuffer==null || surfaceW<=0 || surfaceH<=0) return fxPixels;
+        int stride=pixelBuffer.getWidth();
+        if (stride==surfaceW && fxPixels.length==surfaceW*surfaceH) return fxPixels;
+        int[] out=new int[surfaceW*surfaceH];
+        for (int r=0;r<surfaceH;r++) System.arraycopy(fxPixels,r*stride,out,r*surfaceW,surfaceW);
+        return out;
+    }
 
     public void dispose() {
         disposed=true;
@@ -324,8 +375,7 @@ public class TerminalView extends Region {
         sharedFrame=null;
         workImage=null;
         workPixels=null;
-        scratchMaskImage=null;
-        scratchMaskPixels=null;
+        scratchMask.dispose();
         fxPixels=null;
     }
 
@@ -337,7 +387,13 @@ public class TerminalView extends Region {
         else cursorBlink.stop();
     }
 
-    protected boolean hasTerminalFocus() { return isFocused(); }
+    protected boolean hasTerminalFocus() {
+        if (isFocused()) return true;
+        javafx.scene.Scene s=getScene();
+        if (s==null || s.getFocusOwner()!=this) return false;
+        javafx.stage.Window w=s.getWindow();
+        return w==null || !w.isShowing();
+    }
     protected boolean isTerminalShowing() {
         if (disposed || isDisabled() || !isVisible()) return false;
         if (getScene()==null || getScene().getWindow()==null) return false;
@@ -350,13 +406,23 @@ public class TerminalView extends Region {
         return isTerminalShowing() && hasTerminalFocus() && pane.connected() && pane.screen()!=null && pane.screen().isCursorActive();
     }
 
+    private static int colX(int col,double bw) { return (int)Math.rint(col*bw); }
+    private static int rowY(int row,double bh) { return (int)Math.rint(row*bh); }
+    private int colX(int col) { return (int)Math.rint(col*baseWidth); }
+    private int rowY(int row) { return (int)Math.rint(row*baseHeight); }
+    private int baselineY(int row) { return rowY(row)+(int)ascent; }
+
     private Rectangle cursorBounds() {
         Screen5250 screen=pane.screen();
         if (screen==null) return null;
+        int cols=screen.getColumns();
         int pos=Math.max(0,Math.min(screen.getCurrentPos()-1,screen.getScreenLength()-1));
-        return new Rectangle((int)Math.floor(originX+pos%screen.getColumns()*cellWidth)-2,
-                (int)Math.floor(originY+pos/screen.getColumns()*cellHeight)-2,
-                (int)Math.ceil(cellWidth)+5,(int)Math.ceil(cellHeight)+5);
+        int col=pos%cols,row=pos/cols;
+        double dpiX=geometryDpiX>0 ? geometryDpiX : 1.0,dpiY=geometryDpiY>0 ? geometryDpiY : 1.0;
+        int x0=colX(col),x1=colX(col+1),y0=rowY(row),y1=rowY(row+1);
+        return new Rectangle((int)Math.floor(originX+x0/dpiX)-2,
+                (int)Math.floor(originY+y0/dpiY)-2,
+                (int)Math.ceil((x1-x0)/dpiX)+5,(int)Math.ceil((y1-y0)/dpiY)+5);
     }
 
     protected void recordDirtyRect(Rectangle rect) {}
@@ -406,19 +472,21 @@ public class TerminalView extends Region {
     public void clearSavedZoom() { savedZoom=null; geometryWidth=-1; }
     public void screenChanged() {
         rendered=null; sharedFrame=null; geometryWidth=-1;
-        litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); requestLayout(); requestRender();
+        fluxPaints=null; updateAnimation(); requestLayout(); requestRender();
         revealCursor();
     }
-    public void displayChanged() { sharedPalette=null; litEffect=dimEffect=null; fluxPaints=null; updateAnimation(); requestRender(); }
+    public void displayChanged() { sharedFrame=null; sharedPalette=null; fluxPaints=null; updateAnimation(); requestRender(); }
     public void themeChanged() {
         setTerminalBackground(Ui.customTheme() ? Ui.color(ColorRole.HOST_0) : pane.paneSurfaceColor());
         displayChanged();
     }
     public void fontChanged() {
         face=pane.workspaceFont();
-        nominalWidth=face.getStringBounds("M",TEXT_CONTEXT).getWidth();
-        nominalHeight=face.getLineMetrics("M",TEXT_CONTEXT).getHeight();
-        fontMetrics.clear(); glyphMasks.clear(); fontPixels=0; geometryWidth=-1; configureInk(metrics(16));
+        Font ref=face.deriveFont(16f);
+        nominalWidth=ref.getStringBounds("M",METRICS_CONTEXT).getWidth();
+        nominalHeight=ref.getLineMetrics("M",METRICS_CONTEXT).getHeight();
+        fontMetrics.clear(); strikeFonts.clear(); strikeAscents.clear(); glyphMasks.clear(); fontPixels=0; lastPrewarmHalfPx=-100; geometryWidth=-1;
+        configureInk(metrics(16*FONT_SUBSTEPS));
         pane.syncScrollViewport();
         requestLayout();
         if (blink!=null) screenChanged();
@@ -534,14 +602,20 @@ public class TerminalView extends Region {
         ensureGeometry();
         int cols=pane.screen()==null ? 80 : pane.screen().getColumns();
         int rows=pane.screen()==null ? 24 : pane.screen().getRows();
-        int col=Math.max(0,Math.min(cols-1,(int)((px-originX)/cellWidth)));
-        int row=Math.max(0,Math.min(rows-1,(int)((py-originY)/cellHeight)));
+        double dpiX=geometryDpiX>0 ? geometryDpiX : 1.0,dpiY=geometryDpiY>0 ? geometryDpiY : 1.0;
+        double dx=(px-originX)*dpiX,dy=(py-originY)*dpiY;
+        int col=Math.max(0,Math.min(cols-1,(int)Math.floor(dx/Math.max(1e-6,baseWidth))));
+        while (col+1<cols && dx>=colX(col+1)) col++;
+        while (col>0 && dx<colX(col)) col--;
+        int row=Math.max(0,Math.min(rows-1,(int)Math.floor(dy/Math.max(1e-6,baseHeight))));
+        while (row+1<rows && dy>=rowY(row+1)) row++;
+        while (row>0 && dy<rowY(row)) row--;
         return row*cols+col;
     }
 
     private void ensureGeometry() {
-        int w=Math.max(1,(int)Math.round(getWidth())),h=Math.max(1,(int)Math.round(getHeight()));
-        if (geometryWidth!=w || geometryHeight!=h || geometryFit!=fit || geometryZoom!=zoomValue())
+        double lw=Math.max(1.0,getWidth()),lh=Math.max(1.0,getHeight());
+        if (Math.abs(geometryWidth-lw)>1e-4 || Math.abs(geometryHeight-lh)>1e-4 || geometryFit!=fit || geometryZoom!=zoomValue())
             geometry(geometryDpiX,geometryDpiY);
     }
 
@@ -549,10 +623,14 @@ public class TerminalView extends Region {
         Screen5250 screen=pane.screen();
         if (screen==null) return null;
         ensureGeometry();
+        int cols=screen.getColumns();
         int pos=Math.max(0,Math.min(screen.getCurrentPos()-1,screen.getScreenLength()-1));
-        return new Rectangle((int)Math.floor(originX+pos%screen.getColumns()*cellWidth),
-                (int)Math.floor(originY+pos/screen.getColumns()*cellHeight),
-                (int)Math.ceil(cellWidth)+1,(int)Math.ceil(cellHeight)+1);
+        int col=pos%cols,row=pos/cols;
+        double dpiX=geometryDpiX>0 ? geometryDpiX : 1.0,dpiY=geometryDpiY>0 ? geometryDpiY : 1.0;
+        int x0=colX(col),x1=colX(col+1),y0=rowY(row),y1=rowY(row+1);
+        return new Rectangle((int)Math.floor(originX+x0/dpiX),
+                (int)Math.floor(originY+y0/dpiY),
+                (int)Math.ceil((x1-x0)/dpiX)+1,(int)Math.ceil((y1-y0)/dpiY)+1);
     }
 
     private void revealCursor() {
@@ -566,20 +644,36 @@ public class TerminalView extends Region {
     }
 
     private void geometry(double dpiX,double dpiY) {
-        int w=Math.max(1,(int)Math.round(getWidth())),h=Math.max(1,(int)Math.round(getHeight()));
+        double lw=Math.max(1.0,getWidth()),lh=Math.max(1.0,getHeight());
         Screen5250 screen=pane.screen();
         int rows=screen==null ? 24 : screen.getRows(),cols=screen==null ? 80 : screen.getColumns();
-        double scale=fit ? Math.max(3.0/16,Math.min(28.0/16,
-                Math.min((w-24)/(cols*nominalWidth),(h-20)/(rows*nominalHeight)))) : zoomValue();
-        int pixels=Math.max(1,(int)Math.floor(16*scale*dpiY));
-        InkMetrics target=metrics(pixels);
-        while (fit && pixels>1 && (cols*target.width>(w-24)*dpiX || rows*target.height>(h-20)*dpiY))
-            target=metrics(--pixels);
+        double availW=Math.max(cols,(lw-24.0)*dpiX);
+        double availH=Math.max(rows*2.0,(lh-20.0)*dpiY);
+        double scale=fit ? Math.max(3.0/16.0,Math.min(28.0/16.0,
+                Math.min((lw-24.0)/(cols*nominalWidth),(lh-20.0)/(rows*nominalHeight)))) : zoomValue();
+        double exactStep=Math.max(FONT_SUBSTEPS,16.0*scale*dpiY*FONT_SUBSTEPS);
+        int step=Math.max(FONT_SUBSTEPS,(int)Math.floor(exactStep));
+        if (fit && fontPixels>=FONT_SUBSTEPS && geometryFit && geometryDpiX==dpiX && geometryDpiY==dpiY) {
+            if (step==fontPixels+1 && exactStep<fontPixels+1.35) {
+                step=fontPixels;
+            } else if (step==fontPixels-1 && exactStep>fontPixels-0.35) {
+                InkMetrics keep=metrics(fontPixels);
+                if (colX(cols,keep.width)<=Math.ceil(availW) && rowY(rows,keep.height)<=Math.ceil(availH)) {
+                    step=fontPixels;
+                }
+            }
+        }
+        InkMetrics target=metrics(step);
+        while (fit && step>FONT_SUBSTEPS
+                && (colX(cols,target.width)>Math.ceil(availW) || rowY(rows,target.height)>Math.ceil(availH))) {
+            target=metrics(--step);
+        }
         configureInk(target);
         cellWidth=baseWidth/dpiX; cellHeight=baseHeight/dpiY;
-        originX=Math.rint(Math.max(12,(w-cols*cellWidth)/2)*dpiX)/dpiX;
-        originY=Math.rint(Math.max(10,(h-rows*cellHeight)/2)*dpiY)/dpiY;
-        geometryWidth=w; geometryHeight=h; geometryFit=fit; geometryZoom=zoomValue();
+        double gridLogicalW=colX(cols)/dpiX,gridLogicalH=rowY(rows)/dpiY;
+        originX=Math.rint(Math.max(12.0,(lw-gridLogicalW)*0.5)*dpiX)/dpiX;
+        originY=Math.rint(Math.max(10.0,(lh-gridLogicalH)*0.5)*dpiY)/dpiY;
+        geometryWidth=lw; geometryHeight=lh; geometryFit=fit; geometryZoom=zoomValue();
         geometryDpiX=dpiX; geometryDpiY=dpiY;
     }
 
@@ -684,19 +778,27 @@ public class TerminalView extends Region {
         double sx=outputScaleX(),sy=outputScaleY();
         int pw=Math.max(1,(int)Math.ceil(lw*sx));
         int ph=Math.max(1,(int)Math.ceil(lh*sy));
+        int allocW=(pw+255)&~255;
+        int allocH=(ph+255)&~255;
         boolean recreated=false;
-        if (fxPixels==null || pixelBuffer==null || pixelBuffer.getWidth()!=pw || pixelBuffer.getHeight()!=ph) {
-            fxPixels=new int[pw*ph];
+        if (fxPixels==null || pixelBuffer==null || pixelBuffer.getWidth()<allocW || pixelBuffer.getHeight()<allocH
+                || pixelBuffer.getWidth()>allocW+1024 || pixelBuffer.getHeight()>allocH+1024) {
+            fxPixels=new int[allocW*allocH];
             IntBuffer buf=IntBuffer.wrap(fxPixels);
-            pixelBuffer=new PixelBuffer<>(pw,ph,buf,PixelFormat.getIntArgbPreInstance());
+            pixelBuffer=new PixelBuffer<>(allocW,allocH,buf,PixelFormat.getIntArgbPreInstance());
             fxImage=new WritableImage(pixelBuffer);
             surface.setImage(fxImage);
             recreated=true;
         }
-        int allocW=(pw+127)&~127;
-        int allocH=(ph+127)&~127;
+        if (surfaceW!=pw || surfaceH!=ph) {
+            if (surfaceW>0) activeResizeUntilNanos=System.nanoTime()+250_000_000L;
+            surfaceW=pw;
+            surfaceH=ph;
+            surface.setViewport(new javafx.geometry.Rectangle2D(0,0,pw,ph));
+            recreated=true;
+        }
         if (workImage==null || workImage.getWidth()<allocW || workImage.getHeight()<allocH
-                || workImage.getWidth()>allocW+256 || workImage.getHeight()>allocH+256) {
+                || workImage.getWidth()>allocW+1024 || workImage.getHeight()>allocH+1024) {
             workImage=new BufferedImage(allocW,allocH,BufferedImage.TYPE_INT_ARGB_PRE);
             workPixels=((DataBufferInt)workImage.getRaster().getDataBuffer()).getData();
         }
@@ -726,7 +828,7 @@ public class TerminalView extends Region {
             g.dispose();
         }
         final int workStride=workImage.getWidth();
-        final int fxStride=pw;
+        final int fxStride=pixelBuffer.getWidth();
         final int copyX=dx,copyY=dy,copyW=dw,copyH=dh;
         final int[] src=workPixels,dst=fxPixels;
         pixelBuffer.updateBuffer(pb -> {
@@ -775,8 +877,13 @@ public class TerminalView extends Region {
                 rendered=snapshot(screen);
                 renderedScreen=screen;
                 sharedFrame=null;
-                litEffect=dimEffect=null;
                 fluxPaints=null;
+                lastPrewarmHalfPx=-100;
+            }
+            int curHalfPx=Math.max(6,(int)Math.floor((fontPixels/(float)FONT_SUBSTEPS)*2.0f+0.001f));
+            if (System.nanoTime()>=activeResizeUntilNanos && Math.abs(curHalfPx-lastPrewarmHalfPx)>=3) {
+                lastPrewarmHalfPx=curHalfPx;
+                scheduleGlyphPrewarm(face,fontPixels,rendered);
             }
             Graphics2D cells=(Graphics2D)g.create();
             try {
@@ -787,29 +894,9 @@ public class TerminalView extends Region {
                 cells.setTransform(target);
                 cells.setStroke(new java.awt.BasicStroke(1));
                 Color[] palette=HostPalette.colors(pane.profile().theme());
-                Rectangle clip=cells.getClipBounds();
-                paintBackgrounds(cells,palette,cols,clip);
                 String effect=pane.profile().effect();
-                if (effect.equals("None") || effect.equals(Profile.FLUX)) {
-                    if (effect.equals(Profile.FLUX)) prepareFlux(palette,cols);
-                    paintSharedInk(cells,palette,effect,rows,cols,phase,dpiX,dpiY,logicalW,logicalH);
-                } else {
-                    int resolution=1;
-                    if (effectResolution!=resolution || !backgroundColor.equals(effectBackground)
-                            || anchor!=effectAnchor || end!=effectEnd) {
-                        litEffect=dimEffect=null;
-                        effectResolution=resolution;
-                        effectBackground=backgroundColor; effectAnchor=anchor; effectEnd=end;
-                    }
-                    boolean lit=phase || !rendered.blinking;
-                    EffectLayer layer=lit ? litEffect : dimEffect;
-                    if (layer==null) {
-                        layer=effectLayer(palette,effect,rows,cols,lit,resolution);
-                        if (lit) litEffect=layer; else dimEffect=layer;
-                    }
-                    for (EffectTile tile:layer.tiles)
-                        if (clip==null || clip.intersects(tile.bounds)) cells.drawImage(tile.image,tile.placement,null);
-                }
+                if (effect.equals(Profile.FLUX)) prepareFlux(palette,cols);
+                paintSharedInk(cells,palette,effect,rows,cols,phase,dpiX,dpiY,logicalW,logicalH);
                 if (hasTerminalFocus() && pane.connected() && screen.isCursorActive() && cursorPhase)
                     paintCursor(cells,screen,rows,cols);
             } finally { cells.dispose(); }
@@ -818,8 +905,9 @@ public class TerminalView extends Region {
 
     private void paintCursor(Graphics2D cells,Screen5250 screen,int rows,int cols) {
         int pos=Math.max(0,Math.min(screen.getCurrentPos()-1,rows*cols-1));
-        int col=pos%cols,row=pos/cols,width=(int)baseWidth,height=(int)baseHeight;
-        int x=col*width,y=row*height;
+        int col=pos%cols,row=pos/cols;
+        int x=colX(col),y=rowY(row);
+        int width=Math.max(1,colX(col+1)-x),height=Math.max(1,rowY(row+1)-y);
         Appearance.CursorStyle style=pane.cursorStyle();
         Color fill=Ui.color(ColorRole.CURSOR);
         if (!screen.getOIA().isInsertMode() && style!=Appearance.CursorStyle.FILLED) {
@@ -837,13 +925,16 @@ public class TerminalView extends Region {
         for (RenderRun run:rendered.runs) {
             if (run.row!=row || col<run.start || col>=run.end || run.hidden
                     || (run.flags&EXTENDED_5250_BLINK)!=0 && !phase) continue;
-            if (run.glyphKey!=null) {
-                GlyphMask mask=glyphMask(run);
-                int left=(int)(run.inkStart*baseWidth)+mask.left-x,top=(int)ascent+mask.top;
-                for (int n=0;n<mask.positions.length;n++) {
-                    int pixel=mask.positions[n],px=left+pixel%mask.width,py=top+pixel/mask.width;
-                    if (px>=0 && px<width && py>=0 && py<height)
-                        output[py*width+px]=blendInk(fill.getRGB(),ink.getRGB(),mask.coverage[n]);
+            if (run.text!=null && col>=run.inkStart && col<run.inkStart+run.text.length()) {
+                char ch=run.text.charAt(col-run.inkStart);
+                if (ch>' ') {
+                    GlyphMask mask=charMask(fontPixels,inkFace,ch);
+                    int left=mask.left,top=(int)ascent+mask.top;
+                    for (int n=0;n<mask.positions.length;n++) {
+                        int pixel=mask.positions[n],px=left+pixel%mask.width,py=top+pixel/mask.width;
+                        if (px>=0 && px<width && py>=0 && py<height)
+                            output[py*width+px]=blendInk(fill.getRGB(),ink.getRGB(),mask.coverage[n]);
+                    }
                 }
             }
             Graphics2D details=image.createGraphics();
@@ -857,128 +948,251 @@ public class TerminalView extends Region {
 
     private void paintRunDecorations(Graphics2D g,RenderRun run) {
         if ((run.flags&EXTENDED_5250_UNDERLINE)!=0) {
-            int ux=(int)Math.round(run.start*baseWidth);
-            int uw=Math.max(1,(int)Math.round((run.end-run.start)*baseWidth));
-            int uy=Math.min((int)Math.round(run.row*baseHeight+ascent)+1,(int)Math.round((run.row+1)*baseHeight)-1);
+            int ux=colX(run.start);
+            int uw=Math.max(1,colX(run.end)-ux);
+            int uy=Math.min(baselineY(run.row)+1,rowY(run.row+1)-1);
             g.fillRect(ux,uy,uw,1);
         }
         if (!run.hidden && (run.flags&EXTENDED_5250_COL_SEP)!=0) {
-            int sy=(int)Math.round((run.row+1)*baseHeight)-3;
+            int sy=rowY(run.row+1)-3;
             for (int c=run.start;c<=run.end;c++) {
-                g.fillRect((int)Math.round(c*baseWidth),sy,1,3);
+                g.fillRect(colX(c),sy,1,3);
             }
         }
     }
 
-    private record InkMetrics(Font font,double width,double height,double ascent) {}
-    private InkMetrics metrics(int pixels) {
-        return fontMetrics.computeIfAbsent(pixels,size -> {
-            Font font=face.deriveFont((float)size);
-            var lines=font.getLineMetrics("M",TEXT_CONTEXT);
-            return new InkMetrics(font,Math.ceil(font.getStringBounds("M",TEXT_CONTEXT).getWidth()),
-                    Math.ceil(lines.getHeight()),Math.ceil(lines.getAscent()));
+    private record InkMetrics(int step,Font font,double width,double height,double ascent) {}
+    private InkMetrics metrics(int step) {
+        return fontMetrics.computeIfAbsent(step,s -> {
+            float size=s/(float)FONT_SUBSTEPS;
+            int halfPx=Math.max(6,(int)Math.floor(size*2.0f+0.001f));
+            Font font=strikeFonts.computeIfAbsent(halfPx,hp ->
+                    GLOBAL_STRIKE_FONTS.computeIfAbsent(new StrikeKey(face,hp),k -> k.base.deriveFont(k.halfPx*0.5f)));
+            float lineAscent=strikeAscents.computeIfAbsent(font,f -> f.getLineMetrics("M",METRICS_CONTEXT).getAscent());
+            double w=Math.max(1.0,nominalWidth*(size/16.0));
+            double h=Math.max(2.0,nominalHeight*(size/16.0));
+            double asc=Math.min(Math.max(1.0,Math.floor(h)-1.0),Math.max(1.0,Math.rint(lineAscent)));
+            return new InkMetrics(s,font,w,h,asc);
         });
     }
     private void configureInk(InkMetrics metrics) {
-        int pixels=metrics.font.getSize();
-        if (fontPixels==pixels) return;
-        fontPixels=pixels; inkFace=metrics.font;
+        if (fontPixels==metrics.step) return;
+        fontPixels=metrics.step; inkFace=metrics.font;
         baseWidth=metrics.width; baseHeight=metrics.height; ascent=metrics.ascent;
-        rendered=null; sharedInk=null; sharedFrame=null; litEffect=dimEffect=null; fluxPaints=null;
+        sharedFrame=null; fluxPaints=null;
     }
-    private record GlyphKey(Font font,int cellAdvance,String text) {}
-    private record GlyphMask(int left,int top,int width,int[] positions,int[] coverage) {}
-    private GlyphMask glyphMask(RenderRun run) {
-        GlyphMask existing=glyphMasks.get(run.glyphKey);
-        if (existing!=null) {
-            glyphHits++;
-            return existing;
+    private static final class ScratchMask {
+        BufferedImage image;
+        Graphics2D graphics;
+        int[] pixels;
+        void ensure(int mw,int mh) {
+            if (image==null || image.getWidth()<mw || image.getHeight()<mh) {
+                int aw=Math.max(mw,image==null ? 64 : image.getWidth());
+                int ah=Math.max(mh,image==null ? 64 : image.getHeight());
+                if (graphics!=null) graphics.dispose();
+                image=new BufferedImage(aw,ah,BufferedImage.TYPE_INT_RGB);
+                pixels=((DataBufferInt)image.getRaster().getDataBuffer()).getData();
+                graphics=image.createGraphics();
+                graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
+                graphics.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
+                graphics.setColor(Color.WHITE);
+            }
         }
-        glyphMisses++;
-        GlyphVector vector=run.glyphs();
+        void dispose() {
+            if (graphics!=null) { graphics.dispose(); graphics=null; }
+            image=null; pixels=null;
+        }
+    }
+    private record CharGlyphKey(Font font,char ch) {}
+    private record GlyphMask(int left,int top,int width,int[] positions,int[] coverage) {}
+    private static GlyphMask rasterizeGlyphMask(Font font,char ch,ScratchMask scratch) {
+        GlyphVector vector=font.createGlyphVector(TEXT_CONTEXT,new char[]{ch});
         Rectangle bounds=vector.getPixelBounds(TEXT_CONTEXT,0,0);
         bounds.grow(2,2);
         int mw=Math.max(1,bounds.width),mh=Math.max(1,bounds.height);
-        if (scratchMaskImage==null || scratchMaskImage.getWidth()<mw || scratchMaskImage.getHeight()<mh) {
-            int aw=Math.max(mw,scratchMaskImage==null ? 256 : scratchMaskImage.getWidth());
-            int ah=Math.max(mh,scratchMaskImage==null ? 64 : scratchMaskImage.getHeight());
-            scratchMaskImage=new BufferedImage(aw,ah,BufferedImage.TYPE_INT_RGB);
-            scratchMaskPixels=((DataBufferInt)scratchMaskImage.getRaster().getDataBuffer()).getData();
-        }
-        int stride=scratchMaskImage.getWidth();
-        for (int r=0;r<mh;r++) Arrays.fill(scratchMaskPixels,r*stride,r*stride+mw,0);
-        Graphics2D ink=scratchMaskImage.createGraphics();
-        try {
-            ink.setClip(0,0,mw,mh);
-            ink.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
-            ink.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
-            ink.setColor(Color.WHITE);
-            ink.drawGlyphVector(vector,-bounds.x,-bounds.y);
-        } finally { ink.dispose(); }
+        scratch.ensure(mw,mh);
+        int stride=scratch.image.getWidth();
+        for (int r=0;r<mh;r++) Arrays.fill(scratch.pixels,r*stride,r*stride+mw,0);
+        scratch.graphics.setClip(0,0,mw,mh);
+        scratch.graphics.drawGlyphVector(vector,-bounds.x,-bounds.y);
         int count=0;
         for (int r=0;r<mh;r++) {
             int rowBase=r*stride;
-            for (int c=0;c<mw;c++) if ((scratchMaskPixels[rowBase+c]&0xffffff)!=0) count++;
+            for (int c=0;c<mw;c++) if ((scratch.pixels[rowBase+c]&0xffffff)!=0) count++;
         }
         int[] positions=new int[count],coverage=new int[count];
         for (int r=0,n=0;r<mh;r++) {
             int rowBase=r*stride;
             for (int c=0;c<mw;c++) {
-                int cov=scratchMaskPixels[rowBase+c]&0xffffff;
+                int cov=scratch.pixels[rowBase+c]&0xffffff;
                 if (cov!=0) {
                     positions[n]=r*mw+c;
                     coverage[n++]=cov;
                 }
             }
         }
-        GlyphMask created=new GlyphMask(bounds.x,bounds.y,mw,positions,coverage);
-        glyphMasks.put(run.glyphKey,created);
+        return new GlyphMask(bounds.x,bounds.y,mw,positions,coverage);
+    }
+    private static void scheduleGlyphPrewarm(Font baseFace,int currentStep,RenderFrame frame) {
+        if (baseFace==null || frame==null) return;
+        java.util.BitSet seen=new java.util.BitSet(256);
+        StringBuilder unique=new StringBuilder(96);
+        for (RenderRun run:frame.runs) {
+            if (run.hidden || run.text==null) continue;
+            for (int i=0,len=run.text.length();i<len;i++) {
+                char ch=run.text.charAt(i);
+                if (ch>' ' && !seen.get(ch)) { seen.set(ch); unique.append(ch); }
+            }
+        }
+        if (unique.isEmpty()) return;
+        String chars=unique.toString();
+        int center=Math.max(6,(int)Math.floor((currentStep/(float)FONT_SUBSTEPS)*2.0f+0.001f));
+        GLYPH_WARMER.execute(() -> {
+            int[] deltas={-1,1,-2,2,-3,3,-4,4,-5,5,-6,6,-7,7,-8,8};
+            ScratchMask scratch=WARMER_SCRATCH.get();
+            for (int delta:deltas) {
+                int hp=center+delta;
+                if (hp<10 || hp>64 || GLOBAL_GLYPH_MASKS.size()>=32768) continue;
+                Font strike=GLOBAL_STRIKE_FONTS.computeIfAbsent(new StrikeKey(baseFace,hp),k -> k.base.deriveFont(k.halfPx*0.5f));
+                for (int i=0,len=chars.length();i<len;i++) {
+                    while (System.nanoTime()<activeResizeUntilNanos) {
+                        try { Thread.sleep(25); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                    }
+                    char ch=chars.charAt(i);
+                    CharGlyphKey key=new CharGlyphKey(strike,ch);
+                    if (GLOBAL_GLYPH_MASKS.containsKey(key)) continue;
+                    GlyphMask mask=rasterizeGlyphMask(strike,ch,scratch);
+                    if (GLOBAL_GLYPH_MASKS.size()<32768) GLOBAL_GLYPH_MASKS.putIfAbsent(key,mask);
+                }
+            }
+        });
+    }
+    private GlyphMask charMask(int step,Font font,char ch) {
+        CharGlyphKey key=new CharGlyphKey(font,ch);
+        GlyphMask existing=glyphMasks.get(key);
+        if (existing!=null) {
+            glyphHits++;
+            return existing;
+        }
+        GlyphMask shared=GLOBAL_GLYPH_MASKS.get(key);
+        if (shared!=null) {
+            glyphHits++;
+            glyphMasks.put(key,shared);
+            return shared;
+        }
+        glyphMisses++;
+        GlyphMask created=rasterizeGlyphMask(font,ch,scratchMask);
+        glyphMasks.put(key,created);
+        if (GLOBAL_GLYPH_MASKS.size()<32768) GLOBAL_GLYPH_MASKS.put(key,created);
         return created;
+    }
+
+    private static int customEffectHash() {
+        if (!Ui.customTheme()) return 0;
+        int h=Ui.color(ColorRole.GLOW).getRGB();
+        for (int i=1;i<=6;i++) h=h*31+Ui.color(ColorRole.valueOf("GRADIENT_"+i)).getRGB();
+        return h;
     }
 
     private void paintSharedInk(Graphics2D cells,Color[] palette,String effect,int rows,int cols,boolean visiblePhase,
                                 double dpiX,double dpiY,double logicalW,double logicalH) {
         Rectangle bounds=new Rectangle((int)Math.floor((0-originX)*dpiX),(int)Math.floor((0-originY)*dpiY),
                 (int)Math.ceil(logicalW*dpiX)+2,(int)Math.ceil(logicalH*dpiY)+2);
-        bounds=bounds.intersection(new Rectangle(-4,-4,(int)(cols*baseWidth)+8,(int)(rows*baseHeight)+8));
+        bounds=bounds.intersection(new Rectangle(-4,-4,colX(cols)+8,rowY(rows)+8));
         if (bounds.isEmpty()) return;
         boolean lit=visiblePhase || !rendered.blinking;
         double time=effect.equals(Profile.FLUX) ? fluxPhase : -1;
-        boolean changed=sharedInk==null || sharedFrame!=rendered || !bounds.equals(sharedBounds) || sharedPalette!=palette
-                || !backgroundColor.equals(sharedBackground) || !Ui.color(ColorRole.TERMINAL_SELECTION).equals(sharedSelection)
-                || anchor!=sharedAnchor || end!=sharedEnd || sharedPhase!=lit || sharedFlux!=time;
+        int customHash=customEffectHash();
+        boolean changed=sharedInk==null || sharedFrame!=rendered || sharedFontPixels!=fontPixels
+                || !bounds.equals(sharedBounds) || sharedPalette!=palette || !Objects.equals(effect,sharedEffect)
+                || customHash!=sharedCustomHash || !backgroundColor.equals(sharedBackground)
+                || !Ui.color(ColorRole.TERMINAL_SELECTION).equals(sharedSelection)
+                || anchor!=sharedAnchor || end!=sharedEnd || sharedPhase!=lit || Double.compare(sharedFlux,time)!=0;
         if (changed) {
-            if (sharedInk==null || sharedInk.getWidth()!=bounds.width || sharedInk.getHeight()!=bounds.height)
-                sharedInk=new BufferedImage(bounds.width,bounds.height,BufferedImage.TYPE_INT_RGB);
+            if (sharedInk==null || sharedInk.getWidth()<bounds.width || sharedInk.getHeight()<bounds.height) {
+                int sw=Math.max(bounds.width,sharedInk==null ? 0 : sharedInk.getWidth());
+                int sh=Math.max(bounds.height,sharedInk==null ? 0 : sharedInk.getHeight());
+                sharedInk=new BufferedImage((sw+127)&~127,(sh+127)&~127,BufferedImage.TYPE_INT_ARGB_PRE);
+            }
+            int sharedStride=sharedInk.getWidth();
+            int bw=bounds.width,bh=bounds.height;
             Graphics2D ink=sharedInk.createGraphics();
             PaintContext[] gradients=new PaintContext[palette.length];
             try {
-                ink.setColor(backgroundColor); ink.fillRect(0,0,bounds.width,bounds.height);
+                ink.setClip(0,0,bw,bh);
+                ink.setColor(backgroundColor); ink.fillRect(0,0,bw,bh);
                 ink.translate(-bounds.x,-bounds.y); paintBackgrounds(ink,palette,cols,bounds);
                 int[] output=((DataBufferInt)sharedInk.getRaster().getDataBuffer()).getData();
+                double prismSpan=Math.max(1,colX(cols));
                 for (RenderRun run:rendered.runs) {
                     if (run.hidden || !intersects(run,bounds) || ((run.flags&EXTENDED_5250_BLINK)!=0 && !visiblePhase)) continue;
-                    if (run.glyphKey!=null) {
-                        GlyphMask mask=glyphMask(run);
-                        int left=(int)(run.inkStart*baseWidth)+mask.left,top=(int)(run.row*baseHeight+ascent)+mask.top;
-                        int[] colors=null;
+                    if (run.text!=null) {
+                        int baseRowY=baselineY(run.row);
+                        Color fgColor=palette[run.foreground];
+                        int foreground=fgColor.getRGB();
+                        boolean softGlow=effect.equals("Soft glow") && run.background==0;
+                        boolean prism=effect.equals("Prism") && run.background==0;
+                        PaintContext gradient=null;
                         if (effect.equals(Profile.FLUX) && run.background==0) {
-                            PaintContext gradient=gradients[run.foreground];
+                            gradient=gradients[run.foreground];
                             if (gradient==null) {
                                 gradient=fluxPaints[run.foreground].createContext(ColorModel.getRGBdefault(),bounds,bounds,
                                         new AffineTransform(),cells.getRenderingHints());
                                 gradients[run.foreground]=gradient;
                             }
-                            int height=mask.positions.length==0 ? 1 : mask.positions[mask.positions.length-1]/mask.width+1;
-                            Raster raster=gradient.getRaster(left,top,mask.width,height);
-                            colors=(int[])raster.getDataElements(raster.getMinX(),raster.getMinY(),mask.width,height,null);
                         }
-                        int foreground=palette[run.foreground].getRGB();
-                        for (int n=0;n<mask.positions.length;n++) {
-                            int pixel=mask.positions[n],x=left+pixel%mask.width-bounds.x,y=top+pixel/mask.width-bounds.y;
-                            if (x<0 || y<0 || x>=bounds.width || y>=bounds.height) continue;
-                            int index=y*bounds.width+x;
-                            output[index]=blendInk(output[index],colors==null ? foreground : colors[pixel],mask.coverage[n]);
+                        if (softGlow) {
+                            int glowRgb=(Ui.customTheme() ? Ui.color(ColorRole.GLOW) : fgColor).getRGB();
+                            for (int i=0,len=run.text.length();i<len;i++) {
+                                char ch=run.text.charAt(i);
+                                if (ch<=' ') continue;
+                                int col=run.inkStart+i;
+                                GlyphMask mask=charMask(fontPixels,inkFace,ch);
+                                int baseX=colX(col)+mask.left-bounds.x,baseY=baseRowY+mask.top-bounds.y;
+                                for (int n=0;n<mask.positions.length;n++) {
+                                    int pixel=mask.positions[n],cov=mask.coverage[n];
+                                    int px=baseX+pixel%mask.width,py=baseY+pixel/mask.width;
+                                    if (py>=0 && py<bh) {
+                                        int rowOff=py*sharedStride;
+                                        if (px-1>=0 && px-1<bw) output[rowOff+px-1]=blendGlow(output[rowOff+px-1],glowRgb,cov);
+                                        if (px+1>=0 && px+1<bw) output[rowOff+px+1]=blendGlow(output[rowOff+px+1],glowRgb,cov);
+                                    }
+                                    if (px>=0 && px<bw) {
+                                        if (py-1>=0 && py-1<bh) output[(py-1)*sharedStride+px]=blendGlow(output[(py-1)*sharedStride+px],glowRgb,cov);
+                                        if (py+1>=0 && py+1<bh) output[(py+1)*sharedStride+px]=blendGlow(output[(py+1)*sharedStride+px],glowRgb,cov);
+                                    }
+                                }
+                            }
+                        }
+                        int prismStartRgb=foreground,prismEndRgb=foreground;
+                        if (prism) {
+                            float[] hsb=Color.RGBtoHSB(fgColor.getRed(),fgColor.getGreen(),fgColor.getBlue(),null);
+                            Color prismStart=Ui.customTheme() ? effectColor(fgColor,0) : fgColor;
+                            Color prismEnd=Ui.customTheme() ? effectColor(fgColor,.5)
+                                    : Color.getHSBColor((hsb[0]+.26f)%1,Math.max(.35f,hsb[1]),hsb[2]);
+                            prismStartRgb=prismStart.getRGB(); prismEndRgb=prismEnd.getRGB();
+                        }
+                        for (int i=0,len=run.text.length();i<len;i++) {
+                            char ch=run.text.charAt(i);
+                            if (ch<=' ') continue;
+                            int col=run.inkStart+i;
+                            GlyphMask mask=charMask(fontPixels,inkFace,ch);
+                            int left=colX(col)+mask.left,top=baseRowY+mask.top;
+                            int charFg=prism
+                                    ? ColorTheme.mix(prismStartRgb,prismEndRgb,Math.max(0.0,Math.min(1.0,(colX(col)+colX(col+1))*0.5/prismSpan)))
+                                    : foreground;
+                            int[] colors=null;
+                            if (gradient!=null && mask.positions.length>0) {
+                                int height=mask.positions[mask.positions.length-1]/mask.width+1;
+                                Raster raster=gradient.getRaster(left,top,mask.width,height);
+                                colors=(int[])raster.getDataElements(raster.getMinX(),raster.getMinY(),mask.width,height,null);
+                            }
+                            for (int n=0;n<mask.positions.length;n++) {
+                                int pixel=mask.positions[n],x=left+pixel%mask.width-bounds.x,y=top+pixel/mask.width-bounds.y;
+                                if (x<0 || y<0 || x>=bw || y>=bh) continue;
+                                int index=y*sharedStride+x;
+                                output[index]=blendInk(output[index],colors==null ? charFg : colors[pixel],mask.coverage[n]);
+                            }
                         }
                     }
                     ink.setColor(palette[run.foreground]);
@@ -988,12 +1202,25 @@ public class TerminalView extends Region {
                 for (PaintContext context:gradients) if (context!=null) context.dispose();
                 ink.dispose();
             }
-            sharedFrame=rendered;
-            sharedBounds=bounds; sharedPalette=palette; sharedBackground=backgroundColor;
-            sharedSelection=Ui.color(ColorRole.TERMINAL_SELECTION);
+            sharedFrame=rendered; sharedFontPixels=fontPixels;
+            sharedBounds=bounds; sharedPalette=palette; sharedEffect=effect; sharedCustomHash=customHash;
+            sharedBackground=backgroundColor; sharedSelection=Ui.color(ColorRole.TERMINAL_SELECTION);
             sharedAnchor=anchor; sharedEnd=end; sharedPhase=lit; sharedFlux=time;
         }
-        cells.drawImage(sharedInk,bounds.x,bounds.y,null);
+        java.awt.Composite prevComp=cells.getComposite();
+        cells.setComposite(java.awt.AlphaComposite.Src);
+        cells.drawImage(sharedInk,bounds.x,bounds.y,bounds.x+bounds.width,bounds.y+bounds.height,0,0,bounds.width,bounds.height,null);
+        cells.setComposite(prevComp);
+    }
+
+    private static int blendGlow(int background,int glowRgb,int coverage) {
+        int result=0xff000000;
+        for (int shift=0;shift<=16;shift+=8) {
+            int alpha=((coverage>>shift&255)*80+127)/255;
+            int back=background>>shift&255,front=glowRgb>>shift&255;
+            result|=((back*(255-alpha)+front*alpha+127)/255)<<shift;
+        }
+        return result;
     }
 
     private static int blendInk(int background,int foreground,int coverage) {
@@ -1008,97 +1235,28 @@ public class TerminalView extends Region {
     private void paintBackgrounds(Graphics2D cells,Color[] palette,int cols,Rectangle clip) {
         for (RenderRun run:rendered.runs) {
             if (run.background!=0 && intersects(run,clip)) {
+                int x0=colX(run.start),y0=rowY(run.row);
                 cells.setColor(palette[run.background]);
-                cells.fill(new Rectangle2D.Double(run.start*baseWidth,run.row*baseHeight,
-                        (run.end-run.start)*baseWidth,baseHeight));
+                cells.fillRect(x0,y0,colX(run.end)-x0,rowY(run.row+1)-y0);
             }
         }
         if (anchor>=0 && end>=0) {
-            int left=Math.min(anchor%cols,end%cols),top=Math.min(anchor/cols,end/cols);
+            int c0=Math.min(anchor%cols,end%cols),c1=Math.max(anchor%cols,end%cols)+1;
+            int r0=Math.min(anchor/cols,end/cols),r1=Math.max(anchor/cols,end/cols)+1;
+            int x0=colX(c0),y0=rowY(r0);
             cells.setColor(Ui.color(ColorRole.TERMINAL_SELECTION));
-            cells.fill(new Rectangle2D.Double(left*baseWidth,top*baseHeight,
-                    (Math.abs(anchor%cols-end%cols)+1)*baseWidth,(Math.abs(anchor/cols-end/cols)+1)*baseHeight));
-        }
-    }
-
-    private EffectLayer effectLayer(Color[] palette,String effect,int rows,int cols,boolean visiblePhase,int resolution) {
-        List<EffectTile> tiles=new ArrayList<>();
-        for (int row=0;row<rows;row++) {
-            double left=Double.POSITIVE_INFINITY,right=0;
-            for (RenderRun run:rendered.runs) {
-                if (run.row!=row || run.hidden || ((run.flags&EXTENDED_5250_BLINK)!=0 && !visiblePhase)) continue;
-                if (run.glyphKey!=null) {
-                    GlyphVector gv=run.glyphs();
-                    Rectangle2D ink=gv.getVisualBounds();
-                    left=Math.min(left,run.inkStart*baseWidth+ink.getMinX());
-                    right=Math.max(right,run.inkStart*baseWidth+ink.getMaxX());
-                }
-                if ((run.flags&EXTENDED_5250_UNDERLINE)!=0 || (run.flags&EXTENDED_5250_COL_SEP)!=0) {
-                    left=Math.min(left,run.start*baseWidth); right=Math.max(right,run.end*baseWidth);
-                }
-            }
-            if (!Double.isFinite(left)) continue;
-            Rectangle bounds=new Rectangle((int)Math.floor(left)-4,(int)Math.floor(row*baseHeight)-4,
-                    (int)Math.ceil(right)-(int)Math.floor(left)+8,(int)Math.ceil((row+1)*baseHeight)-(int)Math.floor(row*baseHeight)+8);
-            BufferedImage image=new BufferedImage(bounds.width*resolution,bounds.height*resolution,BufferedImage.TYPE_INT_RGB);
-            Graphics2D ink=image.createGraphics();
-            try {
-                ink.setColor(backgroundColor); ink.fillRect(0,0,image.getWidth(),image.getHeight());
-                ink.scale(resolution,resolution); ink.translate(-bounds.x,-bounds.y);
-                ink.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
-                ink.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
-                paintBackgrounds(ink,palette,cols,bounds);
-                paintInk(ink,palette,effect,cols,visiblePhase,bounds);
-            } finally { ink.dispose(); }
-            AffineTransform placement=new AffineTransform();
-            placement.translate(bounds.x,bounds.y); placement.scale(1.0/resolution,1.0/resolution);
-            tiles.add(new EffectTile(image,placement,bounds));
-        }
-        return new EffectLayer(tiles);
-    }
-
-    private record EffectLayer(List<EffectTile> tiles) {}
-    private record EffectTile(BufferedImage image,AffineTransform placement,Rectangle bounds) {}
-
-    private void paintInk(Graphics2D cells,Color[] palette,String effect,int cols,boolean visiblePhase,Rectangle clip) {
-        for (RenderRun run:rendered.runs) {
-            if (!intersects(run,clip) || run.hidden
-                    || ((run.flags&EXTENDED_5250_BLINK)!=0 && !visiblePhase)) continue;
-            Color foreground=palette[run.foreground];
-            if (run.glyphKey!=null) {
-                GlyphVector gv=run.glyphs();
-                float x=(float)(run.inkStart*baseWidth),y=(float)(run.row*baseHeight+ascent);
-                if (effect.equals("Soft glow") && run.background==0) {
-                    float radius=1;
-                    Color glow=Ui.customTheme() ? Ui.color(ColorRole.GLOW) : foreground;
-                    cells.setColor(new Color(glow.getRed(),glow.getGreen(),glow.getBlue(),80));
-                    cells.drawGlyphVector(gv,x-radius,y); cells.drawGlyphVector(gv,x+radius,y);
-                    cells.drawGlyphVector(gv,x,y-radius); cells.drawGlyphVector(gv,x,y+radius);
-                }
-                cells.setColor(foreground);
-                if (effect.equals("Prism") && run.background==0) {
-                    float[] hsb=Color.RGBtoHSB(foreground.getRed(),foreground.getGreen(),foreground.getBlue(),null);
-                    Color shifted=Ui.customTheme() ? effectColor(foreground,.5)
-                            : Color.getHSBColor((hsb[0]+.26f)%1,Math.max(.35f,hsb[1]),hsb[2]);
-                    cells.setPaint(new java.awt.GradientPaint(0,0,Ui.customTheme() ? effectColor(foreground,0) : foreground,
-                            (float)(cols*baseWidth),0,shifted));
-                }
-                if (effect.equals(Profile.FLUX) && run.background==0) cells.setPaint(fluxPaints[run.foreground]);
-                cells.drawGlyphVector(gv,x,y);
-            }
-            cells.setColor(foreground);
-            paintRunDecorations(cells,run);
+            cells.fillRect(x0,y0,colX(c1)-x0,rowY(r1)-y0);
         }
     }
 
     private void prepareFlux(Color[] palette,int cols) {
-        int width=Math.max(1,(int)(cols*baseWidth));
+        int width=Math.max(1,colX(cols));
         if (fluxPaints!=null && paintedFluxPhase==fluxPhase && fluxPalette==palette && fluxWidth==width
                 && backgroundColor.equals(fluxBackground) && Ui.color(ColorRole.TERMINAL_SELECTION).equals(fluxSelection)) return;
         fluxPaints=new Paint[palette.length];
         for (RenderRun run:rendered.runs) {
             int color=run.foreground;
-            if (run.hidden || run.glyphKey==null || run.background!=0 || fluxPaints[color]!=null) continue;
+            if (run.hidden || run.text==null || run.background!=0 || fluxPaints[color]!=null) continue;
             if (color==0) { fluxPaints[color]=palette[color]; continue; }
             float[] hsb=Color.RGBtoHSB(palette[color].getRed(),palette[color].getGreen(),palette[color].getBlue(),null);
             Color[] stops=new Color[FLUX_STOPS.length];
@@ -1150,8 +1308,8 @@ public class TerminalView extends Region {
         return value<=.04045 ? value/12.92 : Math.pow((value+.055)/1.055,2.4);
     }
     private boolean intersects(RenderRun run,Rectangle clip) {
-        return clip==null || clip.intersects(run.start*baseWidth-2,run.row*baseHeight-2,
-                (run.end-run.start)*baseWidth+4,baseHeight+4);
+        int x0=colX(run.start),y0=rowY(run.row);
+        return clip==null || clip.intersects(x0-2,y0-2,colX(run.end)-x0+4,rowY(run.row+1)-y0+4);
     }
 
     private RenderFrame snapshot(Screen5250 screen) {
@@ -1170,7 +1328,7 @@ public class TerminalView extends Region {
                     if (colors[next]!=colors[pos] || flags[next]!=flags[pos]
                             || (attributes[next]!=0)!=(attributes[pos]!=0)) break;
                 }
-                GlyphKey glyphKey=null;
+                String runText=null;
                 int first=pos,last=row*cols+col;
                 if (!hidden) {
                     while (first<last && text[first]<=' ') first++;
@@ -1178,41 +1336,38 @@ public class TerminalView extends Region {
                     if (first<last) {
                         char[] ink=Arrays.copyOfRange(text,first,last);
                         for (int i=0;i<ink.length;i++) if (ink[i]<32) ink[i]=' ';
-                        glyphKey=new GlyphKey(inkFace,(int)baseWidth,new String(ink));
+                        runText=new String(ink);
                     }
                 }
                 blinking|=!hidden && (flags[pos]&EXTENDED_5250_BLINK)!=0;
                 runs.add(new RenderRun(row,start,col,Math.min(15,colors[pos]&255),
-                        Math.min(15,colors[pos]>>8&255),flags[pos],hidden,glyphKey,first%cols));
+                        Math.min(15,colors[pos]>>8&255),flags[pos],hidden,runText,first%cols));
             }
         }
         return new RenderFrame(runs,blinking);
     }
 
     private record RenderFrame(List<RenderRun> runs,boolean blinking) {}
-    private static final class RenderRun {
+    private final class RenderRun {
         final int row,start,end,foreground,background,flags,inkStart;
         final boolean hidden;
-        final GlyphKey glyphKey;
-        private GlyphVector cachedGlyphs;
+        final String text;
 
         RenderRun(int row,int start,int end,int foreground,int background,int flags,
-                  boolean hidden,GlyphKey glyphKey,int inkStart) {
+                  boolean hidden,String text,int inkStart) {
             this.row=row; this.start=start; this.end=end;
             this.foreground=foreground; this.background=background; this.flags=flags;
-            this.hidden=hidden; this.glyphKey=glyphKey; this.inkStart=inkStart;
+            this.hidden=hidden; this.text=text; this.inkStart=inkStart;
         }
 
         GlyphVector glyphs() {
-            if (cachedGlyphs==null && glyphKey!=null) {
-                GlyphVector gv=glyphKey.font().createGlyphVector(TEXT_CONTEXT,glyphKey.text());
-                double cw=glyphKey.cellAdvance();
-                for (int i=0;i<=gv.getNumGlyphs();i++) {
-                    gv.setGlyphPosition(i,new java.awt.geom.Point2D.Double(i*cw,0));
-                }
-                cachedGlyphs=gv;
+            if (text==null) return null;
+            GlyphVector gv=inkFace.createGlyphVector(TEXT_CONTEXT,text);
+            int origin=colX(inkStart,baseWidth);
+            for (int i=0;i<=gv.getNumGlyphs();i++) {
+                gv.setGlyphPosition(i,new java.awt.geom.Point2D.Double(colX(inkStart+i,baseWidth)-origin,0));
             }
-            return cachedGlyphs;
+            return gv;
         }
     }
 
@@ -1221,8 +1376,8 @@ public class TerminalView extends Region {
         int cols=screen==null ? 80 : screen.getColumns();
         if (fit) return 240;
         double sx=outputScaleX(),sy=outputScaleY();
-        InkMetrics ink=metrics(Math.max(1,(int)Math.floor(16*zoomValue()*sy)));
-        return Math.ceil(cols*ink.width/sx)+24;
+        InkMetrics ink=metrics(Math.max(FONT_SUBSTEPS,(int)Math.floor(16.0*zoomValue()*sy*FONT_SUBSTEPS)));
+        return Math.ceil(colX(cols,ink.width)/sx)+24;
     }
 
     @Override protected double computePrefHeight(double width) {
@@ -1230,7 +1385,7 @@ public class TerminalView extends Region {
         int rows=screen==null ? 24 : screen.getRows();
         if (fit) return 140;
         double sy=outputScaleY();
-        InkMetrics ink=metrics(Math.max(1,(int)Math.floor(16*zoomValue()*sy)));
-        return Math.ceil(rows*ink.height/sy)+20;
+        InkMetrics ink=metrics(Math.max(FONT_SUBSTEPS,(int)Math.floor(16.0*zoomValue()*sy*FONT_SUBSTEPS)));
+        return Math.ceil(rowY(rows,ink.height)/sy)+20;
     }
 }

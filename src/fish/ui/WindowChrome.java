@@ -16,7 +16,7 @@ import fish.model.Profile;
 /** Native JavaFX 25 StageStyle.EXTENDED + HeaderBar unified window chrome. */
 @SuppressWarnings({"deprecation", "removal"})
 public final class WindowChrome extends HeaderBar {
-    public static final int HEIGHT=31;
+    public static final int HEIGHT=34;
     private final Workspace workspace;
     private final Stage stage;
     private final LogoButton caption;
@@ -44,6 +44,7 @@ public final class WindowChrome extends HeaderBar {
         this.menus=menus;
         this.tools=tools;
         menus.setFocusTraversable(false);
+        menus.skinProperty().addListener((o,a,b) -> workspace.tutorialChanged());
         getStyleClass().addAll("fish-header-bar","fish-workspace-header");
         setSnapToPixel(true);
         updateChromeHeight(1.0);
@@ -77,14 +78,17 @@ public final class WindowChrome extends HeaderBar {
         setCenter(dragArea);
 
         minimizeBtn=windowControlButton("Minimize window","minimize",false,() -> stage.setIconified(true));
-        HeaderBar.setButtonType(minimizeBtn,HeaderButtonType.ICONIFY);
+        Ui.bindHeaderButton(minimizeBtn,HeaderButtonType.ICONIFY);
         minimizeBtn.setFocusTraversable(true);
         maximizeBtn=windowControlButton("Maximize window","maximize",false,this::toggleMaximize);
         maximizeBtn.setTooltip(maximizeTooltip);
-        HeaderBar.setButtonType(maximizeBtn,HeaderButtonType.MAXIMIZE);
+        maximizeBtn.addEventFilter(MouseEvent.MOUSE_PRESSED,e -> {
+            if (e.getButton()==MouseButton.PRIMARY) rememberNormal();
+        });
+        Ui.bindHeaderButton(maximizeBtn,HeaderButtonType.MAXIMIZE);
         maximizeBtn.setFocusTraversable(true);
         closeBtn=windowControlButton("Close window","close",true,this::requestClose);
-        HeaderBar.setButtonType(closeBtn,HeaderButtonType.CLOSE);
+        Ui.bindHeaderButton(closeBtn,HeaderButtonType.CLOSE);
         closeBtn.setFocusTraversable(true);
 
         controls=new HBox(0,minimizeBtn,maximizeBtn,closeBtn);
@@ -145,6 +149,9 @@ public final class WindowChrome extends HeaderBar {
     }
 
     public Button logoButton() { return caption; }
+    public Button minimizeButton() { return minimizeBtn; }
+    public Button maximizeButton() { return maximizeBtn; }
+    public Button closeButton() { return closeBtn; }
     public HBox controlsBox() { return controls; }
     public BorderPane dragArea() { return dragArea; }
     public MenuBar menuBar() { return menus; }
@@ -187,7 +194,8 @@ public final class WindowChrome extends HeaderBar {
             }
             if (selector!=null) {
                 double fixed=48+(narrow ? 32 : menusW)+toolsBase+controls.prefWidth(-1)+36;
-                double w=Math.max(68,Math.min(desiredCombo,available-fixed));
+                double minCombo=Math.max(72,selector.minWidth(-1));
+                double w=Math.max(minCombo,Math.min(desiredCombo,available-fixed));
                 if (Math.abs(selector.getPrefWidth()-w)>0.5) selector.setPrefWidth(w);
             }
         }
@@ -255,7 +263,28 @@ public final class WindowChrome extends HeaderBar {
 
     public Node tutorialMenuTarget(String title,String action) {
         if (!menus.isVisible()) return menuButton;
+        if (title!=null && !title.isEmpty()) {
+            Node found=findMenuButton(menus,title);
+            if (found!=null) return found;
+        }
         return menus;
+    }
+
+    private static Node findMenuButton(Parent root,String title) {
+        for (Node child:root.getChildrenUnmodifiable()) {
+            if (child instanceof MenuButton mb && title.equals(cleanLabel(mb.getText())) && mb.isVisible()) return mb;
+            if (child.getStyleClass().contains("menu-button") && child instanceof Labeled lb
+                    && title.equals(cleanLabel(lb.getText())) && child.isVisible()) return child;
+            if (child instanceof Parent p) {
+                Node nested=findMenuButton(p,title);
+                if (nested!=null) return nested;
+            }
+        }
+        return null;
+    }
+
+    private static String cleanLabel(String text) {
+        return text==null ? "" : text.replace("_","").trim();
     }
 
     public void showSystemMenu() {

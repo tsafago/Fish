@@ -149,6 +149,7 @@ public final class Preferences {
         Ui.role(error,"muted");
         error.setAccessibleText("Settings save status");
         VBox footer=new VBox(8,error,buttons);
+        footer.getStyleClass().add("fish-settings-footer");
 
         BorderPane content=new BorderPane();
         content.setPadding(new Insets(16));
@@ -156,7 +157,7 @@ public final class Preferences {
         BorderPane.setMargin(navigation,new Insets(0,18,0,0));
         content.setCenter(pages);
         content.setBottom(footer);
-        BorderPane.setMargin(footer,new Insets(14,0,0,0));
+        BorderPane.setMargin(footer,new Insets(10,0,0,0));
 
         Ui.decorateDialog(dialog,content,this::closeSettings,980,690);
         dialog.setMinWidth(760);
@@ -271,7 +272,38 @@ public final class Preferences {
 
     public Node tutorialTarget(String control) {
         if (control.startsWith("keyboard-")) return keyboard.tutorialTarget(control.substring(9));
-        return control.equals("apply") ? error : targets.getOrDefault(control,navigation);
+        Node resolved=control.equals("apply") ? error : targets.getOrDefault(control,navigation);
+        scrollIntoView(resolved);
+        return resolved;
+    }
+
+    private static void scrollIntoView(Node target) {
+        if (target==null) return;
+        for (Node cur=target.getParent();cur!=null;cur=cur.getParent()) {
+            if (cur instanceof ScrollPane sp && sp.getContent() instanceof Region content) {
+                sp.applyCss();
+                sp.layout();
+                double contentH=content.getBoundsInLocal().getHeight();
+                double viewportH=sp.getViewportBounds().getHeight();
+                if (contentH>viewportH+1.0 && target.getScene()!=null) {
+                    javafx.geometry.Bounds sceneBounds=target.localToScene(target.getBoundsInLocal());
+                    javafx.geometry.Bounds inContent=content.sceneToLocal(sceneBounds);
+                    if (inContent!=null) {
+                        double maxScroll=contentH-viewportH;
+                        double curTop=sp.getVvalue()*maxScroll;
+                        double minY=inContent.getMinY(),maxY=inContent.getMaxY();
+                        double nextTop=curTop;
+                        if (minY<curTop+8.0) nextTop=Math.max(0.0,minY-12.0);
+                        else if (maxY>curTop+viewportH-8.0) nextTop=Math.min(maxScroll,maxY-viewportH+16.0);
+                        if (Math.abs(nextTop-curTop)>0.5) {
+                            sp.setVvalue(Math.max(0.0,Math.min(1.0,nextTop/maxScroll)));
+                            sp.layout();
+                        }
+                    }
+                }
+                break;
+            }
+        }
     }
 
     private void loadDisplay() {

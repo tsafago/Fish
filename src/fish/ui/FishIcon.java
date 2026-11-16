@@ -77,14 +77,32 @@ public final class FishIcon {
         finally { g.dispose(); }
         return image;
     }
+    private record LogoKey(int c1,int c2,int c3) {}
+    private static final java.util.Map<LogoKey,List<javafx.scene.image.Image>> FX_ICON_CACHE=new java.util.concurrent.ConcurrentHashMap<>();
+
     public static List<javafx.scene.image.Image> fxImages() {
-        return List.of(
-                SwingFXUtils.toFXImage(image(16),null),
-                SwingFXUtils.toFXImage(image(24),null),
-                SwingFXUtils.toFXImage(image(32),null),
-                SwingFXUtils.toFXImage(image(48),null),
-                SwingFXUtils.toFXImage(image(64),null),
-                SwingFXUtils.toFXImage(image(256),null));
+        var palette=Ui.colorTheme();
+        LogoKey key=new LogoKey(palette.rgb(ColorRole.LOGO_1),palette.rgb(ColorRole.LOGO_2),palette.rgb(ColorRole.LOGO_3));
+        return FX_ICON_CACHE.computeIfAbsent(key,k -> {
+            if (javafx.application.Platform.isFxApplicationThread()) {
+                javafx.scene.SnapshotParameters params=new javafx.scene.SnapshotParameters();
+                params.setFill(javafx.scene.paint.Color.TRANSPARENT);
+                int[] sizes={16,24,32,48,64,256};
+                javafx.scene.image.Image[] icons=new javafx.scene.image.Image[sizes.length];
+                for (int i=0;i<sizes.length;i++) {
+                    int sz=sizes[i];
+                    icons[i]=canvas(sz,sz).snapshot(params,new javafx.scene.image.WritableImage(sz,sz));
+                }
+                return List.of(icons);
+            }
+            return List.of(
+                    SwingFXUtils.toFXImage(image(16),null),
+                    SwingFXUtils.toFXImage(image(24),null),
+                    SwingFXUtils.toFXImage(image(32),null),
+                    SwingFXUtils.toFXImage(image(48),null),
+                    SwingFXUtils.toFXImage(image(64),null),
+                    SwingFXUtils.toFXImage(image(256),null));
+        });
     }
     public static void main(String[] args) throws IOException {
         int[] sizes={16,24,32,48,64,128,256};

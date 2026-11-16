@@ -1,14 +1,18 @@
 package fish.ui;
 
 import java.util.List;
+import javafx.application.Platform;
+import javafx.beans.value.ChangeListener;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
+import javafx.geometry.Point2D;
 import javafx.geometry.Pos;
 import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
@@ -38,10 +42,13 @@ public final class TutorialDialog {
     private final Button back,next,tryIt,skipTutorial,skipStep;
     private final Rectangle highlightRect=new Rectangle();
     private final Pane highlightLayer=new Pane(highlightRect);
+    private final ChangeListener<Number> geometryListener=(obs,oldV,newV) -> syncHighlightAndPosition();
+    private final ChangeListener<Object> anchorBoundsListener=(obs,oldV,newV) -> syncHighlightAndPosition();
     private ProfilesEditor editor;
     private int step;
     private boolean ended,refreshing;
-    private Node anchor;
+    private Node anchor,observedAnchor;
+    private Pane observedRoot;
     private Window targetWindow;
 
     public TutorialDialog(Workspace workspace,boolean firstRun) { this(workspace,Guide.GETTING_STARTED,firstRun); }
@@ -56,9 +63,11 @@ public final class TutorialDialog {
 
         highlightLayer.setMouseTransparent(true);
         highlightLayer.setManaged(false);
+        highlightLayer.setViewOrder(-100.0);
         highlightRect.setMouseTransparent(true);
-        highlightRect.setFill(javafx.scene.paint.Color.TRANSPARENT);
-        highlightRect.setStrokeWidth(1.5);
+        highlightRect.setStrokeWidth(2.0);
+        highlightRect.setArcWidth(8);
+        highlightRect.setArcHeight(8);
 
         title.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
         Ui.role(progress,"muted");
@@ -66,10 +75,12 @@ public final class TutorialDialog {
         heading.setLeft(title);
         heading.setRight(progress);
 
+        text.getStyleClass().add("fish-tutorial-card");
         text.setEditable(false);
         text.setWrapText(true);
+        text.setFocusTraversable(false);
         text.setAccessibleText("Tutorial step instructions");
-        text.setPrefRowCount(5);
+        text.setPrefRowCount(3);
 
         tryIt=Ui.button("Show control",this::showControl);
         skipTutorial=Ui.button("Skip tutorial",() -> finish(false));
@@ -86,16 +97,22 @@ public final class TutorialDialog {
 
         VBox actions=new VBox(8,contextual,navigation);
         BorderPane body=new BorderPane();
-        body.setPadding(new Insets(12));
+        body.setPadding(new Insets(12,14,12,14));
         body.setTop(heading);
-        BorderPane.setMargin(heading,new Insets(0,0,8,0));
+        BorderPane.setMargin(heading,new Insets(0,0,6,0));
         body.setCenter(text);
         body.setBottom(actions);
-        BorderPane.setMargin(actions,new Insets(10,0,0,0));
+        BorderPane.setMargin(actions,new Insets(8,0,0,0));
 
-        Ui.decorateDialog(stage,body,() -> finish(false),410,280);
-        stage.setMinWidth(350);
-        stage.setMinHeight(245);
+        Ui.decorateDialog(stage,body,() -> finish(false),380,232);
+        stage.setMinWidth(332);
+        stage.setMinHeight(208);
+        stage.setOnShown(e -> {
+            refreshTarget();
+            Platform.runLater(() -> {
+                if (!ended) refreshTarget();
+            });
+        });
         go(0);
     }
 
@@ -108,10 +125,20 @@ public final class TutorialDialog {
     public Button backButton() { return back; }
     public Button nextButton() { return next; }
     public Window targetWindow() { return targetWindow; }
+    public Node currentAnchor() { return anchor; }
+    public Pane highlightLayer() { return highlightLayer; }
+    public Rectangle highlightRect() { return highlightRect; }
 
     public void setVisible(boolean visible) {
-        if (visible) stage.show();
-        else dispose();
+        if (visible) {
+            stage.show();
+            refreshTarget();
+            Platform.runLater(() -> {
+                if (!ended) refreshTarget();
+            });
+        } else {
+            dispose();
+        }
     }
 
     public void focusGuide() {
@@ -165,51 +192,51 @@ public final class TutorialDialog {
     private static List<Step> steps(Guide guide) {
         return switch (guide) {
             case GETTING_STARTED -> List.of(
-                    s("Choose your profile","Use the profile selector beside +. Selection alone changes no session. The default Kerberos profile needs your administrator's IBM i/domain setup; Edit > Settings > Profiles supports password sign-in.","add-profile","","add-profile-selected"),
-                    s("Add and connect","Press + to connect the selected profile in a fresh pane. A lone never-used offline tile is reused. Each connection is independent; on failure use Reconnect in the pane or Session menu.","add","","Add pane"),
-                    s("Close just one pane","Click X to remove a pane. The last pane is kept offline. With hidden headers, X is at the pane's upper-right edge.","close","","Close pane"),
-                    s("Find your settings","Open Edit > Settings. Appearance brings application colors, terminal colors, fonts and pane information together. The left index goes straight to other controls.","settings","","settings-Appearance"),
-                    s("Explore more guides","Open Help > Tutorials for appearance, profiles, keyboard shortcuts, pane tips and desktop layout shortcuts. Every guide has Back, Next, Skip step and Skip tutorial.","Help","Tutorials",""));
+                    s("Choose a profile","Pick a workstation profile in the top-bar selector beside +. Configure host or password profiles anytime in Edit > Settings > Profiles.","add-profile","","add-profile-selected"),
+                    s("Open a session pane","Click + to connect the selected profile in a new pane (reusing an unused starter pane first).","add","","Add pane"),
+                    s("Close a pane","Click X on a pane header to close that pane while keeping the last pane open offline.","close","","Close pane"),
+                    s("Customize Fish","Open Edit > Settings to adjust themes, terminal colors, fonts, profiles, and shortcuts.","settings","","settings-Appearance"),
+                    s("More guides","Open Help > Tutorials anytime for focused guides on profiles, shortcuts, pane layouts, and .lnk launchers.","Help","Tutorials",""));
             case APPEARANCE -> List.of(
-                    s("Open Appearance","Open Edit > Settings, then Appearance. Common appearance controls are all on this page; scroll to the sections below.","Appearance","theme","settings-Appearance"),
-                    s("Choose application colors","Choose Application theme. Valid settings apply automatically. Watch the Saved / error status below. Custom theme editing is optional.","Appearance","theme","appearance-theme"),
-                    s("Choose terminal colors","Check Terminal profile, then choose Text palette. Only that profile and its panes change. Text effect is optional and off by default. Cursor style below chooses underline, outline or filled; Insert fills the cell.","Appearance","palette","appearance-palette"),
-                    s("Choose your font","Choose a monospaced family. A local custom font file is optional; Check font verifies alignment and characters before using it.","Appearance","font","appearance-font"),
-                    s("Set header information","Scroll to Pane information. Show header controls visibility; the checkboxes below select its information.","Appearance","header","appearance-header"),
-                    s("Set footer information","Show footer controls connection status, device name, screen size and cursor location. Extra information is optional. Window and focus outlines are just below.","Appearance","footer","appearance-footer"),
-                    s("Check the save status","Valid choices take effect immediately. Complete typed edits apply after a short pause; disk writes happen separately. Saved confirms persistence; errors stay visible with recovery controls.","Appearance","apply","settings-applied"));
+                    s("Open Appearance","Open Edit > Settings and select Appearance on the left.","Appearance","theme","settings-Appearance"),
+                    s("Application theme","Pick an Application theme—changes apply immediately, or open Theme designer for custom colors.","Appearance","theme","appearance-theme"),
+                    s("Terminal palette & cursor","Select a Terminal profile, then choose its Text palette, optional Text effect, and Cursor style.","Appearance","palette","appearance-palette"),
+                    s("Terminal font","Choose a monospaced font family or browse to a local .ttf/.otf file and click Check font.","Appearance","font","appearance-font"),
+                    s("Pane header","Toggle Show header and choose which details appear above each pane.","Appearance","header","appearance-header"),
+                    s("Pane footer","Toggle Show footer to choose status, screen size, cursor row:col, and insert indicators.","Appearance","footer","appearance-footer"),
+                    s("Auto-save status","Valid changes apply right away and persist automatically when the footer shows Saved.","Appearance","apply","settings-applied"));
             case PASSWORD_PROFILE -> List.of(
-                    s("Open Profiles","Open Settings > Profiles. The actual workstation editor is here; Session > Profiles remains an operational workflow.","Profiles","list","settings-Profiles"),
-                    s("Start a profile","Choose New, or select a saved profile and use Next. New starts a draft; the guide never creates or saves one for you.","Profiles","new","profile-new"),
-                    s("Choose password sign-in","Set Sign in with to Password / manual. Username and password controls appear; no Kerberos ticket is requested.","Profiles","authentication","profile-password-mode"),
-                    s("Enter the host","Enter your IBM i host and a recognizable profile name. This is configuration only, not a connection.","Profiles","host","profile-address"),
-                    s("Enter your username","Enter your username, or choose an existing saved login when available. The guide never reads, records or supplies a password.","Profiles","username","profile-username"),
-                    s("Review sign-in preferences","New password profiles have automatic sign-in and Save password on. Keep or adjust them. A blank password keeps an existing saved password; none is invented.","Profiles","remember","profile-login-options"),
-                    s("Optional advanced fields","Advanced contains port, requested device and code page. The optional Kerberos DNS identity is here in Kerberos mode. Leave defaults unless your administrator specifies otherwise.","Profiles","advanced","profile-advanced"),
-                    s("Create, then select and add","Choose Create profile for a new profile. Existing valid profile edits save automatically; password-store changes require Save login changes. Nothing connects until you use + or Reconnect.","Profiles","apply","profile-saved"));
+                    s("Open Profiles","Open Edit > Settings > Profiles to create or edit workstation profiles.","Profiles","list","settings-Profiles"),
+                    s("Start a draft","Click New to start a profile draft, or select an existing profile and click Next.","Profiles","new","profile-new"),
+                    s("Password sign-in","Set Sign in with to Password / manual to reveal username and password fields.","Profiles","authentication","profile-password-mode"),
+                    s("Host & name","Enter your IBM i hostname or IP address and a clear profile name.","Profiles","host","profile-address"),
+                    s("Username","Enter your IBM i user profile (or pick an existing saved login).","Profiles","username","profile-username"),
+                    s("Sign-in options","Choose whether Fish signs in automatically and stores your password in Windows Credential Manager.","Profiles","remember","profile-login-options"),
+                    s("Advanced options","Expand Advanced only if you need a custom port, device name, or EBCDIC code page.","Profiles","advanced","profile-advanced"),
+                    s("Create profile","Click Create profile to save—then pick it beside + whenever you're ready to connect.","Profiles","apply","profile-saved"));
             case KEYBOARD -> List.of(
-                    s("Open Keyboard Shortcuts","Open Settings > Keyboard Shortcuts. Fish commands and host keys share this editor; host keys still act only in the terminal.","Keyboard Shortcuts","keyboard-search","settings-Keyboard Shortcuts"),
-                    s("Find an action","Type part of an action or key in Find action. The table shows every effective binding, not just the one displayed in a menu.","Keyboard Shortcuts","keyboard-search","keyboard-search"),
-                    s("Select the action","Select the action row. Its complete binding list appears below.","Keyboard Shortcuts","keyboard-table","keyboard-action"),
-                    s("Edit or record a binding","F5 is a single key. For Ctrl+F5 type ctrl F5; for Ctrl+Shift+F5 type ctrl shift F5 (spaces, not +). Use one alternative per line or Record and add. Allowed keys and actions lists every supported token/action. ENTER@numpad is keypad Enter. Two custom owners conflict.","Keyboard Shortcuts","keyboard-keys","keyboard-binding"),
-                    s("Check saved bindings","Complete conflict-free typed bindings apply after a short pause, with disk writes happening separately. Invalid or conflicting entries stay editable without replacing saved keys. Saved confirms persistence.","Keyboard Shortcuts","apply","settings-applied"));
+                    s("Open Keyboard Shortcuts","Open Edit > Settings > Keyboard Shortcuts to customize app and 5250 host keys.","Keyboard Shortcuts","keyboard-search","settings-Keyboard Shortcuts"),
+                    s("Filter actions","Type an action name or key in Find action to narrow the list.","Keyboard Shortcuts","keyboard-search","keyboard-search"),
+                    s("Select an action","Click a row in the table to edit all bindings for that action.","Keyboard Shortcuts","keyboard-table","keyboard-action"),
+                    s("Edit or record keys","Enter one chord per line (e.g. ctrl F5 or ENTER@numpad), or click Record and add.","Keyboard Shortcuts","keyboard-keys","keyboard-binding"),
+                    s("Auto-save check","Conflict-free bindings apply automatically and confirm Saved in the footer.","Keyboard Shortcuts","apply","settings-applied"));
             case PANES -> List.of(
-                    s("Add an independent pane","Choose a profile beside +, then press + to add and connect it. A lone never-used offline tile is reused; later adds create new panes, up to eight.","add","","Add pane"),
-                    s("Resize side by side","Drag the highlighted divider horizontally. Panes > Decrease / Increase divider are keyboard equivalents. Pane size scales text, not host dimensions.","divider-horizontal","","divider-horizontal"),
-                    s("Choose a simple split","With two or three panes, the window's outer edge arranges the whole window: three rows/columns become even thirds, or a large half crosses with its opposite pair intact. Inner pane edges make a half and pair. Four panes use quadrants; each quadrant can split once, up to eight. The shaded result says Window or Pane. Panes > Arrange pane offers the same target areas; hidden headers still support dragging.","Panes","Arrange pane...","panes-arranged"),
-                    s("Resize vertically","Drag the row divider vertically. Decrease / Increase divider resizes the active pane's nearest divider without changing the host's screen dimensions.","divider-vertical","","divider-vertical"),
-                    s("Swap or undo","Drop in another pane's center to swap positions, or use Panes > Swap panes. Quadrant edges fill available half-slots or swap/reorient existing slots; they never split more deeply. Structural changes rebalance sizes. Undo pane arrangement restores the previous arrangement without reconnecting. Eight panes maximum.","Panes","Swap panes...","panes-swapped"),
-                    s("Choose startup connections","Edit > Settings > General controls ordinary restored-window startup. Its off choice is kept. Explicit +, New window and saved-layout launches still connect once; Disconnect stays disconnected until you explicitly retry.","General","startup","startup-changed"),
-                    s("Fit and navigate","View > Fit host screen fits the active pane. Ctrl+Tab moves between panes; X closes one and keeps the last offline. Settings lists your complete custom bindings.","View","Fit host screen","Fit host screen"),
-                    s("Create a layout shortcut","Panes > Saved layouts / shortcuts names this window. Create desktop shortcut saves the layout and writes a Windows .lnk after destination confirmation. Saved layouts below manages existing recipes; each launch opens a new window.","Panes","Saved layouts / shortcuts...","layout-saved"));
+                    s("Add a pane","Pick a profile beside + and click + to open up to eight independent panes.","add","","Add pane"),
+                    s("Resize side-by-side","Drag the vertical divider (or use Panes > Decrease / Increase divider) to resize columns.","divider-horizontal","","divider-horizontal"),
+                    s("Split or arrange","Drag a pane header toward a window or pane edge—or use Panes > Arrange pane—to split cleanly.","Panes","Arrange pane...","panes-arranged"),
+                    s("Resize stacked rows","Drag the horizontal divider vertically to adjust stacked pane heights.","divider-vertical","","divider-vertical"),
+                    s("Swap or undo","Drop onto another pane's center (or use Panes > Swap panes) to swap; Undo restores the prior layout.","Panes","Swap panes...","panes-swapped"),
+                    s("Startup behavior","In Edit > Settings > General, choose whether restored panes reconnect automatically on launch.","General","startup","startup-changed"),
+                    s("Fit & navigate","Use View > Fit host screen to scale text to the pane, and Ctrl+Tab to cycle panes.","View","Fit host screen","Fit host screen"),
+                    s("Save a layout","Open Panes > Saved layouts / shortcuts to save this arrangement or export a Desktop .lnk.","Panes","Saved layouts / shortcuts...","layout-saved"));
             case DESKTOP_SHORTCUTS -> List.of(
-                    s("Choose a profile or keep this layout","For a profile shortcut, use a window with just that profile. Choose it beside +, then use the next step. For your current multi-pane layout, skip these first two steps; no session changes just by opening this guide.","add-profile","","add-profile-selected"),
-                    s("Prepare the window","Press + to add and connect the selected profile, or skip if the window already has the panes you want. To make a one-profile shortcut, use Session > New window and replay this guide there. Saving a recipe never captures screen contents or passwords.","add","","Add pane"),
-                    s("Open saved layouts","Open Panes > Saved layouts / shortcuts. Show control opens that menu; choose the item. Existing layouts and their shortcuts stay separate.","Panes","Saved layouts / shortcuts...","layouts-opened"),
-                    s("Give the layout a name","Under Shortcut for this window, enter a recognizable name, such as Morning work or Inventory. The context above shows a single profile or your current pane count. Use a new name to keep recipes separate.","layouts","name","layout-named"),
-                    s("Create the shortcut","Choose Create desktop shortcut. It saves this window's profiles, arrangement, proportions and fit/zoom when you confirm the destination. No separate Save step is required. Source/Java and Demo launches cannot export runnable shortcuts.","layouts","export","layout-destination-open"),
-                    s("Choose Desktop or a folder","The save chooser starts at Desktop. Keep it or choose another folder, check the .lnk name, then confirm. Cancel writes nothing. Existing files are never overwritten; failures stay visible in Saved layouts so you can retry.","layout-destination","destination","layout-shortcut"),
-                    s("Open it when you need it","Double-click the created .lnk for one new auto-connecting Fish window. Saved layouts below manages existing recipes; renaming/updating keeps their links working. Moving portable Fish requires a new link. This guide never launches it.","layouts","message",""));
+                    s("Pick a profile (optional)","For a single-profile launcher, select that profile beside +; for your current layout, click Skip step.","add-profile","","add-profile-selected"),
+                    s("Set up panes","Click + to open the pane you want in the recipe, or Skip step if your layout is ready.","add","","Add pane"),
+                    s("Open Saved layouts","Open Panes > Saved layouts / shortcuts to name and export this window's layout.","Panes","Saved layouts / shortcuts...","layouts-opened"),
+                    s("Name the layout","Enter a descriptive name (such as Morning work) under Shortcut for this window.","layouts","name","layout-named"),
+                    s("Export shortcut","Click Create desktop shortcut to save the layout and choose where to write the .lnk file.","layouts","export","layout-destination-open"),
+                    s("Confirm destination","Pick Desktop or another folder and confirm—Cancel leaves disk and saved layouts untouched.","layout-destination","destination","layout-shortcut"),
+                    s("Launch anytime","Double-click the .lnk anytime to open a fresh Fish window with that saved layout.","layouts","message",""));
         };
     }
 
@@ -243,15 +270,15 @@ public final class TutorialDialog {
             String message=current.text();
             if (guide==Guide.APPEARANCE && current.control().equals("palette") && workspace.tutorialPreferences()!=null
                     && workspace.tutorialPreferences().category().equals("Appearance") && workspace.tutorialPreferences().customPalette()) {
-                message+=" This custom theme owns host colors. Choose a built-in application theme to enable a profile palette, or skip.";
+                message+=" Custom theme owns terminal colors—pick a built-in theme to change profile palettes, or skip.";
                 target=workspace.tutorialPreferences().tutorialTarget("theme");
             }
             if (current.surface().startsWith("divider-") && workspace.tutorialDivider(current.surface().equals("divider-horizontal"))==null)
-                message+=" There is no matching divider yet. Choose a profile and use + if you want one, or skip.";
+                message+=" Click + first to add a second pane and create a divider, or skip.";
             if (current.surface().equals("add") && workspace.sessionPanes().size()==8)
-                message+=" All eight slots are occupied. Close a pane first or skip.";
+                message+=" All eight pane slots are full—close one first or skip.";
             if (current.surface().equals("close") && workspace.sessionPanes().size()==1 && !workspace.active().busy())
-                message="Only the last offline pane remains; there is nothing to close. Use Next or Skip step.";
+                message="Only one offline pane is open, so X is hidden until another pane or connection is active. Click Next or Skip step.";
 
             title.setText(current.title());
             progress.setText((step+1)+" of "+steps.size());
@@ -259,67 +286,165 @@ public final class TutorialDialog {
             back.setDisable(step==0);
             next.setText(step==steps.size()-1 ? "Done" : "Next");
 
+            bindAnchorObserver(target);
             anchor=target;
             Scene targetScene=anchor==null ? workspace.scene() : anchor.getScene();
             Window win=targetScene==null ? workspace.stage() : targetScene.getWindow();
             if (win==null) win=workspace.stage();
 
             if (targetWindow!=win) {
+                detachWindowListeners(targetWindow);
                 detachHighlight();
                 targetWindow=win;
-                if (targetScene!=null && targetScene.getRoot() instanceof Pane rootPane) {
-                    if (!rootPane.getChildren().contains(highlightLayer)) {
-                        rootPane.getChildren().add(highlightLayer);
-                    }
-                }
+                attachWindowListeners(targetWindow);
             }
-            if (anchor!=null && targetScene!=null && highlightLayer.getParent() instanceof Pane rootPane) {
-                highlightLayer.resizeRelocate(0,0,rootPane.getWidth(),rootPane.getHeight());
-                Bounds sceneBounds=anchor.localToScene(anchor.getBoundsInLocal());
-                if (sceneBounds!=null && sceneBounds.getWidth()>0 && sceneBounds.getHeight()>0) {
-                    highlightRect.setStroke(Ui.fxColor(ColorRole.FOCUS));
-                    highlightRect.setX(sceneBounds.getMinX());
-                    highlightRect.setY(sceneBounds.getMinY());
-                    highlightRect.setWidth(sceneBounds.getWidth());
-                    highlightRect.setHeight(sceneBounds.getHeight());
-                    highlightRect.setVisible(true);
-                } else highlightRect.setVisible(false);
-            } else {
-                highlightRect.setVisible(false);
+            if (targetScene!=null && targetScene.getRoot() instanceof Pane rootPane) {
+                attachHighlightRoot(rootPane);
             }
-            position();
+            syncHighlightAndPosition();
         } finally {
             refreshing=false;
         }
     }
 
+    private void bindAnchorObserver(Node nextAnchor) {
+        if (observedAnchor==nextAnchor) return;
+        if (observedAnchor!=null) {
+            observedAnchor.layoutBoundsProperty().removeListener(anchorBoundsListener);
+            observedAnchor.localToSceneTransformProperty().removeListener(anchorBoundsListener);
+        }
+        observedAnchor=nextAnchor;
+        if (observedAnchor!=null) {
+            observedAnchor.layoutBoundsProperty().addListener(anchorBoundsListener);
+            observedAnchor.localToSceneTransformProperty().addListener(anchorBoundsListener);
+        }
+    }
+
+    private void attachWindowListeners(Window win) {
+        if (win==null) return;
+        win.xProperty().addListener(geometryListener);
+        win.yProperty().addListener(geometryListener);
+        win.widthProperty().addListener(geometryListener);
+        win.heightProperty().addListener(geometryListener);
+    }
+
+    private void detachWindowListeners(Window win) {
+        if (win==null) return;
+        win.xProperty().removeListener(geometryListener);
+        win.yProperty().removeListener(geometryListener);
+        win.widthProperty().removeListener(geometryListener);
+        win.heightProperty().removeListener(geometryListener);
+    }
+
+    private void attachHighlightRoot(Pane rootPane) {
+        if (observedRoot!=rootPane) {
+            if (observedRoot!=null) {
+                observedRoot.widthProperty().removeListener(geometryListener);
+                observedRoot.heightProperty().removeListener(geometryListener);
+                observedRoot.getChildren().remove(highlightLayer);
+            }
+            observedRoot=rootPane;
+            observedRoot.widthProperty().addListener(geometryListener);
+            observedRoot.heightProperty().addListener(geometryListener);
+        }
+        if (!rootPane.getChildren().contains(highlightLayer)) {
+            rootPane.getChildren().add(highlightLayer);
+        }
+        highlightLayer.setViewOrder(-100.0);
+    }
+
     private void detachHighlight() {
-        if (highlightLayer.getParent() instanceof Pane p) {
+        if (observedRoot!=null) {
+            observedRoot.widthProperty().removeListener(geometryListener);
+            observedRoot.heightProperty().removeListener(geometryListener);
+            observedRoot.getChildren().remove(highlightLayer);
+            observedRoot=null;
+        } else if (highlightLayer.getParent() instanceof Pane p) {
             p.getChildren().remove(highlightLayer);
         }
+    }
+
+    private void syncHighlightAndPosition() {
+        if (ended) return;
+        Scene targetScene=anchor==null ? null : anchor.getScene();
+        if (anchor!=null && targetScene!=null && highlightLayer.getParent() instanceof Pane rootPane) {
+            double rw=Math.max(1.0,rootPane.getWidth()),rh=Math.max(1.0,rootPane.getHeight());
+            highlightLayer.resizeRelocate(0,0,rw,rh);
+            Bounds sceneBounds=anchor.localToScene(anchor.getBoundsInLocal());
+            if (sceneBounds!=null && sceneBounds.getWidth()>0 && sceneBounds.getHeight()>0) {
+                Color focus=Ui.fxColor(ColorRole.FOCUS);
+                highlightRect.setStroke(focus);
+                highlightRect.setFill(focus.deriveColor(0,1.0,1.0,0.09));
+                double pad=2.0;
+                double x0=Math.max(1.5,sceneBounds.getMinX()-pad);
+                double y0=Math.max(1.5,sceneBounds.getMinY()-pad);
+                double x1=Math.min(Math.max(x0+2.0,rw-1.5),sceneBounds.getMaxX()+pad);
+                double y1=Math.min(Math.max(y0+2.0,rh-1.5),sceneBounds.getMaxY()+pad);
+                highlightRect.setX(x0);
+                highlightRect.setY(y0);
+                highlightRect.setWidth(Math.max(2.0,x1-x0));
+                highlightRect.setHeight(Math.max(2.0,y1-y0));
+                highlightRect.setVisible(true);
+            } else {
+                highlightRect.setVisible(false);
+            }
+        } else {
+            highlightRect.setVisible(false);
+        }
+        position();
+    }
+
+    Point2D computeDialogPosition(Rectangle2D screen,double winSceneX,double winSceneY,double sw,double sh) {
+        if (anchor==null) return null;
+        Bounds b=anchor.localToScene(anchor.getBoundsInLocal());
+        if (b==null || b.getWidth()<=0 || b.getHeight()<=0) return null;
+        double bx=winSceneX+b.getMinX(),by=winSceneY+b.getMinY();
+        double bw=b.getWidth(),bh=b.getHeight();
+        boolean topBar=b.getMinY()<64;
+        double[][] candidates=topBar
+                ? new double[][]{
+                        {bx,by+bh+10},
+                        {bx+bw-sw,by+bh+10},
+                        {bx-sw-12,by+bh+6},
+                        {bx+bw+12,by}}
+                : new double[][]{
+                        {bx+bw+12,by},
+                        {bx-sw-12,by},
+                        {bx,by+bh+12},
+                        {bx,by-sh-12}};
+        double bestX=candidates[0][0],bestY=candidates[0][1];
+        double bestScore=Double.MAX_VALUE;
+        for (int i=0;i<candidates.length;i++) {
+            double[] c=candidates[i];
+            double x=Math.max(screen.getMinX()+8,Math.min(c[0],screen.getMaxX()-sw-8));
+            double y=Math.max(screen.getMinY()+8,Math.min(c[1],screen.getMaxY()-sh-8));
+            double ox=Math.max(0,Math.min(bx+bw+6,x+sw)-Math.max(bx-6,x));
+            double oy=Math.max(0,Math.min(by+bh+6,y+sh)-Math.max(by-6,y));
+            double cost=ox*oy*2000+Math.abs(x-c[0])+Math.abs(y-c[1])+i*18.0;
+            if (cost<bestScore) { bestScore=cost; bestX=x; bestY=y; }
+        }
+        return new Point2D(Math.round(bestX),Math.round(bestY));
     }
 
     private void position() {
         if (anchor==null || anchor.getScene()==null || targetWindow==null || !stage.isShowing()) return;
         Bounds b=anchor.localToScene(anchor.getBoundsInLocal());
-        if (b==null) return;
-        double bx=targetWindow.getX()+b.getMinX(),by=targetWindow.getY()+b.getMinY();
-        double bw=b.getWidth(),bh=b.getHeight();
-        Rectangle2D screen=Screen.getPrimary().getVisualBounds();
-        double sw=Math.max(360,stage.getWidth()),sh=Math.max(250,stage.getHeight());
-        double[][] candidates={{bx+bw+12,by},{bx-sw-12,by},{bx,by+bh+12},{bx,by-sh-12}};
-        double bestX=candidates[0][0],bestY=candidates[0][1];
-        double bestScore=Double.MAX_VALUE;
-        for (double[] c:candidates) {
-            double x=Math.max(screen.getMinX(),Math.min(c[0],screen.getMaxX()-sw));
-            double y=Math.max(screen.getMinY(),Math.min(c[1],screen.getMaxY()-sh));
-            double ox=Math.max(0,Math.min(bx+bw,x+sw)-Math.max(bx,x));
-            double oy=Math.max(0,Math.min(by+bh,y+sh)-Math.max(by,y));
-            double cost=ox*oy*1000+Math.abs(x-c[0])+Math.abs(y-c[1]);
-            if (cost<bestScore) { bestScore=cost; bestX=x; bestY=y; }
+        if (b==null || b.getWidth()<=0 || b.getHeight()<=0) return;
+        Scene scene=anchor.getScene();
+        double sx=targetWindow.getX()+scene.getX(),sy=targetWindow.getY()+scene.getY();
+        double bx=sx+b.getMinX(),by=sy+b.getMinY();
+        List<Screen> screens=Screen.getScreensForRectangle(bx,by,Math.max(1.0,b.getWidth()),Math.max(1.0,b.getHeight()));
+        if (screens.isEmpty() && targetWindow.getWidth()>0) {
+            screens=Screen.getScreensForRectangle(targetWindow.getX(),targetWindow.getY(),
+                    Math.max(1.0,targetWindow.getWidth()),Math.max(1.0,targetWindow.getHeight()));
         }
-        stage.setX(bestX);
-        stage.setY(bestY);
+        Rectangle2D screen=(screens.isEmpty() ? Screen.getPrimary() : screens.getFirst()).getVisualBounds();
+        double sw=stage.getWidth()>40 ? stage.getWidth() : 380;
+        double sh=stage.getHeight()>40 ? stage.getHeight() : 232;
+        Point2D pt=computeDialogPosition(screen,sx,sy,sw,sh);
+        if (pt==null) return;
+        if (Math.abs(stage.getX()-pt.getX())>0.5) stage.setX(pt.getX());
+        if (Math.abs(stage.getY()-pt.getY())>0.5) stage.setY(pt.getY());
     }
 
     public void finish(boolean completed) {
@@ -333,7 +458,10 @@ public final class TutorialDialog {
     public void dispose() {
         if (!ended) {
             ended=true;
+            bindAnchorObserver(null);
+            detachWindowListeners(targetWindow);
             detachHighlight();
+            targetWindow=null;
             anchor=null;
         }
         stage.close();

@@ -13,9 +13,21 @@ import javafx.event.Event;
 import javafx.geometry.Bounds;
 import javafx.geometry.Point2D;
 import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextArea;
+import javafx.scene.image.ImageView;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HeaderBar;
+import javafx.scene.layout.HeaderButtonType;
 import javafx.scene.layout.Region;
+import javafx.scene.shape.Rectangle;
+import javafx.stage.Stage;
 import org.tn5250j.TN5250jConstants;
 import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.keyboard.KeyMnemonic;
@@ -96,6 +108,10 @@ public final class DpiAndLatencySmoke {
                 verifyZeroActivePaneShift(workspace, 1.5);
                 verifyKeystrokePasteSelectionAndDoubleBuffer(workspace);
                 verifyResizeDividerAndMouseDockLatency(workspace);
+                verifyHeaderButtonSingleFireAndDialogClose(workspace);
+                verifyClickInPaneFocusCursorAndImmediateInput(workspace);
+                verifyTutorialsHighlightAndPositioning(workspace);
+                verifySmoothCrispContinuousResize(workspace);
             } finally {
                 fx(() -> {
                     Ui.setScaleOverride(0);
@@ -459,7 +475,7 @@ public final class DpiAndLatencySmoke {
         Point2D scene = target.localToScene(x, y);
         MouseEvent event = new MouseEvent(
                 type,
-                x, y,
+                scene.getX(), scene.getY(),
                 scene.getX(), scene.getY(),
                 MouseButton.PRIMARY,
                 1,
@@ -532,6 +548,323 @@ public final class DpiAndLatencySmoke {
                 Ui.syncSceneStylesheet(w.scene());
                 FxTestSupport.layout(w);
             }
+            return null;
+        });
+    }
+
+    private static void verifyHeaderButtonSingleFireAndDialogClose(Workspace w) throws Exception {
+        fx(() -> {
+            WindowChrome chrome = w.chrome();
+            Button maxBtn = chrome.maximizeButton();
+            Stage stage = w.stage();
+            check(HeaderBar.getButtonType(maxBtn) == HeaderButtonType.MAXIMIZE,
+                    "Maximize button retains HeaderButtonType.MAXIMIZE for native Snap Layouts.");
+            stage.setMaximized(false);
+            FxTestSupport.layout(w);
+
+            // Real primary mouse click (MOUSE_PRESSED + MOUSE_RELEASED) must NOT double-toggle back to false.
+            double cx = maxBtn.getWidth() * 0.5;
+            double cy = maxBtn.getHeight() * 0.5;
+            fireMouse(maxBtn, MouseEvent.MOUSE_PRESSED, cx, cy, true);
+            fireMouse(maxBtn, MouseEvent.MOUSE_RELEASED, cx, cy, false);
+            check(stage.isMaximized(),
+                    "Primary mouse click on maximize button maximizes stage without shrinking back.");
+
+            // Second primary mouse click restores stage cleanly.
+            fireMouse(maxBtn, MouseEvent.MOUSE_PRESSED, cx, cy, true);
+            fireMouse(maxBtn, MouseEvent.MOUSE_RELEASED, cx, cy, false);
+            check(!stage.isMaximized(),
+                    "Second primary mouse click on maximize button restores stage.");
+
+            // Programmatic/keyboard fire() still works cleanly without mouse events.
+            maxBtn.fire();
+            check(stage.isMaximized(), "Keyboard/programmatic maximizeBtn.fire() maximizes stage.");
+            maxBtn.fire();
+            check(!stage.isMaximized(), "Second maximizeBtn.fire() restores stage.");
+
+            // Verify Ui.decorateDialog close button also fires exactly once on primary mouse click AND .fire().
+            int[] closeCalls = {0};
+            Stage dlg = new Stage();
+            BorderPane content = new BorderPane();
+            Scene dlgScene = Ui.decorateDialog(dlg, content, () -> closeCalls[0]++, 320, 180);
+            Region wrapped = (Region) dlgScene.getRoot();
+            wrapped.applyCss();
+            wrapped.layout();
+            Button dlgClose = FxTestSupport.children(wrapped).stream()
+                    .filter(Button.class::isInstance)
+                    .map(Button.class::cast)
+                    .filter(b -> HeaderBar.getButtonType(b) == HeaderButtonType.CLOSE)
+                    .findFirst()
+                    .orElseThrow();
+            fireMouse(dlgClose, MouseEvent.MOUSE_PRESSED, dlgClose.getWidth() * 0.5, dlgClose.getHeight() * 0.5, true);
+            fireMouse(dlgClose, MouseEvent.MOUSE_RELEASED, dlgClose.getWidth() * 0.5, dlgClose.getHeight() * 0.5, false);
+            check(closeCalls[0] == 1, "Dialog HeaderBar close button invokes onClose once on primary mouse click, got " + closeCalls[0]);
+            dlgClose.fire();
+            check(closeCalls[0] == 2, "Dialog HeaderBar close button invokes onClose once on .fire(), got " + closeCalls[0]);
+            return null;
+        });
+    }
+
+    private static void verifyClickInPaneFocusCursorAndImmediateInput(Workspace w) throws Exception {
+        fx(() -> {
+            Ui.setScaleOverride(1.5);
+            try {
+                Ui.syncSceneStylesheet(w.scene());
+                w.setSize(968, 662);
+                FxTestSupport.layout(w);
+
+                SessionPane pane0 = w.sessionPanes().get(0);
+                SessionPane pane1 = w.sessionPanes().get(1);
+                ScrollPane scroll0 = (ScrollPane) FxTestSupport.field(pane0, "scroll");
+                check(!scroll0.isFocusTraversable(),
+                        "SessionPane ScrollPane is non-focus-traversable so clicks never steal focus from TerminalView.");
+
+                // Start with pane1 active and focused so clicking pane0 must switch active pane AND focus pane0.view().
+                w.activate(pane1);
+                pane1.view().requestFocus();
+                check(w.active() == pane1, "Precondition: pane1 is active before clicking pane0.");
+
+                Screen5250 screen0 = pane0.screen();
+                var firstField = screen0.getScreenFields().getFields()[0];
+                int fieldStart = firstField.startPos();
+                int clickOffset = Math.min(3, Math.max(1, firstField.getLength() - 2));
+                int targetPos = fieldStart + clickOffset;
+                int targetRow = targetPos / screen0.getColumns();
+                int targetCol = targetPos % screen0.getColumns();
+
+                TerminalView view0 = pane0.view();
+                view0.forceSurfaceRender();
+                double originX = (double) FxTestSupport.field(view0, "originX");
+                double originY = (double) FxTestSupport.field(view0, "originY");
+                double cellW = (double) FxTestSupport.field(view0, "cellWidth");
+                double cellH = (double) FxTestSupport.field(view0, "cellHeight");
+                double clickX = originX + (targetCol + 0.5) * cellW;
+                double clickY = originY + (targetRow + 0.5) * cellH;
+
+                // Dispatch primary click through scene -> ScrollPane -> TerminalView.
+                fireMouse(view0, MouseEvent.MOUSE_PRESSED, clickX, clickY, true);
+                check(w.active() == pane0, "Clicking inside inactive pane activates it immediately on MOUSE_PRESSED.");
+                check(w.scene().getFocusOwner() == view0 && view0.hasTerminalFocus(),
+                        "TerminalView keeps scene focus on MOUSE_PRESSED (ScrollPane never steals focus).");
+                check(screen0.isCursorActive(), "5250 cursor is active immediately on MOUSE_PRESSED.");
+                check(screen0.getCurrentRow() - 1 == targetRow && screen0.getCurrentCol() - 1 == targetCol,
+                        "5250 cursor moves immediately on MOUSE_PRESSED to clicked (" + targetRow + "," + targetCol
+                                + "), got (" + (screen0.getCurrentRow() - 1) + "," + (screen0.getCurrentCol() - 1) + ").");
+
+                fireMouse(view0, MouseEvent.MOUSE_RELEASED, clickX, clickY, false);
+                check(w.scene().getFocusOwner() == view0 && view0.hasTerminalFocus(),
+                        "TerminalView retains scene focus after MOUSE_RELEASED without pressing Tab.");
+
+                // Verify the cursor is visibly painted inside the clicked cell immediately.
+                pane0.send(KeyMnemonic.ERASE_FIELD);
+                fireMouse(view0, MouseEvent.MOUSE_PRESSED, clickX, clickY, true);
+                fireMouse(view0, MouseEvent.MOUSE_RELEASED, clickX, clickY, false);
+                view0.forceSurfaceRender();
+                int[] pixels = view0.surfacePixelsForTest();
+                int surfW = (int) FxTestSupport.field(view0, "surfaceW");
+                double scaleX = (double) FxTestSupport.field(view0, "geometryDpiX");
+                double scaleY = (double) FxTestSupport.field(view0, "geometryDpiY");
+                int bgRgb = view0.getTerminalBackground().getRGB() & 0xffffff;
+                int cX0 = (int) Math.rint(originX * scaleX) + (int) Math.rint(targetCol * cellW * scaleX);
+                int cX1 = (int) Math.rint(originX * scaleX) + (int) Math.rint((targetCol + 1) * cellW * scaleX);
+                int cY0 = (int) Math.rint(originY * scaleY) + (int) Math.rint(targetRow * cellH * scaleY);
+                int cY1 = (int) Math.rint(originY * scaleY) + (int) Math.rint((targetRow + 1) * cellH * scaleY);
+                int litCursorPixels = 0;
+                for (int py = cY0; py < cY1; py++) {
+                    for (int px = cX0; px < cX1; px++) {
+                        if ((pixels[py * surfW + px] & 0xffffff) != bgRgb) litCursorPixels++;
+                    }
+                }
+                check(litCursorPixels > 0, "Visible cursor ink is rendered immediately inside clicked cell without pressing Tab.");
+
+                // Immediately send KeyEvents to scene.getFocusOwner() with ZERO Tab key press.
+                Node focusOwner = w.scene().getFocusOwner();
+                Event.fireEvent(focusOwner, new KeyEvent(KeyEvent.KEY_TYPED, "Z", "", KeyCode.UNDEFINED, false, false, false, false));
+                Event.fireEvent(focusOwner, new KeyEvent(KeyEvent.KEY_TYPED, "9", "", KeyCode.UNDEFINED, false, false, false, false));
+                char[] textPlane = new char[screen0.getScreenLength()];
+                screen0.GetScreen(textPlane, textPlane.length, TN5250jConstants.PLANE_TEXT);
+                check(textPlane[targetPos] == 'Z' && textPlane[targetPos + 1] == '9',
+                        "Immediate typing after click writes directly at clicked cell without Tab: got '"
+                                + textPlane[targetPos] + textPlane[targetPos + 1] + "'.");
+                Event.fireEvent(focusOwner, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.BACK_SPACE, false, false, false, false));
+                screen0.GetScreen(textPlane, textPlane.length, TN5250jConstants.PLANE_TEXT);
+                check(textPlane[targetPos] == 'Z' && (textPlane[targetPos + 1] == 0 || textPlane[targetPos + 1] == ' '),
+                        "Immediate Backspace host key works after click without Tab.");
+                pane0.send(KeyMnemonic.ERASE_FIELD);
+            } finally {
+                Ui.setScaleOverride(0);
+                Ui.syncSceneStylesheet(w.scene());
+                FxTestSupport.layout(w);
+            }
+            return null;
+        });
+    }
+
+    private static void verifyTutorialsHighlightAndPositioning(Workspace w) throws Exception {
+        fx(() -> {
+            w.setSize(1120, 720);
+            FxTestSupport.layout(w);
+
+            // Top-bar menu targets resolve to individual .menu-button nodes rather than the full MenuBar.
+            Node editMenuNode = w.chrome().tutorialMenuTarget("Edit", "Settings");
+            Node helpMenuNode = w.chrome().tutorialMenuTarget("Help", "Fish manual");
+            check(editMenuNode != null && editMenuNode != w.chrome().menuBar(),
+                    "tutorialMenuTarget('Edit') resolves to specific Edit .menu-button rather than full MenuBar.");
+            check(helpMenuNode != null && helpMenuNode != w.chrome().menuBar(),
+                    "tutorialMenuTarget('Help') resolves to specific Help .menu-button rather than full MenuBar.");
+            Bounds editBounds = editMenuNode.localToScene(editMenuNode.getBoundsInLocal());
+            Bounds helpBounds = helpMenuNode.localToScene(helpMenuNode.getBoundsInLocal());
+            check(editBounds.getWidth() > 20 && editBounds.getWidth() < 90 && helpBounds.getMinX() > editBounds.getMaxX(),
+                    "Individual top-bar menu buttons have distinct compact bounds.");
+
+            // Concise copy and highlight verification across all 6 guides.
+            for (TutorialDialog.Guide guide : TutorialDialog.Guide.values()) {
+                TutorialDialog td = new TutorialDialog(w, guide, false);
+                try {
+                    List<?> steps = (List<?>) FxTestSupport.field(td, "steps");
+                    TextArea copy = (TextArea) FxTestSupport.field(td, "text");
+                    for (int i = 0; i < steps.size(); i++) {
+                        td.go(i);
+                        String body = copy.getText();
+                        check(body.length() <= 220 && !body.contains("\n\n"),
+                                "Tutorial copy is concise for " + guide.name() + " step " + i + ": len=" + body.length());
+                    }
+                    if (guide == TutorialDialog.Guide.GETTING_STARTED) {
+                        td.go(0);
+                        Region highlightLayer = td.highlightLayer();
+                        Rectangle highlightRect = td.highlightRect();
+                        check(highlightLayer.getParent() == w.scene().getRoot(),
+                                "Tutorial highlightLayer attaches to workspace scene root.");
+                        check(highlightLayer.getViewOrder() < w.chrome().getViewOrder(),
+                                "Tutorial highlightLayer renders above WindowChrome (" + highlightLayer.getViewOrder()
+                                        + " < " + w.chrome().getViewOrder() + ").");
+                        check(highlightRect.isVisible() && highlightRect.getWidth() >= 60 && highlightRect.getHeight() >= 20,
+                                "Starter tutorial step 0 visibly highlights top-bar profile selector.");
+                        double initialHighlightX = highlightRect.getX();
+                        javafx.geometry.Rectangle2D mon = new javafx.geometry.Rectangle2D(0, 0, 1920, 1040);
+                        Point2D pos0 = td.computeDialogPosition(mon, 100, 80, 380, 232);
+                        Bounds anchorScene = td.currentAnchor().localToScene(td.currentAnchor().getBoundsInLocal());
+                        check(pos0 != null && pos0.getY() >= 80 + anchorScene.getMaxY() + 6,
+                                "Starter tutorial step 0 positions cleanly below the top-bar profile selector without covering it.");
+                        w.setSize(520, 720);
+                        FxTestSupport.layout(w);
+                        check(Math.abs(highlightRect.getX() - initialHighlightX) > 80,
+                                "Tutorial highlightRect tracks top-bar control movement live on window resize.");
+                        w.setSize(1120, 720);
+                        FxTestSupport.layout(w);
+                    }
+                } finally {
+                    td.setVisible(false);
+                }
+            }
+
+            // Preferences ScrollPane auto-scrolls offscreen controls into view when targeted by tutorials.
+            Stage pStage = AppearanceDialogs.windowFocusDialog(w);
+            Preferences prefs = w.tutorialPreferences();
+            try {
+                Region pRoot = (Region) pStage.getScene().getRoot();
+                pRoot.resize(860, 360);
+                pRoot.applyCss();
+                pRoot.layout();
+                Node footerNode = prefs.tutorialTarget("footer");
+                pRoot.layout();
+                check(footerNode != null, "Preferences resolves 'footer' tutorial target.");
+                ScrollPane sp = null;
+                for (Node p = footerNode.getParent(); p != null; p = p.getParent()) {
+                    if (p instanceof ScrollPane found) { sp = found; break; }
+                }
+                check(sp != null, "Appearance 'footer' control lives inside a ScrollPane.");
+                Bounds spScene = sp.localToScene(sp.getBoundsInLocal());
+                Bounds targetScene = footerNode.localToScene(footerNode.getBoundsInLocal());
+                check(targetScene.getMaxY() <= spScene.getMaxY() + 2 && targetScene.getMinY() >= spScene.getMinY() - 2,
+                        "Preferences.tutorialTarget('footer') scrolls ScrollPane so target is visible in viewport.");
+            } finally {
+                prefs.closeSettings();
+                UsabilityIterationSmoke.settle(prefs::ended, "Preferences close settled.");
+            }
+            return null;
+        });
+    }
+
+    private static void verifySmoothCrispContinuousResize(Workspace w) throws Exception {
+        fx(() -> {
+            SessionPane pane = w.sessionPanes().getFirst();
+            TerminalView view = pane.view();
+            view.setFit(true);
+            ImageView surface = (ImageView) FxTestSupport.field(view, "surface");
+
+            for (double scale : List.of(1.0, 1.5)) {
+                Ui.setScaleOverride(scale);
+                try {
+                    Ui.syncSceneStylesheet(w.scene());
+                    int prevGridW = -1;
+                    int maxStepJump = 0;
+                    int distinctGridWidths = 0;
+
+                    // Continuous upward sweep across 680..1120 by 2px (tall height so width strictly governs fit).
+                    for (int width = 680; width <= 1120; width += 2) {
+                        w.setSize(width, 920);
+                        FxTestSupport.layout(w);
+                        view.forceSurfaceRender();
+                        check(!surface.isSmooth(), "TerminalView ImageView keeps smooth=false for crisp 1:1 ClearType pixels.");
+                        double cellW = (double) FxTestSupport.field(view, "cellWidth");
+                        double scaleX = (double) FxTestSupport.field(view, "geometryDpiX");
+                        double originX = (double) FxTestSupport.field(view, "originX");
+                        check(Math.abs(originX * scaleX - Math.rint(originX * scaleX)) < 1e-6,
+                                "OriginX snaps to exact physical pixel during continuous resize.");
+                        int gridW = (int) Math.rint(80.0 * cellW * scaleX);
+                        if (prevGridW >= 0) {
+                            check(gridW >= prevGridW,
+                                    "Continuous upward resize is strictly monotonic at scale=" + scale + ", width=" + width
+                                            + ": prev=" + prevGridW + ", cur=" + gridW);
+                            int jump = gridW - prevGridW;
+                            if (jump > maxStepJump) maxStepJump = jump;
+                            if (jump > 0) distinctGridWidths++;
+                        } else {
+                            distinctGridWidths = 1;
+                        }
+                        prevGridW = gridW;
+                    }
+                    check(maxStepJump <= 16,
+                            "Continuous resize avoids 80px font-jump snapping at scale=" + scale + " (maxJump=" + maxStepJump + "px).");
+                    check(distinctGridWidths >= 20,
+                            "Sub-pixel font steps produce smooth progressive grid growth at scale=" + scale
+                                    + " (distinctGridWidths=" + distinctGridWidths + ").");
+
+                    // Continuous downward sweep 1120..680 by 2px must also be monotonic non-increasing.
+                    int prevDownGridW = Integer.MAX_VALUE;
+                    for (int width = 1120; width >= 680; width -= 2) {
+                        w.setSize(width, 920);
+                        FxTestSupport.layout(w);
+                        view.forceSurfaceRender();
+                        double cellW = (double) FxTestSupport.field(view, "cellWidth");
+                        double scaleX = (double) FxTestSupport.field(view, "geometryDpiX");
+                        int gridW = (int) Math.rint(80.0 * cellW * scaleX);
+                        check(gridW <= prevDownGridW,
+                                "Continuous downward resize is strictly monotonic at scale=" + scale + ", width=" + width
+                                        + ": prev=" + prevDownGridW + ", cur=" + gridW);
+                        prevDownGridW = gridW;
+                    }
+
+                    // 1px back-and-forth mouse jitter deadband check: zero oscillation.
+                    w.setSize(900, 920);
+                    FxTestSupport.layout(w);
+                    view.forceSurfaceRender();
+                    int baseStep = (int) FxTestSupport.field(view, "fontPixels");
+                    for (int i = 0; i < 6; i++) {
+                        w.setSize((i % 2 == 0) ? 901 : 900, 920);
+                        FxTestSupport.layout(w);
+                        view.forceSurfaceRender();
+                        check((int) FxTestSupport.field(view, "fontPixels") == baseStep,
+                                "1px resize jitter stays steady without fontStep snap-back oscillation.");
+                    }
+                } finally {
+                    Ui.setScaleOverride(0);
+                }
+            }
+            Ui.syncSceneStylesheet(w.scene());
+            w.setSize(968, 662);
+            FxTestSupport.layout(w);
             return null;
         });
     }

@@ -142,9 +142,9 @@ public final class StreamliningSmoke {
                 Button logo=(Button)field(chrome,"caption");
                 check(logo.isFocusTraversable() && logo.getAccessibleText().contains("animated Flux"),
                         "Logo button is keyboard-accessible and names its effect action.");
-                check(Math.round(logo.getWidth())==48 && Math.round(logo.getHeight())==30,
-                        "Titlebar logo retains 48x30 keyboard/click target.");
-                check(Math.round(chrome.getHeight())==31,"Chrome preserves exact 31px height.");
+                check(Math.round(logo.getWidth())==48 && Math.round(logo.getHeight())==WindowChrome.HEIGHT-1,
+                        "Titlebar logo retains 48x"+(WindowChrome.HEIGHT-1)+" keyboard/click target.");
+                check(Math.round(chrome.getHeight())==WindowChrome.HEIGHT,"Chrome preserves exact "+WindowChrome.HEIGHT+"px height.");
 
                 workspace.activate(first);
                 workspace.putProfile(first.profile().withDisplay(first.profile().theme(),"None"));

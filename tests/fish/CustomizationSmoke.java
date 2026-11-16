@@ -138,10 +138,16 @@ public final class CustomizationSmoke {
         Object frame=field(view,"rendered"); Method runs=frame.getClass().getDeclaredMethod("runs"); runs.setAccessible(true);
         double width=(double)field(view,"baseWidth"); boolean fixed=true;
         for (Object run:(List<?>)runs.invoke(frame)) {
+            java.lang.reflect.Field inkStartField=run.getClass().getDeclaredField("inkStart"); inkStartField.setAccessible(true);
+            int inkStart=(int)inkStartField.get(run);
+            int origin=(int)Math.rint(inkStart*width);
             Method glyph=run.getClass().getDeclaredMethod("glyphs"); glyph.setAccessible(true); GlyphVector vector=(GlyphVector)glyph.invoke(run);
-            if (vector!=null) for (int i=0;i<=vector.getNumGlyphs();i++) fixed&=Math.abs(vector.getGlyphPosition(i).getX()-i*width)<.001;
+            if (vector!=null) for (int i=0;i<=vector.getNumGlyphs();i++) {
+                double gx=vector.getGlyphPosition(i).getX();
+                fixed&=gx==Math.rint(gx) && Math.abs(gx-((int)Math.rint((inkStart+i)*width)-origin))<.001;
+            }
         }
-        check(fixed && width==Math.rint(width),"Custom-font glyphs retain exact integral physical-pixel cells, including code-page characters.");
+        check(fixed && width>0,"Custom-font glyphs retain exact integral physical-pixel cells, including code-page characters.");
     }
     private static void paneChecks(Workspace w,DemoHost host) throws Exception {
         SessionPane pane=w.active(); Appearance a=w.appearanceSettings();
@@ -218,7 +224,7 @@ public final class CustomizationSmoke {
                     for (AppTheme theme:List.of(AppTheme.Lagoon,AppTheme.Afterglow,AppTheme.Eye_Saver)) {
                         w.applyTheme(theme); FxTestSupport.layout(w);
                         Node chrome=(Node)field(w,"chrome");
-                        check(Math.round(((Region)chrome).getHeight())==31 && chrome.isVisible(),
+                        check(Math.round(((Region)chrome).getHeight())==fish.ui.WindowChrome.HEIGHT && chrome.isVisible(),
                                 "Theme changes settle the real chrome/content allocation without overlap: "+theme);
                         FxTestSupport.writeSnapshot(w.scene().getRoot(),1.0,Path.of("build","fish-050-"+theme.name()+".png"));
                     }

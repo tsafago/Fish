@@ -23,14 +23,16 @@ import fish.model.*;
 @SuppressWarnings({"deprecation", "removal"})
 public final class Ui {
     public static java.awt.Color BACKGROUND, PANEL, FIELD, HOVER, LINE, TEXT, MUTED, FOCUS, ERROR, SELECTION;
+    private record StylesheetKey(AppTheme theme, ColorTheme colors, int scaleMillis) {}
+
     private static AppTheme theme = AppTheme.Charcoal;
     private static ColorTheme colors = ColorTheme.builtin(theme);
     private static boolean custom;
-    private static volatile boolean fxStarted;
     private static double scaleOverride;
     private static String currentStylesheet = "";
-    private static final Map<Integer, String> STYLESHEET_CACHE = new ConcurrentHashMap<>();
+    private static final Map<StylesheetKey, String> STYLESHEET_CACHE = new ConcurrentHashMap<>();
     private static final Set<Scene> SCENES = Collections.newSetFromMap(new WeakHashMap<>());
+    private static final Map<Scene, Integer> SCENE_SCALE_MILLIS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Set<Stage> STAGES = Collections.newSetFromMap(new WeakHashMap<>());
     private static final Set<Window> SCALED_WINDOWS = Collections.newSetFromMap(new WeakHashMap<>());
     private static final List<Runnable> THEME_LISTENERS = new CopyOnWriteArrayList<>();
@@ -75,30 +77,75 @@ public final class Ui {
         return color(active ? ColorRole.ACTIVE_TINT : ColorRole.BACKGROUND);
     }
 
-    public static synchronized void install() {
-        System.setProperty("javafx.enablePreview", "true");
-        System.setProperty("javafx.suppressPreviewWarning", "true");
-        if (!fxStarted) {
+    /** Pure-JavaFX bootstrap nested class so Main can start Prism/Glass in parallel before AWT initializes Ui. */
+    public static final class FxBoot {
+        static volatile boolean fxStarted;
+        private static CompletableFuture<Void> fxStartupFuture;
+        private FxBoot() {}
+
+        public static synchronized CompletableFuture<Void> startAsync() {
+            System.setProperty("javafx.enablePreview", "true");
+            System.setProperty("javafx.suppressPreviewWarning", "true");
+            if (fxStarted) return CompletableFuture.completedFuture(null);
+            if (fxStartupFuture != null) return fxStartupFuture;
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            fxStartupFuture = future;
             if (Platform.isFxApplicationThread()) {
                 Platform.setImplicitExit(false);
                 fxStarted = true;
-            } else {
-                CountDownLatch started = new CountDownLatch(1);
+                future.complete(null);
+                return future;
+            }
+            Thread boot = new Thread(() -> {
                 try {
                     Platform.startup(() -> {
                         Platform.setImplicitExit(false);
-                        started.countDown();
+                        fxStarted = true;
+                        future.complete(null);
                     });
-                    if (!started.await(15, TimeUnit.SECONDS))
-                        throw new IllegalStateException("JavaFX toolkit startup timed out.");
                 } catch (IllegalStateException alreadyRunning) {
-                    runAndWaitDirect(() -> Platform.setImplicitExit(false));
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new IllegalStateException("JavaFX startup interrupted.", e);
+                    CountDownLatch latch = new CountDownLatch(1);
+                    Platform.runLater(() -> {
+                        Platform.setImplicitExit(false);
+                        latch.countDown();
+                    });
+                    try { latch.await(15, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                    fxStarted = true;
+                    future.complete(null);
+                } catch (Throwable t) {
+                    future.completeExceptionally(t);
                 }
-                fxStarted = true;
+            }, "fish-fx-bootstrap");
+            boot.setDaemon(false);
+            boot.start();
+            return future;
+        }
+
+        static synchronized void shutdown() {
+            if (fxStarted) {
+                fxStarted = false;
+                fxStartupFuture = null;
+                Platform.exit();
             }
+        }
+    }
+
+    public static CompletableFuture<Void> startToolkitAsync() {
+        return FxBoot.startAsync();
+    }
+
+    public static void install() {
+        install(AppTheme.Charcoal, null);
+    }
+
+    public static synchronized void install(AppTheme initialTheme, ColorTheme customTheme) {
+        try {
+            FxBoot.startAsync().get(15, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("JavaFX startup interrupted.", e);
+        } catch (ExecutionException | TimeoutException e) {
+            throw new IllegalStateException("JavaFX toolkit startup failed.", e);
         }
         if (Boolean.getBoolean("fish.testMode") && !Boolean.getBoolean("fish.embeddedJvm")
                 && "main".equals(Thread.currentThread().getName())
@@ -108,16 +155,14 @@ public final class Ui {
                 System.exit(1);
             });
         }
-        runOnFx(() -> applyTheme(AppTheme.Charcoal));
+        AppTheme target = initialTheme == null ? AppTheme.Charcoal : initialTheme;
+        runOnFx(() -> applyTheme(target, customTheme));
     }
 
-    public static boolean isFxStarted() { return fxStarted; }
+    public static boolean isFxStarted() { return FxBoot.fxStarted; }
 
     public static synchronized void shutdown() {
-        if (fxStarted) {
-            fxStarted = false;
-            Platform.exit();
-        }
+        FxBoot.shutdown();
     }
 
     public static void finishTestRun() {
@@ -125,17 +170,17 @@ public final class Ui {
     }
 
     public static void runLater(Runnable work) {
-        if (fxStarted) Platform.runLater(work);
+        if (FxBoot.fxStarted) Platform.runLater(work);
         else work.run();
     }
 
     public static void runOnFx(Runnable work) {
-        if (!fxStarted || Platform.isFxApplicationThread()) work.run();
+        if (!FxBoot.fxStarted || Platform.isFxApplicationThread()) work.run();
         else runAndWait(work);
     }
 
     public static void runAndWait(Runnable work) {
-        if (!fxStarted || Platform.isFxApplicationThread()) {
+        if (!FxBoot.fxStarted || Platform.isFxApplicationThread()) {
             work.run();
             return;
         }
@@ -163,7 +208,7 @@ public final class Ui {
     }
 
     public static <T> T callAndWait(Callable<T> work) throws Exception {
-        if (!fxStarted || Platform.isFxApplicationThread()) return work.call();
+        if (!FxBoot.fxStarted || Platform.isFxApplicationThread()) return work.call();
         CountDownLatch done = new CountDownLatch(1);
         Object[] box = {null};
         Throwable[] failure = {null};
@@ -182,7 +227,7 @@ public final class Ui {
     }
 
     public static void dispatchSessionRecord(BooleanSupplier alive, Runnable work) throws InterruptedException {
-        if (!fxStarted || Platform.isFxApplicationThread()) {
+        if (!FxBoot.fxStarted || Platform.isFxApplicationThread()) {
             if (alive.getAsBoolean()) work.run();
             return;
         }
@@ -247,8 +292,10 @@ public final class Ui {
     }
 
     public static String stylesheetForScale(double scale) {
-        int key = Math.max(1000, (int) Math.round(scale * 1000.0));
-        return STYLESHEET_CACHE.computeIfAbsent(key, k -> buildStylesheetUri(k / 1000.0));
+        int scaleMillis = Math.max(1000, (int) Math.round(scale * 1000.0));
+        return STYLESHEET_CACHE.computeIfAbsent(
+                new StylesheetKey(theme, colors, scaleMillis),
+                k -> buildStylesheetUri(k.scaleMillis() / 1000.0));
     }
 
     public static void requestScaleLayout(Parent root) {
@@ -261,10 +308,15 @@ public final class Ui {
 
     public static void syncSceneStylesheet(Scene scene) {
         if (scene == null) return;
-        String target = stylesheetForScale(scaleFor(scene));
+        double scale = scaleFor(scene);
+        int scaleMillis = Math.max(1000, (int) Math.round(scale * 1000.0));
+        String target = stylesheetForScale(scale);
         if (scene.getStylesheets().size() != 1 || !target.equals(scene.getStylesheets().getFirst())) {
             scene.getStylesheets().setAll(target);
-            requestScaleLayout(scene.getRoot());
+            Integer prevScale = SCENE_SCALE_MILLIS.put(scene, scaleMillis);
+            if (prevScale == null || prevScale != scaleMillis) {
+                requestScaleLayout(scene.getRoot());
+            }
         }
     }
 
@@ -312,11 +364,17 @@ public final class Ui {
     public static void applyTheme(AppTheme value) { applyTheme(value, null); }
 
     public static void applyTheme(AppTheme value, ColorTheme override) {
-        colors = override == null ? ColorTheme.builtin(value) : override;
-        custom = override != null;
+        ColorTheme nextColors = override == null ? ColorTheme.builtin(value) : override;
+        boolean nextCustom = override != null;
+        if (value == theme && nextCustom == custom && Objects.equals(nextColors, colors)
+                && SCENES.isEmpty() && STAGES.isEmpty() && THEME_LISTENERS.isEmpty()) {
+            currentStylesheet = stylesheetForScale(scaleFor((Scene) null));
+            return;
+        }
+        colors = nextColors;
+        custom = nextCustom;
         updatePaletteFields(value);
         HostPalette.clear();
-        STYLESHEET_CACHE.clear();
         currentStylesheet = stylesheetForScale(scaleFor((Scene) null));
         Runnable apply = () -> {
             javafx.scene.paint.Color fill = fxColor(ColorRole.BACKGROUND);
@@ -325,16 +383,22 @@ public final class Ui {
                 if (scene != null) {
                     scene.setFill(fill);
                     syncSceneStylesheet(scene);
-                    if (scene.getRoot() != null) scene.getRoot().applyCss();
                 }
             }
             for (Stage stage : new ArrayList<>(STAGES)) {
-                if (stage != null) stage.getIcons().setAll(icons);
+                if (stage != null && !stage.getIcons().equals(icons)) {
+                    stage.getIcons().setAll(icons);
+                }
             }
             WindowBorder.refresh();
             for (Runnable listener : THEME_LISTENERS) listener.run();
+            for (Scene scene : new ArrayList<>(SCENES)) {
+                if (scene != null && scene.getRoot() != null && scene.getWindow() != null && scene.getWindow().isShowing()) {
+                    scene.getRoot().applyCss();
+                }
+            }
         };
-        if (fxStarted && !Platform.isFxApplicationThread()) runAndWaitDirect(apply);
+        if (FxBoot.fxStarted && !Platform.isFxApplicationThread()) runAndWaitDirect(apply);
         else apply.run();
     }
 
@@ -439,9 +503,9 @@ public final class Ui {
             .button, .toggle-button {
                 -fx-background-color: -fish-divider, -fish-field;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 2, 1;
+                -fx-background-radius: 4, 3;
                 -fx-text-fill: -fish-text;
-                -fx-padding: 5 11 5 11;
+                -fx-padding: 5 12 5 12;
                 -fx-cursor: hand;
             }
             .button:hover, .toggle-button:hover {
@@ -468,6 +532,7 @@ public final class Ui {
             .fish-icon-button {
                 -fx-background-color: transparent;
                 -fx-background-insets: 0;
+                -fx-background-radius: 4;
                 -fx-padding: 4 6 4 6;
             }
             .fish-icon-button:hover {
@@ -504,7 +569,7 @@ public final class Ui {
             .text-field, .password-field, .text-area {
                 -fx-background-color: -fish-divider, -fish-field;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 2, 1;
+                -fx-background-radius: 4, 3;
                 -fx-text-fill: -fish-text;
                 -fx-prompt-text-fill: -fish-muted;
                 -fx-highlight-fill: -fish-selection;
@@ -515,7 +580,21 @@ public final class Ui {
             }
             .text-area .content {
                 -fx-background-color: -fish-field;
+                -fx-background-radius: 3;
+            }
+            .fish-tutorial-card.text-area {
+                -fx-background-color: transparent;
+                -fx-background-insets: 0;
                 -fx-background-radius: 0;
+                -fx-padding: 0;
+            }
+            .fish-tutorial-card.text-area .content {
+                -fx-background-color: transparent;
+                -fx-background-radius: 0;
+                -fx-padding: 2 0 2 0;
+            }
+            .fish-tutorial-card.text-area:focused {
+                -fx-background-color: transparent;
             }
             .invalid-field {
                 -fx-background-color: -fish-error, -fish-field !important;
@@ -523,7 +602,7 @@ public final class Ui {
             .combo-box-base {
                 -fx-background-color: -fish-divider, -fish-field;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 2, 1;
+                -fx-background-radius: 4, 3;
             }
             .combo-box-base:hover {
                 -fx-background-color: -fish-divider, -fish-hover;
@@ -539,11 +618,15 @@ public final class Ui {
             .combo-box-popup .list-view {
                 -fx-background-color: -fish-divider, -fish-menu;
                 -fx-background-insets: 0, __PX__;
+                -fx-background-radius: 5, 4;
+                -fx-padding: 3;
                 -fx-effect: null;
             }
             .combo-box-popup .list-view .list-cell {
-                -fx-background-color: -fish-menu;
+                -fx-background-color: transparent;
+                -fx-background-radius: 3;
                 -fx-text-fill: -fish-menu-text;
+                -fx-padding: 5 10 5 10;
             }
             .combo-box-popup .list-view .list-cell:hover,
             .combo-box-popup .list-view .list-cell:filled:selected {
@@ -567,8 +650,58 @@ public final class Ui {
             }
             .fish-chrome-combo > .list-cell {
                 -fx-text-fill: -fish-chrome-text;
-                -fx-alignment: center;
+                -fx-alignment: center-left;
                 -fx-padding: 2 6 2 8;
+            }
+            .fish-chrome-pill-combo {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, __PX__ 0 __PX__ __PX__;
+                -fx-background-radius: 4 0 0 4, 3 0 0 3;
+                -fx-border-width: 0;
+            }
+            .fish-chrome-pill-combo:hover {
+                -fx-background-color: -fish-divider, -fish-hover;
+            }
+            .fish-chrome-pill-combo:showing {
+                -fx-background-color: -fish-focus, -fish-pressed;
+            }
+            .fish-chrome-pill-combo:focused {
+                -fx-background-color: -fish-focus, -fish-field;
+                -fx-border-width: 0;
+            }
+            .fish-chrome-pill-combo > .list-cell {
+                -fx-text-fill: -fish-chrome-text;
+                -fx-alignment: center-left;
+                -fx-padding: 2 4 2 9;
+            }
+            .fish-chrome-pill-combo > .arrow-button {
+                -fx-padding: 0 7 0 4;
+            }
+            .fish-chrome-pill-join {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, __PX__ 0 __PX__ 0;
+                -fx-background-radius: 0;
+                -fx-padding: 0;
+            }
+            .fish-chrome-pill-add {
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, __PX__ __PX__ __PX__ 0;
+                -fx-background-radius: 0 4 4 0, 0 3 3 0;
+                -fx-padding: 0 8 0 8;
+                -fx-border-width: 0;
+            }
+            .fish-chrome-pill-add:hover {
+                -fx-background-color: -fish-divider, -fish-hover;
+            }
+            .fish-chrome-pill-add:armed {
+                -fx-background-color: -fish-focus, -fish-pressed;
+            }
+            .fish-chrome-pill-add:focused {
+                -fx-background-color: -fish-focus, -fish-field;
+                -fx-border-width: 0;
+            }
+            .fish-chrome-pill-add:disabled {
+                -fx-background-color: -fish-divider, -fish-panel;
             }
             .check-box {
                 -fx-text-fill: -fish-text;
@@ -580,7 +713,7 @@ public final class Ui {
             .check-box > .box {
                 -fx-background-color: -fish-divider, -fish-field;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 2, 1;
+                -fx-background-radius: 3, 2;
                 -fx-padding: 3;
             }
             .check-box:focused > .box {
@@ -594,13 +727,14 @@ public final class Ui {
             }
             .menu-bar {
                 -fx-background-color: transparent;
-                -fx-padding: 0;
+                -fx-padding: 0 2 0 2;
                 -fx-border-width: 0;
             }
             .menu-bar > .container > .menu-button {
                 -fx-background-color: transparent;
-                -fx-background-radius: 0;
-                -fx-padding: 5 9 5 9;
+                -fx-background-insets: 4 1 4 1;
+                -fx-background-radius: 4;
+                -fx-padding: 6 10 6 10;
             }
             .menu-bar > .container > .menu-button > .label {
                 -fx-text-fill: -fish-chrome-text;
@@ -613,12 +747,13 @@ public final class Ui {
             .context-menu {
                 -fx-background-color: -fish-divider, -fish-menu;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 0;
-                -fx-padding: 3 1 3 1;
+                -fx-background-radius: 5, 4;
+                -fx-padding: 4 3 4 3;
                 -fx-effect: null;
             }
             .menu-item {
                 -fx-background-color: transparent;
+                -fx-background-radius: 3;
                 -fx-padding: 5 12 5 12;
             }
             .menu-item > .label {
@@ -648,7 +783,7 @@ public final class Ui {
             .list-view, .table-view {
                 -fx-background-color: -fish-divider, -fish-field;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 0;
+                -fx-background-radius: 4, 3;
                 -fx-table-cell-border-color: -fish-divider;
             }
             .list-view:focused, .table-view:focused {
@@ -667,18 +802,37 @@ public final class Ui {
                 -fx-text-fill: -fish-selection-text;
             }
             .fish-sidebar.list-view {
-                -fx-background-color: -fish-divider, -fish-panel;
-                -fx-background-insets: 0, __PX__;
+                -fx-background-color: -fish-panel;
+                -fx-background-insets: 0;
+                -fx-background-radius: 0;
+                -fx-padding: 6 6 6 6;
+                -fx-border-color: transparent -fish-divider transparent transparent;
+                -fx-border-width: 0 __PX__ 0 0;
+            }
+            .fish-sidebar.list-view:focused {
+                -fx-background-color: -fish-panel;
             }
             .fish-sidebar .list-cell {
-                -fx-background-color: -fish-panel;
+                -fx-background-color: transparent;
+                -fx-background-radius: 5;
                 -fx-padding: 7 12 7 12;
             }
+            .fish-sidebar .list-cell:filled:hover {
+                -fx-background-color: -fish-hover;
+            }
             .fish-sidebar .list-cell:filled:selected {
-                -fx-background-color: -fish-focus, -fish-selection;
-                -fx-background-insets: 0, 0 0 0 __PX__;
+                -fx-background-color: -fish-selection;
+                -fx-background-radius: 5;
+                -fx-border-color: transparent transparent transparent -fish-focus;
+                -fx-border-width: 0 0 0 2.5;
+                -fx-border-insets: 6 0 6 0;
                 -fx-text-fill: -fish-selection-text;
                 -fx-font-weight: bold;
+            }
+            .fish-settings-footer {
+                -fx-border-color: -fish-divider transparent transparent transparent;
+                -fx-border-width: __PX__ 0 0 0;
+                -fx-padding: 10 0 0 0;
             }
             .table-view .column-header-background,
             .table-view .column-header,
@@ -743,7 +897,7 @@ public final class Ui {
             .scroll-bar > .thumb {
                 -fx-background-color: -fish-divider;
                 -fx-background-insets: 2;
-                -fx-background-radius: 2;
+                -fx-background-radius: 4;
             }
             .scroll-bar > .thumb:hover, .scroll-bar > .thumb:pressed {
                 -fx-background-color: -fish-muted;
@@ -768,19 +922,19 @@ public final class Ui {
             .progress-bar > .track {
                 -fx-background-color: -fish-divider, -fish-field;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 0;
+                -fx-background-radius: 3, 2;
             }
             .progress-bar > .bar {
                 -fx-background-color: -fish-focus;
                 -fx-background-insets: __PX__;
-                -fx-background-radius: 0;
+                -fx-background-radius: 2;
             }
             .tooltip {
                 -fx-background-color: -fish-divider, -fish-tooltip;
                 -fx-background-insets: 0, __PX__;
-                -fx-background-radius: 0;
+                -fx-background-radius: 4, 3;
                 -fx-text-fill: -fish-tooltip-text;
-                -fx-padding: 5 8 5 8;
+                -fx-padding: 5 9 5 9;
                 -fx-effect: null;
             }
             .hyperlink {
@@ -792,7 +946,7 @@ public final class Ui {
                 -fx-background-color: -fish-footer;
                 -fx-border-color: -fish-divider;
                 -fx-border-width: __PX__;
-                -fx-padding: 4 6 4 10;
+                -fx-padding: 4 8 4 10;
             }
             """;
         String css = cssTemplate
@@ -964,6 +1118,24 @@ public final class Ui {
         }
     }
 
+    /**
+     * Attaches OpenJFX {@link HeaderBar#setButtonType} while preventing {@code ButtonBehavior}
+     * from double-firing {@code onAction} on primary mouse clicks already handled by
+     * {@code HeaderButtonBehavior}. Programmatic {@code button.fire()} and keyboard activation
+     * continue to invoke {@code onAction} normally.
+     */
+    public static void bindHeaderButton(Button button, HeaderButtonType type) {
+        HeaderBar.setButtonType(button, type);
+        button.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_RELEASED, e -> {
+            if (e.getButton() == javafx.scene.input.MouseButton.PRIMARY
+                    && button.getLayoutBounds().contains(e.getX(), e.getY())
+                    && button.getScene() != null
+                    && button.getScene().getWindow() instanceof Stage) {
+                button.disarm();
+            }
+        });
+    }
+
     public static Stage dialogStage(Window owner, String title, boolean modal) {
         Stage stage = new Stage(StageStyle.EXTENDED);
         if (owner != null) stage.initOwner(owner);
@@ -986,14 +1158,15 @@ public final class Ui {
         HeaderBar.setDragType(titleLabel, HeaderDragType.DRAGGABLE);
 
         Button close = iconButton("Close dialog", "close", ColorRole.CHROME_TEXT, dismiss);
+        close.getStyleClass().remove("fish-icon-button");
         close.getStyleClass().addAll("fish-chrome-button", "fish-window-close");
-        close.setPrefSize(36, 30);
-        HeaderBar.setButtonType(close, HeaderButtonType.CLOSE);
+        close.setPrefSize(38, 31);
+        bindHeaderButton(close, HeaderButtonType.CLOSE);
 
         HeaderBar header = new HeaderBar(null, dragArea, close);
         header.getStyleClass().add("fish-header-bar");
-        header.setMinHeight(31);
-        header.setPrefHeight(31);
+        header.setMinHeight(32);
+        header.setPrefHeight(32);
 
         BorderPane shell = new BorderPane();
         shell.getStyleClass().add("fish-dialog-shell");

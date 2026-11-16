@@ -57,7 +57,7 @@ $pin = if (Test-Path 'vendor\tn5250j\.git') { & git -C vendor\tn5250j rev-parse 
        elseif (Test-Path 'vendor\tn5250j\REVISION') { (Get-Content vendor\tn5250j\REVISION -Raw).Trim() }
        else { throw 'Core provenance missing: initialize the submodule or use the complete source distribution.' }
 if ($pin -ne 'd160492db8adec5d7cf309c6f4feefa162e6565d') { throw 'Unexpected emulator core revision.' }
-foreach ($directory in @('build\classes','build\generated','build\test-classes','build\package-input')) {
+foreach ($directory in @('build\classes','build\generated','build\test-classes','build\package-input','build\runtime')) {
     $resolved = Join-Path $PSScriptRoot $directory
     if (Test-Path $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
 }
@@ -138,17 +138,48 @@ if ($Task -eq 'Package') {
     if ($LASTEXITCODE -ne 0) { throw 'Fish icon generation failed.' }
     New-Item -ItemType Directory -Force (Split-Path -Parent $image) | Out-Null
     $jmodPath = "$Jdk\jmods;$fxJmods"
+    $runtimeModules = 'java.base,java.desktop,java.xml,java.logging,java.net.http,jdk.crypto.ec,jdk.charsets,javafx.base,javafx.controls,javafx.graphics,javafx.swing'
+    if (Test-Path -LiteralPath build\runtime) { Remove-Item -LiteralPath build\runtime -Recurse -Force }
+    & "$Jdk\bin\jlink.exe" --module-path $jmodPath --add-modules $runtimeModules `
+        '--add-options=--add-modules=ALL-SYSTEM' `
+        --compress zip-0 --no-header-files --no-man-pages --generate-cds-archive --output build\runtime
+    if ($LASTEXITCODE -ne 0) { throw 'Custom runtime image creation failed.' }
     & "$Jdk\bin\jpackage.exe" --type app-image --name Fish --app-version $version --icon build\Fish.ico `
         --input build\package-input --main-jar Fish.jar --main-class fish.Main `
         --dest (Split-Path -Parent $image) --vendor Fish `
-        --module-path $jmodPath `
-        --add-modules java.base,java.desktop,java.xml,java.logging,java.net.http,jdk.crypto.ec,jdk.charsets,javafx.base,javafx.controls,javafx.graphics,javafx.swing `
+        --runtime-image build\runtime `
         --java-options '-Xmx256m' `
+        --java-options '-XX:+IgnoreUnrecognizedVMOptions' `
+        --java-options '-XX:AOTCache=$APPDIR\Fish.aot' `
         --java-options '--enable-native-access=javafx.graphics,ALL-UNNAMED' `
         --java-options '-Djavafx.enablePreview=true' `
         --java-options '-Djavafx.suppressPreviewWarning=true' `
         --java-options '--add-modules=javafx.base,javafx.controls,javafx.graphics,javafx.swing'
     if ($LASTEXITCODE -ne 0) { throw 'Application packaging failed.' }
+    $aotConf = Join-Path $PSScriptRoot 'build\Fish.aotconf'
+    $aotFile = Join-Path $image 'app\Fish.aot'
+    $packagedJava = Join-Path $image 'runtime\bin\java.exe'
+    $packagedJar = Join-Path $image 'app\Fish.jar'
+    # Normalize Fish.jar timestamp to an exact 2-second DOS boundary so ZIP/MSI extraction preserves Fish.aot path validation.
+    $jarItem = Get-Item -LiteralPath $packagedJar
+    $nowLocal = Get-Date
+    $jarItem.LastWriteTime = [DateTime]::new($nowLocal.Year, $nowLocal.Month, $nowLocal.Day, $nowLocal.Hour, $nowLocal.Minute, ($nowLocal.Second - ($nowLocal.Second % 2)), [DateTimeKind]::Local)
+    $aotJvmOpts = @(
+        '-Xmx256m',
+        '--enable-native-access=javafx.graphics,ALL-UNNAMED',
+        '-Djavafx.enablePreview=true',
+        '-Djavafx.suppressPreviewWarning=true',
+        '--add-modules=javafx.base,javafx.controls,javafx.graphics,javafx.swing'
+    )
+    if (Test-Path -LiteralPath $aotConf) { Remove-Item -LiteralPath $aotConf -Force }
+    & $packagedJava @aotJvmOpts -XX:AOTMode=record "-XX:AOTConfiguration=$aotConf" "-Djava.class.path=$packagedJar" fish.Main --aot-warmup
+    if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $aotConf)) {
+        & $packagedJava @aotJvmOpts -XX:AOTMode=create "-XX:AOTConfiguration=$aotConf" "-XX:AOTCache=$aotFile" "-Djava.class.path=$packagedJar"
+        if ($LASTEXITCODE -ne 0) { Write-Warning 'AOT cache creation returned non-zero; falling back to bundled CDS archive.' }
+        Remove-Item -LiteralPath $aotConf -Force -ErrorAction SilentlyContinue
+    } else {
+        Write-Warning 'AOT training pass skipped; falling back to bundled CDS archive.'
+    }
     & "$PSScriptRoot\scripts\set-launcher-encoding.ps1" -Executable (Join-Path $image 'Fish.exe')
     Copy-Item scripts\Fish-config.cmd,Install-Fish.ps1,Uninstall-Fish.ps1 $image -Force
     $source = Join-Path $image 'app\source'

@@ -202,6 +202,7 @@ public final class Workspace {
     private final boolean demonstration;
     private boolean closing;
     private boolean highlightActive;
+    private static final ThreadLocal<java.util.concurrent.CompletableFuture<Void>> DEFERRED_FONT_WARMUP=new ThreadLocal<>();
     private Appearance appearance;
     private Font terminalFont;
     private String fontNotice="";
@@ -262,7 +263,10 @@ public final class Workspace {
         this.demonstration=demonstration;
         this.credentials=new CredentialStore(credentialHelper);
         state.profiles().forEach(p -> profiles.put(p.id(),p));
-        resolveFont();
+        java.util.concurrent.CompletableFuture<Void> deferredWarmup=DEFERRED_FONT_WARMUP.get();
+        boolean deferInitialFont=deferredWarmup!=null && !demonstration && !connectOnStartup && state.displays().isEmpty();
+        if (!deferInitialFont) resolveFont();
+        else deferredWarmup.whenComplete((ignored,err) -> Ui.runLater(this::finishDeferredFontResolution));
         layout=Layout.normalize(state.layout());
         lastProfile=state.lastProfile();
         highlightActive=state.highlightActive();
@@ -279,9 +283,10 @@ public final class Workspace {
 
         menuBar=buildMenus();
 
-        addProfileSelector.getStyleClass().add("fish-chrome-combo");
-        addProfileSelector.setMinSize(68,27);
-        addProfileSelector.setPrefSize(160,27);
+        addProfileSelector.getStyleClass().addAll("fish-chrome-combo","fish-chrome-pill-combo");
+        addProfileSelector.setMinSize(72,24);
+        addProfileSelector.setPrefSize(160,24);
+        addProfileSelector.setMaxHeight(24);
         addProfileSelector.setAccessibleText("Profile for new pane");
         addProfileSelector.setTooltip(new Tooltip("Choose a profile, then + to add and connect; selection alone changes no session"));
         refreshAddProfiles();
@@ -297,15 +302,17 @@ public final class Workspace {
         addPane=new Button();
         addPane.getProperties().put("fish.command",addCmd);
         addPane.setGraphic(Ui.icon("plus",ColorRole.CHROME_TEXT));
-        addPane.getStyleClass().add("fish-chrome-button");
-        addPane.setMinSize(30,27);
-        addPane.setPrefSize(30,27);
+        addPane.getStyleClass().addAll("fish-chrome-button","fish-chrome-pill-add");
+        addPane.setMinSize(30,24);
+        addPane.setPrefSize(30,24);
+        addPane.setMaxHeight(24);
         addPane.disableProperty().bind(addCmd.enabledProperty().not());
         addPane.setAccessibleText("Add and connect selected profile");
         addPane.setTooltip(addPaneTooltip);
         addPane.setOnAction(e -> addCmd.execute());
 
-        HBox tools=new HBox(2,chromeSeparator(),addProfileSelector,chromeSeparator(),addPane);
+        HBox tools=new HBox(0,chromeSeparator(false),addProfileSelector,chromeSeparator(true),addPane);
+        tools.setPadding(new Insets(0,4,0,0));
         tools.setAlignment(Pos.CENTER_LEFT);
 
         chrome=new WindowChrome(this,stage,menuBar,tools,this::toggleFlux);
@@ -367,6 +374,7 @@ public final class Workspace {
 
         stage.setOnCloseRequest(e -> {
             e.consume();
+            chrome.finishKeyboard(false);
             close(false);
         });
         stage.focusedProperty().addListener((o,a,focused) -> {
@@ -375,26 +383,33 @@ public final class Workspace {
         stage.showingProperty().addListener((o,a,showing) -> {
             Ui.syncSceneStylesheet(scene);
             updateWindowOutline();
-            layoutNow();
-            if (showing) Ui.runLater(() -> {
-                Ui.syncSceneStylesheet(scene);
-                updateWindowOutline();
-                layoutNow();
-            });
+            if (showing) {
+                shell.requestLayout();
+                Ui.runLater(() -> {
+                    Ui.syncSceneStylesheet(scene);
+                    updateWindowOutline();
+                });
+            }
         });
         stage.maximizedProperty().addListener((o,a,max) -> updateWindowOutline());
         stage.widthProperty().addListener((o,a,w) -> {
-            if (w.doubleValue()>0) { logicalWidth=w.doubleValue(); windowGeometryChanged(); }
+            if (w.doubleValue()>0) {
+                if (!stage.isMaximized() && !stage.isIconified()) logicalWidth=w.doubleValue();
+                windowGeometryChanged();
+            }
         });
         stage.heightProperty().addListener((o,a,h) -> {
-            if (h.doubleValue()>0) { logicalHeight=h.doubleValue(); windowGeometryChanged(); }
+            if (h.doubleValue()>0) {
+                if (!stage.isMaximized() && !stage.isIconified()) logicalHeight=h.doubleValue();
+                windowGeometryChanged();
+            }
         });
         Ui.onThemeChanged(themeListener);
         constrainWindow();
         layoutNow();
     }
 
-    private Separator chromeSeparator() {
+    private Separator chromeSeparator(boolean pillJoin) {
         Region bar=new Region();
         bar.setManaged(false);
         bar.setMouseTransparent(true);
@@ -419,18 +434,24 @@ public final class Workspace {
                     double dev=Math.round(sp.getX()*s);
                     bx=w*0.5+(dev/s-sp.getX());
                 }
-                double bh=Math.min(h,Math.round(14.0*s)/s);
+                double bh=pillJoin ? h : Math.min(h,Math.round(16.0*s)/s);
                 double by=(h-bh)*0.5;
                 bar.resizeRelocate(bx,by,px,bh);
             }
         };
         sep.getStyleClass().add("fish-chrome-separator");
+        if (pillJoin) {
+            sep.getStyleClass().add("fish-chrome-pill-join");
+            sep.setViewOrder(-1.0);
+        }
         sep.setFocusTraversable(false);
         sep.setMouseTransparent(true);
         sep.setSnapToPixel(false);
-        sep.setMinSize(9,16);
-        sep.setPrefSize(9,16);
-        sep.setMaxSize(9,16);
+        double sw=pillJoin ? 1 : 13;
+        double sh=pillJoin ? 24 : 20;
+        sep.setMinSize(sw,sh);
+        sep.setPrefSize(sw,sh);
+        sep.setMaxSize(sw,sh);
         return sep;
     }
 
@@ -594,7 +615,25 @@ public final class Workspace {
     public boolean hasMultiplePanes() { return layout instanceof Layout.Split; }
     public boolean highlightActive() { return highlightActive; }
     public Appearance appearanceSettings() { return appearance; }
-    public Font terminalFont() { return terminalFont; }
+    public static void withDeferredFontWarmup(java.util.concurrent.CompletableFuture<Void> warmup,Runnable action) {
+        DEFERRED_FONT_WARMUP.set(warmup);
+        try { action.run(); }
+        finally { DEFERRED_FONT_WARMUP.remove(); }
+    }
+
+    private void finishDeferredFontResolution() {
+        if (closing || terminalFont!=null) return;
+        resolveFont();
+        if (!fontNotice.isEmpty() && active!=null) {
+            active.problem(fontNotice);
+            if (stage.isShowing()) Ui.error(stage,fontNotice);
+        }
+    }
+
+    public Font terminalFont() {
+        if (terminalFont==null) resolveFont();
+        return terminalFont;
+    }
 
     public void appearanceSettings(Appearance value) {
         Appearance previous=appearance;
@@ -682,7 +721,7 @@ public final class Workspace {
             throw new IllegalArgumentException("This login has a pending connection/password operation. Wait for it to finish before changing its login.");
         for (Profile candidate:candidates) Profile.login(candidate,candidates);
         shortcuts.validate(shortcuts.overrides(),candidates);
-        try { TerminalFonts.validate(terminalFont,candidates); }
+        try { TerminalFonts.validate(terminalFont(),candidates); }
         catch (java.io.IOException e) { throw new IllegalArgumentException(e.getMessage(),e); }
     }
 

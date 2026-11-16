@@ -65,10 +65,11 @@ Choices are workspace-wide; glyph coverage and cell widths are checked for the
 current code pages. A missing file produces an explicit temporary fallback,
 not loss of the saved choice. Fonts are not uploaded or bundled with releases.
 Each glyph is positioned on a host cell; proportional text layout must never
-replace the fixed grid. Fit derives font size from the actual pane and host
-dimensions. Glyphs are generated at an integer physical font size with snapped
-physical cell advances/baselines and LCD antialiasing, not a fractional font
-transform or bilinear bitmap enlargement. Manual zoom uses the 16px base and scrolling.
+replace the fixed grid. Fit derives font size continuously from the actual pane and host
+dimensions at `1/16px` fractional grid precision with deadband hysteresis so live resizing
+grows smoothly without discrete 80px jumps or snap-back oscillation. Glyphs are rasterized from
+`0.5px` physical ClearType font strikes (`VALUE_TEXT_ANTIALIAS_LCD_HRGB`) and blitted at exact
+integer-snapped physical column/row coordinates (`Math.rint(col * baseWidth)`), never bilinearly scaled. Manual zoom uses the 16px base and scrolling.
 
 ## Layout
 
@@ -91,9 +92,9 @@ In-scene mouse press/drag/release drives live dock previews without Win32 OLE mo
 Headers are 25px high with 8px
 horizontal insets. Display origins retain at least 12px horizontal and 10px
 vertical padding. Resizing does not resize the host's presentation space.
-The main window is undecorated: one 31px dark title/menu row replaces the native
+The main window uses JavaFX 25 `StageStyle.EXTENDED`: one 34px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
-menus/compact profile selector and + control and three 36px window controls.
+menus, the unified `[Profile ▾ | +]` split-pill, and three 36px window controls.
 The leftmost mark is a true 45-degree square with its two left sides extended
 straight through the left corner to form one X and a triangular tail on the left.
 The tail tips end level with the square's top and bottom, without a line joining them.
@@ -109,12 +110,12 @@ focus indication as a subtle underline, never a mouse-click box. Single clicks t
 effect; mouse release and keyboard Space are immediate. A double-click's second
 activation returns to the preceding effect; dragging never activates.
 No logo shimmer remains.
-The titlebar is 31 logical pixels tall, with all controls centered in its actual
+The titlebar is 34 logical pixels tall, with comfortable menu pill spacing, a unified 26px
+rounded split-pill pairing the profile selector and `+` button, and all controls centered in its actual
 layout; native hit regions follow those bounds and scale to current client pixels.
-Pane controls use transparent resting surfaces and the same type/rhythm
-as menus, with crisp vector `SVGPath` icons, hover/pressed feedback and keyboard focus.
-They must not appear as persistent filled chips against the titlebar.
-JavaFX 25 `StageStyle.EXTENDED` and `HeaderBar` (`HeaderDragType.DRAGGABLE` and `HeaderButtonType.ICONIFY` / `MAXIMIZE` / `CLOSE`) provide native Windows 10/11 window framing, DWM Snap Layouts on maximize, Aero Snap, and per-monitor DPI transitions directly through OpenJFX Glass without custom Win32 `WNDPROC` subclassing. Narrow windows collapse menus into a compact overflow menu button.
+Pane controls use crisp vector `SVGPath` icons, hover/pressed feedback and keyboard focus while preserving
+1-physical-pixel seams everywhere.
+JavaFX 25 `StageStyle.EXTENDED` and `HeaderBar` (`HeaderDragType.DRAGGABLE` and single-fire `HeaderButtonType.ICONIFY` / `MAXIMIZE` / `CLOSE` bindings) provide native Windows 10/11 window framing, DWM Snap Layouts on maximize, Aero Snap, and per-monitor DPI transitions directly through OpenJFX Glass without custom Win32 `WNDPROC` subclassing. Narrow windows collapse menus into a compact overflow menu button. Packaged builds include a JDK 25 JEP 483/514 `Fish.aot` AOT cache alongside CDS and parallel JavaFX/AWT bootstrap for fast cold startup.
 
 ## Elevation & Depth
 

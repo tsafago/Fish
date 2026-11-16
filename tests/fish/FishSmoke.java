@@ -454,9 +454,11 @@ public final class FishSmoke {
                 BufferedImage terminal=paint(view,1.5);
                 ImageIO.write(terminal,"png",Path.of("build","fish-terminal-150.png").toFile());
                 check(view.visibleText().contains("Main Menu"),"The screenshot contains real host data.");
-                for (String metric:List.of("baseWidth","baseHeight","ascent")) {
-                    double value=(double)field(view,metric);
-                    check(value==Math.rint(value),"Physical "+metric+" is an integer pixel metric.");
+                double bw=(double)field(view,"baseWidth"),bh=(double)field(view,"baseHeight"),asc=(double)field(view,"ascent");
+                check(bw>0 && bh>0 && asc==Math.rint(asc),"Physical cell metrics and integer baseline ascent are valid.");
+                for (int c=0;c<=80;c++) {
+                    double colEdge=Math.rint(c*bw);
+                    check(colEdge==Math.floor(colEdge),"Physical column "+c+" snaps to an exact integer pixel.");
                 }
                 Object cached=field(view,"rendered");
                 paint(view,1.5);

@@ -172,6 +172,9 @@ public final class SessionPane extends BorderPane {
         empty.setAlignment(Pos.CENTER);
         empty.setPadding(new Insets(0,8,0,8));
         empty.getChildren().add(choices);
+        empty.addEventHandler(MouseEvent.MOUSE_PRESSED,e -> {
+            if (e.getButton()==MouseButton.PRIMARY) activate();
+        });
 
         loading.getChildren().add(spinner);
         body.getChildren().addAll(scroll,empty,loading);
@@ -183,6 +186,12 @@ public final class SessionPane extends BorderPane {
         oia.setTooltip(oiaTooltip);
         footer.setLeft(oia);
         BorderPane.setAlignment(oia,Pos.CENTER_LEFT);
+        footer.addEventHandler(MouseEvent.MOUSE_PRESSED,e -> {
+            if (e.getButton()==MouseButton.PRIMARY) {
+                activate();
+                if (connected()) focusTerminal();
+            }
+        });
 
         reset=Ui.button("Reset",() -> {
             activate();
@@ -367,7 +376,11 @@ public final class SessionPane extends BorderPane {
     }
 
     private void wireScrollViewport() {
+        scroll.setFocusTraversable(false);
         scroll.setCache(false);
+        scroll.focusedProperty().addListener((o,a,f) -> {
+            if (f && scroll.isVisible() && view!=null) view.requestFocus();
+        });
         scroll.skinProperty().addListener((o,a,b) -> disableScrollBitmapCache(scroll));
         scroll.viewportBoundsProperty().addListener((o,a,b) -> syncScrollViewport());
         scroll.widthProperty().addListener((o,a,b) -> syncScrollViewport());
@@ -816,7 +829,7 @@ public final class SessionPane extends BorderPane {
         Ui.message(workspace.stage(),details,"Last pane notice");
     }
 
-    private void updateOia() {
+    void updateOia() {
         if (!javafx.application.Platform.isFxApplicationThread() && Ui.isFxStarted()) {
             Ui.runLater(this::updateOia);
             return;
@@ -1023,7 +1036,7 @@ public final class SessionPane extends BorderPane {
     }
 
     Node tutorialConnectionTarget() { return connectButton.isVisible() && !busy() ? connectButton : close.isVisible() ? close : this; }
-    Node tutorialCloseTarget() { return close.isVisible() ? close : this; }
+    Node tutorialCloseTarget() { return close.isVisible() ? close : header.isVisible() ? header : this; }
     boolean connecting() { return connecting || credentialOperations>0; }
     Node tutorialDragTarget() { return header.isVisible() ? header : dragZone.isVisible() ? dragZone : this; }
 

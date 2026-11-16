@@ -80,10 +80,14 @@ public final class CursorRenderingSmoke {
     }
 
     private static Rectangle cell(View view,double scale,double translation,int position) throws Exception {
-        int width=(int)(double)field(view,"baseWidth"),height=(int)(double)field(view,"baseHeight");
+        double bw=(double)field(view,"baseWidth"),bh=(double)field(view,"baseHeight");
         int columns=((SessionPane)field(view,"pane")).screen().getColumns();
-        return new Rectangle((int)Math.rint(translation+(double)field(view,"originX")*scale)+(position%columns)*width,
-                (int)Math.rint(translation+(double)field(view,"originY")*scale)+(position/columns)*height,width,height);
+        int col=position%columns,row=position/columns;
+        int x0=(int)Math.rint(col*bw),x1=(int)Math.rint((col+1)*bw);
+        int y0=(int)Math.rint(row*bh),y1=(int)Math.rint((row+1)*bh);
+        return new Rectangle((int)Math.rint(translation+(double)field(view,"originX")*scale)+x0,
+                (int)Math.rint(translation+(double)field(view,"originY")*scale)+y0,
+                Math.max(1,x1-x0),Math.max(1,y1-y0));
     }
 
     private static int outside(BufferedImage first,BufferedImage next,Rectangle cell) {

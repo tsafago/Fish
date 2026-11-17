@@ -7,14 +7,15 @@ import java.util.*;
 import java.util.concurrent.TimeUnit;
 import fish.LayoutShortcuts;
 import fish.Main;
+import fish.security.KioskMode;
 
 /**
- * Non-admin, SmartScreen-free per-user installer for portable Fish app-images.
- * Copies the verified local app-image via clean NIO streams (never propagating Zone.Identifier),
- * creates Start Menu / optional Desktop shortcuts, and registers HKCU Uninstall metadata.
+ * Per-user (SmartScreen-free, non-admin) and system-wide (UAC Administrator) installer helpers
+ * for portable Fish app-images.
  */
 public final class UserInstaller {
     public static final String UNINSTALL_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fish";
+    public static final String SYSTEM_UNINSTALL_KEY = "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fish";
     private UserInstaller() {}
 
     public static Path defaultInstallDirectory() {
@@ -26,6 +27,17 @@ public final class UserInstaller {
 
     public static Path defaultInstallDirectory(Path localAppData) {
         return localAppData.resolve("Programs").resolve("Fish").toAbsolutePath().normalize();
+    }
+
+    public static Path defaultSystemInstallDirectory() {
+        String pf = System.getenv("ProgramFiles");
+        Path base = pf != null && !pf.isBlank() ? Path.of(pf) : Path.of("C:\\Program Files");
+        return base.resolve("Fish").toAbsolutePath().normalize();
+    }
+
+    public static boolean isSystemInstalledLocation(Path appDir) {
+        if (appDir == null) return false;
+        return appDir.toAbsolutePath().normalize().equals(defaultSystemInstallDirectory());
     }
 
     public static Optional<Path> currentAppImage() {
@@ -123,6 +135,44 @@ public final class UserInstaller {
             registerUninstall(dest, finalExe, Main.VERSION, sizeKb);
         }
         return finalExe;
+    }
+
+    /** Elevates via Windows UAC (`runas`) to install Fish system-wide into Program Files for all users. */
+    public static Path installSystemWide(Path sourceImage, Path destination, boolean startMenuShortcut,
+                                         boolean desktopShortcut) throws IOException {
+        validateImage(sourceImage);
+        Path src = sourceImage.toAbsolutePath().normalize();
+        Path dest = destination.toAbsolutePath().normalize();
+        if (src.equals(dest) || dest.startsWith(src))
+            throw new IOException("Choose a system-wide install destination separate from the running folder.");
+        Path script = src.resolve("Install-Fish.ps1");
+        if (!Files.isRegularFile(script)) {
+            Path fallback = Path.of("Install-Fish.ps1").toAbsolutePath().normalize();
+            if (Files.isRegularFile(fallback)) script = fallback;
+            else throw new IOException("Install-Fish.ps1 not found alongside Fish.exe: " + script);
+        }
+        String systemRoot = Optional.ofNullable(System.getenv("SystemRoot")).orElse("C:\\Windows");
+        Path psExe = Path.of(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+        StringBuilder args = new StringBuilder();
+        args.append("-NoProfile -ExecutionPolicy Bypass -File ").append(quoteArg(script.toString()))
+                .append(" -AllUsers -Quiet -Source ").append(quoteArg(src.toString()))
+                .append(" -Destination ").append(quoteArg(dest.toString()));
+        if (!startMenuShortcut) args.append(" -NoStartMenuShortcut");
+        if (desktopShortcut) args.append(" -DesktopShortcut");
+        int exit = KioskMode.runElevated(psExe, args.toString(), src, false);
+        if (exit != 0) {
+            throw new IOException(exit == KioskMode.UAC_CANCELLED
+                    ? "Administrator permission was cancelled or declined."
+                    : "System-wide installation exited with code " + exit + ".");
+        }
+        Path targetExe = dest.resolve("Fish.exe");
+        if (!Files.isRegularFile(targetExe))
+            throw new IOException("System-wide installation did not produce " + targetExe);
+        return targetExe;
+    }
+
+    private static String quoteArg(String value) {
+        return "\"" + value.replace("\"", "\\\"") + "\"";
     }
 
     public static void launchInstalled(Path executable, Path dataDir) throws IOException {

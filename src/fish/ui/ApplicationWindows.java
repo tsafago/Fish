@@ -6,8 +6,11 @@ import java.util.*;
 import java.util.concurrent.*;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.stage.Stage;
 import javafx.util.Duration;
+import fish.LayoutShortcuts;
 import fish.model.*;
+import fish.security.KioskMode;
 import fish.update.Updates;
 
 /** JavaFX UI-thread-owned shared settings and independent stages; only this owner writes the workspace. */
@@ -49,13 +52,17 @@ public final class ApplicationWindows {
     public void restore(StateStore.State state,UUID launchLayout) {
         shared=state.withWindows(List.of());
         Ui.applyTheme(state.appTheme(),state.appearance().custom().orElse(null));
+        if (!demonstration && !KioskMode.isEnabled()) {
+            try { LayoutShortcuts.syncAutostart(store.directory(),LayoutShortcuts.executable(),state.savedLayouts()); }
+            catch (Exception ignored) {}
+        }
         if (launchLayout!=null) {
             SavedLayout recipe=recipe(launchLayout);
             List<StateStore.WindowState> retained=new ArrayList<>();
             retained.add(windowState(state)); retained.addAll(state.windows()); dormant=List.copyOf(retained);
             Workspace window=createRecipe(recipe);
             start(window,true);
-            saveTimer.playFromStart();
+            if (!KioskMode.isEnabled()) saveTimer.playFromStart();
             return;
         }
         create(shared);
@@ -90,7 +97,16 @@ public final class ApplicationWindows {
 
     public int openRequest(UUID layout) {
         if (closing || saving()) return 0;
-        if (layout==null) return newWindow() ? 1 : 0;
+        if (layout==null) {
+            if (KioskMode.isEnabled()) {
+                Stage owner=windows.isEmpty() ? null : windows.getFirst().stage();
+                Stage dialog=WorkspaceRecovery.kioskBlockedDialog(owner,unlocked -> {});
+                dialog.show();
+                dialog.toFront();
+                return 1;
+            }
+            return newWindow() ? 1 : 0;
+        }
         if (shared.savedLayouts().stream().noneMatch(s -> s.id().equals(layout))) return 2;
         openLayout(layout);
         return 1;
@@ -105,7 +121,7 @@ public final class ApplicationWindows {
         if (closing || saving()) return false;
         Workspace window=createRecipe(recipe(id));
         start(window,true);
-        saveTimer.playFromStart();
+        if (!KioskMode.isEnabled()) saveTimer.playFromStart();
         return true;
     }
 
@@ -117,8 +133,14 @@ public final class ApplicationWindows {
             UUID id=UUID.randomUUID(); fresh.put(leaf.pane(),id);
             layout=layout.mapLeaf(leaf.pane(),old -> new Layout.Leaf(id,old.profile()));
         }
+        Map<UUID,SavedLayout.Display> remappedDisplays=new LinkedHashMap<>();
+        recipe.displays().forEach((old,display) -> {
+            UUID mapped=fresh.get(old);
+            if (mapped!=null) remappedDisplays.put(mapped,display);
+        });
         StateStore.WindowState saved=recipe.window();
-        Workspace window=create(shared.forWindow(new StateStore.WindowState(layout,saved.width(),saved.height(),saved.lastProfile(),saved.addProfile())));
+        Workspace window=create(shared.forWindow(new StateStore.WindowState(
+                layout,saved.width(),saved.height(),saved.lastProfile(),saved.addProfile(),remappedDisplays)));
         recipe.displays().forEach((old,display) -> window.sessionPanes().stream().filter(p -> p.id().equals(fresh.get(old)))
                 .findFirst().orElseThrow().view().restoreDisplay(display));
         return window;
@@ -157,11 +179,11 @@ public final class ApplicationWindows {
         syncing=true;
         try { for (Workspace window:windows) if (window!=source) window.receiveShared(next); }
         finally { syncing=false; }
-        saveTimer.playFromStart();
+        if (!KioskMode.isEnabled()) saveTimer.playFromStart();
     }
 
     void scheduleSave() {
-        if (closing || syncing) return;
+        if (closing || syncing || KioskMode.isEnabled()) return;
         saveTimer.playFromStart();
     }
 
@@ -190,7 +212,7 @@ public final class ApplicationWindows {
     }
 
     public void saveAsync() {
-        if (closing) return;
+        if (closing || KioskMode.isEnabled()) return;
         StateStore.State snap=snapshot();
         persistence.submit(() -> {
             try { writer.save(snap); }
@@ -223,11 +245,14 @@ public final class ApplicationWindows {
         if (closing) return;
         if (saving()) { Ui.error(windows.getFirst().stage(),"Wait for the profile save to finish before quitting Fish."); return; }
         for (Workspace window:windows) if (!window.closeSettings()) return;
-        StateStore.State saved=snapshot();
+        boolean kiosk=KioskMode.isEnabled();
+        StateStore.State saved=kiosk ? null : snapshot();
         closing=true; saveTimer.stop();
         windows.forEach(Workspace::finishWindow);
         persistence.submit(() -> {
-            try { writer.save(saved); } catch (IOException e) { reportSave(e); }
+            if (!kiosk && saved!=null) {
+                try { writer.save(saved); } catch (IOException e) { reportSave(e); }
+            }
             release();
         });
     }

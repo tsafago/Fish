@@ -7,7 +7,7 @@ import java.security.*;
 import java.util.*;
 
 public final class StateStore implements AutoCloseable {
-    public static final String VERSION="20";
+    public static final String VERSION="21";
     public static final int MAX_BYTES=2_000_000;
     public enum Tutorial { NEW, IN_PROGRESS, COMPLETED, SKIPPED }
     public record WindowState(Layout layout,int width,int height,UUID lastProfile,UUID addProfile,Map<UUID,SavedLayout.Display> displays) {
@@ -176,6 +176,7 @@ public final class StateStore implements AutoCloseable {
         catch (IOException e) { close(); throw e; }
     }
 
+    public Path directory() { return directory; }
     public Path file() { return directory.resolve("workspace.xml"); }
     public synchronized String revision() { return revision; }
     private String diskRevision() throws IOException {
@@ -220,6 +221,15 @@ public final class StateStore implements AutoCloseable {
     public synchronized void factoryReset() throws IOException {
         save(freshState());
         reset=true;
+    }
+    public synchronized State deleteAndReinitialize() throws IOException {
+        if (!lock.isValid()) throw new InUseException();
+        Files.deleteIfExists(directory.resolve("workspace.xml.tmp"));
+        Files.deleteIfExists(file());
+        reset=false;
+        revision="absent";
+        save(freshState());
+        return load();
     }
     public synchronized Path recoverFactory() throws IOException {
         if (!lock.isValid()) throw new InUseException();
@@ -268,7 +278,7 @@ public final class StateStore implements AutoCloseable {
     public State decode(Properties properties) throws IOException {
         try {
             String version = properties.getProperty("version");
-            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19",VERSION).contains(version))
+            if (version==null || !Set.of("1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19","20",VERSION).contains(version))
                 throw new IllegalArgumentException("Workspace version "+Objects.toString(version,"(missing)")+" is not supported by this Fish version. It may belong to a newer release; restore a matching backup or upgrade Fish, rather than relabeling it.");
             if (Integer.parseInt(version)<18 && properties.containsKey("appearance.cursorStyle"))
                 throw new IllegalArgumentException("Cursor style requires workspace version 18; do not relabel or downgrade it.");
@@ -379,12 +389,13 @@ public final class StateStore implements AutoCloseable {
                             Integer.parseInt(required(properties,key+"width")),Integer.parseInt(required(properties,key+"height")),
                             UUID.fromString(required(properties,key+"lastProfile")),
                             UUID.fromString(required(properties,key+(recipes ? "addProfile" : "lastProfile"))),
-                            recipes ? readDisplays(properties,key,windowLayout) : Map.of()));
+                            recipes ? readDisplays(properties,key,windowLayout,version) : Map.of()));
                 }
             }
             List<SavedLayout> savedLayouts=new ArrayList<>();
             UUID selectedLayout=null;
             if (recipes) {
+                boolean hasAutostart=Integer.parseInt(version)>=21;
                 String list=required(properties,"savedLayouts");
                 if (!list.isEmpty()) for (String idText:list.split(",",-1)) {
                     if (savedLayouts.size()>=SavedLayout.MAX_SAVED) throw new IllegalArgumentException("Keep at most 64 saved layouts.");
@@ -400,11 +411,16 @@ public final class StateStore implements AutoCloseable {
                     Map<UUID,SavedLayout.Display> displays=new LinkedHashMap<>();
                     for (Layout.Leaf leaf:saved.leaves()) {
                         String pane=key+"pane."+leaf.pane()+".";
-                        displays.put(leaf.pane(),new SavedLayout.Display(bool(properties,pane+"fit"),Double.parseDouble(required(properties,pane+"zoom"))));
+                        boolean fit=bool(properties,pane+"fit");
+                        double zoom=Double.parseDouble(required(properties,pane+"zoom"));
+                        displays.put(leaf.pane(),new SavedLayout.Display(fit,fit && !hasAutostart ? 1.0 : zoom));
                     }
+                    boolean autostart=hasAutostart
+                            ? bool(properties,key+"autostart")
+                            : (properties.containsKey(key+"autostart") && bool(properties,key+"autostart"));
                     savedLayouts.add(new SavedLayout(id,required(properties,key+"name"),new WindowState(saved,
                             Integer.parseInt(required(properties,key+"width")),Integer.parseInt(required(properties,key+"height")),
-                            UUID.fromString(required(properties,key+"lastProfile")),UUID.fromString(required(properties,key+"addProfile"))),displays));
+                            UUID.fromString(required(properties,key+"lastProfile")),UUID.fromString(required(properties,key+"addProfile"))),displays,autostart));
                 }
                 String selected=required(properties,"selectedLayout");
                 if (!selected.isEmpty()) selectedLayout=SavedLayout.reference(selected);
@@ -420,7 +436,7 @@ public final class StateStore implements AutoCloseable {
                             UpdateSettings.Channel.valueOf(required(properties,"updates.channel")),required(properties,"updates.ignoredVersion"))
                             : UpdateSettings.defaults(),recovery,windows,
                     recipes ? UUID.fromString(required(properties,"addProfile")) : last,savedLayouts,selectedLayout,
-                    recipes ? readDisplays(properties,"",bounded) : Map.of());
+                    recipes ? readDisplays(properties,"",bounded,version) : Map.of());
             if (usability && (result.width()!=Integer.parseInt(required(properties,"width"))
                     || result.height()!=Integer.parseInt(required(properties,"height"))))
                 throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
@@ -447,12 +463,16 @@ public final class StateStore implements AutoCloseable {
         }
     }
     private void notice(String text) { loadNotice+=(loadNotice.isEmpty() ? "" : "\n")+text; }
-    private static Map<UUID,SavedLayout.Display> readDisplays(Properties values,String prefix,Layout layout) {
+    private static Map<UUID,SavedLayout.Display> readDisplays(Properties values,String prefix,Layout layout,String version) {
+        boolean relativeZoom=Integer.parseInt(version)>=21;
         Map<UUID,SavedLayout.Display> result=new LinkedHashMap<>();
         for (Layout.Leaf pane:layout.leaves()) {
             String key=prefix+"pane."+pane.pane()+".";
-            if (values.containsKey(key+"fit") || values.containsKey(key+"zoom"))
-                result.put(pane.pane(),new SavedLayout.Display(bool(values,key+"fit"),Double.parseDouble(required(values,key+"zoom"))));
+            if (values.containsKey(key+"fit") || values.containsKey(key+"zoom")) {
+                boolean fit=bool(values,key+"fit");
+                double zoom=Double.parseDouble(required(values,key+"zoom"));
+                result.put(pane.pane(),new SavedLayout.Display(fit,fit && !relativeZoom ? 1.0 : zoom));
+            }
         }
         return result;
     }
@@ -528,6 +548,7 @@ public final class StateStore implements AutoCloseable {
             properties.setProperty(key+"height",Integer.toString(saved.window().height()));
             properties.setProperty(key+"lastProfile",saved.window().lastProfile().toString());
             properties.setProperty(key+"addProfile",saved.window().addProfile().toString());
+            properties.setProperty(key+"autostart",Boolean.toString(saved.autostart()));
             saved.displays().forEach((id,display) -> {
                 properties.setProperty(key+"pane."+id+".fit",Boolean.toString(display.fit()));
                 properties.setProperty(key+"pane."+id+".zoom",Double.toString(display.zoom()));

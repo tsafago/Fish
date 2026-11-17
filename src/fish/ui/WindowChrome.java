@@ -12,6 +12,7 @@ import javafx.scene.layout.*;
 import javafx.stage.*;
 import fish.model.ColorRole;
 import fish.model.Profile;
+import fish.security.KioskMode;
 
 /** Native JavaFX 25 StageStyle.EXTENDED + HeaderBar unified window chrome. */
 @SuppressWarnings({"deprecation", "removal"})
@@ -159,8 +160,17 @@ public final class WindowChrome extends HeaderBar {
 
     public double minimumBarWidth() {
         double width=48+32+38*3+32;
-        for (Node child:tools.getChildren()) width+=Math.max(child.minWidth(-1),16);
+        if (tools.isManaged() && tools.isVisible()) {
+            for (Node child:tools.getChildren()) width+=Math.max(child.minWidth(-1),16);
+        }
         return width;
+    }
+
+    public void syncKioskState() {
+        compact=null;
+        cachedMenusWidth=-1;
+        caption.syncKioskState();
+        requestLayout();
     }
 
     @Override protected void layoutChildren() {
@@ -170,17 +180,21 @@ public final class WindowChrome extends HeaderBar {
             updateChromeHeight(s);
         }
         double available=getWidth();
+        boolean toolsShown=tools.isManaged() && tools.isVisible();
         if (available>0) {
             if (cachedMenusWidth<=0) {
                 double measured=menus.prefWidth(-1);
                 if (measured>40) cachedMenusWidth=measured;
             }
-            double menusW=Math.max(240,cachedMenusWidth>0 ? cachedMenusWidth : menus.prefWidth(-1));
+            double minMenus=toolsShown ? 240 : 80;
+            double menusW=Math.max(minMenus,cachedMenusWidth>0 ? cachedMenusWidth : menus.prefWidth(-1));
             double toolsBase=0;
             ComboBox<?> selector=null;
-            for (Node n:tools.getChildren()) {
-                if (n instanceof ComboBox<?> cb) selector=cb;
-                else toolsBase+=n.prefWidth(-1);
+            if (toolsShown) {
+                for (Node n:tools.getChildren()) {
+                    if (n instanceof ComboBox<?> cb) selector=cb;
+                    else toolsBase+=n.prefWidth(-1);
+                }
             }
             double desiredCombo=selector==null ? 0 : profileWidth(selector);
             double fullNeeded=48+menusW+toolsBase+desiredCombo+controls.prefWidth(-1)+36;
@@ -199,9 +213,9 @@ public final class WindowChrome extends HeaderBar {
                 if (Math.abs(selector.getPrefWidth()-w)>0.5) selector.setPrefWidth(w);
             }
         }
-        for (Node n:tools.getChildren()) if (n instanceof Parent p) p.requestLayout();
+        if (toolsShown) for (Node n:tools.getChildren()) if (n instanceof Parent p) p.requestLayout();
         super.layoutChildren();
-        for (Node n:tools.getChildren()) if (n instanceof Parent p) p.layout();
+        if (toolsShown) for (Node n:tools.getChildren()) if (n instanceof Parent p) p.layout();
         double h=getHeight();
         double px=Ui.hairline(s);
         Point2D bottomScene=localToScene(0,h);
@@ -402,16 +416,19 @@ public final class WindowChrome extends HeaderBar {
             setMaxSize(48,HEIGHT-1);
             setStyle("-fx-background-color: transparent; -fx-padding: 0;");
             setTooltip(new Tooltip("Fish"));
-            setAccessibleText("Toggle animated Flux text effect in active pane");
+            syncKioskState();
             addEventFilter(MouseEvent.MOUSE_PRESSED,e -> {
+                if (KioskMode.isEnabled()) { e.consume(); return; }
                 keyFocused=false;
                 pressX=e.getX(); pressY=e.getY(); dragged=false; suppressNextFire=false;
                 updateFocusBar();
             });
             addEventFilter(MouseEvent.MOUSE_DRAGGED,e -> {
+                if (KioskMode.isEnabled()) return;
                 if (Math.hypot(e.getX()-pressX,e.getY()-pressY)>=5) dragged=true;
             });
             addEventFilter(MouseEvent.MOUSE_RELEASED,e -> {
+                if (KioskMode.isEnabled()) { e.consume(); return; }
                 if (e.getButton()!=MouseButton.PRIMARY) return;
                 if (dragged) {
                     suppressNextFire=true;
@@ -429,6 +446,7 @@ public final class WindowChrome extends HeaderBar {
                 }
             });
             addEventFilter(KeyEvent.KEY_PRESSED,e -> {
+                if (KioskMode.isEnabled()) return;
                 keyFocused=true;
                 updateFocusBar();
             });
@@ -436,10 +454,22 @@ public final class WindowChrome extends HeaderBar {
                 if (!f) keyFocused=false;
                 updateFocusBar();
             });
-            setOnAction(e -> toggleFlux.run());
+            setOnAction(e -> {
+                if (!KioskMode.isEnabled()) toggleFlux.run();
+            });
+        }
+
+        void syncKioskState() {
+            boolean kiosk=KioskMode.isEnabled();
+            setFocusTraversable(!kiosk);
+            setCursor(javafx.scene.Cursor.DEFAULT);
+            setAccessibleText(kiosk ? "Fish" : "Toggle animated Flux text effect in active pane");
+            if (kiosk) keyFocused=false;
+            updateFocusBar();
         }
 
         @Override public void fire() {
+            if (KioskMode.isEnabled()) return;
             if (suppressNextFire) { suppressNextFire=false; return; }
             super.fire();
         }

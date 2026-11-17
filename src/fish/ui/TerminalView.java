@@ -34,6 +34,7 @@ import javafx.util.Duration;
 import org.tn5250j.framework.tn5250.Screen5250;
 import org.tn5250j.keyboard.KeyMnemonic;
 import fish.model.*;
+import fish.security.KioskMode;
 import static org.tn5250j.TN5250jConstants.*;
 
 /**
@@ -106,9 +107,10 @@ public class TerminalView extends Region {
     private boolean sharedPhase;
     private double sharedFlux=Double.NaN;
     private double cellWidth=9,cellHeight=18,originX=12,originY=10;
-    private double geometryWidth=-1,geometryHeight=-1;
+    private double geometryWidth=-1,geometryHeight=-1,geometryRefW=-1,geometryRefH=-1;
     private double geometryDpiX=1,geometryDpiY=1,geometryZoom;
     private boolean geometryFit,revealQueued;
+    private int surfaceDevX,surfaceDevY;
     private int anchor=-1,end=-1,pressCell=-1;
     private boolean dragging;
     private boolean fit=true;
@@ -185,6 +187,8 @@ public class TerminalView extends Region {
         });
         widthProperty().addListener((o,a,b) -> { requestRender(); revealCursor(); });
         heightProperty().addListener((o,a,b) -> { requestRender(); revealCursor(); });
+        layoutXProperty().addListener((o,a,b) -> requestRender());
+        layoutYProperty().addListener((o,a,b) -> requestRender());
 
         boolean[] suppressTyped={false};
         setOnKeyPressed(event -> {
@@ -193,6 +197,7 @@ public class TerminalView extends Region {
             if (event.getCode()==KeyCode.ENTER && !event.isControlDown() && !event.isShiftDown() && !event.isAltDown()
                     && pane.recoverableInputError()) {
                 suppressTyped[0]=true;
+                pane.dismissResetCalloutImmediately();
                 pane.send(KeyMnemonic.RESET);
                 event.consume();
                 return;
@@ -244,7 +249,7 @@ public class TerminalView extends Region {
             if (event.getButton()!=MouseButton.PRIMARY) return;
             pane.activate();
             requestFocus();
-            paneDrag[0]=event.isAltDown();
+            paneDrag[0]=event.isAltDown() && !KioskMode.isEnabled();
             if (paneDrag[0]) {
                 restartCursor();
                 pane.beginAltDrag(event);
@@ -474,11 +479,28 @@ public class TerminalView extends Region {
         if (ANIMATED.isEmpty()) ANIMATION.stop();
     }
 
-    public void setFit(boolean value) { fit=value; pane.syncScrollViewport(); requestLayout(); requestRender(); revealCursor(); }
+    public void setFit(boolean value) { fit=value; geometryWidth=-1; pane.syncScrollViewport(); requestLayout(); requestRender(); revealCursor(); }
     public boolean isFit() { return fit; }
+    public boolean hasExplicitZoom() { return savedZoom!=null; }
     public double zoomValue() { return savedZoom==null ? pane.profile().zoom() : savedZoom; }
+    public void setRelativeZoom(double zoomFactor,boolean fitMode) {
+        savedZoom=fitMode ? 1.0 : Math.max(0.5,Math.min(3.0,zoomFactor));
+        fit=fitMode;
+        geometryWidth=-1;
+        pane.syncScrollViewport();
+        requestLayout();
+        requestRender();
+        revealCursor();
+    }
+    public void onStageResized() {
+        geometryWidth=-1;
+        requestLayout();
+        requestRender();
+    }
     public void restoreDisplay(SavedLayout.Display display) {
-        savedZoom=display.zoom(); geometryWidth=-1; setFit(display.fit());
+        savedZoom=display.fit() ? 1.0 : display.zoom();
+        geometryWidth=-1;
+        setFit(display.fit());
     }
     public void clearSavedZoom() { savedZoom=null; geometryWidth=-1; }
     public void screenChanged() {
@@ -626,7 +648,10 @@ public class TerminalView extends Region {
 
     private void ensureGeometry() {
         double lw=Math.max(1.0,getWidth()),lh=Math.max(1.0,getHeight());
-        if (Math.abs(geometryWidth-lw)>1e-4 || Math.abs(geometryHeight-lh)>1e-4 || geometryFit!=fit || geometryZoom!=zoomValue())
+        double refW=pane.referenceStageWidth(lw),refH=pane.referenceStageHeight(lh);
+        if (Math.abs(geometryWidth-lw)>1e-4 || Math.abs(geometryHeight-lh)>1e-4
+                || Math.abs(geometryRefW-refW)>1e-4 || Math.abs(geometryRefH-refH)>1e-4
+                || geometryFit!=fit || geometryZoom!=zoomValue())
             geometry(geometryDpiX,geometryDpiY);
     }
 
@@ -654,37 +679,47 @@ public class TerminalView extends Region {
         });
     }
 
-    private void geometry(double dpiX,double dpiY) {
-        double lw=Math.max(1.0,getWidth()),lh=Math.max(1.0,getHeight());
-        Screen5250 screen=pane.screen();
-        int rows=screen==null ? 24 : screen.getRows(),cols=screen==null ? 80 : screen.getColumns();
-        double availW=Math.max(cols,(lw-24.0)*dpiX);
-        double availH=Math.max(rows*2.0,(lh-20.0)*dpiY);
-        double scale=fit ? Math.max(3.0/16.0,Math.min(28.0/16.0,
-                Math.min((lw-24.0)/(cols*nominalWidth),(lh-20.0)/(rows*nominalHeight)))) : zoomValue();
-        double exactStep=Math.max(FONT_SUBSTEPS,16.0*scale*dpiY*FONT_SUBSTEPS);
-        int step=Math.max(FONT_SUBSTEPS,(int)Math.floor(exactStep));
+    private int computeTargetStep(double refW,double refH,int rows,int cols,double dpiX,double dpiY) {
+        double availW=Math.max(cols,(refW-24.0)*dpiX);
+        double availH=Math.max(rows*2.0,(refH-20.0)*dpiY);
+        double fitScale=Math.max(3.0/16.0,Math.min(28.0/16.0,
+                Math.min((refW-24.0)/(cols*nominalWidth),(refH-20.0)/(rows*nominalHeight))));
+        double exactFitStep=Math.max(FONT_SUBSTEPS,16.0*fitScale*dpiY*FONT_SUBSTEPS);
+        int fitStep=Math.max(FONT_SUBSTEPS,(int)Math.floor(exactFitStep));
         if (fit && fontPixels>=FONT_SUBSTEPS && geometryFit && geometryDpiX==dpiX && geometryDpiY==dpiY) {
-            if (step==fontPixels+1 && exactStep<fontPixels+1.35) {
-                step=fontPixels;
-            } else if (step==fontPixels-1 && exactStep>fontPixels-0.35) {
+            if (fitStep==fontPixels+1 && exactFitStep<fontPixels+1.35) {
+                fitStep=fontPixels;
+            } else if (fitStep==fontPixels-1 && exactFitStep>fontPixels-0.35) {
                 InkMetrics keep=metrics(fontPixels);
                 if (colX(cols,keep.width)<=Math.ceil(availW) && rowY(rows,keep.height)<=Math.ceil(availH)) {
-                    step=fontPixels;
+                    fitStep=fontPixels;
                 }
             }
         }
-        InkMetrics target=metrics(step);
-        while (fit && step>FONT_SUBSTEPS
-                && (colX(cols,target.width)>Math.ceil(availW) || rowY(rows,target.height)>Math.ceil(availH))) {
-            target=metrics(--step);
+        InkMetrics fitTarget=metrics(fitStep);
+        while (fitStep>FONT_SUBSTEPS
+                && (colX(cols,fitTarget.width)>Math.ceil(availW) || rowY(rows,fitTarget.height)>Math.ceil(availH))) {
+            fitTarget=metrics(--fitStep);
         }
+        if (fit) return fitStep;
+        int scaled=(int)Math.round(fitStep*zoomValue());
+        return Math.max(FONT_SUBSTEPS*3,Math.min(FONT_SUBSTEPS*240,scaled));
+    }
+
+    private void geometry(double dpiX,double dpiY) {
+        double lw=Math.max(1.0,getWidth()),lh=Math.max(1.0,getHeight());
+        double refW=pane.referenceStageWidth(lw),refH=pane.referenceStageHeight(lh);
+        Screen5250 screen=pane.screen();
+        int rows=screen==null ? 24 : screen.getRows(),cols=screen==null ? 80 : screen.getColumns();
+        int step=computeTargetStep(refW,refH,rows,cols,dpiX,dpiY);
+        InkMetrics target=metrics(step);
         configureInk(target);
         cellWidth=baseWidth/dpiX; cellHeight=baseHeight/dpiY;
         double gridLogicalW=colX(cols)/dpiX,gridLogicalH=rowY(rows)/dpiY;
         originX=Math.rint(Math.max(12.0,(lw-gridLogicalW)*0.5)*dpiX)/dpiX;
         originY=Math.rint(Math.max(10.0,(lh-gridLogicalH)*0.5)*dpiY)/dpiY;
-        geometryWidth=lw; geometryHeight=lh; geometryFit=fit; geometryZoom=zoomValue();
+        geometryWidth=lw; geometryHeight=lh; geometryRefW=refW; geometryRefH=refH;
+        geometryFit=fit; geometryZoom=zoomValue();
         geometryDpiX=dpiX; geometryDpiY=dpiY;
     }
 
@@ -721,7 +756,7 @@ public class TerminalView extends Region {
             snapX=(Math.round(scenePt.getX()*sx)-scenePt.getX()*sx)/sx;
             snapY=(Math.round(scenePt.getY()*sy)-scenePt.getY()*sy)/sy;
         }
-        surface.relocate(snapX,snapY);
+        surface.relocate(surfaceDevX/sx+snapX,surfaceDevY/sy+snapY);
     }
 
     void snapToDeviceGridNow() {
@@ -787,13 +822,21 @@ public class TerminalView extends Region {
         double lw=getWidth(),lh=getHeight();
         if (lw<=1 || lh<=1) return;
         double sx=outputScaleX(),sy=outputScaleY();
-        int pw=Math.max(1,(int)Math.ceil(lw*sx));
-        int ph=Math.max(1,(int)Math.ceil(lh*sy));
+        double[] vp=pane.viewportInView(lw,lh);
+        double visX=vp[0],visY=vp[1],visW=vp[2],visH=vp[3];
+        int totalDevW=Math.max(1,(int)Math.ceil(lw*sx));
+        int totalDevH=Math.max(1,(int)Math.ceil(lh*sy));
+        int devVisX=Math.max(0,Math.min(totalDevW-1,(int)Math.floor(visX*sx)));
+        int devVisY=Math.max(0,Math.min(totalDevH-1,(int)Math.floor(visY*sy)));
+        int devVisRight=Math.max(devVisX+1,Math.min(totalDevW,(int)Math.ceil((visX+visW)*sx)));
+        int devVisBottom=Math.max(devVisY+1,Math.min(totalDevH,(int)Math.ceil((visY+visH)*sy)));
+        int pw=Math.max(1,devVisRight-devVisX);
+        int ph=Math.max(1,devVisBottom-devVisY);
         int allocW=(pw+255)&~255;
         int allocH=(ph+255)&~255;
         boolean recreated=false;
         if (fxPixels==null || pixelBuffer==null || pixelBuffer.getWidth()<allocW || pixelBuffer.getHeight()<allocH
-                || pixelBuffer.getWidth()>allocW+1024 || pixelBuffer.getHeight()>allocH+1024) {
+                || pixelBuffer.getWidth()>allocW+512 || pixelBuffer.getHeight()>allocH+512) {
             fxPixels=new int[allocW*allocH];
             IntBuffer buf=IntBuffer.wrap(fxPixels);
             pixelBuffer=new PixelBuffer<>(allocW,allocH,buf,PixelFormat.getIntArgbPreInstance());
@@ -808,8 +851,13 @@ public class TerminalView extends Region {
             surface.setViewport(new javafx.geometry.Rectangle2D(0,0,pw,ph));
             recreated=true;
         }
+        if (surfaceDevX!=devVisX || surfaceDevY!=devVisY) {
+            surfaceDevX=devVisX;
+            surfaceDevY=devVisY;
+            recreated=true;
+        }
         if (workImage==null || workImage.getWidth()<allocW || workImage.getHeight()<allocH
-                || workImage.getWidth()>allocW+1024 || workImage.getHeight()>allocH+1024) {
+                || workImage.getWidth()>allocW+512 || workImage.getHeight()>allocH+512) {
             workImage=new BufferedImage(allocW,allocH,BufferedImage.TYPE_INT_ARGB_PRE);
             workPixels=((DataBufferInt)workImage.getRaster().getDataBuffer()).getData();
         }
@@ -820,21 +868,26 @@ public class TerminalView extends Region {
         if (recreated || logicalDirty==null) {
             dx=0; dy=0; dw=pw; dh=ph;
         } else {
-            dx=Math.max(0,(int)Math.floor(logicalDirty.x*sx)-1);
-            dy=Math.max(0,(int)Math.floor(logicalDirty.y*sy)-1);
-            dw=Math.min(pw-dx,(int)Math.ceil(logicalDirty.width*sx)+3);
-            dh=Math.min(ph-dy,(int)Math.ceil(logicalDirty.height*sy)+3);
+            int rx0=(int)Math.floor(logicalDirty.x*sx)-devVisX-1;
+            int ry0=(int)Math.floor(logicalDirty.y*sy)-devVisY-1;
+            int rx1=(int)Math.ceil((logicalDirty.x+logicalDirty.width)*sx)-devVisX+2;
+            int ry1=(int)Math.ceil((logicalDirty.y+logicalDirty.height)*sy)-devVisY+2;
+            dx=Math.max(0,rx0);
+            dy=Math.max(0,ry0);
+            dw=Math.min(pw,rx1)-dx;
+            dh=Math.min(ph,ry1)-dy;
             if (dw<=0 || dh<=0) return;
         }
 
         Graphics2D g=workImage.createGraphics();
         try {
             g.setClip(dx,dy,dw,dh);
+            g.translate(-devVisX,-devVisY);
             g.scale(sx,sy);
             if (!recreated && logicalDirty!=null) {
                 g.clip(logicalDirty);
             }
-            paintSurface(g,lw,lh);
+            paintSurface(g,devVisX/sx,devVisY/sy,pw/sx,ph/sy);
         } finally {
             g.dispose();
         }
@@ -868,15 +921,15 @@ public class TerminalView extends Region {
     public void paintComponent(java.awt.Graphics graphics) {
         double lw=getWidth()<=0 ? 640 : getWidth();
         double lh=getHeight()<=0 ? 400 : getHeight();
-        paintSurface((Graphics2D)graphics,lw,lh);
+        paintSurface((Graphics2D)graphics,0,0,lw,lh);
     }
 
-    private void paintSurface(Graphics2D graphics,double logicalW,double logicalH) {
+    private void paintSurface(Graphics2D graphics,double viewX,double viewY,double viewW,double viewH) {
         Graphics2D g=(Graphics2D)graphics.create();
         try {
             g.setColor(backgroundColor);
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_OFF);
-            g.fillRect(0,0,(int)Math.ceil(logicalW),(int)Math.ceil(logicalH));
+            g.fillRect((int)Math.floor(viewX)-1,(int)Math.floor(viewY)-1,(int)Math.ceil(viewW)+3,(int)Math.ceil(viewH)+3);
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);
             g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS,RenderingHints.VALUE_FRACTIONALMETRICS_OFF);
             Screen5250 screen=pane.screen();
@@ -907,7 +960,7 @@ public class TerminalView extends Region {
                 Color[] palette=HostPalette.colors(pane.profile().theme());
                 String effect=pane.profile().effect();
                 if (effect.equals(Profile.FLUX)) prepareFlux(palette,cols);
-                paintSharedInk(cells,palette,effect,rows,cols,phase,dpiX,dpiY,logicalW,logicalH);
+                paintSharedInk(cells,palette,effect,rows,cols,phase,dpiX,dpiY,viewX,viewY,viewW,viewH);
                 if (hasTerminalFocus() && pane.connected() && screen.isCursorActive() && cursorPhase)
                     paintCursor(cells,screen,rows,cols);
             } finally { cells.dispose(); }
@@ -1106,9 +1159,9 @@ public class TerminalView extends Region {
     }
 
     private void paintSharedInk(Graphics2D cells,Color[] palette,String effect,int rows,int cols,boolean visiblePhase,
-                                double dpiX,double dpiY,double logicalW,double logicalH) {
-        Rectangle bounds=new Rectangle((int)Math.floor((0-originX)*dpiX),(int)Math.floor((0-originY)*dpiY),
-                (int)Math.ceil(logicalW*dpiX)+2,(int)Math.ceil(logicalH*dpiY)+2);
+                                double dpiX,double dpiY,double viewX,double viewY,double viewW,double viewH) {
+        Rectangle bounds=new Rectangle((int)Math.floor((viewX-originX)*dpiX)-2,(int)Math.floor((viewY-originY)*dpiY)-2,
+                (int)Math.ceil(viewW*dpiX)+6,(int)Math.ceil(viewH*dpiY)+6);
         bounds=bounds.intersection(new Rectangle(-4,-4,colX(cols)+8,rowY(rows)+8));
         if (bounds.isEmpty()) return;
         boolean lit=visiblePhase || !rendered.blinking;
@@ -1120,10 +1173,11 @@ public class TerminalView extends Region {
                 || !Ui.color(ColorRole.TERMINAL_SELECTION).equals(sharedSelection)
                 || anchor!=sharedAnchor || end!=sharedEnd || sharedPhase!=lit || Double.compare(sharedFlux,time)!=0;
         if (changed) {
-            if (sharedInk==null || sharedInk.getWidth()<bounds.width || sharedInk.getHeight()<bounds.height) {
-                int sw=Math.max(bounds.width,sharedInk==null ? 0 : sharedInk.getWidth());
-                int sh=Math.max(bounds.height,sharedInk==null ? 0 : sharedInk.getHeight());
-                sharedInk=new BufferedImage((sw+127)&~127,(sh+127)&~127,BufferedImage.TYPE_INT_ARGB_PRE);
+            int allocInkW=(bounds.width+127)&~127;
+            int allocInkH=(bounds.height+127)&~127;
+            if (sharedInk==null || sharedInk.getWidth()<allocInkW || sharedInk.getHeight()<allocInkH
+                    || sharedInk.getWidth()>allocInkW+512 || sharedInk.getHeight()>allocInkH+512) {
+                sharedInk=new BufferedImage(allocInkW,allocInkH,BufferedImage.TYPE_INT_ARGB_PRE);
             }
             int sharedStride=sharedInk.getWidth();
             int bw=bounds.width,bh=bounds.height;
@@ -1158,6 +1212,7 @@ public class TerminalView extends Region {
                                 char ch=run.text.charAt(i);
                                 if (ch<=' ') continue;
                                 int col=run.inkStart+i;
+                                if (colX(col+1)<bounds.x-16 || colX(col)>bounds.x+bw+16) continue;
                                 GlyphMask mask=charMask(fontPixels,inkFace,ch);
                                 int baseX=colX(col)+mask.left-bounds.x,baseY=baseRowY+mask.top-bounds.y;
                                 for (int n=0;n<mask.positions.length;n++) {
@@ -1187,6 +1242,7 @@ public class TerminalView extends Region {
                             char ch=run.text.charAt(i);
                             if (ch<=' ') continue;
                             int col=run.inkStart+i;
+                            if (colX(col+1)<bounds.x-16 || colX(col)>bounds.x+bw+16) continue;
                             GlyphMask mask=charMask(fontPixels,inkFace,ch);
                             int left=colX(col)+mask.left,top=baseRowY+mask.top;
                             int charFg=prism
@@ -1383,20 +1439,32 @@ public class TerminalView extends Region {
     }
 
     @Override protected double computePrefWidth(double height) {
+        if (fit || zoomValue()<=1.0) return 240;
         Screen5250 screen=pane.screen();
-        int cols=screen==null ? 80 : screen.getColumns();
-        if (fit) return 240;
+        int rows=screen==null ? 24 : screen.getRows(),cols=screen==null ? 80 : screen.getColumns();
         double sx=outputScaleX(),sy=outputScaleY();
-        InkMetrics ink=metrics(Math.max(FONT_SUBSTEPS,(int)Math.floor(16.0*zoomValue()*sy*FONT_SUBSTEPS)));
+        int step=computeTargetStep(pane.referenceStageWidth(640),pane.referenceStageHeight(400),rows,cols,sx,sy);
+        InkMetrics ink=metrics(step);
         return Math.ceil(colX(cols,ink.width)/sx)+24;
     }
 
     @Override protected double computePrefHeight(double width) {
+        if (fit || zoomValue()<=1.0) return 140;
         Screen5250 screen=pane.screen();
-        int rows=screen==null ? 24 : screen.getRows();
-        if (fit) return 140;
-        double sy=outputScaleY();
-        InkMetrics ink=metrics(Math.max(FONT_SUBSTEPS,(int)Math.floor(16.0*zoomValue()*sy*FONT_SUBSTEPS)));
+        int rows=screen==null ? 24 : screen.getRows(),cols=screen==null ? 80 : screen.getColumns();
+        double sx=outputScaleX(),sy=outputScaleY();
+        int step=computeTargetStep(pane.referenceStageWidth(640),pane.referenceStageHeight(400),rows,cols,sx,sy);
+        InkMetrics ink=metrics(step);
         return Math.ceil(rowY(rows,ink.height)/sy)+20;
+    }
+
+    public int allocatedSurfacePixelsForTest() {
+        return fxPixels==null ? 0 : fxPixels.length;
+    }
+    public int allocatedSharedInkPixelsForTest() {
+        return sharedInk==null ? 0 : sharedInk.getWidth()*sharedInk.getHeight();
+    }
+    public int positionForTest(double x,double y) {
+        return position(x,y);
     }
 }

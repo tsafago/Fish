@@ -30,6 +30,7 @@ import javafx.util.Duration;
 import org.tn5250j.keyboard.KeyMnemonic;
 import fish.model.*;
 import fish.security.CredentialStore;
+import fish.security.KioskMode;
 import fish.update.Updates;
 
 /**
@@ -63,19 +64,21 @@ public final class Workspace {
             divider.setPickOnBounds(true);
             divider.setSnapToPixel(false);
             divider.setStyle("-fx-background-color: transparent;");
-            divider.setCursor(horizontal ? Cursor.H_RESIZE : Cursor.V_RESIZE);
+            divider.setCursor(KioskMode.isEnabled() ? Cursor.DEFAULT : (horizontal ? Cursor.H_RESIZE : Cursor.V_RESIZE));
             seam.setManaged(false);
             seam.setMouseTransparent(true);
             seam.setSnapToPixel(false);
-            divider.setOnMouseEntered(e -> { hovered=true; styleDivider(); });
+            divider.setOnMouseEntered(e -> { hovered=!KioskMode.isEnabled(); styleDivider(); });
             divider.setOnMouseExited(e -> { hovered=false; styleDivider(); });
             int[] startLoc={0};
             divider.setOnMousePressed(e -> {
+                if (KioskMode.isEnabled()) return;
                 startLoc[0]=getDividerLocation();
                 draggingDivider=true;
                 styleDivider();
             });
             divider.setOnMouseDragged(e -> {
+                if (KioskMode.isEnabled() || !draggingDivider) return;
                 Point2D local=sceneToLocal(e.getSceneX(),e.getSceneY());
                 if (local!=null) {
                     int target=(int)Math.round(horizontal ? local.getX() : local.getY());
@@ -84,9 +87,10 @@ public final class Workspace {
                 e.consume();
             });
             divider.setOnMouseReleased(e -> {
+                if (!draggingDivider) return;
                 draggingDivider=false;
                 styleDivider();
-                if (startLoc[0]!=getDividerLocation()) {
+                if (!KioskMode.isEnabled() && startLoc[0]!=getDividerLocation()) {
                     owner.changed();
                     owner.tutorialAction(horizontal ? "divider-horizontal" : "divider-vertical");
                 }
@@ -110,7 +114,9 @@ public final class Workspace {
         }
 
         void styleDivider() {
-            String line=Ui.hex(hovered || draggingDivider ? ColorRole.FOCUS : ColorRole.DIVIDER);
+            boolean kiosk=KioskMode.isEnabled();
+            divider.setCursor(kiosk ? Cursor.DEFAULT : (horizontal ? Cursor.H_RESIZE : Cursor.V_RESIZE));
+            String line=Ui.hex(!kiosk && (hovered || draggingDivider) ? ColorRole.FOCUS : ColorRole.DIVIDER);
             Ui.setStyleIfChanged(seam,"-fx-background-color: "+line+";");
         }
 
@@ -222,6 +228,9 @@ public final class Workspace {
     private Preferences preferences;
     private ProfilesEditor profileEditor;
     private final MenuBar menuBar;
+    private final HBox toolsBox;
+    private Menu sessionMenu,editMenu,insertsMenu,panesMenu,viewMenu,hostMenu,helpMenu;
+    private List<MenuItem> normalEditItems=List.of(),kioskEditItems=List.of();
     private StateStore.Tutorial tutorialStatus;
     private TutorialDialog tutorial;
     private boolean connectOnStartup,startupHandled;
@@ -230,6 +239,10 @@ public final class Workspace {
     private final UpdateController updates;
     private Runnable afterClose=() -> {};
     private final Runnable themeListener=this::themeChanged;
+    private final Runnable kioskListener=() -> {
+        if (javafx.application.Platform.isFxApplicationThread()) syncKioskMode();
+        else Ui.runLater(this::syncKioskMode);
+    };
     private double logicalWidth,logicalHeight;
     private int settingsBatch;
 
@@ -338,6 +351,7 @@ public final class Workspace {
         tools.setSnapToPixel(false);
         tools.setPadding(new Insets(0,4,0,6));
         tools.setAlignment(Pos.CENTER_LEFT);
+        this.toolsBox=tools;
 
         chrome=new WindowChrome(this,stage,menuBar,tools,this::toggleFlux);
         chrome.setViewOrder(-1.0);
@@ -429,6 +443,8 @@ public final class Workspace {
             }
         });
         Ui.onThemeChanged(themeListener);
+        KioskMode.addListener(kioskListener);
+        syncKioskMode();
         constrainWindow();
         layoutNow();
     }
@@ -572,7 +588,7 @@ public final class Workspace {
     void tutorialStatus(StateStore.Tutorial status) { tutorialStatus=status; changed(); }
 
     public void startTutorialIfNeeded() {
-        if (!demonstration && tutorialStatus==StateStore.Tutorial.NEW) openTutorial(true);
+        if (!demonstration && !KioskMode.isEnabled() && tutorialStatus==StateStore.Tutorial.NEW) openTutorial(true);
     }
 
     public void startup() { startup(false); }
@@ -581,7 +597,7 @@ public final class Workspace {
         startupHandled=true;
         if (connectOnStartup || explicit) sessionPanes().forEach(SessionPane::connectOnStartup);
         startTutorialIfNeeded();
-        if (updateSettings.startup() && (application==null || application.checkStartupUpdates(this))) updates.startup();
+        if (!KioskMode.isEnabled() && updateSettings.startup() && (application==null || application.checkStartupUpdates(this))) updates.startup();
     }
 
     public boolean closing() { return closing || application!=null && application.closing(); }
@@ -592,6 +608,7 @@ public final class Workspace {
     public void showTutorial() { openTutorial(false); }
     private void openTutorial(boolean firstRun) { openTutorial(TutorialDialog.Guide.GETTING_STARTED,firstRun); }
     public void openTutorial(TutorialDialog.Guide guide,boolean firstRun) {
+        if (KioskMode.isEnabled()) return;
         if (tutorial!=null && !tutorial.ended()) tutorial.finish(false);
         tutorial=new TutorialDialog(this,guide,firstRun);
         if (isShowing()) { tutorial.setVisible(true); tutorial.focusGuide(); }
@@ -635,6 +652,7 @@ public final class Workspace {
     }
 
     public void selectProfile(SessionPane pane,Profile profile) {
+        if (KioskMode.isEnabled()) return;
         if (pane.busy()) throw new IllegalStateException("Disconnect before selecting a preset.");
         lastProfile=profile.id(); pane.updateProfile(profile); refreshShortcutLabels(); changed();
     }
@@ -694,6 +712,7 @@ public final class Workspace {
 
     public void showShortcuts() { preferences("Keyboard Shortcuts"); }
     public void preferences(String category) {
+        if (KioskMode.isEnabled()) return;
         if (application!=null) {
             Workspace owner=application.settingsOwner(this);
             if (owner!=this) { owner.preferences(category); return; }
@@ -945,7 +964,7 @@ public final class Workspace {
     }
 
     private boolean applyDividerLocation(WorkspaceSplit split,int targetLocation) {
-        if (adjustingDividers || rebuildingLayout || tree==null) return false;
+        if (KioskMode.isEnabled() || adjustingDividers || rebuildingLayout || tree==null) return false;
         adjustingDividers=true;
         double previousRatio=split.userRatio();
         try {
@@ -991,6 +1010,7 @@ public final class Workspace {
     }
 
     public void saveAsync() {
+        if (KioskMode.isEnabled()) return;
         if (application!=null) { application.saveAsync(); return; }
         if (closing) return;
         StateStore.State snapshot=state();
@@ -1006,6 +1026,7 @@ public final class Workspace {
     }
 
     void persistSettings(Runnable done,java.util.function.Consumer<String> failed) {
+        if (KioskMode.isEnabled()) { failed.accept("Settings and layouts cannot be modified while Kiosk mode is enabled."); return; }
         saveTimer.stop();
         if (application!=null) { application.persistTask(() -> {},done,failed); return; }
         StateStore.State snapshot=state();
@@ -1016,7 +1037,7 @@ public final class Workspace {
     }
 
     public void split(boolean horizontal) {
-        if (closing() || settingsSaving() || panes.size()>=Layout.MAX_PANES) return;
+        if (KioskMode.isEnabled() || closing() || settingsSaving() || panes.size()>=Layout.MAX_PANES) return;
         Profile selected=profiles.get(addProfile);
         if (selected==null) { if (active!=null) active.problem("Select a saved profile before adding."); return; }
         SessionPane next;
@@ -1087,7 +1108,7 @@ public final class Workspace {
     }
 
     public DropPlan planDock(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope) {
-        if (closing() || settingsSaving() || scope==Layout.Scope.PANE && source.equals(target) || !hasPane(source) || !hasPane(target)) return null;
+        if (KioskMode.isEnabled() || closing() || settingsSaving() || scope==Layout.Scope.PANE && source.equals(target) || !hasPane(source) || !hasPane(target)) return null;
         try {
             Layout current=currentLayout(),next=current.move(source,target,dock,scope);
             if (next.equals(current)) return null;
@@ -1213,7 +1234,7 @@ public final class Workspace {
     }
 
     public void undoArrangement() {
-        if (arrangementHistory.isEmpty()) return;
+        if (KioskMode.isEnabled() || arrangementHistory.isEmpty()) return;
         Layout previous=arrangementHistory.pop();
         Map<UUID,UUID> currentProfiles=new HashMap<>();
         currentLayout().leaves().forEach(leaf -> currentProfiles.put(leaf.pane(),leaf.profile()));
@@ -1234,6 +1255,7 @@ public final class Workspace {
     }
 
     public void closePane(SessionPane pane) {
+        if (KioskMode.isEnabled()) return;
         if (panes.size()==1) {
             pane.disconnect();
             activate(pane);
@@ -1260,6 +1282,7 @@ public final class Workspace {
     }
 
     private void adjustDivider(double delta) {
+        if (KioskMode.isEnabled()) return;
         Node parent=active==null ? null : active.getParent();
         if (parent instanceof WorkspaceSplit split) {
             int before=split.getDividerLocation();
@@ -1333,7 +1356,10 @@ public final class Workspace {
         else if (accepted) source.problem("No simple placement here, or not enough room. No panes moved.");
     }
 
-    public void profiles() { new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true); }
+    public void profiles() {
+        if (KioskMode.isEnabled()) return;
+        new ProfilesDialog(this,active==null ? profileList().getFirst() : active.profile()).setVisible(true);
+    }
 
     public void moveProfile(UUID id,int direction) {
         List<Profile> order=ProfileManagement.move(profileList(),id,direction);
@@ -1442,25 +1468,104 @@ public final class Workspace {
         } catch (IllegalArgumentException e) { Ui.error(stage,"Could not restore layout: "+e.getMessage()); }
     }
 
-    private void zoom(double delta) {
-        double value=Math.max(.5,Math.min(3,active.view().zoomValue()+delta));
-        Profile profile=active.profile().withZoom(value);
-        putProfile(profile);
-        active.view().clearSavedZoom();
-        active.view().setFit(false);
+    public void zoom(double delta) {
+        zoom(active,delta);
+    }
+
+    public void zoom(SessionPane target,double delta) {
+        if (KioskMode.isEnabled() || target==null) return;
+        target.zoomBy(delta,true);
         changed();
     }
 
-    private void fit() {
-        putProfile(active.profile().withZoom(1));
-        active.view().setFit(true);
+    public void fit() {
+        fit(active);
+    }
+
+    public void fit(SessionPane target) {
+        if (KioskMode.isEnabled() || target==null) return;
+        target.zoomReset(true);
         changed();
     }
 
     public void toggleFlux() {
-        if (closing || settingsSaving() || active==null) return;
+        if (KioskMode.isEnabled() || closing || settingsSaving() || active==null) return;
         Profile profile=active.profile();
         putProfile(profile.withDisplay(profile.theme(),profile.effect().equals(Profile.FLUX) ? "None" : Profile.FLUX));
+    }
+
+    public static boolean isAllowedInKiosk(String title,KeyMnemonic hostKey) {
+        if (hostKey!=null) return true;
+        if (title==null) return false;
+        if (title.startsWith("Focus pane ")) return true;
+        return List.of(
+                "Copy selection / screen",
+                "Paste into fields",
+                "Disable Kiosk Mode...",
+                "Insert profile username",
+                "Insert remembered password",
+                "Send host key...",
+                "Next pane",
+                "Previous pane",
+                "Open menus",
+                "Window menu",
+                "Maximize / restore window",
+                "Minimize window"
+        ).contains(title);
+    }
+
+    public void disableKioskModePrompt() {
+        if (!KioskMode.isEnabled()) return;
+        if (Boolean.getBoolean("fish.testMode")) {
+            try {
+                KioskMode.setEnabledWithAdmin(false);
+            } catch (java.io.IOException e) {
+                Ui.error(stage,"Could not disable Kiosk mode: "+e.getMessage());
+            }
+            return;
+        }
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                KioskMode.setEnabledWithAdmin(false);
+                return "";
+            } catch (java.io.IOException e) {
+                return e.getMessage()==null ? e.getClass().getSimpleName() : e.getMessage();
+            }
+        }).thenAccept(err -> Ui.runLater(() -> {
+            if (!err.isEmpty()) Ui.error(stage,"Could not disable Kiosk mode: "+err);
+        }));
+    }
+
+    private void syncKioskMode() {
+        if (closing) return;
+        boolean kiosk=KioskMode.isEnabled();
+        if (kiosk) {
+            saveTimer.stop();
+            if (tutorial!=null) tutorial.dispose();
+            if (preferences!=null && !preferences.ended()) preferences.forceDispose();
+            if (layoutsDialog!=null) layoutsDialog.dispose();
+            if (profileEditor!=null && profileEditor.getScene()!=null
+                    && profileEditor.getScene().getWindow() instanceof Stage editorStage) editorStage.close();
+            editMenu.getItems().setAll(kioskEditItems);
+            menuBar.getMenus().setAll(editMenu,insertsMenu);
+            if (toolsBox!=null) {
+                toolsBox.setVisible(false);
+                toolsBox.setManaged(false);
+            }
+        } else {
+            editMenu.getItems().setAll(normalEditItems);
+            menuBar.getMenus().setAll(sessionMenu,editMenu,insertsMenu,panesMenu,viewMenu,hostMenu,helpMenu);
+            if (toolsBox!=null) {
+                toolsBox.setVisible(true);
+                toolsBox.setManaged(true);
+            }
+        }
+        if (chrome!=null) chrome.syncKioskState();
+        refreshSplitStyles(tree);
+        panes.values().forEach(SessionPane::updateHeader);
+        refreshCommands();
+        constrainWindow();
+        shell.requestLayout();
     }
 
     private void hostKeys() {
@@ -1477,6 +1582,7 @@ public final class Workspace {
     private MenuBar buildMenus() {
         MenuBar bar=new MenuBar();
         Menu session=menu(bar,"Session");
+        this.sessionMenu=session;
         action(session,"Connect / disconnect",() -> active.connect());
         action(session,"Reconnect",() -> active.reconnect());
         action(session,"New window",() -> {
@@ -1488,7 +1594,7 @@ public final class Workspace {
                     connectOnStartup=!connectOnStartup;
                     command("Connect panes on startup").setSelected(connectOnStartup);
                     changed();
-                },() -> !closing,"automatic reconnect launch");
+                },() -> !closing && !KioskMode.isEnabled(),"automatic reconnect launch");
         startup.setSelected(connectOnStartup);
         commands.add(startup);
         session.getItems().add(new SeparatorMenuItem());
@@ -1498,10 +1604,20 @@ public final class Workspace {
         action(session,"Quit",() -> { if (application==null) close(false); else application.quit(); });
 
         Menu edit=menu(bar,"Edit");
-        action(edit,"Copy selection / screen",() -> active.view().copy());
-        action(edit,"Paste into fields",() -> active.view().paste());
+        this.editMenu=edit;
+        AppCommand copyCmd=action(edit,"Copy selection / screen",() -> active.view().copy());
+        AppCommand pasteCmd=action(edit,"Paste into fields",() -> active.view().paste());
         edit.getItems().add(new SeparatorMenuItem());
         action(edit,Shortcuts.SETTINGS,() -> preferences("Appearance"));
+        normalEditItems=List.copyOf(edit.getItems());
+        AppCommand disableKiosk=new AppCommand("Disable Kiosk Mode...","Edit / Disable Kiosk Mode... (requires Administrator)",null,
+                this::disableKioskModePrompt,() -> !closing && KioskMode.isEnabled(),"kiosk unlock supervisor administrator");
+        commands.add(disableKiosk);
+        kioskEditItems=List.of(
+                copyCmd.createMenuItem("Copy"),
+                pasteCmd.createMenuItem("Paste"),
+                new SeparatorMenuItem(),
+                disableKiosk.createMenuItem("Disable Kiosk Mode..."));
         for (String alias:Shortcuts.SETTINGS_ALIASES.stream().sorted().toList()) {
             Runnable handler=switch (alias) {
                 case "Theme designer..." -> () -> new ThemeDesigner(this).setVisible(true);
@@ -1512,6 +1628,7 @@ public final class Workspace {
         }
 
         Menu inserts=menu(bar,"Inserts");
+        this.insertsMenu=inserts;
         action(inserts,"Insert profile username",() -> active.paste(connectionProfile(active.profile()).username()));
         action(inserts,"Insert remembered password",() -> active.sendPassword());
         inserts.getItems().add(new SeparatorMenuItem());
@@ -1522,6 +1639,7 @@ public final class Workspace {
         action(inserts,"Send host key...",this::hostKeys);
 
         Menu layoutMenu=menu(bar,"Panes");
+        this.panesMenu=layoutMenu;
         action(layoutMenu,"Add pane",() -> split(true));
         action(layoutMenu,"Swap panes...",this::dockingDialog);
         action(layoutMenu,"Arrange pane...",this::arrangementDialog);
@@ -1539,20 +1657,22 @@ public final class Workspace {
         action(layoutMenu,"Saved layouts / shortcuts...",this::savedLayoutsDialog);
 
         Menu view=menu(bar,"View");
+        this.viewMenu=view;
         action(view,"Fit host screen",this::fit);
         action(view,"Zoom in",() -> zoom(.1));
         action(view,"Zoom out",() -> zoom(-.1));
         for (AppTheme t:AppTheme.values()) {
             AppCommand change=new AppCommand("Theme: "+t,"Application theme; does not reconnect sessions",null,
-                    () -> applyTheme(t),() -> !closing && !settingsSaving(),"appearance color scheme "+t.name());
+                    () -> applyTheme(t),() -> !closing && !settingsSaving() && !KioskMode.isEnabled(),"appearance color scheme "+t.name());
             commands.add(change);
         }
         AppCommand flux=new AppCommand("Flux animated text","Flowing multicolor text; opt-in, host attributes preserved",null,
                 () -> putProfile(active.profile().withDisplay(active.profile().theme(),Profile.FLUX)),
-                () -> active!=null && !closing,"theme gradient rainbow animated flowing effect");
+                () -> active!=null && !closing && !KioskMode.isEnabled(),"theme gradient rainbow animated flowing effect");
         commands.add(flux);
 
         Menu host=menu(bar,"Host");
+        this.hostMenu=host;
         for (KeyMnemonic key:List.of(KeyMnemonic.RESET,KeyMnemonic.ATTN,KeyMnemonic.SYSREQ)) {
             action(host,key.name(),() -> active.send(key)).hostKey=key;
         }
@@ -1560,6 +1680,7 @@ public final class Workspace {
         action(host,"Last pane notice...",() -> active.showLastNotice());
 
         Menu help=menu(bar,"Help");
+        this.helpMenu=help;
         Menu tutorials=new Menu("Tutorials");
         help.getItems().add(tutorials);
         String[] tutorialActions={"Getting started tutorial","Tutorial: Appearance","Tutorial: Non-Kerberos profile","Tutorial: Keyboard shortcuts",
@@ -1642,6 +1763,9 @@ public final class Workspace {
         };
         AppCommand action=new AppCommand(text,(menu==null ? "Fish" : menu.getText())+" / "+text,Shortcuts.defaultStroke(text),command,() -> {
             if (closing || settingsSaving()) return false;
+            if (KioskMode.isEnabled() && !isAllowedInKiosk(text,null)
+                    && !(menu!=null && (menu.getText().equals("Host") || menu.getText().equals("Inserts")) && !text.equals("Last pane notice...")))
+                return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
             if (List.of("Profiles...","New window","Saved layouts / shortcuts...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
                     "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started",
@@ -1709,8 +1833,10 @@ public final class Workspace {
                 command("Paste into fields").createMenuItem("Paste"),
                 new SeparatorMenuItem(),
                 command("RESET").createMenuItem("Reset"));
-        for (String act:List.of("Connect / disconnect","Add pane","Arrange pane...","Swap panes...","Close pane"))
-            menu.getItems().add(command(act).createMenuItem(act));
+        if (!KioskMode.isEnabled()) {
+            for (String act:List.of("Connect / disconnect","Add pane","Arrange pane...","Swap panes...","Close pane"))
+                menu.getItems().add(command(act).createMenuItem(act));
+        }
         return menu;
     }
 
@@ -1720,12 +1846,13 @@ public final class Workspace {
         if (!force && settingsSaving()) { Ui.error(stage,"Wait for the profile save to finish before closing Fish."); return; }
         if (!force && !closeSettings()) return;
         saveTimer.stop();
-        StateStore.State snapshot=state();
+        boolean skipSave=KioskMode.isEnabled();
+        StateStore.State snapshot=skipSave ? null : state();
         closing=true;
         disposeWorkspace();
         persistence.submit(() -> {
             try {
-                store.save(snapshot);
+                if (!skipSave && snapshot!=null) store.save(snapshot);
             } catch (java.io.IOException e) {
                 System.err.println("Fish closed; workspace could not be saved: "+e.getMessage());
             } finally {
@@ -1739,6 +1866,7 @@ public final class Workspace {
 
     private void disposeWorkspace() {
         Ui.removeThemeListener(themeListener);
+        KioskMode.removeListener(kioskListener);
         updates.close();
         if (tutorial!=null) tutorial.dispose();
         if (preferences!=null && !preferences.ended()) preferences.forceDispose();
@@ -1789,12 +1917,19 @@ public final class Workspace {
     public void selectSavedLayout(UUID id) { if (!Objects.equals(selectedLayout,id)) { selectedLayout=id; changed(); } }
 
     public SavedLayout saveCurrentLayout(UUID id,String name) {
+        boolean existingAutostart=id!=null && savedLayouts.stream().filter(s -> s.id().equals(id))
+                .map(SavedLayout::autostart).findFirst().orElse(false);
+        return saveCurrentLayout(id,name,existingAutostart);
+    }
+
+    public SavedLayout saveCurrentLayout(UUID id,String name,boolean autostart) {
+        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
         if (settingsSaving()) throw new IllegalArgumentException("Wait for the pending save to finish.");
         StateStore.State current=state();
         Map<UUID,SavedLayout.Display> displays=new LinkedHashMap<>();
         sessionPanes().forEach(p -> displays.put(p.id(),new SavedLayout.Display(p.view().isFit(),p.view().zoomValue())));
         SavedLayout value=new SavedLayout(id==null ? UUID.randomUUID() : id,name,
-                new StateStore.WindowState(current.layout(),current.width(),current.height(),current.lastProfile(),current.addProfile()),displays);
+                new StateStore.WindowState(current.layout(),current.width(),current.height(),current.lastProfile(),current.addProfile()),displays,autostart);
         List<SavedLayout> next=new ArrayList<>(savedLayouts);
         if (id!=null && next.stream().noneMatch(s -> s.id().equals(id))) throw new IllegalArgumentException("Saved layout was deleted. Save as new instead.");
         next.removeIf(s -> s.id().equals(value.id())); next.add(value);
@@ -1803,12 +1938,21 @@ public final class Workspace {
         return value;
     }
 
+    public void setSavedLayoutAutostart(UUID id,boolean autostart) {
+        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
+        if (savedLayouts.stream().noneMatch(s -> s.id().equals(id))) throw new IllegalArgumentException("Saved layout is unavailable.");
+        List<SavedLayout> next=savedLayouts.stream().map(s -> s.id().equals(id) ? s.withAutostart(autostart) : s).toList();
+        updateSavedLayouts(next,id);
+    }
+
     public void renameSavedLayout(UUID id,String name) {
+        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
         List<SavedLayout> next=savedLayouts.stream().map(s -> s.id().equals(id) ? s.renamed(name) : s).toList();
         updateSavedLayouts(next,id);
     }
 
     public void deleteSavedLayout(UUID id) {
+        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
         List<SavedLayout> next=savedLayouts.stream().filter(s -> !s.id().equals(id)).toList();
         updateSavedLayouts(next,next.isEmpty() ? null : next.getFirst().id());
     }
@@ -1816,7 +1960,18 @@ public final class Workspace {
     private void updateSavedLayouts(List<SavedLayout> next,UUID selection) {
         if (settingsSaving()) throw new IllegalArgumentException("Wait for the pending save to finish.");
         state().withSavedLayouts(next,selection);
-        savedLayouts=List.copyOf(next); selectedLayout=selection; changed();
+        savedLayouts=List.copyOf(next); selectedLayout=selection;
+        syncAutostartShortcuts(savedLayouts);
+        changed();
+    }
+
+    private void syncAutostartShortcuts(List<SavedLayout> layouts) {
+        if (demonstration) return;
+        try {
+            fish.LayoutShortcuts.syncAutostart(dataDirectory(),fish.LayoutShortcuts.executable(),layouts);
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("Could not update Windows Startup shortcut: "+e.getMessage(),e);
+        }
     }
 
     public boolean openSavedLayout(UUID id) {
@@ -1846,6 +2001,7 @@ public final class Workspace {
     }
 
     public void savedLayoutsDialog() {
+        if (KioskMode.isEnabled()) return;
         if (layoutsDialog==null || !layoutsDialog.isOpen()) layoutsDialog=new SavedLayoutsDialog(this);
         else layoutsDialog.refresh();
         if (isShowing()) layoutsDialog.show();

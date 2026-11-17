@@ -4,16 +4,37 @@ import java.nio.file.*;
 import java.util.*;
 import fish.demo.DemoHost;
 import fish.model.*;
+import fish.security.KioskMode;
 import fish.ui.*;
 
 public final class Main {
-    public static final String VERSION = "0.9.0";
+    public static final String VERSION = "0.10.0";
     private Main() {}
     public static void main(String[] args) {
         System.setProperty("javafx.enablePreview", "true");
         System.setProperty("javafx.suppressPreviewWarning", "true");
         if (args.length==1 && args[0].equals("--aot-warmup")) {
             runAotWarmup();
+            return;
+        }
+        if (args.length==1 && args[0].equals("--admin-verify")) {
+            System.exit(KioskMode.isUserAdmin() ? 0 : 1);
+            return;
+        }
+        if (args.length==2 && args[0].equals("--admin-kiosk")
+                && (args[1].equalsIgnoreCase("enable") || args[1].equalsIgnoreCase("disable"))) {
+            try {
+                KioskMode.writeDirect(args[1].equalsIgnoreCase("enable"));
+                System.exit(0);
+            } catch (java.io.IOException e) {
+                System.err.println("Fish could not update HKLM\\SOFTWARE\\Fish\\KioskMode: "+e.getMessage());
+                System.exit(1);
+            }
+            return;
+        }
+        if (args.length==1 && args[0].equals("--uninstall-cleanup")) {
+            uninstallCleanup();
+            System.exit(0);
             return;
         }
         if (args.length>0 && args[0].equals("--config")) {
@@ -42,11 +63,28 @@ public final class Main {
                 System.exit(2);
             }
         }
+        if (isKioskLaunchBlocked(demonstration,requestedLayout)) {
+            if (!WorkspaceRecovery.showKioskBlockedAndAllowUnlock()) {
+                System.exit(0);
+                return;
+            }
+        }
+        launchWithRecovery(demonstration,supplied,requestedLayout,true);
+    }
+
+    public static boolean isKioskLaunchBlocked(boolean demonstration,UUID requestedLayout) {
+        return KioskMode.isEnabled() && (demonstration || requestedLayout==null);
+    }
+
+    private static void launchWithRecovery(boolean demonstration,Path supplied,UUID requestedLayout,boolean allowFactoryReset) {
+        Path fallbackDir=supplied!=null ? supplied
+                : defaultDirectory(Path.of(Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home"))));
+        LaunchBroker.Claim openedClaim=null;
+        DemoHost openedHost=null;
         try {
             if (demonstration && requestedLayout!=null) throw new IllegalArgumentException("--layout cannot be combined with --demo.");
             UUID launchLayout=requestedLayout;
-            Path directory = supplied != null ? supplied : demonstration ? Files.createTempDirectory("Fish-demo-")
-                    : defaultDirectory(Path.of(Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home"))));
+            Path directory = supplied != null ? supplied : demonstration ? Files.createTempDirectory("Fish-demo-") : fallbackDir;
             java.util.concurrent.atomic.AtomicReference<ApplicationWindows> running=new java.util.concurrent.atomic.AtomicReference<>();
             LaunchBroker.Claim claim=LaunchBroker.claim(directory,VERSION+(demonstration ? ":demo" : ":normal"),launchLayout,id -> {
                 var accepted=new java.util.concurrent.atomic.AtomicInteger();
@@ -61,6 +99,7 @@ public final class Main {
                 return accepted.get();
             });
             if (claim.forwarded()) return;
+            openedClaim=claim;
             Ui.FxBoot.startAsync();
             java.util.concurrent.CompletableFuture<Void> awtWarmup=java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
@@ -70,9 +109,8 @@ public final class Main {
             });
             StateStore store=claim.store();
             DemoHost host = demonstration ? new DemoHost() : null;
-            StateStore.State state;
-            try { state=demonstration ? demoState(Objects.requireNonNull(host).port()) : WorkspaceRecovery.load(store); }
-            catch (Exception e) { claim.broker().close(); store.close(); if (host!=null) host.close(); throw e; }
+            openedHost=host;
+            StateStore.State state=demonstration ? demoState(Objects.requireNonNull(host).port()) : WorkspaceRecovery.load(store);
             if (state==null) { claim.broker().close(); store.close(); if (host!=null) host.close(); System.exit(0); return; }
             java.util.concurrent.CompletableFuture<Void> fontWarmup=awtWarmup.thenRunAsync(() -> {
                 try {
@@ -114,19 +152,56 @@ public final class Main {
                     if (!store.loadNotice().isEmpty())
                         System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
                 } catch (RuntimeException e) {
+                    if (host != null) host.close();
+                    if (!demo && allowFactoryReset
+                            && WorkspaceRecovery.offerStartupFactoryReset(directory,claim.broker(),store,"Fish could not open its workspace: "+e.getMessage())) {
+                        new Thread(() -> launchWithRecovery(false,supplied,null,false),"fish-recovery-relaunch").start();
+                        return;
+                    }
                     try { claim.broker().close(); }
                     catch (java.io.IOException closeError) { e.addSuppressed(closeError); }
-                    if (host != null) host.close();
                     try { store.close(); }
                     catch (java.io.IOException closeError) { e.addSuppressed(closeError); }
-                    Ui.error(null,"Fish could not open its workspace: " + e.getMessage());
+                    if (demo || !allowFactoryReset) Ui.error(null,"Fish could not open its workspace: " + e.getMessage());
                     System.exit(1);
                 }
             });
         } catch (Exception e) {
+            if (openedHost!=null) openedHost.close();
+            if (!demonstration && allowFactoryReset) {
+                AutoCloseable brokerClose=openedClaim==null ? null : openedClaim.broker();
+                AutoCloseable storeClose=openedClaim==null ? null : openedClaim.store();
+                if (WorkspaceRecovery.offerStartupFactoryReset(fallbackDir,brokerClose,storeClose,"Fish could not start: "+e.getMessage())) {
+                    launchWithRecovery(false,supplied,null,false);
+                    return;
+                }
+                closeClaimQuietly(openedClaim);
+                System.exit(1);
+                return;
+            }
+            closeClaimQuietly(openedClaim);
             try { Ui.install(); Ui.error(null,"Fish could not start: " + e.getMessage()); }
             catch (Exception ignored) { System.err.println("Fish could not start: " + e.getMessage()); }
             System.exit(1);
+        }
+    }
+
+    private static void closeClaimQuietly(LaunchBroker.Claim claim) {
+        if (claim==null) return;
+        try { if (claim.broker()!=null) claim.broker().close(); } catch (java.io.IOException ignored) {}
+        try { if (claim.store()!=null) claim.store().close(); } catch (java.io.IOException ignored) {}
+    }
+
+    /** Invoked by MSI real uninstallation (`REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`) to remove config, Startup shortcuts, and stored credentials. */
+    public static void uninstallCleanup() {
+        LayoutShortcuts.removeAutostartShortcuts(null);
+        KioskMode.deleteAllStoredCredentials();
+        String appData=System.getenv("APPDATA");
+        if (appData!=null && !appData.isBlank()) WorkspaceRecovery.deleteDirectoryTreeQuietly(defaultDirectory(Path.of(appData)));
+        if (KioskMode.isUserAdmin()) {
+            String programData=System.getenv("ProgramData");
+            if (programData!=null && !programData.isBlank()) WorkspaceRecovery.deleteDirectoryTreeQuietly(Path.of(programData).resolve("Fish"));
+            try { KioskMode.writeDirect(false); } catch (java.io.IOException ignored) {}
         }
     }
 

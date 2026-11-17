@@ -3,8 +3,11 @@ package fish.model;
 import java.util.*;
 
 /** Reusable window recipe, never a presentation-space capture or a live connection. */
-public record SavedLayout(UUID id,String name,StateStore.WindowState window,Map<UUID,Display> displays) {
+public record SavedLayout(UUID id,String name,StateStore.WindowState window,Map<UUID,Display> displays,boolean autostart) {
     public static final int MAX_SAVED=64;
+    public SavedLayout(UUID id,String name,StateStore.WindowState window,Map<UUID,Display> displays) {
+        this(id,name,window,displays,false);
+    }
     public record Display(boolean fit,double zoom) {
         public Display {
             if (!Double.isFinite(zoom) || zoom<.5 || zoom>3) throw new IllegalArgumentException("Saved pane zoom must be 0.5-3.");
@@ -33,6 +36,12 @@ public record SavedLayout(UUID id,String name,StateStore.WindowState window,Map<
             throw new IllegalArgumentException("Layout reference must be the saved layout's UUID, not a file or name.");
         return UUID.fromString(value);
     }
-    public SavedLayout renamed(String value) { return new SavedLayout(id,value,window,displays); }
-    @Override public String toString() { return name; }
+    public SavedLayout renamed(String value) { return new SavedLayout(id,value,window,displays,autostart); }
+    public SavedLayout withAutostart(boolean enabled) { return new SavedLayout(id,name,window,displays,enabled); }
+    public static String shortcutFileName(String title) {
+        String safe=(title==null ? "" : title).replaceAll("[<>:\"/\\\\|?*\\p{Cntrl}]","_").replaceAll("[. ]+$","");
+        if (safe.isBlank()) safe="Fish layout";
+        return "Fish - "+safe+".lnk";
+    }
+    @Override public String toString() { return autostart ? name+" (Autostart)" : name; }
 }

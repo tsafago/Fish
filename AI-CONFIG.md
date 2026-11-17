@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.9.0 beta exposes its complete local configuration without an AI service, network
+Fish 0.10.0 beta exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -73,12 +73,11 @@ default workspace. XML is bounded at 2,000,000 bytes. Duplicate entries, unknown
 keys, unsupported future versions and external DTD/entity declarations are rejected.
 No shell commands, hooks, scripts or executable settings are supported.
 
-An exported legacy workspace is migrated to version 20 with recoverable keyboard migration
+An exported legacy workspace is migrated to version 21 with recoverable keyboard migration
 notes. The original workspace is not migrated on disk until apply or a normal app
-save. Older binaries (including 0.8.0) cannot read version 20: restore a pre-upgrade backup for a downgrade.
-Do not manually relabel old/future data as version 20. Interactive startup recovery
-offers an explicitly confirmed factory reset with an exact unique backup, under
-the workspace lock. Offline configuration still rejects bad state without resetting.
+save. Older binaries (including 0.9.0) cannot read version 21: restore a pre-upgrade backup for a downgrade.
+Do not manually relabel old/future data as version 21. When machine-wide Kiosk mode (`HKLM\SOFTWARE\Fish\KioskMode`) is enabled, `--config apply` is blocked so floor configurations remain immutable until an administrator disables Kiosk mode. Interactive startup recovery
+offers both Restore factory settings (with an exact unique backup) and Factory reset (delete config). Offline configuration still rejects bad state without resetting.
 Version-8/9 hosts, sign-in
 choices, login references and tutorial status are retained; startup connection
 is off on pre-9 upgrade and preserves the explicit version-9 value. Legacy profiles

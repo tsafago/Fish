@@ -1061,6 +1061,27 @@ public final class Ui {
                 -fx-border-width: __PX__;
                 -fx-padding: 4 8 4 10;
             }
+            .fish-zoom-hud {
+                -fx-background-color: -fish-divider, -fish-tooltip;
+                -fx-background-insets: 0, __PX__;
+                -fx-background-radius: 6, 5;
+                -fx-text-fill: -fish-tooltip-text;
+                -fx-font-size: 12.5px;
+                -fx-font-weight: bold;
+                -fx-padding: 5 11 5 11;
+                -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.28), 8, 0.1, 0, 2);
+            }
+            .fish-reset-callout {
+                -fx-background-color: -fish-status-error, -fish-panel;
+                -fx-background-insets: 0, __PX__;
+                -fx-background-radius: 6, 5;
+                -fx-padding: 6 8 6 11;
+                -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.30), 10, 0.1, 0, 3);
+            }
+            .fish-reset-callout > .label {
+                -fx-text-fill: -fish-text;
+                -fx-font-size: 12px;
+            }
             """;
         String css = cssTemplate
                 .replace("__PX__", px)

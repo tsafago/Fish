@@ -31,6 +31,8 @@ public final class SavedLayoutsDialog {
     private final Stage stage;
     private final ShortcutExport shortcutExport;
     private final TextField name=new TextField(),existingName=new TextField();
+    private final CheckBox currentAutostart=new CheckBox("Start automatically when Windows signs in");
+    private final CheckBox existingAutostart=new CheckBox("Autostart when Windows signs in");
     private final ComboBox<SavedLayout> layouts=new ComboBox<>();
     private final Label context=new Label(),message=new Label(" ");
     private final Button create,save,replace,rename,delete,open,export;
@@ -75,14 +77,15 @@ public final class SavedLayoutsDialog {
         Label nameLabel=new Label("Name");
         nameLabel.setLabelFor(name);
         nameLabel.setStyle("-fx-font-size: 13px;");
-        VBox naming=new VBox(4,nameLabel,name);
+        currentAutostart.setTooltip(new Tooltip("Launch this saved layout automatically when you sign in to Windows."));
+        VBox naming=new VBox(6,nameLabel,name,currentAutostart);
 
         create=Ui.button("Create desktop shortcut...",() -> chooseShortcut(true));
         create.setDefaultButton(true);
         create.setStyle("-fx-font-size: 13px; -fx-padding: 6 14 6 14;");
 
         save=Ui.button("Save layout only",() -> act(() -> {
-            workspace.saveCurrentLayout(null,name.getText());
+            workspace.saveCurrentLayout(null,name.getText(),currentAutostart.isSelected());
             refresh();
             showLibrary();
             working=true; refresh(); showMessage("Saving layout...",false);
@@ -112,7 +115,20 @@ public final class SavedLayoutsDialog {
         });
 
         layouts.setMaxWidth(Double.MAX_VALUE);
-        VBox fields=new VBox(8,row("Saved layout",layouts),row("Rename to",existingName));
+        existingAutostart.setTooltip(new Tooltip("Add or remove this layout from your Windows Startup folder. Multiple layouts can autostart independently."));
+        existingAutostart.setOnAction(e -> {
+            if (refreshing) return;
+            act(() -> {
+                SavedLayout value=selected();
+                boolean enabled=existingAutostart.isSelected();
+                workspace.setSavedLayoutAutostart(value.id(),enabled);
+                refresh();
+                showMessage(enabled
+                        ? "Autostart enabled for \""+value.name()+"\"."
+                        : "Autostart disabled for \""+value.name()+"\".",false);
+            });
+        });
+        VBox fields=new VBox(8,row("Saved layout",layouts),row("Rename to",existingName),existingAutostart);
 
         open=Ui.button("Open new window",() -> act(() -> {
             if (!workspace.openSavedLayout(selected().id()))
@@ -161,7 +177,11 @@ public final class SavedLayoutsDialog {
         layouts.valueProperty().addListener((obs,oldV,newV) -> {
             if (!refreshing && newV!=null) {
                 workspace.selectSavedLayout(newV.id());
-                existingName.setText(newV.name());
+                refreshing=true;
+                try {
+                    existingName.setText(newV.name());
+                    existingAutostart.setSelected(newV.autostart());
+                } finally { refreshing=false; }
             }
         });
 
@@ -182,6 +202,9 @@ public final class SavedLayoutsDialog {
     public boolean isWorking() { return working; }
     public TextField nameField() { return name; }
     public TextField existingNameField() { return existingName; }
+    public CheckBox currentAutostartCheck() { return currentAutostart; }
+    public CheckBox existingAutostartCheck() { return existingAutostart; }
+    public ComboBox<SavedLayout> layoutsCombo() { return layouts; }
     public Label contextLabel() { return context; }
     public Label messageLabel() { return message; }
     public Button createButton() { return create; }
@@ -226,12 +249,15 @@ public final class SavedLayoutsDialog {
                     .findFirst().orElse(workspace.savedLayouts().isEmpty() ? null : workspace.savedLayouts().getFirst());
             layouts.setValue(value);
             if (!edited) existingName.setText(value==null ? "" : value.name());
+            existingAutostart.setSelected(value!=null && value.autostart());
             for (Button button:new Button[]{replace,rename,delete,open,export}) button.setDisable(value==null || working);
             layouts.setDisable(value==null || working);
             existingName.setDisable(value==null || working);
+            existingAutostart.setDisable(value==null || working);
             create.setDisable(working);
             save.setDisable(working);
             name.setDisable(working);
+            currentAutostart.setDisable(working);
             manage.setText("Saved layouts ("+workspace.savedLayouts().size()+")");
         } finally { refreshing=false; }
     }
@@ -268,7 +294,7 @@ public final class SavedLayoutsDialog {
                     output=output.resolveSibling(output.getFileName()+".lnk");
                 if (Files.exists(output))
                     throw new IllegalArgumentException("That file already exists. Choose a new shortcut filename.");
-                if (current) value=workspace.saveCurrentLayout(null,title);
+                if (current) value=workspace.saveCurrentLayout(null,title,currentAutostart.isSelected());
                 working=true; refresh(); showMessage("Saving layout and creating shortcut...",false);
                 shortcutExport.write(Objects.requireNonNull(value).id(),output,() -> {
                     working=false; refresh(); showMessage("Shortcut created. Opens a new Fish window.",false);

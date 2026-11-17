@@ -1,7 +1,7 @@
 # Fish manual
 
-Fish 0.9.0 BETA - unsigned experimental prerelease, including accepted cursor/usability/simple-pane work.
-Earlier images/releases remain unchanged. This build writes a format-20 workspace;
+Fish 0.10.0 BETA - unsigned experimental prerelease, including viewport-clipped per-pane `100% (auto)` zoom, wheel bindings, per-layout autostart, Kiosk mode, Reset callout, startup factory reset, clean uninstall, and system-wide installation.
+Earlier images/releases remain unchanged. This build writes a format-21 workspace;
 close all Fish windows and back up workspace.xml before first launch.
 
 Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
@@ -46,11 +46,11 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.9.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.9.0) includes Fish-0.9.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user, creates Start menu/desktop shortcuts and bundles the runtime. Its default location is your local application-data Fish directory; Change selects an empty local folder or an existing Fish installation. No administrator installation is requested. Its native checkbox text/check/focus painting uses explicit contrasting colors, including disabled and Windows high-contrast states.
+The public [v0.10.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.0) includes Fish-0.10.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user by default (no administrator rights needed), or system-wide into C:\Program Files\Fish when **Install for all users (requires Administrator)** is checked, creating Start menu/desktop shortcuts and bundling the runtime.
 
-Alternatively, extract the matching Fish-0.9.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.10.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
-For SmartScreen-free per-user installation without administrator privileges, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1` from a portable folder or release directory (or choose **Edit > Settings > General > Install for current user...** directly inside a portable Fish launch). Both install into `%LOCALAPPDATA%\Programs\Fish`, strip Internet `Zone.Identifier` streams on hash/source-verified files, create Start Menu and optional Desktop `.lnk` shortcuts, and register Fish under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish` (`Uninstall-Fish.ps1` removes the installation while keeping `%APPDATA%\Fish\workspace.xml` and saved Windows credentials).
+For SmartScreen-free per-user installation without administrator privileges, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1` from a portable folder or release directory (or choose **Edit > Settings > General > Install for current user...** directly inside a portable Fish launch). For system-wide installation into `%ProgramFiles%\Fish`, pass `-AllUsers` (or choose **Install system-wide (Administrator)...** in Settings > General). Uninstallation (`Uninstall-Fish.ps1` or Windows Settings > Apps) removes the installation and deletes Fish configuration (`%APPDATA%\Fish`), Startup layout shortcuts, and stored `Fish/*` Windows Credential Manager entries.
 
 Note on Windows SmartScreen: any unsigned `.exe` or `.msi` downloaded directly by a web browser receives Mark-of-the-Web (`Zone.Identifier` `ZoneId=3`), which causes SmartScreen to prompt when launched directly via Explorer/`ShellExecute` unless signed with an Authenticode certificate. Extracting the portable ZIP with 7-Zip/`tar`/`Expand-Archive`, running `Install-Fish.ps1`, or using the in-app **Install for current user...** action installs without administrator rights and without triggering SmartScreen prompts on unsigned setup executables. Do not override your organization's security policy.
 
@@ -64,32 +64,42 @@ The script obtains checksum-pinned portable JDK 25, OpenJFX 25, Zig and WiX tool
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs use 0.9.0 names. The final side-by-side image is at dist\Fish-0.9.0\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
+Default build outputs use 0.10.0 names. The final side-by-side image is at dist\Fish-0.10.0\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.9.0\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.9.0\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.10.0\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.10.0\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
 
-Close running Fish windows before an upgrade. Install the new version for the same Windows user. The stable installer upgrade identity allows later releases to replace the application without changing the profile directory.
+Close running Fish windows before an upgrade. Install the new version for the same scope (per-user or all-users). The stable installer upgrade identity allows later releases to replace the application without deleting the workspace during an upgrade.
 
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish; a custom --data-dir takes precedence.
-The next save writes configuration version 20 with cursor style, reduced-motion preference, simple layouts, expanded palettes and recipe version 3. Catalog version is 10.
-Older binaries, including 0.8.0, cannot read it:
+The next save writes configuration version 21 with per-pane relative zoom, per-layout Windows autostart, wheel chord support (`SCROLL+`/`SCROLL-`), cursor style, reduced-motion preference, simple layouts and expanded palettes. Catalog version is 11.
+Older binaries, including 0.9.0, cannot read it:
 keep the matching pre-upgrade backup for downgrade. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
 or Kerberos tickets; they are not a backup of Windows Credential Manager.
 
-Uninstall through Windows Settings > Apps. Uninstalling the application does not intentionally delete workspace profiles or Windows Credential Manager entries. Back up workspace.xml before manual changes or a downgrade.
+Uninstall through Windows Settings > Apps or `Uninstall-Fish.ps1`. Uninstalling Fish deletes `%APPDATA%\Fish` configuration, Fish layout shortcuts in the Windows Startup folder, and `Fish/*` entries in Windows Credential Manager (while upgrades preserve them). Back up workspace.xml externally before uninstalling if you intend to keep settings.
 
-Older workspaces migrate to version 20, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows and update choices. Existing version-18/19 cursor preferences remain; earlier formats initialize underline replace / filled Insert, while fresh workspaces default to Outline / filled Insert. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; supported shapes and reasonable ratios are unchanged. Format 14 gains an empty recipe library and initializes each window's selector from its last profile. Prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.8.0 and earlier require that backup for downgrade. Format 12 bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, exact keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD. Malformed/future state is preserved unless you explicitly confirm startup factory recovery.
+Older workspaces migrate to version 21, retaining profiles/order/login references, exact host keys, themes/fonts, outlines/tint, windows, per-pane zoom, and update choices. Existing version-18/20 cursor preferences remain; earlier formats initialize underline replace / filled Insert, while fresh workspaces default to Outline / filled Insert. Unsupported old experimental topology/extreme divider ratios simplify with a load notice. Every pane/profile ID, stable named-layout UUID and fit/zoom setting remains; supported shapes and reasonable ratios are unchanged. Format 14 gains an empty recipe library and initializes each window's selector from its last profile. Prior built-in pane information defaults migrate to concise defaults; custom/hidden choices remain. Close ALL windows and back up workspace.xml first. Fish 0.9.0 and earlier require that backup for downgrade. Format 12 bindings merge into Settings... with original lists under keyboard.legacy.binding.*. Existing unbindings/key ownership, exact keyboard recovery, explicit startup OFF and PASSWORD auto/remember choices remain. New Kerberos drafts initialize password preferences ON only on their first switch to PASSWORD. Malformed/future state is preserved when choosing Restore factory settings, or completely wiped if you explicitly confirm Factory reset (delete config)... on a startup error.
+
+## Kiosk mode, autostart layouts, per-pane zoom and Reset callout
+
+**Per-pane relative zoom & wheel bindings**: **View > Zoom in / Zoom out / Fit host screen** scales only the target pane relative to that pane's dimensions (`100% (auto)` fits the pane automatically) and briefly displays a zoom percentage badge (`100% (auto)`, `110%`, `90%`, etc.). Panes sharing the same profile maintain independent zoom levels, and per-pane zoom saves with both open windows and saved desktop layout shortcuts. Shortcut bindings and **Record shortcut** accept `scroll +` and `scroll -` (such as `ctrl scroll +` / `ctrl scroll -`, unbound by default) and zoom whichever pane the mouse pointer hovers over.
+
+**Per-layout Windows Autostart**: In **Panes > Saved layouts / shortcuts...**, check **Start automatically when Windows signs in** when creating a layout shortcut or toggle **Autostart when Windows signs in** on one or multiple saved layouts to manage `.lnk` launchers in your Windows Startup folder automatically.
+
+**Kiosk mode (Administrator)**: Administrators can toggle machine-wide Kiosk mode (`HKLM\SOFTWARE\Fish\KioskMode`) in **Edit > Settings > General** or via `Fish.exe --admin-kiosk enable|disable`. While Kiosk mode is active, Fish starts only from `--layout` shortcuts, blocks layout/pane/splitter/zoom/settings changes, disables the animated Fish logo toggle, skips writing lasting workspace changes to disk while keeping window move/maximize/close functional, and shows only **Edit** (`Copy`, `Paste`, `Disable Kiosk Mode...`) and **Inserts**.
+
+**Stuck / Reset helper**: Whenever host input is inhibited in a recoverable state (`Reset` button visible), Fish displays `"Are you stuck? Press Enter or press this button!"` with an inline `[Reset]` button that dismisses immediately as soon as `Enter` or `[Reset]` clears the lock.
 
 The removed Neon effect becomes None with an explicit load notice; the rest of the profile is preserved. The removed Commands action leaves no shortcut-editor entry. Its old default Ctrl+Alt+K and any saved custom chord are reserved as no-ops until explicitly assigned to another action, preventing accidental host input.
 

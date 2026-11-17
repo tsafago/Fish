@@ -19,6 +19,7 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 import fish.install.UserInstaller;
 import fish.model.*;
+import fish.security.KioskMode;
 
 /** One indexed settings surface, with shared profile and keyboard editors and current-user portable install. */
 public final class Preferences {
@@ -456,24 +457,34 @@ public final class Preferences {
         targets.put("startup",startup);
         body.getChildren().add(note("Controls ordinary restored-window startup. Existing off choices are kept. Explicit +, New window and saved-layout launches still connect once; failures offer Reconnect."));
 
-        body.getChildren().add(section("Installation (Current User)"));
+        body.getChildren().add(section("Installation"));
         Optional<Path> appImage=UserInstaller.currentAppImage();
         Path targetInstallDir=UserInstaller.defaultInstallDirectory();
+        Path systemInstallDir=UserInstaller.defaultSystemInstallDirectory();
         boolean alreadyInstalled=appImage.isPresent() && UserInstaller.isInstalledLocation(appImage.get());
+        boolean alreadySystemInstalled=appImage.isPresent() && UserInstaller.isSystemInstalledLocation(appImage.get());
         Label installStatus=note(appImage.isEmpty()
-                ? "Running from development classes/JAR. Package Fish (build.ps1 Package) or run Install-Fish.ps1 to install for your Windows account."
+                ? "Running from development classes/JAR. Package Fish (build.ps1 Package) or run Install-Fish.ps1 to install for your Windows account or system-wide."
+                : alreadySystemInstalled
+                ? "Installed system-wide for all users in: "+appImage.get()
                 : alreadyInstalled
                 ? "Installed for your Windows account in: "+appImage.get()
-                : "Running in portable mode from: "+appImage.get()+"\nInstall for current user copies Fish cleanly to "+targetInstallDir+" with Start Menu integration and no administrator prompt or SmartScreen block.");
+                : "Running in portable mode from: "+appImage.get()+"\nInstall for your Windows account ("+targetInstallDir+", no admin needed) or system-wide for all users ("+systemInstallDir+", requires Administrator).");
         CheckBox desktopLink=new CheckBox("Also create a Desktop shortcut");
         Label installFeedback=note("");
         installFeedback.setVisible(false); installFeedback.setManaged(false);
         Button installBtn=Ui.button(alreadyInstalled ? "Installed in user profile" : "Install for current user...",() -> {});
+        installBtn.setId("prefs-install-user");
         installBtn.setGraphic(Ui.icon("install"));
         installBtn.setDisable(appImage.isEmpty() || alreadyInstalled);
+        Button systemInstallBtn=Ui.button(alreadySystemInstalled ? "Installed system-wide" : "Install system-wide (Administrator)...",() -> {});
+        systemInstallBtn.setId("prefs-install-system");
+        systemInstallBtn.setGraphic(Ui.icon("install"));
+        systemInstallBtn.setDisable(appImage.isEmpty() || alreadySystemInstalled);
         installBtn.setOnAction(e -> {
             if (appImage.isEmpty()) return;
             installBtn.setDisable(true);
+            systemInstallBtn.setDisable(true);
             installFeedback.setText("Installing Fish into "+targetInstallDir+"...");
             Ui.role(installFeedback,"muted");
             installFeedback.setVisible(true); installFeedback.setManaged(true);
@@ -482,6 +493,7 @@ public final class Preferences {
                 try { return UserInstaller.install(appImage.get(),targetInstallDir,true,makeDesktop,true); }
                 catch (IOException ex) { throw new java.io.UncheckedIOException(ex); }
             }).whenComplete((installedExe,err) -> Ui.runLater(() -> {
+                systemInstallBtn.setDisable(appImage.isEmpty() || alreadySystemInstalled);
                 if (err!=null) {
                     Throwable cause=err.getCause()!=null ? err.getCause() : err;
                     if (cause instanceof java.io.UncheckedIOException uio && uio.getCause()!=null) cause=uio.getCause();
@@ -494,7 +506,70 @@ public final class Preferences {
                 }
             }));
         });
-        body.getChildren().addAll(installStatus,desktopLink,installBtn,installFeedback);
+        systemInstallBtn.setOnAction(e -> {
+            if (appImage.isEmpty()) return;
+            installBtn.setDisable(true);
+            systemInstallBtn.setDisable(true);
+            installFeedback.setText("Requesting Administrator permission to install Fish into "+systemInstallDir+"...");
+            Ui.role(installFeedback,"muted");
+            installFeedback.setVisible(true); installFeedback.setManaged(true);
+            boolean makeDesktop=desktopLink.isSelected();
+            CompletableFuture.supplyAsync(() -> {
+                try { return UserInstaller.installSystemWide(appImage.get(),systemInstallDir,true,makeDesktop); }
+                catch (IOException ex) { throw new java.io.UncheckedIOException(ex); }
+            }).whenComplete((installedExe,err) -> Ui.runLater(() -> {
+                installBtn.setDisable(appImage.isEmpty() || alreadyInstalled);
+                if (err!=null) {
+                    Throwable cause=err.getCause()!=null ? err.getCause() : err;
+                    if (cause instanceof java.io.UncheckedIOException uio && uio.getCause()!=null) cause=uio.getCause();
+                    Ui.role(installFeedback,"error");
+                    installFeedback.setText("System-wide install failed: "+(cause.getMessage()==null ? cause.toString() : cause.getMessage()));
+                    systemInstallBtn.setDisable(false);
+                } else {
+                    Ui.role(installFeedback,"muted");
+                    installFeedback.setText("Installed system-wide at "+installedExe+" (All Users Start Menu and Windows Installed Apps updated).");
+                }
+            }));
+        });
+        HBox installActions=new HBox(8,installBtn,systemInstallBtn);
+        installActions.setAlignment(Pos.CENTER_LEFT);
+        body.getChildren().addAll(installStatus,desktopLink,installActions,installFeedback);
+
+        body.getChildren().add(section("Kiosk Mode (Administrator)"));
+        Label kioskNote=note("Locks Fish on this computer so it can only start from saved layout shortcuts, prevents layout/pane/zoom/settings changes, suppresses lasting workspace modifications, and hides all non-essential menus except Edit (Copy, Paste, Disable Kiosk Mode) and Inserts.");
+        Label kioskStatus=note("");
+        Button kioskToggle=Ui.button("",() -> {});
+        kioskToggle.setId("prefs-kiosk-toggle");
+        Runnable syncKioskUi=() -> {
+            boolean active=KioskMode.isEnabled();
+            kioskStatus.setText(active
+                    ? "Current status: Enabled (locked to saved layout shortcuts)."
+                    : "Current status: Disabled (standard workspace controls unlocked).");
+            kioskToggle.setText(active ? "Disable Kiosk Mode (Administrator)..." : "Enable Kiosk Mode (Administrator)...");
+        };
+        syncKioskUi.run();
+        kioskToggle.setOnAction(e -> {
+            boolean target=!KioskMode.isEnabled();
+            if (target) {
+                String warning=workspace.savedLayouts().isEmpty()
+                        ? "No saved layout shortcuts exist yet in this workspace! In Kiosk mode, Fish will only open from saved layout shortcuts.\n\nEnable Kiosk mode anyway (requires Administrator)?"
+                        : "Enable Kiosk mode for this computer (requires Administrator)?\n\nFish will immediately lock pane/layout/settings controls and require launching from saved layout shortcuts.";
+                if (!Ui.confirm(dialog,warning,"Enable Kiosk Mode")) return;
+                if (dirty()) persist();
+            } else {
+                if (!Ui.confirm(dialog,"Disable Kiosk mode on this computer (requires Administrator)?","Disable Kiosk Mode")) return;
+            }
+            try {
+                if (!KioskMode.setEnabledWithAdmin(target)) {
+                    Ui.error(dialog,"Kiosk mode was not changed. Administrator permission was cancelled or unavailable.");
+                }
+            } catch (IOException ex) {
+                Ui.error(dialog,"Could not update Kiosk mode: "+ex.getMessage());
+            }
+            syncKioskUi.run();
+        });
+        targets.put("kiosk",kioskToggle);
+        body.getChildren().addAll(kioskNote,kioskStatus,kioskToggle);
 
         body.getChildren().add(section("Reset"));
         body.getChildren().add(Ui.button("Revert to factory defaults...",workspace::factoryDefaults));

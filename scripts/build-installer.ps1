@@ -10,11 +10,66 @@ $zig=Join-Path $root ('.tools\'+$tools.Native.Directory+'\zig.exe')
 if (-not (Test-Path -LiteralPath $zig)) { throw 'Build the application/native bridge before packaging setup.' }
 $output=Join-Path $root ('build\installer-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Path $output | Out-Null
+$wixTemp=Join-Path $output 'wix-temp'
 & "$Jdk\bin\jpackage.exe" --type msi --name Fish --app-version $Version --app-image $Image `
-    --dest $output --vendor Fish --win-per-user-install --install-dir Fish `
+    --dest $output --temp $wixTemp --vendor Fish --win-per-user-install --install-dir Fish `
     --win-menu --win-shortcut --win-menu-group Fish --win-upgrade-uuid '55b0674d-e226-46cb-852f-6beddd35a74b'
-if ($LASTEXITCODE -ne 0) { throw 'Current-user MSI creation failed.' }
+if ($LASTEXITCODE -ne 0) { throw 'Base MSI staging failed.' }
 $msi=Join-Path $output "Fish-$Version.msi"
+
+# Upgrade the staged WiX definition to dual-scope (per-user default + all-users MSI support via ALLUSERS=2/MSIINSTALLPERUSER=1)
+# and wire real-uninstall config cleanup (Installed AND REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE).
+$wixDir=Join-Path $root ('.tools\'+$tools.Installer.Directory)
+$configDir=Join-Path $wixTemp 'config'
+$bundleWxf=Join-Path $configDir 'bundle.wxf'
+$mainWxs=Join-Path $configDir 'main.wxs'
+if ((Test-Path -LiteralPath $bundleWxf) -and (Test-Path -LiteralPath $mainWxs)) {
+    $bundleXml=[IO.File]::ReadAllText($bundleWxf,[Text.Encoding]::UTF8)
+    $bundleXml=$bundleXml.Replace('<RegistryKey Root="HKCU"','<RegistryKey Root="HKMU"')
+    $bundleXml=[regex]::Replace($bundleXml,
+        '(<RegistrySearch\s+Id="([^"]+)"\s+Root="HKCU"([^>]*></RegistrySearch>))',
+        '$1<RegistrySearch Id="$2_lm" Root="HKLM"$3')
+    [IO.File]::WriteAllText($bundleWxf,$bundleXml,[Text.UTF8Encoding]::new($false))
+
+    $mainXml=[IO.File]::ReadAllText($mainWxs,[Text.Encoding]::UTF8)
+    $mainXml=$mainXml.Replace('<?define JpInstallerVersion=200 ?>','<?define JpInstallerVersion=500 ?>')
+    $mainXml=$mainXml.Replace('InstallScope="$(var.JpInstallScope)" ','')
+    $dualProps=@'
+    <Property Id="ALLUSERS" Value="2"/>
+    <Property Id="MSIINSTALLPERUSER" Value="1"/>
+    <CustomAction Id="FishUninstallCleanup" Directory="INSTALLDIR" ExeCommand="&quot;[INSTALLDIR]Fish.exe&quot; --uninstall-cleanup" Execute="deferred" Impersonate="yes" Return="ignore"/>
+'@
+    $mainXml=$mainXml.Replace('<Media Id="1"',($dualProps+"`r`n    <Media Id=`"1`""))
+    $cleanupSeq='      <Custom Action="FishUninstallCleanup" Before="RemoveFiles">Installed AND (REMOVE="ALL") AND (NOT UPGRADINGPRODUCTCODE)</Custom>'
+    $mainXml=$mainXml.Replace('</InstallExecuteSequence>',($cleanupSeq+"`r`n    </InstallExecuteSequence>"))
+    [IO.File]::WriteAllText($mainWxs,$mainXml,[Text.UTF8Encoding]::new($false))
+
+    # Re-compile and link the patched dual-scope MSI using the exact candle/light flags jpackage prepared.
+    $wixObjOut=Join-Path $output 'wix-dual-obj'
+    New-Item -ItemType Directory -Force -Path $wixObjOut | Out-Null
+    $candleArgs=@('-nologo','-arch','x64','-ext','WixUtilExtension',"-dJpAppName=Fish","-dJpAppVersion=$Version",
+        "-dJpProductCode=$([guid]::NewGuid().ToString('B').ToUpperInvariant())",
+        '-dJpProductUpgradeCode={55B0674D-E226-46CB-852F-6BEDDD35A74B}',
+        '-dJpAppVendor=Fish','-dJpAppDescription=Fish',"-dJpConfigDir=$configDir",
+        '-dJpAllowUpgrades=yes','-dJpAllowDowngrades=yes','-dJpExecutableOSVersion=600')
+    $appIcon=Get-ChildItem -LiteralPath $configDir -Filter '*.ico' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($appIcon) { $candleArgs += "-dJpIcon=$($appIcon.FullName)" }
+    $sizeKb=[int][Math]::Ceiling(((Get-ChildItem -LiteralPath $Image -Recurse -File | Measure-Object -Property Length -Sum).Sum)/1024.0)
+    $candleArgs += "-dJpAppSizeKb=$sizeKb"
+    $wxsInputs=@(Get-ChildItem -LiteralPath $configDir -File | Where-Object { $_.Extension -in @('.wxs','.wxf') } | ForEach-Object { $_.FullName })
+    foreach ($srcFile in $wxsInputs) {
+        $objTarget=Join-Path $wixObjOut (([IO.Path]::GetFileNameWithoutExtension($srcFile))+'.wixobj')
+        & "$wixDir\candle.exe" @candleArgs -out $objTarget $srcFile
+        if ($LASTEXITCODE -ne 0) { throw "Dual-scope WiX compile failed on $srcFile." }
+    }
+    $locArgs=@('-cultures:en-us')
+    $enWxl=Join-Path $configDir 'MsiInstallerStrings_en.wxl'
+    if (Test-Path -LiteralPath $enWxl) { $locArgs += @('-loc',$enWxl) }
+    $objFiles=@(Get-ChildItem -LiteralPath $wixObjOut -Filter '*.wixobj' | ForEach-Object { $_.FullName })
+    Remove-Item -LiteralPath $msi -Force -ErrorAction SilentlyContinue
+    & "$wixDir\light.exe" -nologo -spdb -sval -ext WixUtilExtension -ext WixUIExtension -b $configDir -b $Image @locArgs -out $msi @objFiles
+    if ($LASTEXITCODE -ne 0) { throw 'Dual-scope MSI linking failed.' }
+}
 $parts=$Version.Split('.')
 $header="#define FISH_VERSION L`"$Version`"`n#define FISH_VERSION_A `"$Version`"`n"
 [IO.File]::WriteAllText((Join-Path $output 'fish-setup-version.h'),$header,[Text.UTF8Encoding]::new($false))

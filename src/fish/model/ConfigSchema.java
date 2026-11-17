@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",10); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",11); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -82,19 +82,21 @@ public final class ConfigSchema {
         root.put("windowFields",Map.of("layout",fields.get("layout"),"width",fields.get("width"),"height",fields.get("height"),
                 "lastProfile",fields.get("lastProfile"),"addProfile",fields.get("addProfile")));
         root.put("displayPrefix","pane.{pane-uuid}. or window.{index}.pane.{pane-uuid}.");
-        root.put("displayFields",Map.of("fit",field("boolean",true,"Optional paired fit/zoom entries for a pane in the corresponding window; both or neither. No screen data."),
-                "zoom",field("number",1,"Finite 0.5..3; captured per-pane manual zoom, used when fit=false.")));
+        root.put("displayFields",Map.of("fit",field("boolean",true,"Optional paired fit/zoom entries for a pane in the corresponding window; both or neither. fit=true means 100% (auto) fit to pane. No screen data."),
+                "zoom",field("number",1,"Finite 0.5..3; captured per-pane relative zoom factor (1.0 = 100% auto fit to pane size).")));
         root.put("savedLayoutPrefix","savedLayout.{listed-layout-uuid}.");
         root.put("savedLayoutFields",Map.of("version",enumeration("3",List.of("3")),
                 "name",field("text",null,"1..80 printable characters; unique ignoring case. Rename retains UUID/shortcuts."),
                 "layout",fields.get("layout"),"width",fields.get("width"),"height",fields.get("height"),
-                "lastProfile",fields.get("lastProfile"),"addProfile",fields.get("addProfile")));
+                "lastProfile",fields.get("lastProfile"),"addProfile",fields.get("addProfile"),
+                "autostart",field("boolean",false,"When true, Fish maintains a Windows Startup shortcut launching this saved layout automatically at sign-in.")));
         root.put("savedLayoutDisplayPrefix","savedLayout.{listed-layout-uuid}.pane.{pane-uuid}.");
         root.put("savedLayoutDisplayFields",Map.of("fit",field("boolean",true,"Required for every pane in this recipe; no extra pane IDs."),
-                "zoom",field("number",1,"Required finite 0.5..3; no terminal contents, credentials or authenticated state.")));
+                "zoom",field("number",1,"Required finite 0.5..3 relative to pane size; no terminal contents, credentials or authenticated state.")));
         root.put("savedLayoutLaunch","Fish.exe --layout UUID [--data-dir DIRECTORY]. Exactly one new ordinary window with rekeyed fresh sessions; never filenames, names, hosts or executable configuration. Missing/deleted IDs fail explicitly. Exported .lnk retains the executable path and explicit data directory; moving portable Fish breaks its old target. Cold shortcut launches retain previous window restoration without opening it; saved collection appends the shortcut window for the next ordinary cold launch. Named recipes change only on explicit Update, not moving dividers.");
         root.put("shortcutPrefix","binding.{exact-action-title}");
-        root.put("shortcutValue","Newline-separated exact pressed chords, or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.");
+        root.put("shortcutValue","Newline-separated exact pressed chords or mouse wheel directions (SCROLL+ / SCROLL-, also accepted as scroll + / scroll -), or empty to unbind that action. Modifiers ctrl, shift, alt, altGraph; Java key names. ENTER is standard; ENTER@numpad (alias NUMPAD_ENTER) is keypad. Optional @standard/@numpad/@left/@right/@unknown action-key location; modifier sides are not distinguished. Explicit entries, even equal to defaults, stay explicit.");
+        root.put("supportedKeys",KeyChord.supportedKeys());
         root.put("actions",Shortcuts.commands().stream().filter(c -> !Shortcuts.SETTINGS_ALIASES.contains(c.title())).map(c -> {
             Map<String,Object> data=new LinkedHashMap<>();
             data.put("title",c.title()); data.put("default",KeyBindings.defaultText(c.title())); data.put("hostAction",c.host()==null ? null : c.host().name()); return data;
@@ -108,7 +110,7 @@ public final class ConfigSchema {
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
         root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-17.");
-        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.9.0 beta. Format 20 / recipe 3 retains simple pane families/cursor preferences, adds appearance.reducedMotion, defaults fresh cursorStyle to OUTLINE, and allows updates across minor and major versions. Formats through 19 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.10.0 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart) and pane-size-relative per-pane zoom (100% auto fit), retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.");
         root.put("startupRecovery","Unreadable/unsupported workspaces offer Exit, bounded explicit Retry and confirmed factory recovery under the exclusive workspace lock. Recovery first preserves the exact original workspace-recovery-UUID.xml; credentials/fonts/other files stay untouched. A future version may require upgrading Fish, not resetting.");
         root.put("settingsPersistence","Valid discrete settings apply in the interaction before coalesced asynchronous disk writes. Typing validates after a short pause; incomplete/conflicting groups remain editable. Saved acknowledges the current generation's disk write; failures retain Retry recovery. Creation/credentials/destruction/exports stay explicit.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",

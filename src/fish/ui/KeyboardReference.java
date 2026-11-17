@@ -15,7 +15,7 @@ import fish.model.*;
 
 /** Searchable syntax and action reference derived from the live parser and command catalog. */
 public final class KeyboardReference {
-    public static final String EXAMPLES="Single: F5 or ENTER.  Ctrl+F5: ctrl F5.  Ctrl+Shift+F5: ctrl shift F5.";
+    public static final String EXAMPLES="Single: F5 or ENTER.  Ctrl+F5: ctrl F5.  Wheel: ctrl scroll + or ctrl SCROLL-.";
     public static final String ALTERNATIVES="Use spaces, not + signs. One alternative per line. Main: ENTER. Keypad: ENTER@numpad.";
 
     public record KeyRow(String label,String token) {}

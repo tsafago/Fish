@@ -20,26 +20,29 @@
 #include "fish-setup-common.h"
 #include "fish-setup-version.h"
 
-/* Restrained Fish chrome; the real Windows Installer transaction remains per-user. */
+/* Restrained Fish chrome; supports per-user (no admin) by default and optional all-users (UAC) install. */
 #define WIDTH 620
-#define HEIGHT 420
+#define HEIGHT 452
 #define RESULT (WM_APP+1)
 #define PHASE (WM_APP+2)
 #define INSTALL 101
 #define CANCEL 102
 #define CHANGE 103
 #define OPEN_APP 104
+#define ALL_USERS 105
 static COLORREF background=RGB(17,21,25),panel=RGB(25,31,37),text=RGB(229,234,240),
     muted=RGB(154,167,180),accent=RGB(123,188,203),divider=RGB(53,66,79);
 static unsigned option_paints=0;
 typedef struct { char magic[16]; ULONGLONG length; BYTE hash[32]; } Footer;
 _Static_assert(sizeof(Footer)==56,"Payload footer layout");
-static HWND window,folder,change,install,cancel,open_app;
+static HWND window,folder,change,install,cancel,open_app,all_users;
 static HFONT body_font,title_font;
 static HBRUSH field_brush;
 static UINT dpi=96;
 static BOOL busy=FALSE,completed=FALSE,reboot=FALSE,updating=FALSE,registered_installation=FALSE;
-static WCHAR destination[32768],data_directory[32768],status[512]=L"Ready to install for your Windows account.";
+static BOOL system_wide_mode=FALSE,custom_folder_chosen=FALSE,elevated_autostart=FALSE,elevated_open_app=TRUE;
+static WCHAR destination[32768],user_default_dest[32768],system_default_dest[32768],data_directory[32768];
+static WCHAR status[512]=L"Ready to install for your Windows account.";
 static DWORD parent_pid=0;
 static HANDLE parent_process=NULL;
 static HDC paint_dc=NULL;
@@ -101,33 +104,42 @@ static void label(HDC dc,const WCHAR *value,int x,int y,int width,int height,COL
 }
 static void surface(HDC dc,int width,int height,BOOL preview) {
     RECT all={0,0,width,height}; HBRUSH brush=CreateSolidBrush(background); FillRect(dc,&all,brush); DeleteObject(brush);
-    label(dc,L"Fish",28,22,300,42,text,title_font,DT_LEFT|DT_SINGLELINE);
-    label(dc,L"5250 workspace  /  " FISH_VERSION,29,67,550,22,muted,body_font,DT_LEFT|DT_SINGLELINE);
-    label(dc,L"For your Windows account. No administrator access needed.",29,106,555,24,text,body_font,DT_LEFT|DT_SINGLELINE);
-    label(dc,L"Install to",29,147,550,22,muted,body_font,DT_LEFT|DT_SINGLELINE);
-    label(dc,L"Profiles, passwords and preferences stay as they are.",29,250,560,24,muted,body_font,DT_LEFT|DT_SINGLELINE);
-    label(dc,L"Close all Fish windows and back up workspace.xml: older Fish cannot read format 15.",29,277,560,36,muted,body_font,DT_LEFT|DT_WORDBREAK);
-    label(dc,status,29,321,560,45,text,body_font,DT_LEFT|DT_WORDBREAK);
+    BOOL sys_checked=all_users && SendMessageW(all_users,BM_GETCHECK,0,0)==BST_CHECKED;
+    label(dc,L"Fish",28,20,300,42,text,title_font,DT_LEFT|DT_SINGLELINE);
+    label(dc,L"5250 workspace  /  " FISH_VERSION,29,64,550,22,muted,body_font,DT_LEFT|DT_SINGLELINE);
+    label(dc,sys_checked
+            ? L"System-wide for all users on this PC. Administrator access required."
+            : L"For your Windows account. No administrator access needed.",
+            29,100,560,24,text,body_font,DT_LEFT|DT_SINGLELINE);
+    label(dc,L"Install to",29,138,550,22,muted,body_font,DT_LEFT|DT_SINGLELINE);
+    label(dc,L"Profiles, passwords and preferences stay as they are during updates.",29,278,560,22,muted,body_font,DT_LEFT|DT_SINGLELINE);
+    label(dc,L"Close all Fish windows before updating. Uninstalling Fish removes saved configuration.",29,302,560,34,muted,body_font,DT_LEFT|DT_WORDBREAK);
+    label(dc,status,29,348,560,44,text,body_font,DT_LEFT|DT_WORDBREAK);
     HPEN pen=CreatePen(PS_SOLID,1,divider); HGDIOBJ old=SelectObject(dc,pen);
     MoveToEx(dc,px(0),height-px(54),NULL); LineTo(dc,width,height-px(54)); SelectObject(dc,old); DeleteObject(pen);
     if (busy) {
-        RECT track={px(29),px(309),px(590),px(311)};
+        RECT track={px(29),px(339),px(590),px(341)};
         brush=CreateSolidBrush(divider); FillRect(dc,&track,brush); DeleteObject(brush);
         track.left+=px((pulse%45)*10); track.right=min(px(590),track.left+px(100));
         brush=CreateSolidBrush(accent); FillRect(dc,&track,brush); DeleteObject(brush);
     }
     if (preview) {
-        RECT input={px(29),px(175),px(489),px(207)};
+        RECT input={px(29),px(164),px(489),px(196)};
         brush=CreateSolidBrush(panel); FillRect(dc,&input,brush); DeleteObject(brush);
-        label(dc,L"%LOCALAPPDATA%\\Fish",38,181,440,22,text,body_font,DT_LEFT|DT_SINGLELINE);
-        label(dc,L"Change...",501,181,90,25,accent,body_font,DT_CENTER|DT_SINGLELINE);
+        label(dc,L"%LOCALAPPDATA%\\Fish",38,170,440,22,text,body_font,DT_LEFT|DT_SINGLELINE);
+        label(dc,L"Change...",501,170,90,25,accent,body_font,DT_CENTER|DT_SINGLELINE);
+        if (all_users) {
+            POINT previous; SetViewportOrgEx(dc,px(29),px(206),&previous);
+            SendMessageW(all_users,WM_PRINTCLIENT,(WPARAM)dc,PRF_CLIENT);
+            SetViewportOrgEx(dc,previous.x,previous.y,NULL);
+        }
         if (open_app) {
-            POINT previous; SetViewportOrgEx(dc,px(29),px(217),&previous);
+            POINT previous; SetViewportOrgEx(dc,px(29),px(238),&previous);
             SendMessageW(open_app,WM_PRINTCLIENT,(WPARAM)dc,PRF_CLIENT);
             SetViewportOrgEx(dc,previous.x,previous.y,NULL);
         }
-        label(dc,L"Cancel",392,382,95,24,text,body_font,DT_CENTER|DT_SINGLELINE);
-        label(dc,L"Install",495,382,95,24,accent,body_font,DT_CENTER|DT_SINGLELINE);
+        label(dc,L"Cancel",392,414,95,24,text,body_font,DT_CENTER|DT_SINGLELINE);
+        label(dc,L"Install",495,414,95,24,accent,body_font,DT_CENTER|DT_SINGLELINE);
     }
 }
 static void fonts(void) {
@@ -139,11 +151,12 @@ static void fonts(void) {
         CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
 }
 static void position(void) {
-    MoveWindow(folder,px(29),px(175),px(460),px(32),TRUE);
-    MoveWindow(change,px(497),px(175),px(94),px(32),TRUE);
-    MoveWindow(open_app,px(29),px(217),px(540),px(27),TRUE);
-    MoveWindow(cancel,px(389),px(374),px(98),px(34),TRUE);
-    MoveWindow(install,px(495),px(374),px(96),px(34),TRUE);
+    MoveWindow(folder,px(29),px(164),px(460),px(32),TRUE);
+    MoveWindow(change,px(497),px(164),px(94),px(32),TRUE);
+    MoveWindow(all_users,px(29),px(206),px(540),px(27),TRUE);
+    MoveWindow(open_app,px(29),px(238),px(540),px(27),TRUE);
+    MoveWindow(cancel,px(389),px(406),px(98),px(34),TRUE);
+    MoveWindow(install,px(495),px(406),px(96),px(34),TRUE);
     for (HWND child=GetWindow(window,GW_CHILD);child;child=GetWindow(child,GW_HWNDNEXT))
         SendMessageW(child,WM_SETFONT,(WPARAM)body_font,TRUE);
 }
@@ -287,8 +300,11 @@ static DWORD WINAPI install_worker(void *unused) {
             BOOL valid=fish_quote(command,32768,program);
             if (valid) wcscat(command,L" /i ");
             valid=valid && fish_quote(command,32768,msi);
-            if (valid && wcslen(command)+100<32768) wcscat(command,L" /qn /norestart MSIRESTARTMANAGERCONTROL=Disable INSTALLDIR=");
-            else valid=FALSE;
+            if (valid && wcslen(command)+140<32768) {
+                wcscat(command,system_wide_mode
+                        ? L" /qn /norestart MSIRESTARTMANAGERCONTROL=Disable ALLUSERS=1 MSIINSTALLPERUSER=\"\" INSTALLDIR="
+                        : L" /qn /norestart MSIRESTARTMANAGERCONTROL=Disable MSIINSTALLPERUSER=1 ALLUSERS=2 INSTALLDIR=");
+            } else valid=FALSE;
             valid=valid && fish_quote(command,32768,destination);
             STARTUPINFOW startup={0}; startup.cb=sizeof(startup); PROCESS_INFORMATION process={0};
             if (valid && CreateProcessW(program,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&process)) {
@@ -305,13 +321,62 @@ static DWORD WINAPI install_worker(void *unused) {
     HeapFree(GetProcessHeap(),0,memory);
     PostMessageW(window,RESULT,result,0); return 0;
 }
+static BOOL elevate_for_all_users(void) {
+    WCHAR self[32768],*params=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
+    if (!params) return FALSE;
+    DWORD len=GetModuleFileNameW(NULL,self,32768);
+    if (!len || len>=32768) { HeapFree(GetProcessHeap(),0,params); return FALSE; }
+    wcscpy(params,L"--elevated-all-users ");
+    if (!fish_quote(params,32768,destination) || wcslen(params)+20>=32768) {
+        HeapFree(GetProcessHeap(),0,params); return FALSE;
+    }
+    wcscat(params,SendMessageW(open_app,BM_GETCHECK,0,0)==BST_CHECKED ? L" --open-app" : L" --no-open-app");
+    SHELLEXECUTEINFOW sei={0};
+    sei.cbSize=sizeof(sei);
+    sei.hwnd=window;
+    sei.lpVerb=L"runas";
+    sei.lpFile=self;
+    sei.lpParameters=params;
+    sei.nShow=SW_SHOWNORMAL;
+    BOOL ok=ShellExecuteExW(&sei);
+    HeapFree(GetProcessHeap(),0,params);
+    return ok;
+}
+static void toggle_all_users(void) {
+    system_wide_mode=SendMessageW(all_users,BM_GETCHECK,0,0)==BST_CHECKED;
+    if (!custom_folder_chosen && !registered_installation) {
+        const WCHAR *target=system_wide_mode ? system_default_dest : user_default_dest;
+        if (*target) {
+            wcscpy(destination,target);
+            normalize_destination();
+            SetWindowTextW(folder,destination);
+        }
+    }
+    wcscpy(status,system_wide_mode
+            ? (IsUserAnAdmin()
+                    ? L"Ready to install system-wide for all users."
+                    : L"Ready to install system-wide (Administrator prompt on Install).")
+            : L"Ready to install for your Windows account.");
+    InvalidateRect(window,NULL,FALSE);
+}
 static void start_install(void) {
     if (busy) return;
     GetWindowTextW(folder,destination,32768);
     normalize_destination();
+    system_wide_mode=all_users && SendMessageW(all_users,BM_GETCHECK,0,0)==BST_CHECKED;
+    if (system_wide_mode && !IsUserAnAdmin()) {
+        if (elevate_for_all_users()) {
+            DestroyWindow(window);
+        } else {
+            wcscpy(status,L"Administrator permission was declined. Uncheck all-users install or press Install to retry.");
+            InvalidateRect(window,NULL,FALSE);
+        }
+        return;
+    }
     busy=TRUE;
     wcscpy(status,L"Verifying and preparing the bundled installer...");
-    EnableWindow(install,FALSE); EnableWindow(cancel,FALSE); EnableWindow(change,FALSE); EnableWindow(open_app,FALSE);
+    EnableWindow(install,FALSE); EnableWindow(cancel,FALSE); EnableWindow(change,FALSE);
+    EnableWindow(open_app,FALSE); if (all_users) EnableWindow(all_users,FALSE);
     HANDLE worker=CreateThread(NULL,0,install_worker,NULL,0,NULL);
     if (worker) CloseHandle(worker);
     else { busy=FALSE; wcscpy(status,L"Setup could not start. Close and try again."); EnableWindow(cancel,TRUE); EnableWindow(install,TRUE); }
@@ -370,6 +435,7 @@ static void browse(void) {
                 if (SUCCEEDED(IShellItem_GetDisplayName(item,SIGDN_FILESYSPATH,&path))) {
                     if (directory_ok(path)) {
                         wcscpy(destination,path); normalize_destination(); SetWindowTextW(folder,destination);
+                        custom_folder_chosen=TRUE;
                     }
                     else MessageBoxW(window,L"Choose an empty local folder or an existing Fish installation.",L"Install location",MB_OK|MB_ICONINFORMATION);
                     CoTaskMemFree(path);
@@ -381,15 +447,29 @@ static void browse(void) {
     }
 }
 static void installed_location(void) {
-    PWSTR local=NULL;
+    PWSTR local=NULL,prog=NULL;
     if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData,0,NULL,&local))) {
-        swprintf(destination,32768,L"%ls\\Fish",local); CoTaskMemFree(local);
+        swprintf(user_default_dest,32768,L"%ls\\Fish",local);
+        wcscpy(destination,user_default_dest);
+        CoTaskMemFree(local);
+    }
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_ProgramFiles,0,NULL,&prog))) {
+        swprintf(system_default_dest,32768,L"%ls\\Fish",prog);
+        CoTaskMemFree(prog);
+    } else wcscpy(system_default_dest,L"C:\\Program Files\\Fish");
+    if (elevated_autostart) {
+        normalize_destination();
+        return;
     }
     WCHAR product[39]; DWORD index=0;
     while (MsiEnumRelatedProductsW(L"{55B0674D-E226-46CB-852F-6BEDDD35A74B}",0,index++,product)==ERROR_SUCCESS) {
         DWORD length=32767; WCHAR location[32768];
         if (MsiGetProductInfoW(product,INSTALLPROPERTY_INSTALLLOCATION,location,&length)==ERROR_SUCCESS && *location) {
-            wcscpy(destination,location); registered_installation=TRUE; break;
+            wcscpy(destination,location); registered_installation=TRUE;
+            WCHAR per_machine[16]=L""; DWORD pm_len=15;
+            if (MsiGetProductInfoW(product,INSTALLPROPERTY_ASSIGNMENTTYPE,per_machine,&pm_len)==ERROR_SUCCESS && per_machine[0]==L'1')
+                system_wide_mode=TRUE;
+            break;
         }
     }
     if (updating && !registered_installation) {
@@ -405,9 +485,12 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
         case WM_CREATE: {
             folder=CreateWindowExW(0,L"EDIT",destination,WS_CHILD|WS_VISIBLE|ES_AUTOHSCROLL|ES_READONLY,0,0,0,0,hwnd,NULL,NULL,NULL);
             change=CreateWindowW(L"BUTTON",L"Change...",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,hwnd,(HMENU)CHANGE,NULL,NULL);
+            all_users=CreateWindowW(L"BUTTON",L"Install for all users (requires Administrator)",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,0,0,0,0,hwnd,(HMENU)ALL_USERS,NULL,NULL);
             open_app=CreateWindowW(L"BUTTON",L"Open Fish when setup finishes",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_AUTOCHECKBOX,0,0,0,0,hwnd,(HMENU)OPEN_APP,NULL,NULL);
-            if (!open_app || !SetWindowSubclass(open_app,option_procedure,1,0)) return -1;
-            SendMessageW(open_app,BM_SETCHECK,BST_CHECKED,0);
+            if (!all_users || !open_app || !SetWindowSubclass(all_users,option_procedure,1,0)
+                    || !SetWindowSubclass(open_app,option_procedure,1,0)) return -1;
+            SendMessageW(all_users,BM_SETCHECK,system_wide_mode ? BST_CHECKED : BST_UNCHECKED,0);
+            SendMessageW(open_app,BM_SETCHECK,elevated_open_app ? BST_CHECKED : BST_UNCHECKED,0);
             cancel=CreateWindowW(L"BUTTON",L"Cancel",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,hwnd,(HMENU)CANCEL,NULL,NULL);
             install=CreateWindowW(L"BUTTON",L"Install",WS_CHILD|WS_VISIBLE|WS_TABSTOP|BS_OWNERDRAW,0,0,0,0,hwnd,(HMENU)INSTALL,NULL,NULL);
             SetTimer(hwnd,1,90,NULL); return 0;
@@ -474,7 +557,8 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
                 if (wp==ERROR_INSTALL_ALREADY_RUNNING) wcscpy(status,L"Fish is running, or its install path could not be checked. Close that copy and Retry. No process was stopped.");
                 else if (wp==ERROR_DIR_NOT_EMPTY) wcscpy(status,L"Choose an empty local folder or an existing Fish installation.");
                 else swprintf(status,512,L"Setup failed (Windows code %lu). Nothing is reported updated. Close other installers and Retry.",(unsigned long)wp);
-                SetWindowTextW(install,L"Retry"); EnableWindow(install,TRUE); EnableWindow(change,TRUE); EnableWindow(open_app,TRUE);
+                SetWindowTextW(install,L"Retry"); EnableWindow(install,TRUE); EnableWindow(change,TRUE);
+                EnableWindow(open_app,TRUE); if (all_users && !updating) EnableWindow(all_users,TRUE);
             }
             InvalidateRect(hwnd,NULL,FALSE); return 0;
         case WM_COMMAND:
@@ -487,6 +571,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
                     break;
                 case CANCEL: SendMessageW(hwnd,WM_CLOSE,0,0); break;
                 case CHANGE: browse(); break;
+                case ALL_USERS: toggle_all_users(); break;
             }
             return 0;
         case WM_CLOSE: if (!busy) DestroyWindow(hwnd); return 0;
@@ -519,7 +604,7 @@ static double luminance(COLORREF color) {
     for (int i=0;i<3;i++) values[i]=values[i]<=0.04045 ? values[i]/12.92 : pow((values[i]+0.055)/1.055,2.4);
     return 0.2126*values[0]+0.7152*values[1]+0.0722*values[2];
 }
-static BOOL option_test_size(void) {
+static BOOL option_test_control(HWND target) {
     HDC dc=CreateCompatibleDC(NULL);
     BITMAPINFO info={0}; info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth=px(540); info.bmiHeader.biHeight=-px(27); info.bmiHeader.biPlanes=1; info.bmiHeader.biBitCount=32;
@@ -529,22 +614,22 @@ static BOOL option_test_size(void) {
     for (int system=0;system<2;system++) {
         colors(system);
         for (int enabled=0;enabled<2;enabled++) for (int checked=0;checked<2;checked++) {
-            EnableWindow(open_app,enabled); SendMessageW(open_app,BM_SETCHECK,checked ? BST_CHECKED : BST_UNCHECKED,0);
-            SendMessageW(open_app,WM_MOUSEMOVE,0,MAKELPARAM(px(8),px(8)));
-            SendMessageW(open_app,BM_SETSTATE,checked,0);
-            unsigned before=option_paints; SendMessageW(open_app,WM_PRINTCLIENT,(WPARAM)dc,PRF_CLIENT);
+            EnableWindow(target,enabled); SendMessageW(target,BM_SETCHECK,checked ? BST_CHECKED : BST_UNCHECKED,0);
+            SendMessageW(target,WM_MOUSEMOVE,0,MAKELPARAM(px(8),px(8)));
+            SendMessageW(target,BM_SETSTATE,checked,0);
+            unsigned before=option_paints; SendMessageW(target,WM_PRINTCLIENT,(WPARAM)dc,PRF_CLIENT);
             COLORREF foreground=enabled ? text : muted;
             double first=luminance(foreground),second=luminance(background);
             double ratio=(max(first,second)+0.05)/(min(first,second)+0.05);
             int ink=0;
             for (int y=0;y<px(27);y++) for (int x=px(25);x<px(500);x++) if (GetPixel(dc,x,y)==foreground) ink++;
             valid=valid && option_paints==before+1 && ratio>=4.5 && ink>25
-                && SendMessageW(open_app,BM_GETCHECK,0,0)==(checked ? BST_CHECKED : BST_UNCHECKED);
+                && SendMessageW(target,BM_GETCHECK,0,0)==(checked ? BST_CHECKED : BST_UNCHECKED);
         }
     }
-    SendMessageW(open_app,BM_SETSTATE,FALSE,0);
-    EnableWindow(open_app,TRUE); SendMessageW(open_app,BM_CLICK,0,0);
-    valid=valid && SendMessageW(open_app,BM_GETCHECK,0,0)==BST_UNCHECKED;
+    SendMessageW(target,BM_SETSTATE,FALSE,0);
+    EnableWindow(target,TRUE); SendMessageW(target,BM_CLICK,0,0);
+    valid=valid && SendMessageW(target,BM_GETCHECK,0,0)==BST_UNCHECKED;
     SelectObject(dc,previous); DeleteObject(image); DeleteDC(dc); colors(FALSE); return valid;
 }
 static BOOL option_test(void) {
@@ -552,8 +637,19 @@ static BOOL option_test(void) {
     const UINT scales[]={96,120,144,168,192};
     for (unsigned i=0;i<sizeof(scales)/sizeof(scales[0]);i++) {
         dpi=scales[i]; fonts(); position();
-        valid=option_test_size() && valid;
+        valid=option_test_control(open_app) && option_test_control(all_users) && valid;
     }
+    /* Verify toggling all_users switches default target between per-user and system-wide folders. */
+    wcscpy(user_default_dest,L"C:\\Users\\Test\\AppData\\Local\\Fish");
+    wcscpy(system_default_dest,L"C:\\Program Files\\Fish");
+    custom_folder_chosen=FALSE; registered_installation=FALSE;
+    SendMessageW(all_users,BM_SETCHECK,BST_UNCHECKED,0);
+    SendMessageW(all_users,BM_CLICK,0,0);
+    WCHAR actual[32768]=L""; GetWindowTextW(folder,actual,32768);
+    valid=valid && SendMessageW(all_users,BM_GETCHECK,0,0)==BST_CHECKED && !wcscmp(actual,L"C:\\Program Files\\Fish");
+    SendMessageW(all_users,BM_CLICK,0,0);
+    GetWindowTextW(folder,actual,32768);
+    valid=valid && SendMessageW(all_users,BM_GETCHECK,0,0)==BST_UNCHECKED && !wcscmp(actual,L"C:\\Users\\Test\\AppData\\Local\\Fish");
     dpi=saved; fonts(); position(); return valid;
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show) {
@@ -579,10 +675,23 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
         WCHAR *end=NULL; unsigned long pid=wcstoul(args[2],&end,10);
         if (!pid || *end || !*args[4] || wcslen(args[4])>=32700) { LocalFree(args); return 2; }
         parent_pid=(DWORD)pid; wcscpy(data_directory,args[4]); updating=TRUE;
+    } else if ((count==3 || count==4) && !wcscmp(args[1],L"--elevated-all-users")) {
+        if (!*args[2] || wcslen(args[2])>=32700) { LocalFree(args); return 2; }
+        wcscpy(destination,args[2]);
+        system_wide_mode=TRUE; custom_folder_chosen=TRUE; elevated_autostart=TRUE;
+        if (count==4) {
+            if (!wcscmp(args[3],L"--open-app")) elevated_open_app=TRUE;
+            else if (!wcscmp(args[3],L"--no-open-app")) elevated_open_app=FALSE;
+            else { LocalFree(args); return 2; }
+        }
     } else if (count!=1 && !preview && !controls) { LocalFree(args); return 2; }
     LocalFree(args); CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
     if (!preview && !controls) installed_location();
-    else wcscpy(destination,L"%LOCALAPPDATA%\\Fish");
+    else {
+        wcscpy(user_default_dest,L"%LOCALAPPDATA%\\Fish");
+        wcscpy(system_default_dest,L"C:\\Program Files\\Fish");
+        wcscpy(destination,user_default_dest);
+    }
     if (!*destination) { CoUninitialize(); return 3; }
     WNDCLASSEXW klass={0}; klass.cbSize=sizeof(klass); klass.lpfnWndProc=procedure; klass.hInstance=instance;
     klass.lpszClassName=L"FishSetup"; klass.hCursor=LoadCursorW(NULL,IDC_ARROW); klass.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(1));
@@ -615,16 +724,17 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
             }
         } else if (GetLastError()!=ERROR_INVALID_PARAMETER) { DestroyWindow(window); CoUninitialize(); return 3; }
         waiting_since=GetTickCount64(); wcscpy(status,L"Waiting for Fish to close; your workspace has been saved...");
-        EnableWindow(install,FALSE); EnableWindow(change,FALSE);
+        EnableWindow(install,FALSE); EnableWindow(change,FALSE); if (all_users) EnableWindow(all_users,FALSE);
         SetWindowTextW(open_app,L"Reopen Fish after a successful update"); EnableWindow(open_app,FALSE);
         if (!parent_process) start_install();
     }
     ShowWindow(window,show); UpdateWindow(window);
+    if (elevated_autostart) start_install();
     MSG message;
     while (GetMessageW(&message,NULL,0,0)>0) {
         if (message.message==WM_KEYDOWN && message.wParam==VK_RETURN) {
             HWND focused=GetFocus();
-            if (focused==cancel || focused==change || focused==open_app || focused==install) SendMessageW(focused,BM_CLICK,0,0);
+            if (focused==cancel || focused==change || focused==open_app || focused==all_users || focused==install) SendMessageW(focused,BM_CLICK,0,0);
             else if (IsWindowEnabled(install)) SendMessageW(window,WM_COMMAND,INSTALL,0);
             continue;
         }

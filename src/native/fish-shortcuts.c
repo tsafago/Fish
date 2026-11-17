@@ -5,6 +5,8 @@
 #include <jni.h>
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <shellapi.h>
+#include <wincred.h>
 #include <objbase.h>
 #include <dwmapi.h>
 
@@ -44,6 +46,30 @@ JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_startMenu0(JNIEnv *env,jclas
     PWSTR path=NULL;
     if (FAILED(SHGetKnownFolderPath(&FOLDERID_Programs,0,NULL,&path))) {
         failure(env,"Cannot locate your Start Menu Programs folder."); return NULL;
+    }
+    jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
+}
+JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_startup0(JNIEnv *env,jclass type) {
+    (void)type;
+    PWSTR path=NULL;
+    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Startup,0,NULL,&path))) {
+        failure(env,"Cannot locate your Windows Startup folder."); return NULL;
+    }
+    jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
+}
+JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_commonStartMenu0(JNIEnv *env,jclass type) {
+    (void)type;
+    PWSTR path=NULL;
+    if (FAILED(SHGetKnownFolderPath(&FOLDERID_CommonPrograms,0,NULL,&path))) {
+        failure(env,"Cannot locate the All Users Start Menu Programs folder."); return NULL;
+    }
+    jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
+}
+JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_commonDesktop0(JNIEnv *env,jclass type) {
+    (void)type;
+    PWSTR path=NULL;
+    if (FAILED(SHGetKnownFolderPath(&FOLDERID_PublicDesktop,0,NULL,&path))) {
+        failure(env,"Cannot locate the Public Desktop folder."); return NULL;
     }
     jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
 }
@@ -144,4 +170,90 @@ JNIEXPORT jboolean JNICALL Java_fish_ui_WindowBorder_syncProcessWindows0(JNIEnv 
     EnumWindows(apply_dwm_border_proc,(LPARAM)&ctx);
     return ctx.updated>0 ? JNI_TRUE : JNI_FALSE;
 }
+
+JNIEXPORT jboolean JNICALL Java_fish_security_KioskMode_readRegistry0(JNIEnv *env,jclass type) {
+    (void)env; (void)type;
+    HKEY key=NULL;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,L"SOFTWARE\\Fish",0,KEY_QUERY_VALUE|KEY_WOW64_64KEY,&key)!=ERROR_SUCCESS)
+        return JNI_FALSE;
+    DWORD value=0,reg_type=0,size=sizeof(DWORD);
+    LONG rc=RegQueryValueExW(key,L"KioskMode",NULL,&reg_type,(LPBYTE)&value,&size);
+    RegCloseKey(key);
+    return (rc==ERROR_SUCCESS && reg_type==REG_DWORD && value!=0) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_fish_security_KioskMode_writeRegistry0(JNIEnv *env,jclass type,jboolean enabled) {
+    (void)type;
+    HKEY key=NULL;
+    LONG rc=RegCreateKeyExW(HKEY_LOCAL_MACHINE,L"SOFTWARE\\Fish",0,NULL,REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE|KEY_WOW64_64KEY,NULL,&key,NULL);
+    if (rc!=ERROR_SUCCESS) {
+        failure(env,rc==ERROR_ACCESS_DENIED
+                ? "Administrator privileges are required to change Kiosk mode."
+                : "Windows could not open HKLM\\SOFTWARE\\Fish.");
+        return;
+    }
+    DWORD value=enabled ? 1u : 0u;
+    rc=RegSetValueExW(key,L"KioskMode",0,REG_DWORD,(const BYTE *)&value,sizeof(DWORD));
+    RegCloseKey(key);
+    if (rc!=ERROR_SUCCESS) failure(env,"Windows could not save the Kiosk mode setting.");
+}
+
+JNIEXPORT jboolean JNICALL Java_fish_security_KioskMode_isUserAdmin0(JNIEnv *env,jclass type) {
+    (void)env; (void)type;
+    return IsUserAnAdmin() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jint JNICALL Java_fish_security_KioskMode_runElevatedWait0(JNIEnv *env,jclass type,jstring executable,jstring arguments,jstring directory,jboolean show_window) {
+    (void)type;
+    WCHAR *exe=text(env,executable);
+    WCHAR *args=exe ? text_arg(env,arguments,TRUE) : NULL;
+    WCHAR *cwd=args ? text_arg(env,directory,TRUE) : NULL;
+    jint status=-1;
+    if (!cwd) goto done;
+    SHELLEXECUTEINFOW sei;
+    ZeroMemory(&sei,sizeof(sei));
+    sei.cbSize=sizeof(sei);
+    sei.fMask=SEE_MASK_NOCLOSEPROCESS;
+    sei.lpVerb=L"runas";
+    sei.lpFile=exe;
+    sei.lpParameters=args;
+    sei.lpDirectory=cwd[0] ? cwd : NULL;
+    sei.nShow=show_window ? SW_SHOWNORMAL : SW_HIDE;
+    if (!ShellExecuteExW(&sei)) {
+        DWORD err=GetLastError();
+        if (err==ERROR_CANCELLED) { status=-1223; goto done; }
+        failure(env,"Windows could not launch the elevated Administrator command.");
+        goto done;
+    }
+    if (sei.hProcess) {
+        WaitForSingleObject(sei.hProcess,INFINITE);
+        DWORD exit_code=1;
+        if (GetExitCodeProcess(sei.hProcess,&exit_code)) status=(jint)exit_code;
+        CloseHandle(sei.hProcess);
+    } else {
+        status=0;
+    }
+done:
+    if (exe) HeapFree(GetProcessHeap(),0,exe);
+    if (args) HeapFree(GetProcessHeap(),0,args);
+    if (cwd) HeapFree(GetProcessHeap(),0,cwd);
+    return status;
+}
+
+JNIEXPORT jint JNICALL Java_fish_security_KioskMode_deleteAllFishCredentials0(JNIEnv *env,jclass type) {
+    (void)env; (void)type;
+    DWORD count=0;
+    PCREDENTIALW *creds=NULL;
+    if (!CredEnumerateW(L"Fish/*",0,&count,&creds)) return 0;
+    jint removed=0;
+    for (DWORD i=0;i<count;i++) {
+        if (creds[i] && creds[i]->TargetName) {
+            if (CredDeleteW(creds[i]->TargetName,creds[i]->Type,0)) removed++;
+        }
+    }
+    CredFree(creds);
+    return removed;
+}
+
 

@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.9.0'
+$version = '0.10.0'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
 $manifest = Import-PowerShellDataFile .\tools.psd1
@@ -82,14 +82,14 @@ Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item build\fish-native.dll dist\fish-native.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
 if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Maintenance') { Get-Item tests\fish\FxTestSupport.java,tests\fish\Tests.java,tests\fish\MaintenanceSmoke.java,tests\fish\MaintenanceUiSmoke.java,tests\fish\NoticeSmoke.java,tests\fish\NativeUpdateSmoke.java,tests\fish\KeyboardPreferencesSmoke.java,tests\fish\SettingsTutorialSmoke.java,tests\fish\LaunchBrokerSmoke.java,tests\fish\WindowRevisionSmoke.java,tests\fish\LayoutFeatureSmoke.java,tests\fish\ShortcutRefinementSmoke.java,tests\fish\UsabilityIterationSmoke.java,tests\fish\SimplePaneSmoke.java,tests\fish\CursorRenderingSmoke.java,tests\fish\BetaSettingsSmoke.java,tests\fish\BetaRecoverySmoke.java,tests\fish\BetaUiSmoke.java }
-        elseif ($Task -eq 'Smoke') { Get-Item tests\fish\FxTestSupport.java,tests\fish\Tests.java,tests\fish\FishSmoke.java,tests\fish\StreamliningSmoke.java,tests\fish\CustomizationSmoke.java,tests\fish\ChromeConsistencySmoke.java,tests\fish\RefinementSmoke.java,tests\fish\UsabilitySmoke.java,tests\fish\KerberosSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
+    $testFiles = if ($Task -eq 'Maintenance') { Get-Item tests\fish\FxTestSupport.java,tests\fish\Tests.java,tests\fish\MaintenanceSmoke.java,tests\fish\MaintenanceUiSmoke.java,tests\fish\NoticeSmoke.java,tests\fish\NativeUpdateSmoke.java,tests\fish\KeyboardPreferencesSmoke.java,tests\fish\SettingsTutorialSmoke.java,tests\fish\LaunchBrokerSmoke.java,tests\fish\WindowRevisionSmoke.java,tests\fish\LayoutFeatureSmoke.java,tests\fish\ShortcutRefinementSmoke.java,tests\fish\UsabilityIterationSmoke.java,tests\fish\SimplePaneSmoke.java,tests\fish\CursorRenderingSmoke.java,tests\fish\BetaSettingsSmoke.java,tests\fish\BetaRecoverySmoke.java,tests\fish\BetaUiSmoke.java,tests\fish\ZeroTenFeaturesSmoke.java }
+        elseif ($Task -eq 'Smoke') { Get-Item tests\fish\FxTestSupport.java,tests\fish\Tests.java,tests\fish\FishSmoke.java,tests\fish\StreamliningSmoke.java,tests\fish\CustomizationSmoke.java,tests\fish\ChromeConsistencySmoke.java,tests\fish\RefinementSmoke.java,tests\fish\UsabilitySmoke.java,tests\fish\KerberosSmoke.java,tests\fish\UsabilityIterationSmoke.java,tests\fish\ZeroTenFeaturesSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 25 -encoding UTF-8 -Xlint:-deprecation,-removal --module-path $fxLib --add-modules $fxModules -cp build\classes -d build\test-classes '@build\tests.txt'
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
     if ($Task -eq 'Maintenance') {
-        foreach ($fixture in @('fish.Tests','fish.update.MaintenanceSmoke','fish.ui.NoticeSmoke','fish.ui.MaintenanceUiSmoke','fish.ui.KeyboardPreferencesSmoke','fish.ui.SettingsTutorialSmoke','fish.LaunchBrokerSmoke','fish.ui.WindowRevisionSmoke','fish.ui.LayoutFeatureSmoke','fish.ui.ShortcutRefinementSmoke','fish.ui.UsabilityIterationSmoke','fish.ui.SimplePaneSmoke','fish.ui.CursorRenderingSmoke','fish.ui.BetaSettingsSmoke','fish.ui.BetaRecoverySmoke','fish.ui.BetaUiSmoke')) {
+        foreach ($fixture in @('fish.Tests','fish.update.MaintenanceSmoke','fish.ui.NoticeSmoke','fish.ui.MaintenanceUiSmoke','fish.ui.KeyboardPreferencesSmoke','fish.ui.SettingsTutorialSmoke','fish.LaunchBrokerSmoke','fish.ui.WindowRevisionSmoke','fish.ui.LayoutFeatureSmoke','fish.ui.ShortcutRefinementSmoke','fish.ui.UsabilityIterationSmoke','fish.ui.SimplePaneSmoke','fish.ui.CursorRenderingSmoke','fish.ui.BetaSettingsSmoke','fish.ui.BetaRecoverySmoke','fish.ui.BetaUiSmoke','fish.ui.ZeroTenFeaturesSmoke')) {
             $fixtureArgs=@()
             if ($fixture -eq 'fish.Tests') { $fixtureArgs+='--protocol-only' }
             & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' $fixture @fixtureArgs
@@ -123,6 +123,8 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     if ($LASTEXITCODE -ne 0) { throw 'Interaction refinement smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.DpiAndLatencySmoke
     if ($LASTEXITCODE -ne 0) { throw 'DPI 1px border and latency smoke checks failed.' }
+    & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.ZeroTenFeaturesSmoke
+    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.0 feature and stress checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
@@ -148,7 +150,7 @@ if ($Task -eq 'Package') {
         --input build\package-input --main-jar Fish.jar --main-class fish.Main `
         --dest (Split-Path -Parent $image) --vendor Fish `
         --runtime-image build\runtime `
-        --java-options '-Xmx256m' `
+        --java-options '-Xmx512m' `
         --java-options '-XX:+IgnoreUnrecognizedVMOptions' `
         --java-options '-XX:AOTCache=$APPDIR\Fish.aot' `
         --java-options '--enable-native-access=javafx.graphics,ALL-UNNAMED' `
@@ -165,7 +167,7 @@ if ($Task -eq 'Package') {
     $nowLocal = Get-Date
     $jarItem.LastWriteTime = [DateTime]::new($nowLocal.Year, $nowLocal.Month, $nowLocal.Day, $nowLocal.Hour, $nowLocal.Minute, ($nowLocal.Second - ($nowLocal.Second % 2)), [DateTimeKind]::Local)
     $aotJvmOpts = @(
-        '-Xmx256m',
+        '-Xmx512m',
         '--enable-native-access=javafx.graphics,ALL-UNNAMED',
         '-Djavafx.enablePreview=true',
         '-Djavafx.suppressPreviewWarning=true',
@@ -196,7 +198,7 @@ if ($Task -eq 'Package') {
 if ($Task -eq 'Run' -or $Task -eq 'Demo') {
     $appArgs = @()
     if ($Task -eq 'Demo') { $appArgs += '--demo' }
-    & "$Jdk\bin\java.exe" -Xmx256m @fxJvmArgs -jar dist\Fish.jar @appArgs
+    & "$Jdk\bin\java.exe" -Xmx512m @fxJvmArgs -jar dist\Fish.jar @appArgs
     if ($LASTEXITCODE -ne 0) { throw 'Application exited with an error.' }
 }
 Write-Host "Fish $Task complete."

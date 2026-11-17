@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 import fish.model.*;
+import fish.security.KioskMode;
 import fish.ui.TerminalFonts;
 
 /** Offline-only configuration commands: no workspace window, sockets or credential store. */
@@ -41,6 +42,8 @@ public final class Configuration {
                 else writeNew(file,ConfigSchema.document().getBytes(StandardCharsets.UTF_8));
                 return 0;
             }
+            if (command.equals("apply") && KioskMode.isEnabled())
+                throw new IllegalArgumentException("Kiosk mode is enabled on this computer; configuration changes are locked.");
             if (file==null) throw new IllegalArgumentException(command+" requires --file.");
             Path canonical=directory.resolve("workspace.xml");
             if (file.equals(canonical) || file.equals(directory.resolve("workspace.lock")) || file.equals(directory.resolve("workspace.xml.tmp"))
@@ -82,7 +85,12 @@ public final class Configuration {
     }
     public static void validate(StateStore.State state) throws IOException {
         Shortcuts.validate(state.shortcuts(),state.profiles());
-        for (String value:state.appearance().retiredShortcuts()) Shortcuts.stroke(value);
+        for (String value:state.appearance().retiredShortcuts()) {
+            if (!value.isBlank()) {
+                KeyChord parsed=KeyChord.parse(value);
+                if (!KeyChord.isScrollCode(parsed.code())) Shortcuts.stroke(value);
+            }
+        }
         Set<UUID> profiles=new HashSet<>();
         state.profiles().forEach(p -> profiles.add(p.id()));
         for (Profile profile:state.profiles()) {

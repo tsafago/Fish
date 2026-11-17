@@ -6,6 +6,7 @@ import javafx.geometry.Pos;
 import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -25,7 +26,10 @@ public final class KeyRecorder extends BorderPane {
         capture.addEventFilter(KeyEvent.ANY,event -> {
             if (captureFxEvent(event)) event.consume();
         });
-        Label hint=new Label("Tab, Enter and Escape can be recorded. Alt+C cancels; type that chord in the editor.");
+        capture.addEventFilter(ScrollEvent.SCROLL,event -> {
+            if (captureScrollEvent(event)) event.consume();
+        });
+        Label hint=new Label("Tab, Enter, Escape and mouse wheel (e.g. Ctrl+Scroll) can be recorded. Alt+C cancels; type that chord in the editor.");
         hint.setWrapText(true);
         Button clearBtn=Ui.button("Clear / record again",() -> {
             chosen=null;
@@ -72,6 +76,24 @@ public final class KeyRecorder extends BorderPane {
             return true;
         }
         return false;
+    }
+
+    public boolean captureScrollEvent(ScrollEvent event) {
+        if (event==null || event.isInertia()) return false;
+        if (chosen==null) {
+            try {
+                KeyChord wheel=KeyChord.from(event);
+                if (wheel==null) return false;
+                chosen=wheel;
+                capture.setText(chosen+"  /  "+chosen.label());
+                captured.run();
+            } catch (IllegalArgumentException e) {
+                chosen=null;
+                capture.setText(e.getMessage());
+                return false;
+            }
+        }
+        return true;
     }
 
     public KeyChord chosen() { return chosen; }

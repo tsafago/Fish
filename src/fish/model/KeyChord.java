@@ -6,6 +6,8 @@ import javax.swing.KeyStroke;
 
 /** The action key's reported location is part of its identity; modifier sides are not. */
 public record KeyChord(int code,int modifiers,int location) {
+    public static final int VK_SCROLL_UP=0x10001;
+    public static final int VK_SCROLL_DOWN=0x10002;
     private static final Map<String,Integer> LOCATIONS=Map.of("standard",KeyEvent.KEY_LOCATION_STANDARD,
             "numpad",KeyEvent.KEY_LOCATION_NUMPAD,"left",KeyEvent.KEY_LOCATION_LEFT,
             "right",KeyEvent.KEY_LOCATION_RIGHT,"unknown",KeyEvent.KEY_LOCATION_UNKNOWN);
@@ -15,6 +17,8 @@ public record KeyChord(int code,int modifiers,int location) {
         modifiers&=MASK;
         if ((modifiers&InputEvent.ALT_GRAPH_DOWN_MASK)!=0) modifiers&=~(InputEvent.CTRL_DOWN_MASK|InputEvent.ALT_DOWN_MASK);
         if (code==0 || location<0 || location>4) throw new IllegalArgumentException("Invalid key identity.");
+        if (isScrollCode(code) && location!=KeyEvent.KEY_LOCATION_STANDARD)
+            throw new IllegalArgumentException("Scroll bindings only use the @standard location.");
         if (!actionKey(code))
             throw new IllegalArgumentException("Press an action key as well as a modifier.");
         if (code==KeyEvent.VK_WINDOWS || (modifiers&InputEvent.META_DOWN_MASK)!=0
@@ -22,11 +26,23 @@ public record KeyChord(int code,int modifiers,int location) {
                 || modifiers==InputEvent.CTRL_DOWN_MASK && code==KeyEvent.VK_ESCAPE)
             throw new IllegalArgumentException("Windows keys, Ctrl+Escape, Alt+F4 and Alt+Space belong to Windows.");
     }
+    public static boolean isScrollCode(int code) { return code==VK_SCROLL_UP || code==VK_SCROLL_DOWN; }
+    public boolean isScroll() { return isScrollCode(code); }
     public static boolean actionKey(int code) {
         return code!=0 && !List.of(KeyEvent.VK_CONTROL,KeyEvent.VK_SHIFT,KeyEvent.VK_ALT,KeyEvent.VK_META,KeyEvent.VK_ALT_GRAPH).contains(code);
     }
     public static boolean actionKey(javafx.scene.input.KeyCode code) {
         return code!=null && code!=javafx.scene.input.KeyCode.UNDEFINED && actionKey(code.getCode());
+    }
+    public static KeyChord from(javafx.scene.input.ScrollEvent event) {
+        if (event==null || event.isInertia()) return null;
+        double delta=event.getDeltaY()!=0 ? event.getDeltaY() : event.getDeltaX();
+        if (delta==0) return null;
+        int mods=(event.isControlDown() ? InputEvent.CTRL_DOWN_MASK : 0)
+                |(event.isShiftDown() ? InputEvent.SHIFT_DOWN_MASK : 0)
+                |(event.isAltDown() ? InputEvent.ALT_DOWN_MASK : 0)
+                |(event.isMetaDown() ? InputEvent.META_DOWN_MASK : 0);
+        return new KeyChord(delta>0 ? VK_SCROLL_UP : VK_SCROLL_DOWN,mods,KeyEvent.KEY_LOCATION_STANDARD);
     }
     public static KeyChord from(KeyEvent event) {
         return normalized(event.getKeyCode(),event.getModifiersEx(),event.getKeyLocation());
@@ -72,12 +88,49 @@ public record KeyChord(int code,int modifiers,int location) {
                 throw new IllegalArgumentException("NUMPAD_ENTER must use the numpad location.");
             location=KeyEvent.KEY_LOCATION_NUMPAD;
         }
+        KeyChord scroll=parseScroll(value,location,text);
+        if (scroll!=null) return scroll;
         KeyStroke key=KeyStroke.getKeyStroke(value);
         if (key==null || key.getKeyCode()==0 || key.isOnKeyRelease())
             throw new IllegalArgumentException("Invalid chord: "+text+". Try ctrl ENTER@numpad.");
         int code=key.getKeyCode();
         if (location<0) location=intrinsicNumpad(code) ? KeyEvent.KEY_LOCATION_NUMPAD : KeyEvent.KEY_LOCATION_STANDARD;
         return normalized(code,key.getModifiers(),location);
+    }
+    private static KeyChord parseScroll(String value,int location,String originalText) {
+        String compact=value.replaceAll("\\s+"," ").strip();
+        String lower=compact.toLowerCase(Locale.ROOT);
+        int scrollCode=0;
+        String modPrefix=null;
+        for (String upSuffix:new String[]{"scroll +","scroll+","wheel +","wheel+","scroll_up","scroll up"}) {
+            if (lower.equals(upSuffix)) { scrollCode=VK_SCROLL_UP; modPrefix=""; break; }
+            if (lower.endsWith(" "+upSuffix) || lower.endsWith("-"+upSuffix) || lower.endsWith("+"+upSuffix)) {
+                scrollCode=VK_SCROLL_UP;
+                modPrefix=compact.substring(0,compact.length()-upSuffix.length()-1).replace('-',' ').replace('+',' ').strip();
+                break;
+            }
+        }
+        if (scrollCode==0) {
+            for (String downSuffix:new String[]{"scroll -","scroll-","wheel -","wheel-","scroll_down","scroll down"}) {
+                if (lower.equals(downSuffix)) { scrollCode=VK_SCROLL_DOWN; modPrefix=""; break; }
+                if (lower.endsWith(" "+downSuffix) || lower.endsWith("-"+downSuffix) || lower.endsWith("+"+downSuffix)) {
+                    scrollCode=VK_SCROLL_DOWN;
+                    modPrefix=compact.substring(0,compact.length()-downSuffix.length()-1).replace('-',' ').replace('+',' ').strip();
+                    break;
+                }
+            }
+        }
+        if (scrollCode==0) return null;
+        if (location>=0 && location!=KeyEvent.KEY_LOCATION_STANDARD)
+            throw new IllegalArgumentException("Scroll bindings only use the @standard location.");
+        int mods=0;
+        if (!modPrefix.isEmpty()) {
+            KeyStroke modCheck=KeyStroke.getKeyStroke(modPrefix+" F1");
+            if (modCheck==null || modCheck.getKeyCode()!=KeyEvent.VK_F1 || modCheck.isOnKeyRelease())
+                throw new IllegalArgumentException("Invalid chord: "+originalText+". Try ctrl SCROLL+ or ctrl scroll +.");
+            mods=modCheck.getModifiers();
+        }
+        return new KeyChord(scrollCode,mods,KeyEvent.KEY_LOCATION_STANDARD);
     }
     private static boolean intrinsicNumpad(int code) {
         return code>=KeyEvent.VK_NUMPAD0 && code<=KeyEvent.VK_NUMPAD9
@@ -104,6 +157,8 @@ public record KeyChord(int code,int modifiers,int location) {
             catch (IllegalArgumentException unsupported) { /* Only parser-accepted action keys are shown. */ }
         }
         names.add("NUMPAD_ENTER");
+        names.add("SCROLL+");
+        names.add("SCROLL-");
         return names.stream().distinct().sorted().toList();
     }
     public static List<String> locations() { return LOCATIONS.keySet().stream().sorted().map(s -> "@"+s).toList(); }
@@ -128,6 +183,12 @@ public record KeyChord(int code,int modifiers,int location) {
         return location==KeyEvent.KEY_LOCATION_UNKNOWN ? new KeyChord(code,modifiers,KeyEvent.KEY_LOCATION_STANDARD) : this;
     }
     @Override public String toString() {
+        if (isScrollCode(code)) {
+            String token=code==VK_SCROLL_UP ? "SCROLL+" : "SCROLL-";
+            if (modifiers==0) return token;
+            String modText=KeyStroke.getKeyStroke(KeyEvent.VK_F1,modifiers).toString().replace("pressed F1","").strip();
+            return modText.isEmpty() ? token : modText+" "+token;
+        }
         String stroke=KeyStroke.getKeyStroke(code,modifiers).toString().replace("pressed ","");
         return stroke+switch(location) {
             case KeyEvent.KEY_LOCATION_NUMPAD -> "@numpad";
@@ -139,6 +200,10 @@ public record KeyChord(int code,int modifiers,int location) {
     }
     public String label() {
         String mods=InputEvent.getModifiersExText(modifiers);
+        if (isScrollCode(code)) {
+            String wheel=code==VK_SCROLL_UP ? "Scroll +" : "Scroll -";
+            return (mods.isEmpty() ? "" : mods+"+")+wheel;
+        }
         return (mods.isEmpty() ? "" : mods+"+")+KeyEvent.getKeyText(code)
                 +switch(location) {
                     case KeyEvent.KEY_LOCATION_NUMPAD -> " (keypad)";

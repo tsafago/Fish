@@ -1,6 +1,7 @@
 param(
     [string]$Source = '',
-    [string]$Destination = (Join-Path $env:LOCALAPPDATA 'Programs\Fish'),
+    [string]$Destination = '',
+    [switch]$AllUsers,
     [switch]$DesktopShortcut,
     [switch]$NoStartMenuShortcut,
     [switch]$NoRegistry,
@@ -8,6 +9,24 @@ param(
     [switch]$Quiet
 )
 $ErrorActionPreference = 'Stop'
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $Destination) {
+    $Destination = if ($AllUsers) { Join-Path $env:ProgramFiles 'Fish' } else { Join-Path $env:LOCALAPPDATA 'Programs\Fish' }
+}
+
+if ($AllUsers -and -not $isAdmin -and $env:FISH_TEST_NO_ELEVATE -ne '1') {
+    $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $PSCommandPath), '-AllUsers')
+    if ($Source) { $argList += @('-Source', ('"{0}"' -f ([IO.Path]::GetFullPath($Source)))) }
+    if ($Destination) { $argList += @('-Destination', ('"{0}"' -f ([IO.Path]::GetFullPath($Destination)))) }
+    if ($DesktopShortcut) { $argList += '-DesktopShortcut' }
+    if ($NoStartMenuShortcut) { $argList += '-NoStartMenuShortcut' }
+    if ($NoRegistry) { $argList += '-NoRegistry' }
+    if ($Launch) { $argList += '-Launch' }
+    if ($Quiet) { $argList += '-Quiet' }
+    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList ($argList -join ' ') -Verb RunAs -Wait -PassThru
+    exit $proc.ExitCode
+}
 
 function Remove-ZoneIdentifier([string]$Root) {
     Get-ChildItem -LiteralPath $Root -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
@@ -145,14 +164,19 @@ try {
     }
 
     $version = (Get-Item -LiteralPath $targetExe).VersionInfo.ProductVersion
-    if (-not $version) { $version = '0.9.0' }
+    if (-not $version) { $version = '0.10.0' }
     $sizeBytes = (Get-ChildItem -LiteralPath $targetDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
     $sizeKb = [int][Math]::Ceiling($sizeBytes / 1024.0)
     $uninstallScript = Join-Path $targetDir 'Uninstall-Fish.ps1'
     $uninstallCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$uninstallScript`""
+    if ($AllUsers) { $uninstallCmd += ' -AllUsers' }
 
-    if (-not $NoRegistry) {
-        $regPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish'
+    if (-not $NoRegistry -and $env:FISH_TEST_SKIP_REGISTRY -ne '1') {
+        $regPath = if ($AllUsers) {
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish'
+        } else {
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish'
+        }
         New-Item -Path $regPath -Force | Out-Null
         Set-ItemProperty -Path $regPath -Name 'DisplayName' -Value 'Fish'
         Set-ItemProperty -Path $regPath -Name 'DisplayVersion' -Value $version
@@ -166,18 +190,33 @@ try {
         Set-ItemProperty -Path $regPath -Name 'EstimatedSize' -Value $sizeKb -Type DWord
     }
 
-    if (-not $NoStartMenuShortcut) {
-        $startMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Fish.lnk'
+    $programsDir = if ($AllUsers) {
+        if ($env:FISH_TEST_COMMON_PROGRAMS) { $env:FISH_TEST_COMMON_PROGRAMS } else { [Environment]::GetFolderPath('CommonPrograms') }
+    } else {
+        if ($env:FISH_TEST_USER_PROGRAMS) { $env:FISH_TEST_USER_PROGRAMS } else { [Environment]::GetFolderPath('Programs') }
+    }
+    $desktopDir = if ($AllUsers) {
+        if ($env:FISH_TEST_COMMON_DESKTOP) { $env:FISH_TEST_COMMON_DESKTOP } else { [Environment]::GetFolderPath('CommonDesktopDirectory') }
+    } else {
+        if ($env:FISH_TEST_USER_DESKTOP) { $env:FISH_TEST_USER_DESKTOP } else { [Environment]::GetFolderPath('Desktop') }
+    }
+
+    if (-not $NoStartMenuShortcut -and $programsDir) {
+        $startMenu = Join-Path $programsDir 'Fish.lnk'
         New-FishShortcut -ShortcutPath $startMenu -TargetExe $targetExe
     }
-    if ($DesktopShortcut) {
-        $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'Fish.lnk'
+    if ($DesktopShortcut -and $desktopDir) {
+        $desktop = Join-Path $desktopDir 'Fish.lnk'
         New-FishShortcut -ShortcutPath $desktop -TargetExe $targetExe
     }
 
     if (-not $Quiet) {
-        Write-Host "Fish $version installed for current user at: $targetDir"
-        Write-Host 'No administrator privileges required; Mark-of-the-Web cleared to prevent SmartScreen prompts.'
+        if ($AllUsers) {
+            Write-Host "Fish $version installed system-wide for all users at: $targetDir"
+        } else {
+            Write-Host "Fish $version installed for current user at: $targetDir"
+            Write-Host 'No administrator privileges required; Mark-of-the-Web cleared to prevent SmartScreen prompts.'
+        }
     }
     if ($Launch) {
         Start-Process -FilePath $targetExe -WorkingDirectory $targetDir

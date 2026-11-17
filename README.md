@@ -10,11 +10,21 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.9.0 beta
+## Fish 0.10.0 beta
 
-[Download v0.9.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.9.0):
-current-user setup, portable image, complete corresponding source/licenses and checksums.
+[Download v0.10.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.0):
+current-user or system-wide setup, portable image, complete corresponding source/licenses and checksums.
 This is an unsigned prerelease, not a stable or ACS-compatible release.
+
+### New in 0.10.0 beta
+
+- **Viewport-clipped multi-pane zoom & relative per-pane `100% (auto)` scale**: Terminal pixel buffers are strictly sized to each pane's visible viewport (`-Xmx512m`), eliminating multi-pane zoom slowdowns and `OutOfMemoryError` crashes even with 8 panes zoomed to `300%`. Zooming is per-pane (independent across shared or distinct profiles), relative to each pane's dimensions (`100% (auto)` fits the pane automatically), saved with workspace windows and desktop layout shortcuts, and displays a brief zoom percentage HUD pill.
+- **Mouse wheel bindings (`scroll +` / `scroll -`)**: Shortcuts and the shortcut recorder accept wheel chords such as `ctrl scroll +` and `ctrl scroll -` (`SCROLL+` / `SCROLL-`, unbound by default) and target whichever session pane the pointer hovers over.
+- **Per-layout Windows Autostart**: One or multiple saved layouts in **Panes > Saved layouts / shortcuts...** can independently start automatically when Windows signs in.
+- **Admin-controlled Kiosk mode**: Administrators can enable or disable machine-wide Kiosk mode (`HKLM\SOFTWARE\Fish\KioskMode`) from **Edit > Settings > General** or `Fish.exe --admin-kiosk enable|disable`. When enabled, Fish starts only from saved layout shortcuts, locks pane/splitter/zoom/layout/settings controls, turns the Fish mark into a static icon, suppresses lasting workspace modifications on disk while still allowing window move/maximize/close, and reduces menus to **Edit** (`Copy`, `Paste`, `Disable Kiosk Mode...`) and **Inserts**.
+- **Helpful Reset callout**: Whenever host input is recoverable (`Reset` shown), Fish pops up `"Are you stuck? Press Enter or press this button!"` with an inline `[Reset]` button that disappears immediately (`0 ms`) upon pressing `Enter` or clicking `Reset`.
+- **Startup error factory reset & clean uninstallation**: Any startup failure offers **Factory reset (delete config)...** (requiring Administrator approval when Kiosk mode is enabled), and uninstallation deletes Fish configuration (`%APPDATA%\Fish`), Startup layout shortcuts, and stored `Fish/*` credentials.
+- **System-wide installation (`-AllUsers`)**: `Fish-0.10.0-setup.exe`, `Install-Fish.ps1 -AllUsers`, `Uninstall-Fish.ps1 -AllUsers`, and **Settings > General > Install system-wide (Administrator)...** support machine-wide installation under `%ProgramFiles%\Fish`.
 
 Valid discrete Settings choices take effect in their interaction, independently
 of coalesced asynchronous disk writes. Typed fonts/keys/profile fields retain
@@ -33,11 +43,8 @@ visible. Portable updating still installs a per-user copy, not a replacement
 portable folder. **All releases (including betas)** and **Stable releases** allow updating
 to the latest release across patch, minor and major versions.
 
-Unreadable/future workspace startup offers Exit, one Retry and explicitly
-confirmed Restore factory settings. Recovery keeps an exact unique
-`workspace-recovery-UUID.xml` backup before atomic replacement under the existing
-exclusive lock, without clearing credentials, fonts or other user files.
-Format **20** requires a pre-upgrade workspace backup to downgrade to 0.8.0 or earlier.
+Unreadable/future workspace startup offers Exit, one Retry, Restore factory settings (preserving a `workspace-recovery-UUID.xml` backup), and full **Factory reset (delete config)...** on any startup error.
+Format **21** requires a pre-upgrade workspace backup to downgrade to 0.9.0 or earlier.
 Synthetic fractional-grid checks are not proof that the physical 4K jump is gone;
 physical monitor/native upgrade/IBM i/ACS/SSO acceptance remains unverified.
 
@@ -300,7 +307,7 @@ That 0.5.3 preview used
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-In this 0.9.0 beta, valid discrete Settings choices apply immediately and autosave separately; pane scale/layout
+In this 0.10.0 beta, valid discrete Settings choices apply immediately and autosave separately; pane scale/layout
 actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
@@ -358,33 +365,33 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.9.0-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.9.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.9.0), then run the
-installer for your Windows user. It creates
-Start menu/desktop shortcuts without a system-wide Java installation or
-administrator installation. Keep one release's installer, portable ZIP, complete
+Download `Fish-0.10.0-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.10.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.0), then run the
+installer for your Windows user (default, no administrator rights) or check **Install for all users (requires Administrator)** to install system-wide under `C:\Program Files\Fish`. It creates
+Start menu/desktop shortcuts without a separate Java installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract the matching `Fish-0.9.0-windows-x64.zip` and open
+For a portable copy, extract the matching `Fish-0.10.0-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 
-### SmartScreen & Non-Admin Per-User Installation
+### SmartScreen, Non-Admin Per-User & System-Wide Installation
 
-Any unsigned `.exe` or `.msi` downloaded directly by a web browser receives Windows Mark-of-the-Web (`Zone.Identifier` `ZoneId=3`), which causes Windows SmartScreen to prompt when launched directly via Explorer/`ShellExecute` unless Authenticode-signed. Fish provides three non-admin paths that avoid unnecessary SmartScreen blocks:
+Any unsigned `.exe` or `.msi` downloaded directly by a web browser receives Windows Mark-of-the-Web (`Zone.Identifier` `ZoneId=3`), which causes Windows SmartScreen to prompt when launched directly via Explorer/`ShellExecute` unless Authenticode-signed. Fish provides non-admin per-user paths as well as optional system-wide installation:
 
-1. **PowerShell Per-User Installer (`Install-Fish.ps1` / `Uninstall-Fish.ps1`)**: Installs from `dist\Fish`, a portable `.zip`, or a SHA-256-verified GitHub stream download into `%LOCALAPPDATA%\Programs\Fish` with zero UAC/admin prompts, strips `Zone.Identifier` streams, creates Start Menu and optional Desktop `.lnk` shortcuts, and registers per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish` so Fish appears normally in Windows Installed Apps:
+1. **PowerShell Installer (`Install-Fish.ps1` / `Uninstall-Fish.ps1`)**: Installs per-user into `%LOCALAPPDATA%\Programs\Fish` with zero UAC/admin prompts, or system-wide into `%ProgramFiles%\Fish` with `-AllUsers` (prompting for Administrator via UAC when needed). Uninstallation (`Uninstall-Fish.ps1` / Windows Installed Apps) removes the installation along with Fish configuration (`%APPDATA%\Fish`), Startup layout shortcuts, and stored `Fish/*` Windows credentials:
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1 -Source .\dist\Fish -DesktopShortcut
+   powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1 -Source .\dist\Fish -AllUsers -DesktopShortcut
    ```
-2. **In-App One-Click User Install (`Edit > Settings > General > Install for current user...`)**: Copies a running portable `Fish.exe` image cleanly via Java NIO streams into `%LOCALAPPDATA%\Programs\Fish` with Start Menu/Desktop shortcuts and `HKCU` Uninstall registration without launching an external unsigned `setup.exe`.
+2. **In-App One-Click Install (`Edit > Settings > General`)**: Offers both **Install for current user...** (no admin) and **Install system-wide (Administrator)...** directly from a portable launch.
 3. **SmartScreen-Free In-App Self-Update**: SHA-256-verified updates strip `Zone.Identifier` ADS and launch via `CreateProcessW` rather than `ShellExecuteExW`. Checksums accompany every package; do not bypass organizational IT policy.
 
 **Back up before upgrading:** close ALL Fish windows normally and copy `workspace.xml`
-outside the application folder before first launching 0.9.0 beta. The default location
+outside the application folder before first launching 0.10.0 beta. The default location
 is `%APPDATA%\Fish`, and custom `--data-dir` locations still apply. The next save upgrades configuration
-to **version 20** if needed. Fish 0.8.0 and earlier cannot read
+to **version 21** if needed. Fish 0.9.0 and earlier cannot read
 it. Keep a pre-upgrade backup for downgrade. XML/config exports contain no passwords or Kerberos tickets;
 OS credentials are separate.
 
@@ -399,8 +406,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.9.0-setup.exe` | Current-user native installer with bundled runtime |
-| `dist\Fish-0.9.0-windows-x64.zip` | Portable image, alongside matching source and checksums |
+| `dist\Fish-0.10.0-setup.exe` | Per-user or system-wide native installer with bundled runtime |
+| `dist\Fish-0.10.0-windows-x64.zip` | Portable image, alongside matching source and checksums |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -411,16 +418,16 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching package is **Fish 0.9.0 BETA**, an unsigned experimental prerelease.
+The matching package is **Fish 0.10.0 BETA**, an unsigned experimental prerelease.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.9.0\Fish` to Package.
-This delivery is at `dist\Fish-0.9.0\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.10.0\Fish` to Package.
+This delivery is at `dist\Fish-0.10.0\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
 ```powershell
-.\dist\Fish-0.9.0\Fish\Fish.exe
-.\dist\Fish-0.9.0\Fish\Fish.exe --demo
+.\dist\Fish-0.10.0\Fish\Fish.exe
+.\dist\Fish-0.10.0\Fish\Fish.exe --demo
 ```
 
 The packaged application includes a private Java runtime; no installed Java,

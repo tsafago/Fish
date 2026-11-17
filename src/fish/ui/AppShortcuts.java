@@ -7,8 +7,10 @@ import javafx.scene.Scene;
 import javafx.scene.control.TextInputControl;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
+import javafx.scene.input.ScrollEvent;
 import org.tn5250j.keyboard.KeyMnemonic;
 import fish.model.*;
+import fish.security.KioskMode;
 
 /** Window-scoped JavaFX event filter preceding scene focus traversal and terminal key handlers. */
 public final class AppShortcuts {
@@ -21,6 +23,7 @@ public final class AppShortcuts {
     private Set<KeyChord> unbound=Set.of();
     private boolean suppressTyped;
     private final EventHandler<KeyEvent> sceneFilter=this::filterSceneEvent;
+    private final EventHandler<ScrollEvent> scrollFilter=this::filterScrollEvent;
 
     private record PhysicalKey(int code,int location) {}
 
@@ -32,6 +35,7 @@ public final class AppShortcuts {
 
     void attach(Scene scene) {
         scene.addEventFilter(KeyEvent.ANY,sceneFilter);
+        scene.addEventFilter(ScrollEvent.SCROLL,scrollFilter);
         workspace.stage().focusedProperty().addListener((obs,was,focused) -> {
             if (!focused) { claimed.clear(); suppressTyped=false; }
         });
@@ -58,6 +62,39 @@ public final class AppShortcuts {
     private void filterSceneEvent(KeyEvent event) {
         Node target=event.getTarget() instanceof Node n ? n : workspace.scene().getFocusOwner();
         if (dispatchKey(target,event)) event.consume();
+    }
+
+    private void filterScrollEvent(ScrollEvent event) {
+        Node target=event.getTarget() instanceof Node n ? n : workspace.scene().getFocusOwner();
+        if (dispatchScroll(target,event)) event.consume();
+    }
+
+    public boolean dispatchScroll(Node source,ScrollEvent event) {
+        KeyChord chord=KeyChord.from(event);
+        if (chord==null) return false;
+        if (isTextInput(source) && chord.modifiers()==0) return false;
+        String title=KeyBindings.lookup(bindings,chord,unbound);
+        if (title==null) return false;
+        AppCommand command=commands.stream().filter(c -> c.title.equals(title)).findFirst().orElse(null);
+        if (command==null) return false;
+        if (KioskMode.isEnabled() && !Workspace.isAllowedInKiosk(command.title,command.hostKey)) return true;
+        SessionPane hovered=enclosingSessionPane(source);
+        if (command.hostKey!=null) {
+            if (hovered==null && !isTerminalNode(source)) return false;
+            if (hovered!=null) workspace.activate(hovered);
+            command.execute();
+            return true;
+        }
+        if (hovered!=null) {
+            switch (command.title) {
+                case "Zoom in" -> { workspace.zoom(hovered,.1); return true; }
+                case "Zoom out" -> { workspace.zoom(hovered,-.1); return true; }
+                case "Fit host screen" -> { workspace.fit(hovered); return true; }
+                default -> {}
+            }
+        }
+        command.execute();
+        return true;
     }
 
     public boolean dispatchKey(Node source,KeyEvent event) {
@@ -91,6 +128,7 @@ public final class AppShortcuts {
                     && workspace.active()!=null && workspace.active().recoverableInputError()) {
                 claimed.add(new PhysicalKey(event.getCode().getCode(),location));
                 suppressTyped=true;
+                workspace.active().dismissResetCalloutImmediately();
                 workspace.active().send(KeyMnemonic.RESET);
                 return true;
             }
@@ -100,6 +138,11 @@ public final class AppShortcuts {
             if (isTextInput(source)) return false;
             String title=KeyBindings.lookup(bindings,chord,unbound);
             AppCommand command=title==null ? null : commands.stream().filter(c -> c.title.equals(title)).findFirst().orElseThrow();
+            if (command!=null && KioskMode.isEnabled() && !Workspace.isAllowedInKiosk(command.title,command.hostKey)) {
+                claimed.add(new PhysicalKey(chord.code(),location));
+                suppressTyped=true;
+                return true;
+            }
             if (command!=null && command.hostKey!=null && !inTerminal) return false;
             boolean explicitlyUnbound=unbound.contains(chord) || unbound.contains(chord.standardIfUnknown());
             if (command==null && !explicitlyUnbound && !retired.contains(chord) && !retired.contains(chord.standardIfUnknown())) return false;
@@ -112,6 +155,10 @@ public final class AppShortcuts {
         return false;
     }
 
+    private static SessionPane enclosingSessionPane(Node node) {
+        for (Node cur=node;cur!=null;cur=cur.getParent()) if (cur instanceof SessionPane sp) return sp;
+        return null;
+    }
     private static boolean isTerminalNode(Node node) {
         for (Node cur=node;cur!=null;cur=cur.getParent()) if (cur instanceof TerminalView) return true;
         return false;
@@ -122,7 +169,10 @@ public final class AppShortcuts {
     }
 
     void dispose() {
-        if (workspace.scene()!=null) workspace.scene().removeEventFilter(KeyEvent.ANY,sceneFilter);
+        if (workspace.scene()!=null) {
+            workspace.scene().removeEventFilter(KeyEvent.ANY,sceneFilter);
+            workspace.scene().removeEventFilter(ScrollEvent.SCROLL,scrollFilter);
+        }
         claimed.clear();
     }
     void refreshLabels() {

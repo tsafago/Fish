@@ -27,6 +27,20 @@ static WCHAR *text_arg(JNIEnv *env,jstring value,BOOL allow_empty) {
     return copy;
 }
 static WCHAR *text(JNIEnv *env,jstring value) { return text_arg(env,value,FALSE); }
+static void notify_parent_dir(const WCHAR *file) {
+    if (!file || !*file) return;
+    size_t len=wcslen(file);
+    WCHAR *parent=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,(len+1)*sizeof(WCHAR));
+    if (!parent) return;
+    wcscpy(parent,file);
+    WCHAR *slash=wcsrchr(parent,L'\\');
+    if (slash) {
+        if (slash==parent+2 && parent[1]==L':') slash[1]=0;
+        else *slash=0;
+        if (*parent) SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,parent,NULL);
+    }
+    HeapFree(GetProcessHeap(),0,parent);
+}
 JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_executable0(JNIEnv *env,jclass type) {
     (void)type;
     WCHAR path[32768]; DWORD size=GetModuleFileNameW(NULL,path,32768);
@@ -36,7 +50,8 @@ JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_executable0(JNIEnv *env,jcla
 JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_desktop0(JNIEnv *env,jclass type) {
     (void)type;
     PWSTR path=NULL;
-    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Desktop,0,NULL,&path))) {
+    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Desktop,KF_FLAG_CREATE,NULL,&path))
+            && FAILED(SHGetKnownFolderPath(&FOLDERID_Desktop,0,NULL,&path))) {
         failure(env,"Cannot locate your Desktop folder. Choose another local folder."); return NULL;
     }
     jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
@@ -44,7 +59,8 @@ JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_desktop0(JNIEnv *env,jclass 
 JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_startMenu0(JNIEnv *env,jclass type) {
     (void)type;
     PWSTR path=NULL;
-    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Programs,0,NULL,&path))) {
+    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Programs,KF_FLAG_CREATE,NULL,&path))
+            && FAILED(SHGetKnownFolderPath(&FOLDERID_Programs,0,NULL,&path))) {
         failure(env,"Cannot locate your Start Menu Programs folder."); return NULL;
     }
     jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
@@ -52,7 +68,8 @@ JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_startMenu0(JNIEnv *env,jclas
 JNIEXPORT jstring JNICALL Java_fish_LayoutShortcuts_startup0(JNIEnv *env,jclass type) {
     (void)type;
     PWSTR path=NULL;
-    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Startup,0,NULL,&path))) {
+    if (FAILED(SHGetKnownFolderPath(&FOLDERID_Startup,KF_FLAG_CREATE,NULL,&path))
+            && FAILED(SHGetKnownFolderPath(&FOLDERID_Startup,0,NULL,&path))) {
         failure(env,"Cannot locate your Windows Startup folder."); return NULL;
     }
     jstring result=(*env)->NewString(env,(jchar *)path,(jsize)wcslen(path)); CoTaskMemFree(path); return result;
@@ -79,6 +96,11 @@ JNIEXPORT void JNICALL Java_fish_LayoutShortcuts_create0(JNIEnv *env,jclass type
     if (!cwd) goto done;
     HRESULT init=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
     if (FAILED(init) && init!=RPC_E_CHANGED_MODE) { failure(env,"Windows Shell initialization failed."); goto done; }
+    DWORD prev_attr=GetFileAttributesW(file);
+    BOOL existed_before=(prev_attr!=INVALID_FILE_ATTRIBUTES);
+    if (existed_before && (prev_attr & FILE_ATTRIBUTE_READONLY)) {
+        SetFileAttributesW(file,prev_attr & ~FILE_ATTRIBUTE_READONLY);
+    }
     IShellLinkW *link=NULL; IPersistFile *persist=NULL;
     HRESULT result=CoCreateInstance(&CLSID_ShellLink,NULL,CLSCTX_INPROC_SERVER,&IID_IShellLinkW,(void **)&link);
     if (SUCCEEDED(result)) result=IShellLinkW_SetPath(link,exe);
@@ -87,16 +109,49 @@ JNIEXPORT void JNICALL Java_fish_LayoutShortcuts_create0(JNIEnv *env,jclass type
     if (SUCCEEDED(result)) result=IShellLinkW_SetIconLocation(link,exe,0);
     if (SUCCEEDED(result)) result=IShellLinkW_SetShowCmd(link,SW_SHOWNORMAL);
     if (SUCCEEDED(result)) result=IShellLinkW_QueryInterface(link,&IID_IPersistFile,(void **)&persist);
-    if (SUCCEEDED(result)) result=IPersistFile_Save(persist,file,TRUE);
+    if (SUCCEEDED(result)) {
+        for (int attempt=0;attempt<10;attempt++) {
+            result=IPersistFile_Save(persist,file,TRUE);
+            if (SUCCEEDED(result) || (result!=HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION) && result!=STG_E_SHAREVIOLATION)) break;
+            Sleep(25);
+        }
+    }
+    if (SUCCEEDED(result)) (void)IPersistFile_SaveCompleted(persist,file);
     if (persist) IPersistFile_Release(persist);
     if (link) IShellLinkW_Release(link);
     if (SUCCEEDED(init)) CoUninitialize();
-    if (FAILED(result)) failure(env,"Windows could not save the layout shortcut. Choose a writable folder.");
+    if (FAILED(result)) {
+        if (!existed_before) DeleteFileW(file);
+        failure(env,"Windows could not save the layout shortcut. Choose a writable folder.");
+    } else {
+        SetFileAttributesW(file,FILE_ATTRIBUTE_ARCHIVE);
+        SHChangeNotify(existed_before ? SHCNE_UPDATEITEM : SHCNE_CREATE,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,file,NULL);
+        if (!existed_before) SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,file,NULL);
+        notify_parent_dir(file);
+    }
 done:
     if (file) HeapFree(GetProcessHeap(),0,file);
     if (exe) HeapFree(GetProcessHeap(),0,exe);
     if (args) HeapFree(GetProcessHeap(),0,args);
     if (cwd) HeapFree(GetProcessHeap(),0,cwd);
+}
+JNIEXPORT void JNICALL Java_fish_LayoutShortcuts_notifyDeleted0(JNIEnv *env,jclass type,jstring shortcut) {
+    (void)type;
+    WCHAR *file=text(env,shortcut);
+    if (!file) return;
+    SHChangeNotify(SHCNE_DELETE,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,file,NULL);
+    notify_parent_dir(file);
+    HeapFree(GetProcessHeap(),0,file);
+}
+JNIEXPORT jboolean JNICALL Java_fish_LayoutShortcuts_desktopIconsHidden0(JNIEnv *env,jclass type) {
+    (void)env; (void)type;
+    HKEY key=NULL;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",0,KEY_QUERY_VALUE,&key)!=ERROR_SUCCESS)
+        return JNI_FALSE;
+    DWORD value=0,reg_type=0,size=sizeof(DWORD);
+    LONG rc=RegQueryValueExW(key,L"HideIcons",NULL,&reg_type,(LPBYTE)&value,&size);
+    RegCloseKey(key);
+    return (rc==ERROR_SUCCESS && reg_type==REG_DWORD && value==1) ? JNI_TRUE : JNI_FALSE;
 }
 JNIEXPORT jobjectArray JNICALL Java_fish_LayoutShortcuts_inspect0(JNIEnv *env,jclass type,jstring shortcut) {
     (void)type;
@@ -106,7 +161,13 @@ JNIEXPORT jobjectArray JNICALL Java_fish_LayoutShortcuts_inspect0(JNIEnv *env,jc
     IShellLinkW *link=NULL; IPersistFile *persist=NULL; WCHAR *values=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,4*32768*sizeof(WCHAR));
     HRESULT result=values ? CoCreateInstance(&CLSID_ShellLink,NULL,CLSCTX_INPROC_SERVER,&IID_IShellLinkW,(void **)&link) : E_OUTOFMEMORY;
     if (SUCCEEDED(result)) result=IShellLinkW_QueryInterface(link,&IID_IPersistFile,(void **)&persist);
-    if (SUCCEEDED(result)) result=IPersistFile_Load(persist,file,STGM_READ);
+    if (SUCCEEDED(result)) {
+        for (int attempt=0;attempt<10;attempt++) {
+            result=IPersistFile_Load(persist,file,STGM_READ|STGM_SHARE_DENY_NONE);
+            if (SUCCEEDED(result) || (result!=HRESULT_FROM_WIN32(ERROR_SHARING_VIOLATION) && result!=STG_E_SHAREVIOLATION)) break;
+            Sleep(25);
+        }
+    }
     if (SUCCEEDED(result)) result=IShellLinkW_GetPath(link,values,32768,NULL,SLGP_RAWPATH);
     if (SUCCEEDED(result)) result=IShellLinkW_GetArguments(link,values+32768,32768);
     if (SUCCEEDED(result)) result=IShellLinkW_GetWorkingDirectory(link,values+65536,32768);

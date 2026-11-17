@@ -66,55 +66,93 @@ public final class CustomizationSmoke {
     }
     private static void themeChecks(Workspace w) throws Exception {
         Appearance initial=w.appearanceSettings();
-        ThemeDesigner designer=new ThemeDesigner(w); FxTestSupport.layout(designer.stage());
-        TextField name=designer.nameField();
-        check(designer.roleEntries().size()==ColorRole.values().length,"Designer inventories every semantic, host, logo and gradient color role.");
-        name.setText("Fixture custom");
-        for (ThemeDesigner.RoleEntry entry:designer.roleEntries()) {
-            int rgb=ColorTheme.builtin(AppTheme.Lagoon).rgb(entry.role);
-            designer.setRoleHex(entry.role,String.format("#%06X",rgb));
-        }
-        designer.setRoleHex(ColorRole.HOST_0,"#101820");
-        designer.setRoleHex(ColorRole.HOST_2,"#6AE5BB");
-        designer.setRoleHex(ColorRole.DIVIDER,"#466080");
-        ColorTheme draft=designer.draft();
-        designer.preview();
-        check(w.appearanceSettings().equals(initial) && Ui.customTheme(),"Real live preview leaves the persistent workspace settings untouched.");
-        designer.dismiss();
-        check(!Ui.customTheme() && w.appearanceSettings().equals(initial),"Cancel restores the actual applied theme, not a corrupt partial draft.");
-
-        designer=new ThemeDesigner(w); FxTestSupport.layout(designer.stage());
-        designer.nameField().setText(draft.name());
-        for (ThemeDesigner.RoleEntry entry:designer.roleEntries()) {
-            designer.setRoleHex(entry.role,String.format("#%06X",draft.rgb(entry.role)));
-        }
-        designer.save(false);
-        check(w.appearanceSettings().themes().contains(draft) && !Ui.customTheme(),"Save creates a reusable named theme without applying it.");
-        designer.save(true);
-        check(w.appearanceSettings().custom().orElseThrow().equals(draft) && Ui.colorTheme().equals(draft),"Save & apply uses the actual persistence and renderer path.");
-        for (ColorRole role:ColorRole.values())
-            check((Ui.color(role).getRGB()&0xffffff)==draft.rgb(role),"No valid chosen RGB value is silently overridden: "+role);
-        check(Ui.activeStylesheetUrl().startsWith("data:text/css;base64,"),"JavaFX CSS stylesheet reflects custom semantic roles.");
-
         SessionPane pane=w.active();
-        check(pane.view().getTerminalBackground().equals(Ui.color(ColorRole.HOST_0))
-                || pane.view().getTerminalBackground().equals(Ui.color(ColorRole.ACTIVE_TINT)),
-                "Custom theme background role applies to terminal.");
-        w.highlightActive(false);
-        check(pane.view().getTerminalBackground().equals(Ui.color(ColorRole.HOST_0)),
-                "Disabling custom tint restores the exact chosen host background.");
-        w.highlightActive(true);
-        Color[] host=HostPalette.colors("Amber");
-        for (int n=0;n<16;n++) check((host[n].getRGB()&0xffffff)==draft.rgb(ColorRole.valueOf("HOST_"+n)),
-                "Custom theme owns host attribute slot "+n+" regardless of built-in profile palette.");
-        FxTestSupport.writeSnapshot(designer.stage().getScene().getRoot(),1.0,Path.of("build","fish-050-theme-designer.png"));
-        designer.dismiss();
+        String savedProfileTheme=pane.profile().theme();
+        String savedProfileEffect=pane.profile().effect();
 
-        EnumMap<ColorRole,Integer> partial=new EnumMap<>(draft.colors()); partial.remove(ColorRole.GRADIENT_4);
+        // 1. Verify all 21 curated primary color presets synthesize WCAG-legible, collision-free IBM palettes across dark & light themes
+        check(Profile.PRIMARY_COLORS.size()>=20,"At least 20 common primary color presets are available for standard users.");
+        for (AppTheme appTheme:List.of(AppTheme.Charcoal,AppTheme.OLED,AppTheme.Paper,AppTheme.Light)) {
+            int bgRgb=ColorTheme.builtin(appTheme).rgb(ColorRole.HOST_0);
+            Color bg=new Color(bgRgb);
+            for (Profile.PrimaryColor preset:Profile.PRIMARY_COLORS) {
+                check(Profile.isCustomColor(preset.hex()) && Profile.normalizeTheme(preset.hex().toLowerCase(Locale.ROOT)).equals(preset.hex()),
+                        "Primary preset normalizes to canonical #RRGGBB: "+preset);
+                Color[] slots=HostPalette.fromPrimaryColor(preset.rgb(),appTheme.dark,bg);
+                check(slots.length==16 && (slots[0].getRGB()&0xffffff)==bgRgb,"Synthesized IBM palette preserves 16 host slots and theme background.");
+                double normalContrast=HostPalette.contrastRatio(slots[2].getRGB()&0xffffff,bgRgb);
+                double brightContrast=HostPalette.contrastRatio(slots[10].getRGB()&0xffffff,bgRgb);
+                check(normalContrast>=(appTheme.dark ? 6.8 : 4.8),"Primary text slot 2 maintains crisp WCAG contrast on "+appTheme+": "+preset.name()+" -> "+normalContrast);
+                check(brightContrast>normalContrast,"Bright primary slot 10 has stronger contrast than normal slot 2 on "+appTheme+": "+preset.name());
+                for (int slot:new int[]{1,3,4,5,6,7,8,9,11,12,13,14,15}) {
+                    double sc=HostPalette.contrastRatio(slots[slot].getRGB()&0xffffff,bgRgb);
+                    check(sc>=(slot==8 ? 2.5 : 4.2),"Synthesized IBM slot "+slot+" remains readable on "+appTheme+": "+preset.name()+" -> "+sc);
+                }
+            }
+        }
+
+        // 2. Verify automatic hue collision avoidance on Crimson, Royal Blue, Cyan, and Amber primaries
+        Color darkBg=new Color(ColorTheme.builtin(AppTheme.Charcoal).rgb(ColorRole.HOST_0));
+        for (String collidingHex:List.of("#EF4444","#3B82F6","#06B6D4","#F59E0B","#D946EF")) {
+            int rgb=Profile.parseCustomColor(collidingHex);
+            Color[] slots=HostPalette.fromPrimaryColor(rgb,true,darkBg);
+            double pHue=HostPalette.hueOfRgb(slots[2].getRGB()&0xffffff);
+            for (int secSlot:new int[]{1,3,4,5,6}) {
+                double sHue=HostPalette.hueOfRgb(slots[secSlot].getRGB()&0xffffff);
+                check(HostPalette.hueDistance(pHue,sHue)>=24.0,
+                        "Secondary IBM slot "+secSlot+" automatically separates from primary "+collidingHex+" (pHue="+pHue+", sHue="+sHue+")");
+            }
+        }
+
+        // 3. Verify Settings > Appearance Primary Color dropdown + 360-degree Hue selector + live terminal effects
+        w.preferences("Appearance");
+        Preferences prefs=w.tutorialPreferences();
+        FxTestSupport.layout(prefs.dialog());
+        check(prefs.paletteCombo().getItems().contains(Preferences.CUSTOM_COLOR),
+                "Text palette dropdown includes Custom color alongside built-in palettes.");
+        check(prefs.primaryColorCombo().getItems().equals(Profile.PRIMARY_COLORS),
+                "Primary color dropdown sits beside Text palette with all curated presets.");
+
+        BufferedImage beforeColor=paint(pane.view());
+        Profile.PrimaryColor royalBlue=Profile.PRIMARY_COLORS.stream().filter(c -> c.name().equals("Royal Blue")).findFirst().orElseThrow();
+        prefs.primaryColorCombo().setValue(royalBlue);
+        check(Preferences.CUSTOM_COLOR.equals(prefs.paletteCombo().getValue())
+                && royalBlue.hex().equals(w.active().profile().theme()),
+                "Choosing a Primary Color preset switches Text palette to Custom color and updates the profile immediately.");
+        BufferedImage afterRoyal=paint(pane.view());
+        check(different(beforeColor,afterRoyal),"Choosing a Primary Color preset repaints terminal ink immediately.");
+
+        // Sweep the hue selector and verify custom shade synthesis + effects compatibility
+        prefs.hueSlider().setValue(18.0);
+        String coralShade=Profile.colorFromHue(18.0);
+        check(coralShade.equals(w.active().profile().theme()) && Preferences.CUSTOM_COLOR.equals(prefs.paletteCombo().getValue()),
+                "Adjusting the Hue selector synthesizes and applies the exact custom #RRGGBB shade: "+w.active().profile().theme());
+        for (String fxName:Profile.EFFECTS) {
+            prefs.effectCombo().setValue(fxName);
+            BufferedImage fxImg=paint(pane.view());
+            check(fxImg.getWidth()>0 && fxImg.getHeight()>0,"Custom primary color renders cleanly with effect: "+fxName);
+        }
+        prefs.effectCombo().setValue(savedProfileEffect);
+        UsabilityIterationSmoke.settle(() -> !prefs.saving(),"Primary color settings autosave settled");
+        FxTestSupport.layout(prefs.dialog());
+        FxTestSupport.writeSnapshot(prefs.dialog().getScene().getRoot(),1.5,Path.of("build","fish-0101-primary-color-settings.png"));
+        prefs.forceDispose();
+
+        // 4. Legacy ColorTheme runtime model & validation integrity
+        ColorTheme lagoon=ColorTheme.builtin(AppTheme.Lagoon);
+        w.appearanceSettings(initial.withTheme("LagoonCustom",List.of(new ColorTheme("LagoonCustom",lagoon.colors()))));
+        check(Ui.customTheme() && Ui.activeStylesheetUrl().startsWith("data:text/css;base64,"),
+                "Legacy saved ColorTheme entries remain supported by Ui stylesheet generation.");
+        w.appearanceSettings(initial);
+        check(!Ui.customTheme() && w.appearanceSettings().equals(initial),"Restoring built-in theme clears custom ColorTheme override.");
+
+        EnumMap<ColorRole,Integer> partial=new EnumMap<>(lagoon.colors()); partial.remove(ColorRole.GRADIENT_4);
         boolean rejected=false; try { new ColorTheme("Partial",partial); } catch (IllegalArgumentException e) { rejected=true; }
         check(rejected,"Incomplete custom themes are rejected rather than filled with silent defaults.");
         rejected=false; try { ColorTheme.parse("#GG0011"); } catch (IllegalArgumentException e) { rejected=true; }
         check(rejected,"Exact color input rejects malformed hexadecimal values.");
+        rejected=false; try { Profile.normalizeTheme("#12345"); } catch (IllegalArgumentException e) { rejected=true; }
+        check(rejected,"Profile custom color rejects non-6-digit hex strings.");
     }
     private static void fontChecks(Workspace w,Path root) throws Exception {
         check(TerminalFonts.installed().size()>=2,"Installed fixed-width families are discovered, not merely advertised.");
@@ -248,8 +286,9 @@ public final class CustomizationSmoke {
         }
         try (StateStore store=new StateStore(root.resolve("workspace"))) {
             StateStore.State state=store.load();
-            check(!state.appearance().outline() && state.appearance().themes().size()==1
-                    && state.appearance().custom().orElseThrow().name().equals("Fixture custom"),"Custom theme and outline survive restart.");
+            check(!state.appearance().outline()
+                    && state.profiles().stream().anyMatch(pr -> Profile.isCustomColor(pr.theme())),
+                    "Custom primary color and outline survive restart.");
             check(state.appearance().font().file().endsWith("fixture-font.ttf"),"Local custom-font reference persists across restart.");
             check(!state.highlightActive() && state.appearance().info().equals(Appearance.PaneInfo.defaults()),
                     "Pane information and tint settings persist independently.");

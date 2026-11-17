@@ -325,10 +325,13 @@ public final class StateStore implements AutoCloseable {
                     Layout saved=Layout.decode(profileLayout);
                     profileLayout=migrateLayout(saved,version,"Saved profile layout").encode();
                 }
+                String rawTheme=required(properties,key+"theme");
+                if (Integer.parseInt(version)<21 && Profile.isCustomColor(rawTheme.strip()))
+                    throw new IllegalArgumentException("Custom profile primary colors require workspace version 21.");
                 profiles.add(new Profile(id, required(properties, key + "name"), required(properties, key + "host"),
                         Integer.parseInt(required(properties, key + "port")), required(properties, key + "device"),
                         required(properties, key + "username"), bool(properties, key + "auto"), bool(properties, key + "remember"),
-                        required(properties, key + "codePage"), required(properties, key + "theme"),
+                        required(properties, key + "codePage"), rawTheme,
                         effect, Double.parseDouble(required(properties, key + "zoom")),
                         keys, profileLayout,
                         usability && !required(properties,key+"loginSource").isEmpty()

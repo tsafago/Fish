@@ -5,7 +5,7 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
-## Fish 0.10.0 beta responsiveness, Kiosk/autostart controls, and recovery
+## Fish 0.10.1 beta responsiveness, primary-color palettes, spatial pane traversal, Kiosk/autostart controls, and recovery
 
 No protocol/ACS/SSO compatibility expansion is claimed. All accepted 0.7.9
 cursor preferences, autosaved Settings and canonical eight-pane layouts remain.

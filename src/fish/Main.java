@@ -8,7 +8,7 @@ import fish.security.KioskMode;
 import fish.ui.*;
 
 public final class Main {
-    public static final String VERSION = "0.10.0";
+    public static final String VERSION = "0.10.1";
     private Main() {}
     public static void main(String[] args) {
         System.setProperty("javafx.enablePreview", "true");
@@ -123,8 +123,11 @@ public final class Main {
                 try { fontWarmup.get(2,java.util.concurrent.TimeUnit.SECONDS); }
                 catch (Exception ignored) {}
             }
-            Path location = Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            Path helper = (Files.isDirectory(location) ? Path.of("scripts") : location.getParent()).resolve("credential-store.ps1").toAbsolutePath();
+            Path location = NativeLibrary.codeLocation(Main.class);
+            Path appFolder = Files.isDirectory(location) ? location : location.getParent();
+            Path helper = (appFolder != null && Files.isRegularFile(appFolder.resolve("credential-store.ps1"))
+                    ? appFolder.resolve("credential-store.ps1")
+                    : Path.of("scripts", "credential-store.ps1")).toAbsolutePath().normalize();
             boolean demo = demonstration;
             boolean temporary = supplied == null && demonstration;
             Ui.runLater(() -> {
@@ -192,13 +195,25 @@ public final class Main {
         try { if (claim.store()!=null) claim.store().close(); } catch (java.io.IOException ignored) {}
     }
 
-    /** Invoked by MSI real uninstallation (`REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`) to remove config, Startup shortcuts, and stored credentials. */
+    /** Invoked by MSI real uninstallation (`REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`) to remove config, shortcuts, secondary installs, and stored credentials. */
     public static void uninstallCleanup() {
+        boolean admin=KioskMode.isUserAdmin();
         LayoutShortcuts.removeAutostartShortcuts(null);
+        LayoutShortcuts.removeApplicationShortcuts(admin);
         KioskMode.deleteAllStoredCredentials();
+        Path runningDir=null;
+        try {
+            Path exe=LayoutShortcuts.executable().toAbsolutePath().normalize();
+            runningDir=exe.getParent();
+        } catch (java.io.IOException | RuntimeException ignored) {}
+        fish.install.UserInstaller.cleanSupersededUserInstallations(runningDir);
+        try {
+            new ProcessBuilder("reg.exe","delete",fish.install.UserInstaller.UNINSTALL_KEY,"/f")
+                    .redirectErrorStream(true).start().waitFor(5,java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception ignored) {}
         String appData=System.getenv("APPDATA");
         if (appData!=null && !appData.isBlank()) WorkspaceRecovery.deleteDirectoryTreeQuietly(defaultDirectory(Path.of(appData)));
-        if (KioskMode.isUserAdmin()) {
+        if (admin) {
             String programData=System.getenv("ProgramData");
             if (programData!=null && !programData.isBlank()) WorkspaceRecovery.deleteDirectoryTreeQuietly(Path.of(programData).resolve("Fish"));
             try { KioskMode.writeDirect(false); } catch (java.io.IOException ignored) {}

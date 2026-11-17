@@ -318,6 +318,10 @@ public final class WorkspaceRecovery {
         if (root==null || !Files.exists(root)) return;
         try (var walk=Files.walk(root)) {
             for (Path p:walk.sorted(Comparator.reverseOrder()).toList()) {
+                try {
+                    var dos=Files.getFileAttributeView(p,java.nio.file.attribute.DosFileAttributeView.class,LinkOption.NOFOLLOW_LINKS);
+                    if (dos!=null) dos.setReadOnly(false);
+                } catch (IOException | UnsupportedOperationException ignored) {}
                 try { Files.deleteIfExists(p); } catch (IOException ignored) {}
             }
         } catch (IOException ignored) {}

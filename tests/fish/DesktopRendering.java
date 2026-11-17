@@ -105,6 +105,12 @@ public final class DesktopRendering {
             return null;
         });
 
+        edt(() -> {
+            FxTestSupport.layout(window);
+            for (SessionPane p : window.sessionPanes()) p.view().forceSurfaceRender();
+            return null;
+        });
+
         List<Long> paints = new CopyOnWriteArrayList<>();
         List<Long> lags = new CopyOnWriteArrayList<>();
         ScheduledExecutorService sampler = Executors.newSingleThreadScheduledExecutor();

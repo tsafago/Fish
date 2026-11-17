@@ -44,8 +44,7 @@ secondary; there are no promotional surfaces, dashboard cards or AI controls.
 OLED Amber, High Contrast, High Contrast Light, Lagoon, Afterglow and Eye Saver token sets;
 `ColorRole` inventories every semantic UI, host, effect and logo RGB role.
 `ColorTheme` supplies complete named maps; `Ui` applies them to every owned UI route.
-The Theme Designer previews transactionally with visual color swatches and exact hex inputs, and saves reusable workspace themes.
-Custom values are exact, with advisory contrast warnings rather than forced corrections.
+Per-profile primary color presets and the 360-degree hue selector in **Settings > Appearance** synthesize a WCAG-contrasted, hue-collision-free 16-slot IBM 5250 palette automatically for dark and light themes, replacing the former standalone 60-role theme designer.
 `Ui` generates live JavaFX CSS stylesheets (`data:text/css;base64,...`) from semantic color tokens for all scenes, controls, popups, scrollbars and split dividers. `HostPalette` defines
 sixteen host colors independently, including darker foregrounds for Paper.
 Never collapse host color, reverse, underline, blink or non-display distinctions

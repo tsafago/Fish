@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.10.0'
+$version = '0.10.1'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
 $manifest = Import-PowerShellDataFile .\tools.psd1
@@ -124,7 +124,7 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.DpiAndLatencySmoke
     if ($LASTEXITCODE -ne 0) { throw 'DPI 1px border and latency smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.ZeroTenFeaturesSmoke
-    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.0 feature and stress checks failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.1 feature and stress checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
@@ -165,7 +165,8 @@ if ($Task -eq 'Package') {
     # Normalize Fish.jar timestamp to an exact 2-second DOS boundary so ZIP/MSI extraction preserves Fish.aot path validation.
     $jarItem = Get-Item -LiteralPath $packagedJar
     $nowLocal = Get-Date
-    $jarItem.LastWriteTime = [DateTime]::new($nowLocal.Year, $nowLocal.Month, $nowLocal.Day, $nowLocal.Hour, $nowLocal.Minute, ($nowLocal.Second - ($nowLocal.Second % 2)), [DateTimeKind]::Local)
+    $normalizedWriteTime = [DateTime]::new($nowLocal.Year, $nowLocal.Month, $nowLocal.Day, $nowLocal.Hour, $nowLocal.Minute, ($nowLocal.Second - ($nowLocal.Second % 2)), [DateTimeKind]::Local)
+    $jarItem.LastWriteTime = $normalizedWriteTime
     $aotJvmOpts = @(
         '-Xmx512m',
         '--enable-native-access=javafx.graphics,ALL-UNNAMED',
@@ -173,14 +174,40 @@ if ($Task -eq 'Package') {
         '-Djavafx.suppressPreviewWarning=true',
         '--add-modules=javafx.base,javafx.controls,javafx.graphics,javafx.swing'
     )
+    # Stage AOT recording/creation in a temporary directory that is deleted immediately afterward.
+    # This guarantees the build-time path inside Fish.aot never exists at runtime, even on the build machine,
+    # so every test exercises Fish with AOT-linked classes active and CodeSource.getLocation() == null.
+    $aotStageRoot = Join-Path $PSScriptRoot 'build\aot-stage'
+    $aotStageImage = Join-Path $aotStageRoot 'Fish'
+    if (Test-Path -LiteralPath $aotStageRoot) { Remove-Item -LiteralPath $aotStageRoot -Recurse -Force }
     if (Test-Path -LiteralPath $aotConf) { Remove-Item -LiteralPath $aotConf -Force }
-    & $packagedJava @aotJvmOpts -XX:AOTMode=record "-XX:AOTConfiguration=$aotConf" "-Djava.class.path=$packagedJar" fish.Main --aot-warmup
-    if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $aotConf)) {
-        & $packagedJava @aotJvmOpts -XX:AOTMode=create "-XX:AOTConfiguration=$aotConf" "-XX:AOTCache=$aotFile" "-Djava.class.path=$packagedJar"
-        if ($LASTEXITCODE -ne 0) { Write-Warning 'AOT cache creation returned non-zero; falling back to bundled CDS archive.' }
-        Remove-Item -LiteralPath $aotConf -Force -ErrorAction SilentlyContinue
-    } else {
-        Write-Warning 'AOT training pass skipped; falling back to bundled CDS archive.'
+    try {
+        New-Item -ItemType Directory -Force -Path $aotStageRoot | Out-Null
+        Copy-Item -LiteralPath $image -Destination $aotStageImage -Recurse -Force
+        $stagedJava = Join-Path $aotStageImage 'runtime\bin\java.exe'
+        $stagedJar = Join-Path $aotStageImage 'app\Fish.jar'
+        $stagedAot = Join-Path $aotStageImage 'app\Fish.aot'
+        (Get-Item -LiteralPath $stagedJar).LastWriteTimeUtc = $jarItem.LastWriteTimeUtc
+        & $stagedJava @aotJvmOpts -XX:AOTMode=record "-XX:AOTConfiguration=$aotConf" "-Djava.class.path=$stagedJar" fish.Main --aot-warmup
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $aotConf)) {
+            & $stagedJava @aotJvmOpts -XX:AOTMode=create "-XX:AOTConfiguration=$aotConf" "-XX:AOTCache=$stagedAot" "-Djava.class.path=$stagedJar"
+            if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $stagedAot)) {
+                Move-Item -LiteralPath $stagedAot -Destination $aotFile -Force
+            } else {
+                Write-Warning 'AOT cache creation returned non-zero; falling back to bundled CDS archive.'
+            }
+            Remove-Item -LiteralPath $aotConf -Force -ErrorAction SilentlyContinue
+        } else {
+            Write-Warning 'AOT training pass skipped; falling back to bundled CDS archive.'
+        }
+    } finally {
+        if (Test-Path -LiteralPath $aotStageRoot) { Remove-Item -LiteralPath $aotStageRoot -Recurse -Force }
+    }
+    if (Test-Path -LiteralPath $aotFile) {
+        $aotProbe = & $packagedJava -Xlog:aot @aotJvmOpts "-XX:AOTCache=$aotFile" "-Djava.class.path=$packagedJar" fish.Main --help 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0 -or $aotProbe -notmatch 'Using AOT-linked classes:\s*true') {
+            throw "Packaged Fish.aot verification failed after deleting build\aot-stage:`n$aotProbe"
+        }
     }
     & "$PSScriptRoot\scripts\set-launcher-encoding.ps1" -Executable (Join-Path $image 'Fish.exe')
     Copy-Item scripts\Fish-config.cmd,Install-Fish.ps1,Uninstall-Fish.ps1 $image -Force

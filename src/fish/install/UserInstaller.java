@@ -124,17 +124,33 @@ public final class UserInstaller {
         }
 
         Path finalExe = dest.resolve("Fish.exe");
-        if (startMenuShortcut) {
-            LayoutShortcuts.createApplicationLink(LayoutShortcuts.startMenu().resolve("Fish.lnk"), finalExe);
-        }
-        if (desktopShortcut) {
-            LayoutShortcuts.createApplicationLink(LayoutShortcuts.desktop().resolve("Fish.lnk"), finalExe);
+        if (startMenuShortcut || desktopShortcut) {
+            LayoutShortcuts.reconcileApplicationShortcuts(finalExe, startMenuShortcut, desktopShortcut);
         }
         if (registerHkcu && System.getProperty("os.name", "").startsWith("Windows")) {
             long sizeKb = Math.max(1L, (totalBytes[0] + 1023L) / 1024L);
             registerUninstall(dest, finalExe, Main.VERSION, sizeKb);
+            cleanSupersededUserInstallations(dest);
         }
         return finalExe;
+    }
+
+    /** Removes stale side-by-side per-user Fish directories (%LOCALAPPDATA%\Fish vs %LOCALAPPDATA%\Programs\Fish) when not running. */
+    public static void cleanSupersededUserInstallations(Path keepDir) {
+        String local = System.getenv("LOCALAPPDATA");
+        if (local == null || local.isBlank()) return;
+        Path normKeep = keepDir == null ? null : keepDir.toAbsolutePath().normalize();
+        for (Path candidate : List.of(
+                Path.of(local, "Programs", "Fish").toAbsolutePath().normalize(),
+                Path.of(local, "Fish").toAbsolutePath().normalize())) {
+            if (normKeep != null && candidate.equals(normKeep)) continue;
+            Path candExe = candidate.resolve("Fish.exe");
+            if (!Files.isRegularFile(candExe, LinkOption.NOFOLLOW_LINKS)) continue;
+            boolean inUse = ProcessHandle.allProcesses()
+                    .map(ph -> ph.info().command().orElse(""))
+                    .anyMatch(cmd -> !cmd.isEmpty() && cmd.equalsIgnoreCase(candExe.toString()));
+            if (!inUse) deleteTreeQuietly(candidate);
+        }
     }
 
     /** Elevates via Windows UAC (`runas`) to install Fish system-wide into Program Files for all users. */
@@ -250,6 +266,10 @@ public final class UserInstaller {
     private static void deleteTreeQuietly(Path root) {
         try (var paths = Files.walk(root)) {
             for (Path p : paths.sorted(Comparator.reverseOrder()).toList()) {
+                try {
+                    var dos = Files.getFileAttributeView(p, java.nio.file.attribute.DosFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+                    if (dos != null) dos.setReadOnly(false);
+                } catch (IOException | UnsupportedOperationException ignored) {}
                 try { Files.deleteIfExists(p); } catch (IOException ignored) {}
             }
         } catch (IOException ignored) {}

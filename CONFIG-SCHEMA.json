@@ -691,7 +691,7 @@
       "title": "Host NEW LINE"
     }
   ],
-  "catalogVersion": 11,
+  "catalogVersion": 12,
   "cursorStyles": {
     "FILLED": "Filled block in both modes.",
     "IBM": "Underline in replace mode; filled block in Insert. IBM-documented mode-aware style.",
@@ -851,25 +851,9 @@
       "type": "boolean"
     },
     "theme": {
-      "constraints": "Exact case-sensitive value.",
+      "constraints": "Exact built-in palette name (Phosphor, Cool, Warm, Amber, Ice, Orchid, High contrast, IBM vivid, Mint, Rose, OLED green, OLED amber, Azure vivid, Crimson vivid) or #RRGGBB custom primary color (normalized uppercase; secondary IBM 5250 slots auto-adjust for contrast and hue separation).",
       "default": "Phosphor",
-      "type": "enum",
-      "values": [
-        "Phosphor",
-        "Cool",
-        "Warm",
-        "Amber",
-        "Ice",
-        "Orchid",
-        "High contrast",
-        "IBM vivid",
-        "Mint",
-        "Rose",
-        "OLED green",
-        "OLED amber",
-        "Azure vivid",
-        "Crimson vivid"
-      ]
+      "type": "palette-or-rgb"
     },
     "username": {
       "constraints": "Same naming rule as device. Blank when loginSource is set. Ignored for KERBEROS (Windows identity/EIM supplies the user).",
@@ -1693,7 +1677,7 @@
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.10.0 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart) and pane-size-relative per-pane zoom (100% auto fit), retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.10.1 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart), pane-size-relative per-pane zoom (100% auto fit), and per-profile #RRGGBB custom primary colors with automatic IBM 5250 palette synthesis, retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.",
   "windowPrefix": "window.{zero-based-index}.",
   "workspaceVersion": "21"
 }

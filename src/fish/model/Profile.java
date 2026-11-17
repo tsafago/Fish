@@ -29,8 +29,69 @@ public record Profile(UUID id, String name, String host, int port, String device
             "284", "285", "297", "500", "870", "871", "1140", "1141", "1147", "1148");
     public static final List<String> THEMES = List.of("Phosphor", "Cool", "Warm", "Amber", "Ice", "Orchid", "High contrast",
             "IBM vivid", "Mint", "Rose", "OLED green", "OLED amber", "Azure vivid", "Crimson vivid");
+    public record PrimaryColor(String name, String hex, int rgb) {
+        public PrimaryColor(String name, String hex) {
+            this(name, hex.toUpperCase(Locale.ROOT), Integer.parseInt(hex.substring(1), 16) & 0xffffff);
+        }
+        @Override public String toString() { return name; }
+    }
+    public static final List<PrimaryColor> PRIMARY_COLORS = List.of(
+            new PrimaryColor("Classic Green", "#6AE368"),
+            new PrimaryColor("Emerald", "#38D989"),
+            new PrimaryColor("Mint", "#5EEAD4"),
+            new PrimaryColor("Teal", "#26D0CE"),
+            new PrimaryColor("Cyan", "#22D3EE"),
+            new PrimaryColor("Sky Blue", "#38BDF8"),
+            new PrimaryColor("Ocean Blue", "#60A5FA"),
+            new PrimaryColor("Royal Blue", "#5B7CFA"),
+            new PrimaryColor("Indigo", "#818CF8"),
+            new PrimaryColor("Violet", "#A78BFA"),
+            new PrimaryColor("Purple", "#C084FC"),
+            new PrimaryColor("Magenta", "#E879F9"),
+            new PrimaryColor("Pink", "#F472B6"),
+            new PrimaryColor("Rose", "#FB7185"),
+            new PrimaryColor("Crimson", "#F87171"),
+            new PrimaryColor("Coral", "#FA7A5A"),
+            new PrimaryColor("Orange", "#FB923C"),
+            new PrimaryColor("Amber", "#FBBF24"),
+            new PrimaryColor("Gold", "#F5D033"),
+            new PrimaryColor("Lime", "#A3E635"),
+            new PrimaryColor("Ice Silver", "#CBD5E1"));
     public static final String FLUX="Flux (animated)";
     public static final List<String> EFFECTS = List.of("None", "Soft glow", "Prism",FLUX);
+
+    public static boolean isCustomColor(String value) {
+        return value != null && value.matches("#[0-9A-Fa-f]{6}");
+    }
+
+    public static String normalizeTheme(String value) {
+        if (value == null) throw new IllegalArgumentException("Unknown palette or effect.");
+        String trimmed = value.strip();
+        if (THEMES.contains(trimmed)) return trimmed;
+        if (isCustomColor(trimmed)) return trimmed.toUpperCase(Locale.ROOT);
+        throw new IllegalArgumentException("Unknown palette or effect.");
+    }
+
+    public static int parseCustomColor(String theme) {
+        if (!isCustomColor(theme)) throw new IllegalArgumentException("Expected #RRGGBB custom color: " + theme);
+        return Integer.parseInt(theme.substring(1), 16) & 0xffffff;
+    }
+
+    public static String formatCustomColor(int rgb) {
+        return String.format(Locale.ROOT, "#%06X", rgb & 0xffffff);
+    }
+
+    public static String colorFromHue(double hueDegrees) {
+        float h = (float) (((hueDegrees % 360.0) + 360.0) % 360.0 / 360.0);
+        int rgb = java.awt.Color.HSBtoRGB(h, 0.76f, 0.94f) & 0xffffff;
+        return formatCustomColor(rgb);
+    }
+
+    public static Optional<PrimaryColor> matchingPrimaryColor(String theme) {
+        if (!isCustomColor(theme)) return Optional.empty();
+        String normalized = theme.toUpperCase(Locale.ROOT);
+        return PRIMARY_COLORS.stream().filter(p -> p.hex().equals(normalized)).findFirst();
+    }
 
     public Profile {
         Objects.requireNonNull(id);
@@ -56,7 +117,8 @@ public record Profile(UUID id, String name, String host, int port, String device
         if (authentication==Authentication.KERBEROS && (automaticSignOn || rememberPassword || loginSource!=null))
             throw new IllegalArgumentException("Kerberos uses Windows sign-in, not saved passwords or another profile's login. Set auto/remember false and loginSource empty.");
         if (!CODE_PAGES.contains(codePage)) throw new IllegalArgumentException("Unsupported SBCS code page: " + codePage);
-        if (!THEMES.contains(theme) || !EFFECTS.contains(effect)) throw new IllegalArgumentException("Unknown palette or effect.");
+        theme = normalizeTheme(theme);
+        if (!EFFECTS.contains(effect)) throw new IllegalArgumentException("Unknown palette or effect.");
         if (!Double.isFinite(zoom) || zoom < 0.5 || zoom > 3) throw new IllegalArgumentException("Zoom must be 50-300%.");
     }
 

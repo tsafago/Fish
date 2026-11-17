@@ -23,8 +23,9 @@ public final class PackagedLayoutSmoke {
         check(child.exitValue()==0,"Packaged offline CLI succeeds: "+List.of(args)+"\n"+Files.readString(log));
     }
     public static void main(String[] args) throws Exception {
-        Path jar=Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-        Path executable=jar.getParent().getParent().resolve("Fish.exe").toAbsolutePath();
+        Path jar=NativeLibrary.codeLocation(Main.class);
+        Path appDir=Files.isDirectory(jar) ? jar : jar.getParent();
+        Path executable=appDir.getParent().resolve("Fish.exe").toAbsolutePath();
         check(Files.isRegularFile(executable),"Actual packaged executable exists beside private runtime");
         Path root=Files.createTempDirectory(Path.of("build"),"packaged-layout-075-").toAbsolutePath();
         try {

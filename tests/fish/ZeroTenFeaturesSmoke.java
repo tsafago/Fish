@@ -25,6 +25,7 @@ import org.tn5250j.keyboard.KeyMnemonic;
 import fish.Configuration;
 import fish.LayoutShortcuts;
 import fish.Main;
+import fish.NativeLibrary;
 import fish.demo.DemoHost;
 import fish.demo.DemoScreens;
 import fish.model.*;
@@ -68,8 +69,9 @@ public final class ZeroTenFeaturesSmoke {
         check(KeyChord.supportedKeys().contains("SCROLL+") && KeyChord.supportedKeys().contains("SCROLL-"),
                 "Supported keys list includes SCROLL+ and SCROLL-");
         String schema = Files.readString(Path.of("CONFIG-SCHEMA.json"));
-        check(schema.contains("\"SCROLL+\"") && schema.contains("\"SCROLL-\"") && schema.contains("\"catalogVersion\": 11"),
-                "CONFIG-SCHEMA.json exports catalogVersion 11 and SCROLL+/SCROLL-");
+        check(schema.contains("\"SCROLL+\"") && schema.contains("\"SCROLL-\"")
+                        && schema.contains("\"catalogVersion\": 12") && schema.contains("\"palette-or-rgb\""),
+                "CONFIG-SCHEMA.json exports catalogVersion 12, palette-or-rgb, and SCROLL+/SCROLL-");
 
         for (String up : List.of("scroll +", "SCROLL+", "wheel +")) {
             KeyChord parsed = KeyChord.parse(up);
@@ -638,11 +640,13 @@ public final class ZeroTenFeaturesSmoke {
             Path testUserDesk = Files.createDirectories(psSandbox.resolve("UserDesktop"));
             Path testCommonProgs = Files.createDirectories(psSandbox.resolve("CommonPrograms"));
             Path testCommonDesk = Files.createDirectories(psSandbox.resolve("CommonDesktop"));
+            Path testLocalAppData = Files.createDirectories(psSandbox.resolve("LocalAppData"));
 
             Map<String, String> env = new LinkedHashMap<>();
             env.put("FISH_TEST_NO_ELEVATE", "1");
             env.put("FISH_TEST_SKIP_REGISTRY", "1");
             env.put("FISH_TEST_SKIP_CREDENTIALS", "1");
+            env.put("FISH_TEST_LOCALAPPDATA", testLocalAppData.toString());
             env.put("FISH_TEST_APPDATA", testAppData.toString());
             env.put("FISH_TEST_PROGRAMDATA", testProgData.toString());
             env.put("FISH_TEST_STARTUP", testStartup.toString());
@@ -650,6 +654,32 @@ public final class ZeroTenFeaturesSmoke {
             env.put("FISH_TEST_USER_DESKTOP", testUserDesk.toString());
             env.put("FISH_TEST_COMMON_PROGRAMS", testCommonProgs.toString());
             env.put("FISH_TEST_COMMON_DESKTOP", testCommonDesk.toString());
+
+            // Seed a stale MSI-style install at %LOCALAPPDATA%\Fish with a read-only Fish.aot + duplicate Programs\Fish\Fish.lnk
+            Path staleMsiDir = Files.createDirectories(testLocalAppData.resolve("Fish").resolve("app"));
+            Path staleExe = Files.writeString(testLocalAppData.resolve("Fish").resolve("Fish.exe"), "MZ-stale-msi");
+            Path staleAot = Files.writeString(staleMsiDir.resolve("Fish.aot"), "stale-aot");
+            var dosView = Files.getFileAttributeView(staleAot, java.nio.file.attribute.DosFileAttributeView.class);
+            if (dosView != null) dosView.setReadOnly(true);
+            LayoutShortcuts.createApplicationLink(testUserProgs.resolve("Fish").resolve("Fish.lnk"), staleExe);
+            LayoutShortcuts.createApplicationLink(testUserDesk.resolve("Fish.lnk"), staleExe);
+
+            // Per-user install to %LOCALAPPDATA%\Programs\Fish reconciles old %LOCALAPPDATA%\Fish, read-only files, and duplicate shortcuts!
+            Path scriptUserDest = testLocalAppData.resolve("Programs").resolve("Fish");
+            runPowerShell(env, "-File", Path.of("Install-Fish.ps1").toAbsolutePath().toString(),
+                    "-Source", fakeSource.toString(), "-Destination", scriptUserDest.toString(), "-Quiet");
+            check(Files.exists(scriptUserDest.resolve("Fish.exe"))
+                    && !Files.exists(testLocalAppData.resolve("Fish"))
+                    && Files.exists(testUserProgs.resolve("Fish.lnk"))
+                    && !Files.exists(testUserProgs.resolve("Fish").resolve("Fish.lnk"))
+                    && Files.exists(testUserDesk.resolve("Fish.lnk")),
+                    "Install-Fish.ps1 cleans superseded %LOCALAPPDATA%\\Fish (even with read-only Fish.aot) and reconciles duplicate Start Menu/Desktop shortcuts");
+            runPowerShell(env, "-File", Path.of("Uninstall-Fish.ps1").toAbsolutePath().toString(),
+                    "-Destination", scriptUserDest.toString(), "-Quiet");
+            check(!Files.exists(scriptUserDest.resolve("Fish.exe"))
+                    && !Files.exists(testUserProgs.resolve("Fish.lnk"))
+                    && !Files.exists(testUserDesk.resolve("Fish.lnk")),
+                    "Uninstall-Fish.ps1 removes reconciled %LOCALAPPDATA%\\Programs\\Fish and shortcuts");
 
             // Per-user install + seed %APPDATA%\Fish\workspace.xml + Startup .lnk -> Uninstall deletes config & shortcuts!
             runPowerShell(env, "-File", Path.of("Install-Fish.ps1").toAbsolutePath().toString(),
@@ -716,12 +746,317 @@ public final class ZeroTenFeaturesSmoke {
         check(code == 0, "PowerShell command failed (" + code + "): " + String.join(" ", psArgs) + "\n" + output);
     }
 
+    private static void verifyEightPaneSpatialTraversalAndCustomColorPersistence(Path root, int port) throws Exception {
+        UUID profileId = UUID.randomUUID();
+        Profile customColorProfile = new Profile(profileId, "Indigo Ops", "127.0.0.1", port, "DEMOA2", "", false, false,
+                "37", "#6366f1", "None", 1.0, Map.of(), "");
+        check("#6366F1".equals(customColorProfile.theme()), "Lowercase #rrggbb normalizes to canonical uppercase #RRGGBB");
+
+        // 1. 4x2 vertical-subsplit 8-pane layout: spatial order must visit Row 0 (L,R) -> Row 1 (L,R) -> Row 2 (L,R) -> Row 3 (L,R)
+        UUID l0 = UUID.randomUUID(), l1 = UUID.randomUUID(), l2 = UUID.randomUUID(), l3 = UUID.randomUUID();
+        UUID r0 = UUID.randomUUID(), r1 = UUID.randomUUID(), r2 = UUID.randomUUID(), r3 = UUID.randomUUID();
+        Layout fourRowsTwoCols = new Layout.Split(true, 0.5,
+                new Layout.Split(false, 0.5,
+                        new Layout.Split(false, 0.5, new Layout.Leaf(l0, profileId), new Layout.Leaf(l1, profileId)),
+                        new Layout.Split(false, 0.5, new Layout.Leaf(l2, profileId), new Layout.Leaf(l3, profileId))),
+                new Layout.Split(false, 0.5,
+                        new Layout.Split(false, 0.5, new Layout.Leaf(r0, profileId), new Layout.Leaf(r1, profileId)),
+                        new Layout.Split(false, 0.5, new Layout.Leaf(r2, profileId), new Layout.Leaf(r3, profileId))));
+        check(Workspace.spatialPaneOrder(fourRowsTwoCols).equals(List.of(l0, r0, l1, r1, l2, r2, l3, r3)),
+                "4x2 8-pane spatialPaneOrder visits left-to-right within each of the 4 rows: " + Workspace.spatialPaneOrder(fourRowsTwoCols));
+
+        // 2. Classic 2x4 quadrant-split 8-pane layout (where binary DFS jumps TL0,TL1 -> BL0,BL1 -> TR0,TR1 -> BR0,BR1)
+        UUID tl0 = UUID.randomUUID(), tl1 = UUID.randomUUID(), tr0 = UUID.randomUUID(), tr1 = UUID.randomUUID();
+        UUID bl0 = UUID.randomUUID(), bl1 = UUID.randomUUID(), br0 = UUID.randomUUID(), br1 = UUID.randomUUID();
+        Layout twoRowsFourCols = new Layout.Split(true, 0.5,
+                new Layout.Split(false, 0.5,
+                        new Layout.Split(true, 0.5, new Layout.Leaf(tl0, profileId), new Layout.Leaf(tl1, profileId)),
+                        new Layout.Split(true, 0.5, new Layout.Leaf(bl0, profileId), new Layout.Leaf(bl1, profileId))),
+                new Layout.Split(false, 0.5,
+                        new Layout.Split(true, 0.5, new Layout.Leaf(tr0, profileId), new Layout.Leaf(tr1, profileId)),
+                        new Layout.Split(true, 0.5, new Layout.Leaf(br0, profileId), new Layout.Leaf(br1, profileId))));
+        List<UUID> expectedReadingOrder = List.of(tl0, tl1, tr0, tr1, bl0, bl1, br0, br1);
+        check(!twoRowsFourCols.leaves().stream().map(Layout.Leaf::pane).toList().equals(expectedReadingOrder),
+                "Raw binary-tree DFS order differs from visual reading order on 8-pane quadrant splits");
+        check(Workspace.spatialPaneOrder(twoRowsFourCols).equals(expectedReadingOrder),
+                "2x4 8-pane spatialPaneOrder visits entire top row left-to-right then entire bottom row left-to-right");
+
+        Path wsDir = Files.createDirectory(root.resolve("spatial-eight-pane"));
+        CountDownLatch closed = new CountDownLatch(1);
+        StateStore store = new StateStore(wsDir);
+        try {
+            StateStore.State seed = new StateStore.State(List.of(customColorProfile), twoRowsFourCols, 1400, 820,
+                    AppTheme.Charcoal, profileId, Map.of(), true, Appearance.defaults().withReducedMotion(true),
+                    StateStore.Tutorial.SKIPPED, false, UpdateSettings.defaults());
+            store.save(seed);
+            StateStore.State reloaded = store.load();
+            check("#6366F1".equals(reloaded.profiles().getFirst().theme()),
+                    "Custom #RRGGBB profile primary color round-trips through StateStore format 21");
+
+            // Verify version < 21 rejects raw #RRGGBB profile themes
+            Path v20Dir = Files.createDirectory(root.resolve("v20-reject-hex"));
+            Files.copy(store.file(), v20Dir.resolve("workspace.xml"));
+            Properties xml = new Properties();
+            try (var in = Files.newInputStream(v20Dir.resolve("workspace.xml"))) { xml.loadFromXML(in); }
+            xml.setProperty("version", "20");
+            try (var out = Files.newOutputStream(v20Dir.resolve("workspace.xml"))) { xml.storeToXML(out, "v20 test"); }
+            boolean v20Rejected = false;
+            try (StateStore v20Store = new StateStore(v20Dir)) { v20Store.load(); }
+            catch (java.io.IOException expected) { v20Rejected = true; }
+            check(v20Rejected, "Format < 21 rejects raw #RRGGBB profile themes cleanly");
+
+            Workspace w = fx(() -> {
+                Workspace win = new Workspace(store, reloaded, wsDir.resolve("absent-cred.ps1"), false);
+                win.setSize(1400, 820);
+                win.onClosed(closed::countDown);
+                layout(win);
+                return win;
+            });
+            try {
+                fx(() -> {
+                    List<UUID> liveIds = w.sessionPanes().stream().map(SessionPane::id).toList();
+                    check(liveIds.equals(expectedReadingOrder),
+                            "Mounted Workspace.sessionPanes() returns 8 panes in strict reading order: " + liveIds);
+
+                    // Verify Focus pane 1..8 and Ctrl+Tab / Ctrl+Shift+Tab follow exact reading order
+                    for (int i = 0; i < 8; i++) {
+                        w.executeCommand("Focus pane " + (i + 1));
+                        check(w.active().id().equals(expectedReadingOrder.get(i)),
+                                "Focus pane " + (i + 1) + " targets visual reading-order pane " + i);
+                    }
+                    w.executeCommand("Focus pane 1");
+                    for (int step = 1; step <= 8; step++) {
+                        w.cycle(1);
+                        check(w.active().id().equals(expectedReadingOrder.get(step % 8)),
+                                "Ctrl+Tab cycle(+1) step " + step + " moves left-to-right, top-to-bottom without quadrant jump");
+                    }
+                    for (int step = 7; step >= 0; step--) {
+                        w.cycle(-1);
+                        check(w.active().id().equals(expectedReadingOrder.get(step)),
+                                "Ctrl+Shift+Tab cycle(-1) step " + step + " moves right-to-left, bottom-to-top without quadrant jump");
+                    }
+
+                    // Verify unmodified Tab and Shift+Tab across offline 8-pane controls cross top-left -> top-right before bottom-left!
+                    List<SessionPane> ordered = w.sessionPanes();
+                    SessionPane pane2 = ordered.get(1); // tl1 (right half of top-left quadrant)
+                    SessionPane pane3 = ordered.get(2); // tr0 (left half of top-right quadrant)
+                    SessionPane pane4 = ordered.get(3); // tr1 (right half of top-right quadrant)
+                    SessionPane pane5 = ordered.get(4); // bl0 (left half of bottom-left quadrant)
+
+                    List<Node> p3Stops = pane3.focusStops();
+                    Node p3First = p3Stops.getFirst();
+                    p3First.requestFocus();
+                    KeyEvent shiftTabFromTr0 = new KeyEvent(p3First, p3First, KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, true, false, false, false);
+                    Event.fireEvent(p3First, shiftTabFromTr0);
+                    Node focusedAfterShiftTab = w.scene().getFocusOwner();
+                    check(pane2.focusStops().contains(focusedAfterShiftTab) && w.active() == pane2,
+                            "Shift+Tab from top-right pane 3 steps horizontally left to pane 2 (tl1), not bottom-left quadrant!");
+
+                    // Tab forward from pane 2's last focus stop must cross horizontally into pane 3 (tr0)!
+                    KeyEvent tabForward = new KeyEvent(focusedAfterShiftTab, focusedAfterShiftTab, KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, false, false, false, false);
+                    Event.fireEvent(focusedAfterShiftTab, tabForward);
+                    check(w.scene().getFocusOwner() == p3First && w.active() == pane3,
+                            "Tab from end of pane 2 (tl1) crosses horizontally into pane 3 (tr0), not down to bottom-left!");
+
+                    // Shift+Tab from pane 5 (bl0, start of row 2) must step up-right to pane 4 (tr1, end of row 1)!
+                    Node p5First = pane5.focusStops().getFirst();
+                    p5First.requestFocus();
+                    Event.fireEvent(p5First, new KeyEvent(p5First, p5First, KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, true, false, false, false));
+                    check(pane4.focusStops().contains(w.scene().getFocusOwner()) && w.active() == pane4,
+                            "Shift+Tab from start of bottom row (pane 5) wraps cleanly to end of top row (pane 4)!");
+                    return null;
+                });
+
+                // Verify connected 5250 Tab / Shift+Tab inside TerminalView still navigates 5250 fields normally
+                fx(() -> {
+                    w.sessionPanes().getFirst().connect();
+                    return null;
+                });
+                UsabilityIterationSmoke.settle(() -> w.sessionPanes().getFirst().connected()
+                        && w.sessionPanes().getFirst().screen().getScreenFields().getSize() >= 2,
+                        "Connected pane 1 to DemoHost with >= 2 input fields");
+                fx(() -> {
+                    SessionPane connectedPane = w.sessionPanes().getFirst();
+                    w.activate(connectedPane);
+                    connectedPane.focusTerminal();
+                    int pos0 = connectedPane.screen().getCurrentPos();
+                    TerminalView tv = connectedPane.view();
+                    Event.fireEvent(tv, new KeyEvent(tv, tv, KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, false, false, false, false));
+                    int pos1 = connectedPane.screen().getCurrentPos();
+                    check(pos1 != pos0 && w.active() == connectedPane,
+                            "Connected 5250 Tab advances host input field without leaving TerminalView");
+                    Event.fireEvent(tv, new KeyEvent(tv, tv, KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, true, false, false, false));
+                    int posBack = connectedPane.screen().getCurrentPos();
+                    check(posBack == pos0 && w.active() == connectedPane,
+                            "Connected 5250 Shift+Tab returns to previous host input field without leaving TerminalView");
+                    return null;
+                });
+            } finally {
+                fx(() -> { w.close(false); return null; });
+                check(closed.await(8, TimeUnit.SECONDS), "8-pane spatial traversal workspace closed cleanly");
+            }
+        } finally {
+            try { store.close(); } catch (Exception ignored) {}
+        }
+    }
+
+    private static void verifyCodeSourceNullSafetyAndDesktopShortcutVisibility(Path root, int port) throws Exception {
+        // 1. Verify NativeLibrary.resolveCodeLocation handles JDK 25 AOT null CodeSource.getLocation() and missing build-machine URLs
+        Path aotInstall = Files.createDirectories(root.resolve("aot-install-sim"));
+        Path aotAppDir = Files.createDirectories(aotInstall.resolve("app"));
+        Path aotExe = Files.writeString(aotInstall.resolve("Fish.exe"), "MZ-aot");
+        Path aotJar = Files.writeString(aotAppDir.resolve("Fish.jar"), "PK-aot-jar");
+        Path fallbackClasses = Files.createDirectories(root.resolve("fallback-classes"));
+
+        check(NativeLibrary.resolveCodeLocation(aotExe.toString(), null, "", null).equals(aotJar.toAbsolutePath().normalize()),
+                "jpackage.app-path resolves <install>/app/Fish.jar when CodeSource.getLocation() is null");
+        java.net.URL missingBuildMachineUrl = new java.net.URI("file:///Z:/missing-build-machine/dist/Fish/app/Fish.jar").toURL();
+        check(NativeLibrary.resolveCodeLocation(null, aotExe.toString(), "", missingBuildMachineUrl).equals(aotJar.toAbsolutePath().normalize()),
+                "ProcessHandle Fish.exe resolves <install>/app/Fish.jar even when AOT CodeSource points to missing build-machine path");
+        check(NativeLibrary.resolveCodeLocation(null, null, aotJar.toString(), null).equals(aotJar.toAbsolutePath().normalize()),
+                "java.class.path resolves Fish.jar when CodeSource.getLocation() is null");
+        check(NativeLibrary.resolveCodeLocation(null, null, fallbackClasses.toString(), null).equals(fallbackClasses.toAbsolutePath().normalize()),
+                "java.class.path directory fallback works when CodeSource.getLocation() is null");
+        check(Files.exists(NativeLibrary.codeLocation(Main.class))
+                && Files.exists(NativeLibrary.codeLocation(Configuration.class)),
+                "NativeLibrary.codeLocation resolves existing runtime paths for Main and Configuration");
+
+        // 2. Verify LayoutShortcuts creates visible FILE_ATTRIBUTE_ARCHIVE .lnk with zero transient temp files + Shell notify
+        Path activeDesktop = Files.createDirectories(root.resolve("OneDrive").resolve("Desktop"));
+        Path inactiveHome = Files.createDirectories(root.resolve("UserHome"));
+        Path inactiveHomeDesktop = Files.createDirectories(inactiveHome.resolve("Desktop"));
+        Path inactiveOneDrive = Files.createDirectories(root.resolve("OldOneDrive"));
+        Files.createDirectories(inactiveOneDrive.resolve("Desktop"));
+        Path testStartMenu = Files.createDirectories(root.resolve("TestStartMenu"));
+        Path customFolder = Files.createDirectories(root.resolve("CustomFolder"));
+
+        Path directLnk = activeDesktop.resolve("Fish - Direct.lnk");
+        UUID layoutId = UUID.randomUUID();
+        LayoutShortcuts.create(directLnk, aotExe, root, layoutId);
+        check(Files.isRegularFile(directLnk), "LayoutShortcuts.create writes .lnk directly to active Desktop");
+        try (var list = Files.list(activeDesktop)) {
+            List<String> names = list.map(p -> p.getFileName().toString()).toList();
+            check(names.equals(List.of("Fish - Direct.lnk")),
+                    "Zero transient 0-byte Fish-layout-*.lnk files created in Desktop directory: " + names);
+        }
+        var dosAttrs = Files.readAttributes(directLnk, java.nio.file.attribute.DosFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        check(dosAttrs.isArchive() && !dosAttrs.isHidden() && !dosAttrs.isSystem(),
+                "Created Desktop .lnk has normal visible FILE_ATTRIBUTE_ARCHIVE without hidden/system flags");
+        String[] inspected = LayoutShortcuts.inspect(directLnk);
+        check(inspected != null && inspected.length >= 2 && inspected[1] != null
+                && inspected[1].contains("--layout " + layoutId),
+                "Direct-saved Desktop .lnk round-trips layout UUID cleanly via LayoutShortcuts.inspect");
+
+        // 3. Verify inactive %USERPROFILE%\Desktop and inactive OneDrive\Desktop remap onto active FOLDERID_Desktop
+        check(LayoutShortcuts.resolveDesktopDestination(
+                inactiveHomeDesktop.resolve("Ops.lnk"), activeDesktop, inactiveHome, List.of(inactiveOneDrive))
+                .equals(activeDesktop.resolve("Ops.lnk").toAbsolutePath().normalize()),
+                "Saving into inactive %USERPROFILE%\\Desktop remaps to active FOLDERID_Desktop");
+        check(LayoutShortcuts.resolveDesktopDestination(
+                inactiveOneDrive.resolve("Desktop").resolve("Ops.lnk"), activeDesktop, inactiveHome, List.of(inactiveOneDrive))
+                .equals(activeDesktop.resolve("Ops.lnk").toAbsolutePath().normalize()),
+                "Saving into inactive OneDrive\\Desktop remaps to active FOLDERID_Desktop");
+        check(LayoutShortcuts.resolveDesktopDestination(
+                customFolder.resolve("Ops.lnk"), activeDesktop, inactiveHome, List.of(inactiveOneDrive))
+                .equals(customFolder.resolve("Ops.lnk").toAbsolutePath().normalize()),
+                "Saving into an explicit non-Desktop folder preserves that folder untouched");
+
+        // 4. Verify reconcileApplicationShortcuts & SavedLayoutsDialog Desktop remapping + HideIcons hint
+        String prevDesk = System.getProperty("fish.test.desktopDir");
+        String prevMenu = System.getProperty("fish.test.startMenuDir");
+        String prevHome = System.getProperty("fish.test.userHome");
+        String prevHide = System.getProperty("fish.test.hideDesktopIcons");
+        String prevRemap = System.getProperty("fish.test.remapDesktop");
+        String prevExe = System.getProperty("fish.test.executable");
+        System.setProperty("fish.test.desktopDir", activeDesktop.toString());
+        System.setProperty("fish.test.startMenuDir", testStartMenu.toString());
+        System.setProperty("fish.test.userHome", inactiveHome.toString());
+        System.setProperty("fish.test.hideDesktopIcons", "true");
+        System.setProperty("fish.test.remapDesktop", "true");
+        System.setProperty("fish.test.executable", aotExe.toString());
+        try {
+            Path oldExe = Files.writeString(Files.createDirectories(root.resolve("old-bin")).resolve("Fish.exe"), "MZ-old");
+            LayoutShortcuts.createApplicationLink(testStartMenu.resolve("Fish").resolve("Fish.lnk"), oldExe);
+            LayoutShortcuts.createApplicationLink(activeDesktop.resolve("Fish.lnk"), oldExe);
+
+            LayoutShortcuts.reconcileApplicationShortcuts(aotExe, true, false);
+            check(Files.exists(testStartMenu.resolve("Fish.lnk"))
+                    && !Files.exists(testStartMenu.resolve("Fish").resolve("Fish.lnk"))
+                    && Files.exists(activeDesktop.resolve("Fish.lnk")),
+                    "reconcileApplicationShortcuts removes duplicate MSI subfolder shortcut and refreshes existing Desktop Fish.lnk");
+
+            LayoutShortcuts.removeApplicationShortcuts(false);
+            check(!Files.exists(testStartMenu.resolve("Fish.lnk"))
+                    && !Files.exists(activeDesktop.resolve("Fish.lnk")),
+                    "removeApplicationShortcuts deletes Start Menu and Desktop Fish.lnk cleanly");
+
+            Path dlgWsDir = Files.createDirectories(root.resolve("saved-layouts-remap-ws"));
+            CountDownLatch closed = new CountDownLatch(1);
+            Profile p = new Profile(UUID.randomUUID(), "Desk Ops", "127.0.0.1", port, "", "", false, false,
+                    "37", "Phosphor", "None", 1.0, Map.of(), "");
+            StateStore store = new StateStore(dlgWsDir);
+            try {
+                StateStore.State st = new StateStore.State(List.of(p), new Layout.Leaf(UUID.randomUUID(), p.id()),
+                        1100, 720, AppTheme.Charcoal, p.id(), Map.of(), true, Appearance.defaults().withReducedMotion(true),
+                        StateStore.Tutorial.SKIPPED, false, UpdateSettings.defaults());
+                store.save(st);
+                Workspace w = fx(() -> {
+                    Workspace win = new Workspace(store, st, dlgWsDir.resolve("absent-cred.ps1"), false);
+                    win.onClosed(closed::countDown);
+                    layout(win);
+                    return win;
+                });
+                try {
+                    AtomicReference<Path> writtenOutput = new AtomicReference<>();
+                    AtomicReference<String> statusText = new AtomicReference<>("");
+                    fx(() -> {
+                        SavedLayoutsDialog dlg = new SavedLayoutsDialog(w, new SavedLayoutsDialog.ShortcutExport() {
+                            @Override public Path desktop() { return activeDesktop; }
+                            @Override public Path choose(Path initialDir, String initialFileName, Window owner) {
+                                // Simulate user picking inactive %USERPROFILE%\Desktop in FileChooser!
+                                return inactiveHomeDesktop.resolve(initialFileName);
+                            }
+                            @Override public void write(UUID id, Path output, Runnable done, java.util.function.Consumer<String> failed) {
+                                writtenOutput.set(output);
+                                done.run();
+                            }
+                        });
+                        Button createBtn = (Button) field(dlg, "create");
+                        createBtn.fire();
+                        Label msgLabel = (Label) field(dlg, "message");
+                        statusText.set(msgLabel.getText());
+                        ((Stage) field(dlg, "stage")).close();
+                        return null;
+                    });
+                    check(activeDesktop.resolve("Fish - Desk Ops.lnk").toAbsolutePath().normalize().equals(writtenOutput.get()),
+                            "SavedLayoutsDialog remaps inactive %USERPROFILE%\\Desktop choice onto active FOLDERID_Desktop: " + writtenOutput.get());
+                    check(statusText.get().contains("Show desktop icons"),
+                            "SavedLayoutsDialog warns when Windows HideIcons is enabled: " + statusText.get());
+                } finally {
+                    fx(() -> { w.close(false); return null; });
+                    check(closed.await(8, TimeUnit.SECONDS), "SavedLayoutsDialog workspace closed cleanly");
+                }
+            } finally {
+                try { store.close(); } catch (Exception ignored) {}
+            }
+        } finally {
+            if (prevDesk == null) System.clearProperty("fish.test.desktopDir"); else System.setProperty("fish.test.desktopDir", prevDesk);
+            if (prevMenu == null) System.clearProperty("fish.test.startMenuDir"); else System.setProperty("fish.test.startMenuDir", prevMenu);
+            if (prevHome == null) System.clearProperty("fish.test.userHome"); else System.setProperty("fish.test.userHome", prevHome);
+            if (prevHide == null) System.clearProperty("fish.test.hideDesktopIcons"); else System.setProperty("fish.test.hideDesktopIcons", prevHide);
+            if (prevRemap == null) System.clearProperty("fish.test.remapDesktop"); else System.setProperty("fish.test.remapDesktop", prevRemap);
+            if (prevExe == null) System.clearProperty("fish.test.executable"); else System.setProperty("fish.test.executable", prevExe);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Ui.install();
-        check("0.10.0".equals(Main.VERSION), "Main.VERSION is 0.10.0: " + Main.VERSION);
+        check("0.10.1".equals(Main.VERSION), "Main.VERSION is 0.10.1: " + Main.VERSION);
         Path root = Files.createTempDirectory(Path.of("build"), "zero-ten-smoke-");
         try (DemoHost host = new DemoHost()) {
             verifyScrollBindingsAndRecorder(root);
+            verifyEightPaneSpatialTraversalAndCustomColorPersistence(root, host.port());
+            verifyCodeSourceNullSafetyAndDesktopShortcutVisibility(root, host.port());
             verifyEightPaneZoomAndHoveredWheel(root, host.port());
             verifyAutostartAndKioskAndResetCallout(root, host.port());
             verifyStartupFactoryResetAndInstallScripts(root);
@@ -734,7 +1069,7 @@ public final class ZeroTenFeaturesSmoke {
             FxTestSupport.closeAllWindows();
             FxTestSupport.deleteTree(root);
         }
-        System.out.println("PASS Fish 0.10.0 zoom/wheel/autostart/kiosk/reset/recovery/system-install checks: " + checks);
+        System.out.println("PASS Fish 0.10.1 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
         Ui.finishTestRun();
     }
 }

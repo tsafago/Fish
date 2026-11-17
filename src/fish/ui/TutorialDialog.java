@@ -199,8 +199,8 @@ public final class TutorialDialog {
                     s("More guides","Open Help > Tutorials anytime for focused guides on profiles, shortcuts, pane layouts, and .lnk launchers.","Help","Tutorials",""));
             case APPEARANCE -> List.of(
                     s("Open Appearance","Open Edit > Settings and select Appearance on the left.","Appearance","theme","settings-Appearance"),
-                    s("Application theme","Pick an Application theme—changes apply immediately, or open Theme designer for custom colors.","Appearance","theme","appearance-theme"),
-                    s("Terminal palette & cursor","Select a Terminal profile, then choose its Text palette, optional Text effect, and Cursor style.","Appearance","palette","appearance-palette"),
+                    s("Application theme","Pick an Application theme—dark and light themes apply immediately across every window.","Appearance","theme","appearance-theme"),
+                    s("Palette or primary color","Select a Terminal profile, then choose a Text palette—or pick any Primary color and fine-tune its hue.","Appearance","palette","appearance-palette"),
                     s("Terminal font","Choose a monospaced font family or browse to a local .ttf/.otf file and click Check font.","Appearance","font","appearance-font"),
                     s("Pane header","Toggle Show header and choose which details appear above each pane.","Appearance","header","appearance-header"),
                     s("Pane footer","Toggle Show footer to choose status, screen size, cursor row:col, and insert indicators.","Appearance","footer","appearance-footer"),

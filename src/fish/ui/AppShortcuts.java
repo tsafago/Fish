@@ -143,6 +143,14 @@ public final class AppShortcuts {
                 suppressTyped=true;
                 return true;
             }
+            if (!inTerminal && (command==null || command.hostKey!=null)
+                    && event.getCode()==KeyCode.TAB && !event.isControlDown() && !event.isAltDown() && !event.isMetaDown()
+                    && enclosingSessionPane(source)!=null
+                    && workspace.traversePaneFocus(source,event.isShiftDown() ? -1 : 1)) {
+                claimed.add(new PhysicalKey(chord.code(),location));
+                suppressTyped=true;
+                return true;
+            }
             if (command!=null && command.hostKey!=null && !inTerminal) return false;
             boolean explicitlyUnbound=unbound.contains(chord) || unbound.contains(chord.standardIfUnknown());
             if (command==null && !explicitlyUnbound && !retired.contains(chord) && !retired.contains(chord.standardIfUnknown())) return false;

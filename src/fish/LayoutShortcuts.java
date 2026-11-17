@@ -12,21 +12,30 @@ public final class LayoutShortcuts {
         try { NativeLibrary.load(); }
         catch (IllegalStateException e) { throw new IOException("Windows shortcuts unavailable: "+e.getMessage(),e); }
     }
+    private static Path testOverridePath(String propName) {
+        if (!Boolean.getBoolean("fish.testMode")) return null;
+        String override=System.getProperty(propName);
+        return override!=null && !override.isBlank() ? Path.of(override.strip()).toAbsolutePath().normalize() : null;
+    }
     public static Path executable() throws IOException {
-        if (Boolean.getBoolean("fish.testMode")) {
-            String override=System.getProperty("fish.test.executable");
-            if (override!=null && !override.isBlank()) return Path.of(override.strip()).toAbsolutePath().normalize();
-        }
+        Path ov=testOverridePath("fish.test.executable");
+        if (ov!=null) return ov;
         load();
         return Path.of(executable0());
     }
-    public static Path desktop() throws IOException { load(); return Path.of(desktop0()); }
-    public static Path startMenu() throws IOException { load(); return Path.of(startMenu0()); }
+    public static Path desktop() throws IOException {
+        Path ov=testOverridePath("fish.test.desktopDir");
+        if (ov!=null) return ov;
+        load(); return Path.of(desktop0());
+    }
+    public static Path startMenu() throws IOException {
+        Path ov=testOverridePath("fish.test.startMenuDir");
+        if (ov!=null) return ov;
+        load(); return Path.of(startMenu0());
+    }
     public static Path startup() throws IOException {
-        if (Boolean.getBoolean("fish.testMode")) {
-            String override=System.getProperty("fish.test.startupDir");
-            if (override!=null && !override.isBlank()) return Path.of(override.strip()).toAbsolutePath().normalize();
-        }
+        Path ov=testOverridePath("fish.test.startupDir");
+        if (ov!=null) return ov;
         try {
             load();
             return Path.of(startup0());
@@ -37,8 +46,16 @@ public final class LayoutShortcuts {
             throw e instanceof IOException io ? io : new IOException("Windows Startup folder unavailable.",e);
         }
     }
-    public static Path commonStartMenu() throws IOException { load(); return Path.of(commonStartMenu0()); }
-    public static Path commonDesktop() throws IOException { load(); return Path.of(commonDesktop0()); }
+    public static Path commonStartMenu() throws IOException {
+        Path ov=testOverridePath("fish.test.commonStartMenuDir");
+        if (ov!=null) return ov;
+        load(); return Path.of(commonStartMenu0());
+    }
+    public static Path commonDesktop() throws IOException {
+        Path ov=testOverridePath("fish.test.commonDesktopDir");
+        if (ov!=null) return ov;
+        load(); return Path.of(commonDesktop0());
+    }
     public static String arguments(UUID layout,Path directory) {
         String path=directory.toAbsolutePath().normalize().toString();
         if (path.length()>30000 || path.chars().anyMatch(c -> c<32 || c=='"'))
@@ -58,11 +75,7 @@ public final class LayoutShortcuts {
             throw new IOException("Choose a new .lnk file in an existing folder; existing shortcuts are never overwritten.");
         String args=arguments(layout,directory);
         load();
-        Path temporary=Files.createTempFile(output.getParent(),"Fish-layout-",".lnk");
-        try {
-            create0(temporary.toString(),target.toString(),args,target.getParent().toString());
-            Files.move(temporary,output);
-        } finally { Files.deleteIfExists(temporary); }
+        create0(output.toString(),target.toString(),args,target.getParent().toString());
     }
     public static void createApplicationLink(Path destination,Path executable) throws IOException {
         for (Path part:destination) if (part.toString().equals("..")) throw new IOException("Choose a shortcut destination without parent traversal.");
@@ -73,11 +86,153 @@ public final class LayoutShortcuts {
             throw new IOException("Application shortcut must end in .lnk.");
         Files.createDirectories(output.getParent());
         load();
-        Path temporary=Files.createTempFile(output.getParent(),"Fish-app-",".lnk");
+        create0(output.toString(),target.toString(),"",target.getParent().toString());
+    }
+    public static boolean deleteShortcut(Path shortcut) throws IOException {
+        if (shortcut==null) return false;
+        Path norm=shortcut.toAbsolutePath().normalize();
         try {
-            create0(temporary.toString(),target.toString(),"",target.getParent().toString());
-            Files.move(temporary,output,StandardCopyOption.REPLACE_EXISTING);
-        } finally { Files.deleteIfExists(temporary); }
+            var dos=Files.getFileAttributeView(norm,java.nio.file.attribute.DosFileAttributeView.class,LinkOption.NOFOLLOW_LINKS);
+            if (dos!=null) dos.setReadOnly(false);
+        } catch (IOException | UnsupportedOperationException ignored) {}
+        boolean removed=false;
+        IOException lastError=null;
+        for (int attempt=0;attempt<10;attempt++) {
+            try {
+                removed=Files.deleteIfExists(norm);
+                lastError=null;
+                break;
+            } catch (FileSystemException e) {
+                lastError=e;
+                try { Thread.sleep(25); }
+                catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+            }
+        }
+        if (lastError!=null) throw lastError;
+        if (removed) {
+            try { load(); notifyDeleted0(norm.toString()); }
+            catch (IOException | UnsatisfiedLinkError ignored) {}
+        }
+        return removed;
+    }
+
+    /**
+     * If {@code chosen} sits inside an inactive local/OneDrive Desktop folder (e.g. {@code %USERPROFILE%\Desktop}
+     * while OneDrive Known Folder Move redirected the active Shell Desktop to {@code OneDrive\Desktop}),
+     * remaps {@code chosen} onto {@code activeDesktop} so the icon renders on the user's real Windows Desktop.
+     */
+    public static Path resolveDesktopDestination(Path chosen,Path activeDesktop,Path userHome,Collection<Path> oneDriveRoots) {
+        if (chosen==null) return null;
+        Path normChosen=chosen.toAbsolutePath().normalize();
+        Path parent=normChosen.getParent();
+        Path fileName=normChosen.getFileName();
+        if (parent==null || fileName==null || activeDesktop==null) return normChosen;
+        Path normActive=activeDesktop.toAbsolutePath().normalize();
+        if (parent.equals(normActive) || !Files.isDirectory(normActive)) return normChosen;
+        List<Path> candidates=new ArrayList<>();
+        if (userHome!=null) candidates.add(userHome.toAbsolutePath().normalize().resolve("Desktop"));
+        if (oneDriveRoots!=null) {
+            for (Path root:oneDriveRoots) {
+                if (root!=null) candidates.add(root.toAbsolutePath().normalize().resolve("Desktop"));
+            }
+        }
+        for (Path inactiveDesktop:candidates) {
+            if (parent.equals(inactiveDesktop)) return normActive.resolve(fileName);
+        }
+        return normChosen;
+    }
+
+    public static Path remapInactiveDesktop(Path chosen) {
+        if (chosen==null) return null;
+        try {
+            Path active=desktop();
+            Path testHome=testOverridePath("fish.test.userHome");
+            String profileEnv=System.getenv("USERPROFILE");
+            Path home=testHome!=null ? testHome
+                    : profileEnv!=null && !profileEnv.isBlank()
+                    ? Path.of(profileEnv)
+                    : Path.of(System.getProperty("user.home","."));
+            List<Path> oneDrives=new ArrayList<>();
+            for (String envName:List.of("OneDrive","OneDriveCommercial","OneDriveConsumer")) {
+                String val=System.getenv(envName);
+                if (val!=null && !val.isBlank()) {
+                    try { oneDrives.add(Path.of(val.strip())); }
+                    catch (InvalidPathException ignored) {}
+                }
+            }
+            return resolveDesktopDestination(chosen,active,home,oneDrives);
+        } catch (IOException | RuntimeException e) {
+            return chosen.toAbsolutePath().normalize();
+        }
+    }
+
+    public static boolean areDesktopIconsHidden() {
+        if (Boolean.getBoolean("fish.testMode")) {
+            String prop=System.getProperty("fish.test.hideDesktopIcons");
+            return prop!=null && Boolean.parseBoolean(prop);
+        }
+        try {
+            load();
+            return desktopIconsHidden0();
+        } catch (IOException | UnsatisfiedLinkError e) {
+            return false;
+        }
+    }
+
+    public static boolean targetsFishApplication(Path shortcut) {
+        if (shortcut==null || !Files.isRegularFile(shortcut,LinkOption.NOFOLLOW_LINKS)) return false;
+        try {
+            String[] info=inspect(shortcut);
+            if (info==null || info.length<2 || info[0]==null) return false;
+            String args=info[1]==null ? "" : info[1];
+            if (args.contains("--layout ")) return false;
+            Path target=Path.of(info[0]);
+            return target.getFileName()!=null && target.getFileName().toString().equalsIgnoreCase("Fish.exe");
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    public static void reconcileApplicationShortcuts(Path targetExe,boolean startMenuShortcut,boolean desktopShortcut) throws IOException {
+        Path normExe=targetExe.toAbsolutePath().normalize();
+        if (startMenuShortcut) {
+            Path programs=startMenu();
+            createApplicationLink(programs.resolve("Fish.lnk"),normExe);
+            Path msiGroup=programs.resolve("Fish");
+            Path msiLink=msiGroup.resolve("Fish.lnk");
+            if (targetsFishApplication(msiLink)) {
+                deleteShortcut(msiLink);
+                try { Files.deleteIfExists(msiGroup); } catch (IOException ignored) {}
+            }
+        }
+        Path desk=desktop();
+        Path deskLink=desk.resolve("Fish.lnk");
+        if (desktopShortcut || targetsFishApplication(deskLink)) {
+            createApplicationLink(deskLink,normExe);
+        }
+    }
+
+    public static void removeApplicationShortcuts(boolean includeAllUsers) {
+        List<Path> folders=new ArrayList<>();
+        try { folders.add(startMenu()); } catch (IOException ignored) {}
+        try { folders.add(desktop()); } catch (IOException ignored) {}
+        if (includeAllUsers) {
+            try { folders.add(commonStartMenu()); } catch (IOException ignored) {}
+            try { folders.add(commonDesktop()); } catch (IOException ignored) {}
+        }
+        for (Path folder:folders) {
+            if (folder==null || !Files.isDirectory(folder)) continue;
+            Path direct=folder.resolve("Fish.lnk");
+            if (targetsFishApplication(direct)) {
+                try { deleteShortcut(direct); } catch (IOException ignored) {}
+            }
+            Path group=folder.resolve("Fish");
+            Path grouped=group.resolve("Fish.lnk");
+            if (targetsFishApplication(grouped)) {
+                try { deleteShortcut(grouped); } catch (IOException ignored) {}
+                try { Files.deleteIfExists(group); } catch (IOException ignored) {}
+            }
+        }
     }
     public static void syncAutostart(Path directory,List<SavedLayout> layouts) throws IOException {
         syncAutostart(directory,executable(),layouts);
@@ -111,7 +266,7 @@ public final class LayoutShortcuts {
                 if (matchesWorkspaceLayoutLink(normalizedEntry,normalizedData)) {
                     SavedLayout wanted=desired.get(normalizedEntry);
                     if (wanted==null || !matchesLayoutId(normalizedEntry,wanted.id())) {
-                        Files.deleteIfExists(normalizedEntry);
+                        deleteShortcut(normalizedEntry);
                     }
                 }
             }
@@ -121,11 +276,7 @@ public final class LayoutShortcuts {
         for (Map.Entry<Path,SavedLayout> item:desired.entrySet()) {
             Path output=item.getKey();
             String args=arguments(item.getValue().id(),normalizedData);
-            Path temporary=Files.createTempFile(startupDir,"Fish-autostart-",".lnk");
-            try {
-                create0(temporary.toString(),target.toString(),args,target.getParent().toString());
-                Files.move(temporary,output,StandardCopyOption.REPLACE_EXISTING);
-            } finally { Files.deleteIfExists(temporary); }
+            create0(output.toString(),target.toString(),args,target.getParent().toString());
         }
     }
 
@@ -139,7 +290,7 @@ public final class LayoutShortcuts {
                 for (Path entry:entries.toList()) {
                     if (!entry.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".lnk")) continue;
                     if (normalizedData==null ? isAnyFishLayoutLink(entry) : matchesWorkspaceLayoutLink(entry,normalizedData)) {
-                        if (Files.deleteIfExists(entry)) removed++;
+                        if (deleteShortcut(entry)) removed++;
                     }
                 }
             }
@@ -210,5 +361,7 @@ public final class LayoutShortcuts {
     private static native String commonStartMenu0() throws IOException;
     private static native String commonDesktop0() throws IOException;
     private static native void create0(String destination,String target,String arguments,String workingDirectory) throws IOException;
+    private static native void notifyDeleted0(String shortcut) throws IOException;
+    private static native boolean desktopIconsHidden0();
     private static native String[] inspect0(String shortcut) throws IOException;
 }

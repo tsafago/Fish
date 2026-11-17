@@ -24,6 +24,8 @@ import fish.security.KioskMode;
 /** One indexed settings surface, with shared profile and keyboard editors and current-user portable install. */
 public final class Preferences {
     public static final List<String> CATEGORIES=List.of("Appearance","Profiles","Keyboard Shortcuts","General","Updates");
+    public static final String CUSTOM_COLOR="Custom color";
+    private static final String DEFAULT_CUSTOM_COLOR="#38BDF8";
     private final Workspace workspace;
     private final ListView<String> navigation=new ListView<>(FXCollections.observableArrayList(CATEGORIES));
     private final StackPane pages=new StackPane();
@@ -32,13 +34,24 @@ public final class Preferences {
     private final List<CheckBox> info=new ArrayList<>();
     private final ComboBox<Object> theme=new ComboBox<>();
     private final ComboBox<Profile> scope=new ComboBox<>();
-    private final ComboBox<String> palette=new ComboBox<>(FXCollections.observableArrayList(Profile.THEMES));
+    private final ComboBox<String> palette=new ComboBox<>(paletteOptions());
+    private final ComboBox<Profile.PrimaryColor> primaryColor=new ComboBox<>(FXCollections.observableArrayList(Profile.PRIMARY_COLORS));
+    private final Slider hueSlider=new Slider(0.0,360.0,199.0);
+    private final StackPane hueBar=new StackPane();
+    private final Region hueThumb=new Region();
+    private final Label hueBadge=new Label(DEFAULT_CUSTOM_COLOR);
+    private final HBox palettePreviewStrip=new HBox(10);
+    private final Label palettePreviewMode=new Label("Auto IBM palette");
+    private final Label[] palettePreviewSamples={
+            new Label("Primary"),new Label("Header"),new Label("Accent"),new Label("Warn"),new Label("Error")
+    };
     private final ComboBox<String> effect=new ComboBox<>(FXCollections.observableArrayList(Profile.EFFECTS));
     private final ComboBox<Appearance.CursorStyle> cursorStyle=new ComboBox<>(FXCollections.observableArrayList(Appearance.CursorStyle.values()));
     private final ComboBox<String> family=new ComboBox<>();
     private final TextField fontPath=new TextField();
     private final ComboBox<UpdateSettings.Channel> channel=new ComboBox<>(FXCollections.observableArrayList(UpdateSettings.Channel.values()));
     private final Map<UUID,Display> displays=new LinkedHashMap<>(),originalDisplays=new LinkedHashMap<>();
+    private final Map<UUID,String> customColors=new LinkedHashMap<>();
     private final Map<String,Node> targets=new HashMap<>();
     private UUID displayProfile;
     private boolean loading,saving,ended,syncing,applying,unsaved,closeRequested,conflict,editPending;
@@ -51,7 +64,7 @@ public final class Preferences {
     public final ProfilesEditor profiles;
     private final Label error=new Label(" ");
     private final Label fontStatus=note(""),paletteStatus=note("");
-    private final Button designer,closeButton,retryButton,reloadButton;
+    private final Button closeButton,retryButton,reloadButton;
     private final Stage dialog;
     private Draft saved;
     private Shared baseline;
@@ -84,21 +97,72 @@ public final class Preferences {
 
         keyboard=new KeyboardEditor(workspace);
         profiles=new ProfilesEditor(workspace,workspace.active()==null ? workspace.lastProfile() : workspace.active().profile(),true,this::closeSettings);
-        designer=Ui.button("Theme designer...",this::designTheme);
         loadThemes();
+        configureColorControls();
 
         scope.setItems(FXCollections.observableArrayList(workspace.profileList()));
         for (Profile profile:workspace.profileList()) {
             displays.put(profile.id(),new Display(profile.theme(),profile.effect()));
+            if (Profile.isCustomColor(profile.theme())) customColors.put(profile.id(),Profile.normalizeTheme(profile.theme()));
         }
         originalDisplays.putAll(displays);
         scope.setValue(workspace.active()==null ? workspace.lastProfile() : workspace.active().profile());
         loadDisplay();
 
         scope.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) { loadDisplay(); refresh(); } });
-        palette.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) { displayChanged("appearance-palette"); edited(false); } });
+        palette.valueProperty().addListener((obs,oldV,newV) -> {
+            if (!loading && newV!=null && displayProfile!=null) {
+                loading=true;
+                try {
+                    if (CUSTOM_COLOR.equals(newV)) {
+                        String hex=customColors.computeIfAbsent(displayProfile,id -> DEFAULT_CUSTOM_COLOR);
+                        primaryColor.setValue(Profile.matchingPrimaryColor(hex).orElse(null));
+                        hueSlider.setValue(HostPalette.hueOfRgb(Profile.parseCustomColor(hex)));
+                    } else {
+                        primaryColor.setValue(null);
+                    }
+                } finally { loading=false; }
+                displayChanged("appearance-palette");
+                refreshColorControls();
+                edited(false);
+            }
+        });
+        primaryColor.valueProperty().addListener((obs,oldV,newV) -> {
+            if (!loading && newV!=null && displayProfile!=null) {
+                customColors.put(displayProfile,newV.hex());
+                loading=true;
+                try {
+                    palette.setValue(CUSTOM_COLOR);
+                    hueSlider.setValue(HostPalette.hueOfRgb(newV.rgb()));
+                } finally { loading=false; }
+                displayChanged("appearance-palette");
+                refreshColorControls();
+                edited(false);
+            }
+        });
+        hueSlider.valueProperty().addListener((obs,oldV,newV) -> {
+            if (!loading && newV!=null && displayProfile!=null) {
+                String hex=Profile.colorFromHue(newV.doubleValue());
+                customColors.put(displayProfile,hex);
+                loading=true;
+                try {
+                    palette.setValue(CUSTOM_COLOR);
+                    primaryColor.setValue(Profile.matchingPrimaryColor(hex).orElse(null));
+                } finally { loading=false; }
+                displayChanged("appearance-palette");
+                refreshColorControls();
+                edited(false);
+            }
+        });
         effect.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) { displayChanged("appearance-effect"); edited(false); } });
-        theme.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) { paletteEnabled(); edited(false); workspace.tutorialAction("appearance-theme"); } });
+        theme.valueProperty().addListener((obs,oldV,newV) -> {
+            if (!loading && newV!=null) {
+                paletteEnabled();
+                edited(false);
+                refreshColorControls();
+                workspace.tutorialAction("appearance-theme");
+            }
+        });
         cursorStyle.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) edited(false); });
         channel.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) edited(false); });
 
@@ -203,6 +267,9 @@ public final class Preferences {
     public ComboBox<Object> themeCombo() { return theme; }
     public ComboBox<Profile> scopeCombo() { return scope; }
     public ComboBox<String> paletteCombo() { return palette; }
+    public ComboBox<Profile.PrimaryColor> primaryColorCombo() { return primaryColor; }
+    public Slider hueSlider() { return hueSlider; }
+    public StackPane hueBar() { return hueBar; }
     public ComboBox<String> effectCombo() { return effect; }
     public ComboBox<Appearance.CursorStyle> cursorStyleCombo() { return cursorStyle; }
     public ComboBox<String> familyCombo() { return family; }
@@ -224,7 +291,7 @@ public final class Preferences {
         forceDispose();
     }
 
-    void forceDispose() {
+    public void forceDispose() {
         if (ended) return;
         ended=true;
         edits.stop();
@@ -244,13 +311,14 @@ public final class Preferences {
             Set<UUID> ids=new HashSet<>();
             for (Profile profile:workspace.profileList()) {
                 ids.add(profile.id()); Display current=new Display(profile.theme(),profile.effect());
+                if (Profile.isCustomColor(profile.theme())) customColors.put(profile.id(),Profile.normalizeTheme(profile.theme()));
                 Display original=originalDisplays.get(profile.id());
                 if (original==null || original.equals(displays.get(profile.id()))) {
                     displays.put(profile.id(),current); originalDisplays.put(profile.id(),current); base.put(profile.id(),current);
                 }
             }
             for (UUID id:new HashSet<>(displays.keySet())) if (!ids.contains(id)) {
-                displays.remove(id); originalDisplays.remove(id); base.remove(id);
+                displays.remove(id); originalDisplays.remove(id); customColors.remove(id); base.remove(id);
             }
             saved=saved.withDisplays(base);
             UUID selId=displayProfile;
@@ -313,22 +381,229 @@ public final class Preferences {
         }
     }
 
+    private static javafx.collections.ObservableList<String> paletteOptions() {
+        List<String> items=new ArrayList<>(Profile.THEMES);
+        items.add(CUSTOM_COLOR);
+        return FXCollections.observableArrayList(items);
+    }
+
+    private String activeCustomHex() {
+        if (displayProfile!=null && customColors.containsKey(displayProfile)) return customColors.get(displayProfile);
+        return DEFAULT_CUSTOM_COLOR;
+    }
+
+    private String effectivePaletteValue() {
+        String selected=palette.getValue();
+        if (CUSTOM_COLOR.equals(selected)) return activeCustomHex();
+        return selected!=null ? selected : "Phosphor";
+    }
+
+    private static Region colorSwatch(int rgb,double size) {
+        Region dot=new Region();
+        dot.setMinSize(size,size);
+        dot.setPrefSize(size,size);
+        dot.setMaxSize(size,size);
+        String border=Ui.theme().dark ? "rgba(255,255,255,0.26)" : "rgba(0,0,0,0.22)";
+        dot.setStyle(String.format(Locale.ROOT,
+                "-fx-background-color: #%06X; -fx-background-radius: 3px; -fx-border-color: %s; -fx-border-radius: 3px; -fx-border-width: 1px;",
+                rgb&0xffffff,border));
+        return dot;
+    }
+
+    private ListCell<String> newPaletteCell() {
+        return new ListCell<>() {
+            @Override protected void updateItem(String item,boolean empty) {
+                super.updateItem(item,empty);
+                if (empty || item==null) { setText(null); setGraphic(null); return; }
+                String sampleTheme=CUSTOM_COLOR.equals(item) ? activeCustomHex() : item;
+                setText(item);
+                setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(sampleTheme),11));
+                setGraphicTextGap(8);
+            }
+        };
+    }
+
+    private ListCell<Profile.PrimaryColor> newPrimaryColorButtonCell() {
+        return new ListCell<>() {
+            @Override protected void updateItem(Profile.PrimaryColor item,boolean empty) {
+                super.updateItem(item,empty);
+                boolean customActive=CUSTOM_COLOR.equals(palette.getValue());
+                if (!customActive) {
+                    setText("Choose color...");
+                    setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(activeCustomHex()),12));
+                    setGraphicTextGap(8);
+                } else if (item!=null && !empty) {
+                    setText(item.name());
+                    setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(item.hex()),12));
+                    setGraphicTextGap(8);
+                } else {
+                    String hex=activeCustomHex();
+                    setText("Custom ("+hex+")");
+                    setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(hex),12));
+                    setGraphicTextGap(8);
+                }
+            }
+        };
+    }
+
+    private void configureColorControls() {
+        palette.setCellFactory(lv -> newPaletteCell());
+        palette.setButtonCell(newPaletteCell());
+
+        primaryColor.setCellFactory(lv -> new ListCell<>() {
+            @Override protected void updateItem(Profile.PrimaryColor item,boolean empty) {
+                super.updateItem(item,empty);
+                if (empty || item==null) { setText(null); setGraphic(null); return; }
+                setText(item.name());
+                setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(item.hex()),12));
+                setGraphicTextGap(8);
+            }
+        });
+        primaryColor.setButtonCell(newPrimaryColorButtonCell());
+        primaryColor.setTooltip(new Tooltip("Pick a primary color to automatically generate a balanced IBM-style palette for this profile."));
+
+        Region spectrum=new Region();
+        spectrum.setMinHeight(12);
+        spectrum.setPrefHeight(12);
+        spectrum.setMaxHeight(12);
+        spectrum.setMaxWidth(Double.MAX_VALUE);
+        spectrum.setStyle("-fx-background-color: linear-gradient(to right,"
+                +" #F25555 0%, #F29D38 11%, #E6D63A 19%, #4CD964 34%, #2DD4BF 47%,"
+                +" #38BDF8 56%, #5B8DEF 65%, #8B5CF6 76%, #EC4899 88%, #F25555 100%);"
+                +" -fx-background-radius: 6px; -fx-border-color: rgba(128,128,128,0.35); -fx-border-radius: 6px; -fx-border-width: 1px;");
+
+        hueThumb.setMinSize(16,16);
+        hueThumb.setPrefSize(16,16);
+        hueThumb.setMaxSize(16,16);
+        hueThumb.setMouseTransparent(true);
+        hueThumb.setEffect(new javafx.scene.effect.DropShadow(javafx.scene.effect.BlurType.GAUSSIAN,javafx.scene.paint.Color.rgb(0,0,0,0.40),4.0,0.0,0.0,1.0));
+        StackPane.setAlignment(hueThumb,Pos.CENTER_LEFT);
+
+        hueBar.getChildren().setAll(spectrum,hueThumb);
+        hueBar.setMinHeight(24);
+        hueBar.setPrefHeight(24);
+        hueBar.setMaxWidth(Double.MAX_VALUE);
+        hueBar.setAlignment(Pos.CENTER_LEFT);
+        hueBar.setCursor(javafx.scene.Cursor.HAND);
+        hueBar.setFocusTraversable(true);
+        hueBar.setAccessibleText("Primary color hue selector (0 to 360 degrees)");
+        Tooltip.install(hueBar,new Tooltip("Click or drag across the hue spectrum (or press Left/Right) to fine-tune the profile's primary color."));
+
+        java.util.function.DoubleConsumer pickAtX=x -> {
+            if (hueBar.isDisabled()) return;
+            double usable=Math.max(1.0,hueBar.getWidth()-16.0);
+            double ratio=Math.clamp((x-8.0)/usable,0.0,1.0);
+            hueSlider.setValue(Math.round(ratio*360.0));
+        };
+        hueBar.setOnMousePressed(e -> { hueBar.requestFocus(); pickAtX.accept(e.getX()); e.consume(); });
+        hueBar.setOnMouseDragged(e -> { pickAtX.accept(e.getX()); e.consume(); });
+        hueBar.setOnKeyPressed(e -> {
+            if (hueBar.isDisabled()) return;
+            double step=e.isShiftDown() ? 15.0 : 3.0;
+            switch (e.getCode()) {
+                case LEFT -> { hueSlider.setValue(Math.max(0.0,hueSlider.getValue()-step)); e.consume(); }
+                case RIGHT -> { hueSlider.setValue(Math.min(360.0,hueSlider.getValue()+step)); e.consume(); }
+                case HOME -> { hueSlider.setValue(0.0); e.consume(); }
+                case END -> { hueSlider.setValue(360.0); e.consume(); }
+                default -> {}
+            }
+        });
+        hueBar.widthProperty().addListener((obs,oldW,newW) -> updateHueThumbPosition());
+        hueBar.focusedProperty().addListener((obs,oldF,newF) -> updateHueThumbStyle());
+
+        hueBadge.setMinWidth(68);
+        hueBadge.setPrefWidth(68);
+        hueBadge.setAlignment(Pos.CENTER_RIGHT);
+        hueBadge.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11.5px;");
+        Ui.role(hueBadge,"muted");
+
+        palettePreviewMode.setStyle("-fx-font-size: 11px;");
+        Region spacer=new Region();
+        HBox.setHgrow(spacer,Priority.ALWAYS);
+        HBox tokens=new HBox(9,palettePreviewSamples);
+        tokens.setAlignment(Pos.CENTER_RIGHT);
+        for (Label sample:palettePreviewSamples) {
+            sample.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11.5px; -fx-font-weight: bold;");
+        }
+        palettePreviewStrip.setAlignment(Pos.CENTER_LEFT);
+        palettePreviewStrip.setPadding(new Insets(4,10,4,10));
+        palettePreviewStrip.getChildren().setAll(palettePreviewMode,spacer,tokens);
+    }
+
+    private void updateHueThumbPosition() {
+        double usable=Math.max(0.0,hueBar.getWidth()-16.0);
+        double ratio=Math.clamp(hueSlider.getValue()/360.0,0.0,1.0);
+        hueThumb.setTranslateX(Math.rint(ratio*usable));
+    }
+
+    private void updateHueThumbStyle() {
+        int rgb=HostPalette.primaryPreviewRgb(activeCustomHex());
+        String ring=hueBar.isFocused() ? Ui.hex(ColorRole.FOCUS) : "#FFFFFF";
+        hueThumb.setStyle(String.format(Locale.ROOT,
+                "-fx-background-color: #%06X; -fx-background-radius: 8px; -fx-border-color: %s; -fx-border-radius: 8px; -fx-border-width: 2px;",
+                rgb&0xffffff,ring));
+    }
+
+    private void refreshColorControls() {
+        String effective=effectivePaletteValue();
+        boolean isCustom=CUSTOM_COLOR.equals(palette.getValue());
+        hueBadge.setText(isCustom ? activeCustomHex() : effective);
+        updateHueThumbStyle();
+        updateHueThumbPosition();
+
+        java.awt.Color[] slots=HostPalette.colors(effective);
+        int bgRgb=Ui.color(ColorRole.HOST_0).getRGB()&0xffffff;
+        int borderRgb=Ui.color(ColorRole.DIVIDER).getRGB()&0xffffff;
+        int mutedRgb=slots[8].getRGB()&0xffffff;
+        palettePreviewStrip.setStyle(String.format(Locale.ROOT,
+                "-fx-background-color: #%06X; -fx-background-radius: 5px; -fx-border-color: #%06X; -fx-border-radius: 5px; -fx-border-width: 1px;",
+                bgRgb,borderRgb));
+        palettePreviewMode.setText(isCustom ? "Auto IBM palette" : "Active palette");
+        palettePreviewMode.setStyle(String.format(Locale.ROOT,"-fx-font-size: 11px; -fx-text-fill: #%06X;",mutedRgb));
+        int[] sampleSlots={2,1,3,6,4};
+        for (int i=0;i<sampleSlots.length;i++) {
+            int sampleRgb=slots[sampleSlots[i]].getRGB()&0xffffff;
+            palettePreviewSamples[i].setStyle(String.format(Locale.ROOT,
+                    "-fx-font-family: 'Consolas'; -fx-font-size: 11.5px; -fx-font-weight: bold; -fx-text-fill: #%06X;",
+                    sampleRgb));
+        }
+
+        // Refresh ComboBox button cells and prompt text so swatch colors and custom shades always display clearly
+        primaryColor.setPromptText(isCustom ? "Custom shade ("+activeCustomHex()+")" : "Choose color...");
+        palette.setButtonCell(newPaletteCell());
+        primaryColor.setButtonCell(newPrimaryColorButtonCell());
+    }
+
     private void loadDisplay() {
         Profile profile=scope.getValue();
         if (profile==null) return;
         loading=true;
-        displayProfile=profile.id();
-        Display value=displays.get(profile.id());
-        if (value!=null) {
-            palette.setValue(value.palette());
-            effect.setValue(value.effect());
-        }
-        loading=false;
+        try {
+            displayProfile=profile.id();
+            Display value=displays.get(profile.id());
+            if (value!=null) {
+                String pal=value.palette();
+                if (Profile.isCustomColor(pal)) {
+                    String hex=Profile.normalizeTheme(pal);
+                    customColors.put(profile.id(),hex);
+                    palette.setValue(CUSTOM_COLOR);
+                    primaryColor.setValue(Profile.matchingPrimaryColor(hex).orElse(null));
+                    hueSlider.setValue(HostPalette.hueOfRgb(Profile.parseCustomColor(hex)));
+                } else {
+                    String remembered=customColors.computeIfAbsent(profile.id(),id -> DEFAULT_CUSTOM_COLOR);
+                    palette.setValue(pal);
+                    primaryColor.setValue(null);
+                    hueSlider.setValue(HostPalette.hueOfRgb(Profile.parseCustomColor(remembered)));
+                }
+                effect.setValue(value.effect());
+            }
+        } finally { loading=false; }
+        refreshColorControls();
     }
 
     private void displayChanged(String action) {
         if (loading || displayProfile==null) return;
-        displays.put(displayProfile,new Display(palette.getValue(),effect.getValue()));
+        displays.put(displayProfile,new Display(effectivePaletteValue(),effect.getValue()));
         refresh();
         workspace.tutorialAction(action);
     }
@@ -336,15 +611,13 @@ public final class Preferences {
     private void paletteEnabled() {
         boolean isCustom=theme.getValue() instanceof ColorTheme;
         palette.setDisable(isCustom);
-        paletteStatus.setText(isCustom ? "This custom application theme supplies host colors. Choose a built-in theme to use the profile palette." : "");
+        primaryColor.setDisable(isCustom);
+        hueBar.setDisable(isCustom);
+        hueSlider.setDisable(isCustom);
+        palettePreviewStrip.setOpacity(isCustom ? 0.55 : 1.0);
+        paletteStatus.setText(isCustom ? "This legacy custom application theme supplies host colors. Choose a built-in theme to use profile palettes or custom colors." : "");
         paletteStatus.setVisible(isCustom);
         paletteStatus.setManaged(isCustom);
-    }
-
-    private void designTheme() {
-        if (dirty() || saving()) return;
-        workspace.executeCommand("Theme designer...");
-        loadThemes(); saved=draft(); baseline=currentShared(); paletteEnabled(); refresh(); designer.requestFocus();
     }
 
     private void addPage(String name,Region body,boolean scroll) {
@@ -367,20 +640,35 @@ public final class Preferences {
 
     public VBox appearancePage() {
         VBox body=new VBox(9);
-        for (ComboBox<?> cb:List.of(theme,scope,palette,effect,cursorStyle,family)) cb.setMaxWidth(Double.MAX_VALUE);
+        for (ComboBox<?> cb:List.of(theme,scope,palette,primaryColor,effect,cursorStyle,family)) cb.setMaxWidth(Double.MAX_VALUE);
 
         body.getChildren().add(section("Colors"));
         body.getChildren().add(row("Application theme",theme));
         body.getChildren().add(row("Terminal profile",scope));
-        body.getChildren().add(note("Palette and effect apply to the selected profile, including its other panes. This does not switch your session."));
-        body.getChildren().add(row("Text palette",palette));
+        body.getChildren().add(note("Palette, primary color, and effect apply to the selected profile across its panes without interrupting your session."));
+
+        HBox.setHgrow(palette,Priority.ALWAYS);
+        HBox.setHgrow(primaryColor,Priority.ALWAYS);
+        palette.setPrefWidth(170);
+        primaryColor.setPrefWidth(190);
+        primaryColor.setAccessibleText("Primary color preset");
+        HBox paletteRow=new HBox(8,palette,primaryColor);
+        paletteRow.setAlignment(Pos.CENTER_LEFT);
+        body.getChildren().add(rowNode("Text palette",paletteRow,palette));
+
+        HBox.setHgrow(hueBar,Priority.ALWAYS);
+        HBox hueSliderRow=new HBox(8,hueBar,hueBadge);
+        hueSliderRow.setAlignment(Pos.CENTER_LEFT);
+        VBox hueSection=new VBox(6,hueSliderRow,palettePreviewStrip);
+        body.getChildren().add(rowNode("Color hue",hueSection,hueSlider));
+
         body.getChildren().add(paletteStatus);
         body.getChildren().add(row("Text effect (opt-in)",effect));
         cursorStyle.setTooltip(new Tooltip("Replace mode uses an underline or outline; Insert fills the cell. Filled uses a block in both modes."));
         body.getChildren().add(row("Cursor style",cursorStyle));
-        body.getChildren().add(row("Custom theme",designer));
 
-        targets.put("theme",theme); targets.put("palette",palette); targets.put("effect",effect); targets.put("scope",scope);
+        targets.put("theme",theme); targets.put("palette",palette); targets.put("primary-color",primaryColor);
+        targets.put("hue",hueBar); targets.put("effect",effect); targets.put("scope",scope);
 
         body.getChildren().add(section("Terminal font"));
         body.getChildren().add(row("Monospaced family",family));
@@ -663,16 +951,13 @@ public final class Preferences {
 
     private void edited(boolean typing) {
         if (saved==null || ended || loading || syncing || applying) return;
-        if (displayProfile!=null) displays.put(displayProfile,new Display(palette.getValue(),effect.getValue()));
+        if (displayProfile!=null) displays.put(displayProfile,new Display(effectivePaletteValue(),effect.getValue()));
         if (typing) { editPending=true; edits.playFromStart(); refresh(); }
         else apply();
     }
 
     private void refresh() {
         if (saved==null || closeButton==null) return;
-        boolean changed=dirty();
-        designer.setDisable(changed || saving());
-        designer.setTooltip(changed ? new Tooltip("Finish or repair pending edits before opening the theme designer.") : null);
         boolean showRetry=!saveFailure.isEmpty();
         retryButton.setVisible(showRetry); retryButton.setManaged(showRetry);
         boolean showReload=conflict || !validation.isEmpty();
@@ -825,10 +1110,11 @@ public final class Preferences {
             boolean[] flags={i.header(),i.profile(),i.connection(),i.host(),i.device(),i.footer(),i.status(),i.dimensions(),i.cursor(),i.insert(),i.footerDevice()};
             for (int n=0;n<flags.length;n++) info.get(n).setSelected(flags[n]);
             keyboard.reload(workspace.shortcutOverrides());
-            displays.clear(); originalDisplays.clear();
+            displays.clear(); originalDisplays.clear(); customColors.clear();
             for (Profile p:workspace.profileList()) {
                 Display display=new Display(p.theme(),p.effect());
                 displays.put(p.id(),display); originalDisplays.put(p.id(),display);
+                if (Profile.isCustomColor(p.theme())) customColors.put(p.id(),Profile.normalizeTheme(p.theme()));
             }
             loadDisplay();
             saved=draft(); baseline=currentShared(); conflict=false; validation="";

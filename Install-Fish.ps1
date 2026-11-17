@@ -28,8 +28,67 @@ if ($AllUsers -and -not $isAdmin -and $env:FISH_TEST_NO_ELEVATE -ne '1') {
     exit $proc.ExitCode
 }
 
+function Initialize-ShellNotify {
+    if ('FishShell.Notify' -as [type]) { return }
+    try {
+        Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+namespace FishShell {
+    public static class Notify {
+        private const int SHCNE_CREATE = 0x00000002;
+        private const int SHCNE_DELETE = 0x00000004;
+        private const int SHCNE_UPDATEDIR = 0x00001000;
+        private const int SHCNE_UPDATEITEM = 0x00002000;
+        private const uint SHCNF_PATHW = 0x0005;
+        private const uint SHCNF_FLUSHNOWAIT = 0x2000;
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern void SHChangeNotify(int wEventId, uint uFlags, string dwItem1, string dwItem2);
+        public static void Saved(string path, bool existed) {
+            if (string.IsNullOrEmpty(path)) return;
+            SHChangeNotify(existed ? SHCNE_UPDATEITEM : SHCNE_CREATE, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path, null);
+            SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path, null);
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, dir, null);
+        }
+        public static void Deleted(string path) {
+            if (string.IsNullOrEmpty(path)) return;
+            SHChangeNotify(SHCNE_DELETE, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path, null);
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, dir, null);
+        }
+    }
+}
+'@ -ErrorAction SilentlyContinue
+    } catch {}
+}
+
+function Remove-TreeForce([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+    Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            if ($_.Attributes -band [IO.FileAttributes]::ReadOnly) {
+                $_.Attributes = ($_.Attributes -bxor [IO.FileAttributes]::ReadOnly)
+            }
+        } catch {}
+    }
+    try {
+        $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        if ($rootItem -and ($rootItem.Attributes -band [IO.FileAttributes]::ReadOnly)) {
+            $rootItem.Attributes = ($rootItem.Attributes -bxor [IO.FileAttributes]::ReadOnly)
+        }
+    } catch {}
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Remove-ZoneIdentifier([string]$Root) {
     Get-ChildItem -LiteralPath $Root -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            if ($_.Attributes -band [IO.FileAttributes]::ReadOnly) {
+                $_.Attributes = ($_.Attributes -bxor [IO.FileAttributes]::ReadOnly)
+            }
+        } catch {}
         try { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue } catch {}
         try { Remove-Item -LiteralPath ($_.FullName + ':Zone.Identifier') -Force -ErrorAction SilentlyContinue } catch {}
     }
@@ -38,6 +97,7 @@ function Remove-ZoneIdentifier([string]$Root) {
 function New-FishShortcut([string]$ShortcutPath, [string]$TargetExe) {
     $parent = Split-Path -Parent $ShortcutPath
     if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    $existed = Test-Path -LiteralPath $ShortcutPath
     $shell = New-Object -ComObject WScript.Shell
     $link = $shell.CreateShortcut($ShortcutPath)
     $link.TargetPath = $TargetExe
@@ -45,6 +105,22 @@ function New-FishShortcut([string]$ShortcutPath, [string]$TargetExe) {
     $link.IconLocation = "$TargetExe,0"
     $link.Description = 'Fish 5250 Workspace'
     $link.Save()
+    try { [IO.File]::SetAttributes($ShortcutPath, [IO.FileAttributes]::Archive) } catch {}
+    Initialize-ShellNotify
+    if ('FishShell.Notify' -as [type]) { [FishShell.Notify]::Saved($ShortcutPath, [bool]$existed) }
+}
+
+function Remove-FishShortcut([string]$ShortcutPath) {
+    if (-not $ShortcutPath -or -not (Test-Path -LiteralPath $ShortcutPath)) { return }
+    try {
+        $item = Get-Item -LiteralPath $ShortcutPath -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReadOnly)) {
+            $item.Attributes = ($item.Attributes -bxor [IO.FileAttributes]::ReadOnly)
+        }
+    } catch {}
+    Remove-Item -LiteralPath $ShortcutPath -Force -ErrorAction SilentlyContinue
+    Initialize-ShellNotify
+    if ('FishShell.Notify' -as [type]) { [FishShell.Notify]::Deleted($ShortcutPath) }
 }
 
 $targetDir = [IO.Path]::GetFullPath($Destination.TrimEnd('\'))
@@ -146,6 +222,20 @@ try {
     }
     Remove-ZoneIdentifier -Root $staging
 
+    if ($env:FISH_TEST_SKIP_REGISTRY -ne '1') {
+        try {
+            $msi = New-Object -ComObject WindowsInstaller.Installer
+            $products = @($msi.RelatedProducts('{55B0674D-E226-46CB-852F-6BEDDD35A74B}'))
+            foreach ($code in $products) {
+                $assign = ''
+                try { $assign = [string]$msi.ProductInfo($code, 'AssignmentType') } catch {}
+                if ($assign -eq '1' -and -not $isAdmin) { continue }
+                $msiArgs = "/x $code /qn /norestart MSIRESTARTMANAGERCONTROL=Disable UPGRADINGPRODUCTCODE={55B0674D-E226-46CB-852F-6BEDDD35A74B}"
+                Start-Process -FilePath 'msiexec.exe' -ArgumentList $msiArgs -Wait -WindowStyle Hidden | Out-Null
+            }
+        } catch {}
+    }
+
     $backup = $null
     if (Test-Path -LiteralPath $targetDir) {
         $backup = $targetDir + '.old-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
@@ -154,7 +244,7 @@ try {
     try {
         Move-Item -LiteralPath $staging -Destination $targetDir
         if ($backup -and (Test-Path -LiteralPath $backup)) {
-            Remove-Item -LiteralPath $backup -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-TreeForce -Path $backup
         }
     } catch {
         if (-not (Test-Path -LiteralPath $targetDir) -and $backup -and (Test-Path -LiteralPath $backup)) {
@@ -163,8 +253,30 @@ try {
         throw
     }
 
+    $localAppBase = if ($env:FISH_TEST_LOCALAPPDATA) {
+        $env:FISH_TEST_LOCALAPPDATA
+    } elseif ($env:FISH_TEST_SKIP_REGISTRY -ne '1') {
+        $env:LOCALAPPDATA
+    } else {
+        ''
+    }
+    if ($localAppBase) {
+        foreach ($alt in @((Join-Path $localAppBase 'Programs\Fish'), (Join-Path $localAppBase 'Fish'))) {
+            $altFull = [IO.Path]::GetFullPath($alt.TrimEnd('\'))
+            if ($altFull -ieq $targetDir) { continue }
+            $altExe = Join-Path $altFull 'Fish.exe'
+            if (-not (Test-Path -LiteralPath $altExe)) { continue }
+            $altRunning = Get-Process -Name 'Fish' -ErrorAction SilentlyContinue | Where-Object {
+                try { $_.MainModule.FileName -ieq $altExe } catch { $false }
+            }
+            if (-not $altRunning) {
+                Remove-TreeForce -Path $altFull
+            }
+        }
+    }
+
     $version = (Get-Item -LiteralPath $targetExe).VersionInfo.ProductVersion
-    if (-not $version) { $version = '0.10.0' }
+    if (-not $version) { $version = '0.10.1' }
     $sizeBytes = (Get-ChildItem -LiteralPath $targetDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
     $sizeKb = [int][Math]::Ceiling($sizeBytes / 1024.0)
     $uninstallScript = Join-Path $targetDir 'Uninstall-Fish.ps1'
@@ -201,13 +313,25 @@ try {
         if ($env:FISH_TEST_USER_DESKTOP) { $env:FISH_TEST_USER_DESKTOP } else { [Environment]::GetFolderPath('Desktop') }
     }
 
-    if (-not $NoStartMenuShortcut -and $programsDir) {
-        $startMenu = Join-Path $programsDir 'Fish.lnk'
-        New-FishShortcut -ShortcutPath $startMenu -TargetExe $targetExe
+    if ($programsDir) {
+        $msiSubDir = Join-Path $programsDir 'Fish'
+        $msiSubShortcut = Join-Path $msiSubDir 'Fish.lnk'
+        if (Test-Path -LiteralPath $msiSubShortcut) {
+            Remove-FishShortcut -ShortcutPath $msiSubShortcut
+            if ((Test-Path -LiteralPath $msiSubDir) -and @(Get-ChildItem -LiteralPath $msiSubDir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+                Remove-Item -LiteralPath $msiSubDir -Force -ErrorAction SilentlyContinue
+            }
+        }
+        if (-not $NoStartMenuShortcut) {
+            $startMenu = Join-Path $programsDir 'Fish.lnk'
+            New-FishShortcut -ShortcutPath $startMenu -TargetExe $targetExe
+        }
     }
-    if ($DesktopShortcut -and $desktopDir) {
+    if ($desktopDir) {
         $desktop = Join-Path $desktopDir 'Fish.lnk'
-        New-FishShortcut -ShortcutPath $desktop -TargetExe $targetExe
+        if ($DesktopShortcut -or (Test-Path -LiteralPath $desktop)) {
+            New-FishShortcut -ShortcutPath $desktop -TargetExe $targetExe
+        }
     }
 
     if (-not $Quiet) {

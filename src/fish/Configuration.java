@@ -107,15 +107,14 @@ public final class Configuration {
             throw new IllegalArgumentException("Configuration font files must be local, not network/UNC paths.");
         TerminalFonts.validate(TerminalFonts.resolve(state.appearance().font()),state.profiles());
     }
-    private static String document(String name) throws IOException {
-        try {
-            Path location=Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-            Path folder=Files.isDirectory(location) ? location : location.getParent();
-            Path file=folder.resolve(name);
-            if (!Files.exists(file) && folder.getParent()!=null && Files.exists(folder.getParent().resolve(name)))
-                file=folder.getParent().resolve(name);
-            return file.toAbsolutePath().normalize().toString();
-        } catch (java.net.URISyntaxException e) { throw new IOException("Cannot locate bundled configuration documentation.",e); }
+    private static String document(String name) {
+        Path location=NativeLibrary.codeLocation(Main.class);
+        Path folder=Files.isDirectory(location) ? location : location.getParent();
+        if (folder==null) folder=Path.of(".").toAbsolutePath().normalize();
+        Path file=folder.resolve(name);
+        if (!Files.exists(file) && folder.getParent()!=null && Files.exists(folder.getParent().resolve(name)))
+            file=folder.getParent().resolve(name);
+        return file.toAbsolutePath().normalize().toString();
     }
     private static void writeNew(Path target,byte[] content) throws IOException {
         if (Files.exists(target)) throw new IOException("Output exists; choose a new file to preserve your existing edits.");

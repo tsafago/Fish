@@ -52,19 +52,18 @@ public final class RefinementSmoke {
         w.appearanceSettings(w.appearanceSettings().withWindowOutline(!w.appearanceSettings().windowOutline()));
         check(glyphs==field(w.active().view(),"rendered"),"Non-font settings no longer reload fonts or discard glyph caches.");
 
-        ThemeDesigner designer=new ThemeDesigner(w); FxTestSupport.layout(designer.stage());
-        designer.nameField().setText("Refinement saved");
-        button(designer.stage(),"Save").fire();
-        check(w.appearanceSettings().themes().stream().anyMatch(t -> t.name().equals("Refinement saved"))
-                && !button(designer.stage(),"Apply").isDisabled(),
-                "Save retains its reusable-library responsibility; Apply can subsequently activate the saved theme.");
-        button(designer.stage(),"Apply").fire();
-        check(w.appearanceSettings().selectedTheme().equals("Refinement saved") && button(designer.stage(),"Apply").isDisabled(),
-                "Designer Apply activates and resets the draft baseline without closing.");
-        designer.nameField().setText("Refinement done");
-        button(designer.stage(),"Done").fire();
-        check(!designer.stage().isShowing() && w.appearanceSettings().selectedTheme().equals("Refinement done"),
-                "Designer Done saves/applies and closes.");
+        w.preferences("Appearance");
+        Preferences colorPrefs=w.tutorialPreferences();
+        FxTestSupport.layout(colorPrefs.dialog());
+        javafx.scene.layout.StackPane hueBar=colorPrefs.hueBar();
+        double barW=Math.max(120.0,hueBar.getWidth());
+        double clickX=8.0+0.60*Math.max(1.0,barW-16.0);
+        hueBar.fireEvent(new MouseEvent(MouseEvent.MOUSE_PRESSED,clickX,12,clickX,12,MouseButton.PRIMARY,1,false,false,false,false,true,false,false,true,false,false,null));
+        hueBar.fireEvent(new MouseEvent(MouseEvent.MOUSE_RELEASED,clickX,12,clickX,12,MouseButton.PRIMARY,1,false,false,false,false,false,false,false,true,false,false,null));
+        check(Profile.isCustomColor(w.active().profile().theme()) && Preferences.CUSTOM_COLOR.equals(colorPrefs.paletteCombo().getValue()),
+                "Clicking the rainbow hue bar selects a custom #RRGGBB primary color immediately: "+w.active().profile().theme());
+        UsabilityIterationSmoke.settle(() -> !colorPrefs.saving(),"Custom primary color autosave did not settle");
+        colorPrefs.forceDispose();
     }
 
     private static void dragZone(Workspace w) throws Exception {

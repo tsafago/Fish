@@ -245,6 +245,8 @@ public final class Workspace {
     };
     private double logicalWidth,logicalHeight;
     private int settingsBatch;
+    private Layout cachedSpatialLayout;
+    private List<SessionPane> cachedSessionPanes=List.of();
 
     public Workspace(StateStore store,StateStore.State state,Path credentialHelper,boolean demonstration) {
         this(store,state,credentialHelper,demonstration,new Updates());
@@ -776,7 +778,64 @@ public final class Workspace {
     public void highlightActive(boolean enabled) {
         highlightActive=enabled; panes.values().forEach(SessionPane::updateHeader); changed();
     }
-    public List<SessionPane> sessionPanes() { return layout.leaves().stream().map(l -> panes.get(l.pane())).toList(); }
+
+    public static List<UUID> spatialPaneOrder(Layout layout) {
+        if (layout==null || layout instanceof Layout.Empty) return List.of();
+        List<Layout.Leaf> leaves=layout.leaves();
+        if (leaves.size()<=1) return leaves.stream().map(Layout.Leaf::pane).toList();
+        Map<UUID,Rectangle> bounds=project(layout,new Rectangle(0,0,10_000,10_000));
+        record Entry(UUID id,Rectangle rect) {}
+        List<Entry> byTop=new ArrayList<>(leaves.size());
+        for (Layout.Leaf leaf:leaves) {
+            byTop.add(new Entry(leaf.pane(),bounds.getOrDefault(leaf.pane(),new Rectangle(0,0,0,0))));
+        }
+        byTop.sort(Comparator.comparingInt((Entry e) -> e.rect.y).thenComparingInt(e -> e.rect.x));
+        List<List<Entry>> bands=new ArrayList<>();
+        for (Entry candidate:byTop) {
+            if (!bands.isEmpty()) {
+                List<Entry> current=bands.getLast();
+                boolean sameBand=true;
+                for (Entry existing:current) {
+                    int overlap=Math.min(candidate.rect.y+candidate.rect.height,existing.rect.y+existing.rect.height)
+                            -Math.max(candidate.rect.y,existing.rect.y);
+                    double minHeight=Math.min(candidate.rect.height,existing.rect.height);
+                    if (overlap<=0.5*minHeight) {
+                        sameBand=false;
+                        break;
+                    }
+                }
+                if (sameBand) {
+                    current.add(candidate);
+                    continue;
+                }
+            }
+            List<Entry> band=new ArrayList<>();
+            band.add(candidate);
+            bands.add(band);
+        }
+        Comparator<Entry> inBand=Comparator.comparingInt((Entry e) -> e.rect.x).thenComparingInt(e -> e.rect.y);
+        List<UUID> ordered=new ArrayList<>(leaves.size());
+        for (List<Entry> band:bands) {
+            band.sort(inBand);
+            for (Entry e:band) ordered.add(e.id);
+        }
+        return List.copyOf(ordered);
+    }
+
+    public List<SessionPane> sessionPanes() {
+        Layout effective=tree!=null && !rebuildingLayout && !(layout instanceof Layout.Empty) ? capture(tree) : layout;
+        if (Objects.equals(effective,cachedSpatialLayout) && cachedSessionPanes.size()==panes.size()) {
+            boolean intact=true;
+            for (SessionPane p:cachedSessionPanes) {
+                if (panes.get(p.id())!=p) { intact=false; break; }
+            }
+            if (intact) return cachedSessionPanes;
+        }
+        List<SessionPane> ordered=spatialPaneOrder(effective).stream().map(panes::get).filter(Objects::nonNull).toList();
+        cachedSpatialLayout=effective;
+        cachedSessionPanes=ordered;
+        return ordered;
+    }
     public List<AppCommand> commands() { return List.copyOf(commands); }
     public AppCommand command(String name) { return commands.stream().filter(c -> c.title.equals(name)).findFirst().orElseThrow(); }
 
@@ -1260,10 +1319,10 @@ public final class Workspace {
             pane.disconnect();
             activate(pane);
         } else {
-            List<Layout.Leaf> slots=new ArrayList<>(currentLayout().leaves());
-            int index=sessionPanes().indexOf(pane);
-            slots.removeIf(leaf -> leaf.pane().equals(pane.id()));
-            if (active==pane) active=panes.get(slots.get(Math.min(index,slots.size()-1)).pane());
+            List<SessionPane> ordered=new ArrayList<>(sessionPanes());
+            int index=ordered.indexOf(pane);
+            ordered.remove(pane);
+            if (active==pane) active=ordered.get(Math.min(Math.max(0,index),ordered.size()-1));
             layout=Objects.requireNonNull(currentLayout().remove(pane.id()));
             arrangementHistory.clear(); clearPreviews();
             buildTree();
@@ -1279,6 +1338,49 @@ public final class Workspace {
         int index=Math.floorMod(ordered.indexOf(active)+delta,ordered.size());
         activate(ordered.get(index));
         active.focusTerminal();
+    }
+
+    private record FocusStop(SessionPane pane,Node node) {}
+
+    public boolean traversePaneFocus(Node source,int delta) {
+        List<FocusStop> stops=new ArrayList<>();
+        for (SessionPane pane:sessionPanes()) {
+            for (Node node:pane.focusStops()) stops.add(new FocusStop(pane,node));
+        }
+        if (stops.isEmpty()) return false;
+        Node current=source!=null ? source : (scene!=null ? scene.getFocusOwner() : null);
+        int index=findFocusStopIndex(stops,current);
+        if (index<0 && scene!=null && scene.getFocusOwner()!=current) {
+            index=findFocusStopIndex(stops,scene.getFocusOwner());
+        }
+        if (index<0) {
+            SessionPane enclosing=null;
+            for (Node cur=current;cur!=null;cur=cur.getParent()) {
+                if (cur instanceof SessionPane sp) { enclosing=sp; break; }
+            }
+            SessionPane anchor=enclosing!=null ? enclosing : active;
+            if (anchor!=null) {
+                for (int i=0;i<stops.size();i++) {
+                    if (stops.get(i).pane()==anchor) { index=i; break; }
+                }
+            }
+        }
+        int nextIndex=index<0 ? (delta>=0 ? 0 : stops.size()-1) : Math.floorMod(index+delta,stops.size());
+        FocusStop target=stops.get(nextIndex);
+        activate(target.pane());
+        target.node().requestFocus();
+        return true;
+    }
+
+    private static int findFocusStopIndex(List<FocusStop> stops,Node candidate) {
+        if (candidate==null) return -1;
+        for (int i=0;i<stops.size();i++) {
+            Node stopNode=stops.get(i).node();
+            for (Node cur=candidate;cur!=null;cur=cur.getParent()) {
+                if (cur==stopNode) return i;
+            }
+        }
+        return -1;
     }
 
     private void adjustDivider(double delta) {
@@ -1620,7 +1722,6 @@ public final class Workspace {
                 disableKiosk.createMenuItem("Disable Kiosk Mode..."));
         for (String alias:Shortcuts.SETTINGS_ALIASES.stream().sorted().toList()) {
             Runnable handler=switch (alias) {
-                case "Theme designer..." -> () -> new ThemeDesigner(this).setVisible(true);
                 case "Check for updates..." -> () -> updates.manual();
                 default -> () -> preferences("Appearance");
             };

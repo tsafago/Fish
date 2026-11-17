@@ -17,7 +17,7 @@ public final class ConfigSchema {
     public static Map<String,Object> catalog() {
         Map<String,Object> root=new LinkedHashMap<>(), fields=new LinkedHashMap<>(), profile=new LinkedHashMap<>(), theme=new LinkedHashMap<>();
         root.put("format","Fish XML properties configuration");
-        root.put("catalogVersion",11); root.put("workspaceVersion",StateStore.VERSION);
+        root.put("catalogVersion",12); root.put("workspaceVersion",StateStore.VERSION);
         root.put("freshWorkspaceProfile",Map.of("host","10.1.2.3","port",23,"authentication","KERBEROS",
                 "kerberosServer","","auto",false,"remember",false,"loginSource","","connectOnStartup",true));
         root.put("newPasswordProfilePreferences",Map.of("auto",true,"remember",true,"password","Never created, copied or supplied automatically."));
@@ -68,7 +68,7 @@ public final class ConfigSchema {
         profile.put("remember",field("boolean",false,"False for KERBEROS and linked profiles. New independent PASSWORD profiles default true; existing explicit off choices remain off. Configuration never touches OS credentials, creates passwords, or acquires tickets."));
         profile.put("loginSource",field("uuid-or-empty","","PASSWORD only: explicit independent PASSWORD source with username and remember=true for THIS target host. No self references, chains or cycles. KERBEROS must be empty; Windows identity is used directly."));
         profile.put("codePage",enumeration("37",Profile.CODE_PAGES));
-        profile.put("theme",enumeration("Phosphor",Profile.THEMES));
+        profile.put("theme",field("palette-or-rgb","Phosphor","Exact built-in palette name ("+String.join(", ",Profile.THEMES)+") or #RRGGBB custom primary color (normalized uppercase; secondary IBM 5250 slots auto-adjust for contrast and hue separation)."));
         profile.put("effect",enumeration("None",Profile.EFFECTS));
         profile.put("zoom",field("number",1,"Finite 0.5..3; existing fit/manual behavior retained."));
         profile.put("layout",field("layout-or-empty","","Empty or saved bounded layout; every profile ID must exist."));
@@ -110,7 +110,7 @@ public final class ConfigSchema {
                 "profile.{uuid}.name","Original profile display name; independent of current/deleted profiles.",
                 "profile.{uuid}.key.{old-Swing-stroke}","Original host mnemonic or empty. Recovery only, never dispatched."));
         root.put("keyboardMigration","Formats 1-11 migrate exact keys as before. Format 12 preserves exact key locations, multiline lists and recovery, then merges old settings action bindings into Settings...; originals remain under keyboard.legacy.binding.*. Explicit unbinding and other custom key owners are preserved. Profile key.*, shortcut.* and live old settings action bindings are rejected in formats 13-17.");
-        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.10.0 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart) and pane-size-relative per-pane zoom (100% auto fit), retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.");
+        root.put("windowMigration","Back up workspace.xml with ALL Fish windows closed before Fish 0.10.1 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart), pane-size-relative per-pane zoom (100% auto fit), and per-profile #RRGGBB custom primary colors with automatic IBM 5250 palette synthesis, retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.");
         root.put("startupRecovery","Unreadable/unsupported workspaces offer Exit, bounded explicit Retry and confirmed factory recovery under the exclusive workspace lock. Recovery first preserves the exact original workspace-recovery-UUID.xml; credentials/fonts/other files stay untouched. A future version may require upgrading Fish, not resetting.");
         root.put("settingsPersistence","Valid discrete settings apply in the interaction before coalesced asynchronous disk writes. Typing validates after a short pause; incomplete/conflicting groups remain editable. Saved acknowledges the current generation's disk write; failures retain Retry recovery. Creation/credentials/destruction/exports stay explicit.");
         root.put("layoutGrammar",Map.of("leaf","L|{pane-uuid}|{profile-uuid}","split","H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}",

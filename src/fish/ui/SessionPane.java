@@ -603,6 +603,26 @@ public final class SessionPane extends BorderPane {
         else view.requestFocus();
     }
 
+    List<Node> focusStops() {
+        List<Node> stops=new ArrayList<>(4);
+        if ("terminal".equals(shownCard)) addFocusStop(stops,view);
+        else if ("offline".equals(shownCard)) {
+            addFocusStop(stops,presets);
+            addFocusStop(stops,connectButton);
+        }
+        addFocusStop(stops,reset);
+        addFocusStop(stops,close);
+        return stops;
+    }
+
+    private void addFocusStop(List<Node> stops,Node candidate) {
+        if (candidate==null || !candidate.isFocusTraversable() || candidate.isDisabled()) return;
+        for (Node cur=candidate;cur!=null;cur=cur.getParent()) {
+            if (!cur.isVisible()) return;
+            if (cur==this) { stops.add(candidate); return; }
+        }
+    }
+
     public void refreshPresets() {
         updatingPresets=true;
         try {

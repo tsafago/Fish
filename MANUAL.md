@@ -1,6 +1,6 @@
 # Fish manual
 
-Fish 0.10.0 BETA - unsigned experimental prerelease, including viewport-clipped per-pane `100% (auto)` zoom, wheel bindings, per-layout autostart, Kiosk mode, Reset callout, startup factory reset, clean uninstall, and system-wide installation.
+Fish 0.10.1 BETA - unsigned experimental prerelease, including spatial left-to-right/top-to-bottom pane traversal, per-profile primary color & hue IBM palette synthesis, viewport-clipped per-pane `100% (auto)` zoom, wheel bindings, per-layout autostart, Kiosk mode, Reset callout, startup factory reset, clean uninstall, and system-wide installation.
 Earlier images/releases remain unchanged. This build writes a format-21 workspace;
 close all Fish windows and back up workspace.xml before first launch.
 
@@ -46,9 +46,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.10.0 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.0) includes Fish-0.10.0-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user by default (no administrator rights needed), or system-wide into C:\Program Files\Fish when **Install for all users (requires Administrator)** is checked, creating Start menu/desktop shortcuts and bundling the runtime.
+The public [v0.10.1 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.1) includes Fish-0.10.1-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user by default (no administrator rights needed), or system-wide into C:\Program Files\Fish when **Install for all users (requires Administrator)** is checked, creating Start menu/desktop shortcuts and bundling the runtime.
 
-Alternatively, extract the matching Fish-0.10.0-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.10.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 For SmartScreen-free per-user installation without administrator privileges, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1` from a portable folder or release directory (or choose **Edit > Settings > General > Install for current user...** directly inside a portable Fish launch). For system-wide installation into `%ProgramFiles%\Fish`, pass `-AllUsers` (or choose **Install system-wide (Administrator)...** in Settings > General). Uninstallation (`Uninstall-Fish.ps1` or Windows Settings > Apps) removes the installation and deletes Fish configuration (`%APPDATA%\Fish`), Startup layout shortcuts, and stored `Fish/*` Windows Credential Manager entries.
 
@@ -64,15 +64,15 @@ The script obtains checksum-pinned portable JDK 25, OpenJFX 25, Zig and WiX tool
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs use 0.10.0 names. The final side-by-side image is at dist\Fish-0.10.0\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
+Default build outputs use 0.10.1 names. The final side-by-side image is at dist\Fish-0.10.1\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.10.0\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.10.0\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.10.1\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.10.1\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -81,7 +81,7 @@ Close running Fish windows before an upgrade. Install the new version for the sa
 
 Before first launching the new version, copy the existing workspace.xml outside
 the application directory. Normally it is in %APPDATA%\Fish; a custom --data-dir takes precedence.
-The next save writes configuration version 21 with per-pane relative zoom, per-layout Windows autostart, wheel chord support (`SCROLL+`/`SCROLL-`), cursor style, reduced-motion preference, simple layouts and expanded palettes. Catalog version is 11.
+The next save writes configuration version 21 with per-profile `#RRGGBB` primary colors, per-pane relative zoom, per-layout Windows autostart, wheel chord support (`SCROLL+`/`SCROLL-`), cursor style, reduced-motion preference, simple layouts and expanded palettes. Catalog version is 12.
 Older binaries, including 0.9.0, cannot read it:
 keep the matching pre-upgrade backup for downgrade. Never relabel a new export as an older format.
 Workspace/config backups contain safe credential references, not OS passwords
@@ -220,9 +220,9 @@ Factory reset clears recipes but never deletes external shortcut files.
 
 The selected pane has an optional physical-pixel outline. Settings > Appearance controls it independently of active tint and the whole-window outline. Disabling the pane outline removes its border/insets, not just its color. Activating a different pane does not change spacing. Its header, terminal and footer share one surface; keyboard focus and the terminal cursor remain available with both outline and tint off. OLED themes retain a true-black terminal background.
 
-Panes > Next pane and Previous pane cycle focus. The defaults are Ctrl+Tab and Ctrl+Shift+Tab, including when the terminal or offline preset selector has focus. Settings > Keyboard Shortcuts can change them.
+Panes > Next pane and Previous pane cycle focus in visual reading order (left-to-right across each horizontal row, then top-to-bottom across rows), including on 4–8 pane quadrant splits. The defaults are Ctrl+Tab and Ctrl+Shift+Tab, and Tab / Shift+Tab across offline or non-terminal pane controls follow the same spatial order while connected 5250 terminals retain normal Tab / Shift+Tab field navigation. Settings > Keyboard Shortcuts can change Next/Previous pane.
 
-Ctrl+Alt+1 through Ctrl+Alt+8 focus the corresponding layout position. The Shortcuts list can change these too. These are panes inside Fish, not separate document tabs.
+Ctrl+Alt+1 through Ctrl+Alt+8 focus the corresponding visual reading-order pane position (1..8). The Shortcuts list can change these too. These are panes inside Fish, not separate document tabs.
 
 ## Windows positioning and resizing
 
@@ -237,7 +237,7 @@ Alt+Space opens the Windows system menu. The default Ctrl+Alt+Space opens Fish's
 The whole-window outline is on by default and is not required for resizing.
 Settings > Appearance can disable the complete square one-physical-pixel perimeter.
 The restored-window perimeter is verified before maximizing, but it can disappear after maximize/restore; this is a known unresolved native geometry/surface-inset defect.
-All owned structural borders, menu separators and the titlebar/content divider use Theme Designer's Structure > Divider color.
+All owned structural borders, menu separators and the titlebar/content divider use the active theme's shared Divider color.
 Dialogs and popups have the same flat edge, without native shadows or rounded corners. Windows-owned system menus and installers remain OS-controlled.
 
 Window changes scale the terminal rendering; only the host may switch between 24x80 and 27x132. Very small snapped windows cannot make a dense 132-column screen as readable as a larger window.
@@ -403,9 +403,7 @@ unsaved edits require correction or confirmed discard; a failed save retains
 Retry, and closing without saving requires an explicit warning confirmation.
 New profiles and Windows password-store changes retain explicit Create
 profile / Save login changes. No settings edit starts a connection.
-The optional reusable theme designer retains explicit Preview/Save/Apply/Cancel.
-Finish pending Settings edits before opening it. File exports and destructive
-operations retain destination/confirmation boundaries.
+File exports and destructive operations retain destination/confirmation boundaries.
 
 Keyboard combines all Fish and host actions. Search/select a row. The table shows effective keys; the typed area contains its default list or your replacement, **one chord per line**. Use **Record and add**, press/release a chord and choose Use chord. Record only observes its explicit capture field, not passwords or other windows. Tab, Enter and Escape can be recorded; Alt+C cancels the recorder (type that chord manually if needed). Clear records again; Cancel leaves the draft unchanged. Record appends, so several shortcuts can invoke the same action. Remove line deletes one; Unbind action empties that action; Restore default removes its explicit override.
 
@@ -495,15 +493,15 @@ Settings > Appearance controls whole-pane tint, active-pane outline, the separat
 
 Settings theme choices apply/save automatically. Configured direct preset shortcuts and the logo's Flux action remain immediate. Neither reconnects sessions or alters host dimensions.
 
-## Theme designer and saved custom themes
+## Per-profile primary color and automatic IBM palettes
 
-Open Settings > Appearance > Theme designer (apply/cancel other Settings drafts first). Load a built-in preset or a saved custom theme, then enter a name and precise #RRGGBB values in the color table. Its 60 semantic roles cover every owned UI color: surfaces, text, disabled/hover/pressed/focus/selection states, chrome and inactive controls, menus/tooltips, header/footer/statuses, tint/shared Divider, cursor/terminal selection, all sixteen host slots, six effect-gradient stops, glow and the logo gradient. Structure > Divider owns all structural edges and optional outlines; legacy LINE/OUTLINE entries migrate to the existing Divider color with a notice instead of leaving conflicting controls.
+Beside **Text palette** in **Settings > Appearance**, choose any preset from the primary-color dropdown (such as Classic Green, Emerald, Mint, Teal, Cyan, Sky Blue, Ocean Blue, Royal Blue, Indigo, Violet, Purple, Magenta, Pink, Rose, Crimson, Coral, Orange, Amber, Gold, Lime, or Ice Silver) or click/drag across the 360-degree **Color hue** spectrum bar beneath it.
 
-Preview applies the draft to the real application without saving. Cancel, Escape or closing the designer restores the most recently applied theme. Save creates/updates a reusable custom theme; Apply also selects it and stays open. Done saves/applies pending edits and closes. Saving edits to the currently active named theme updates that active theme. Load it again to edit; choose a different name to save a copy. Names are case-insensitively unique, replacements require confirmation when values differ, and up to 32 custom themes are supported.
+Choosing a preset or hue switches that profile's **Text palette** to **Custom color**, stores its canonical `#RRGGBB` primary color on the profile (`profile.<uuid>.theme`), and automatically synthesizes a balanced 16-slot IBM-style 5250 palette:
 
-Malformed colors and incomplete themes are rejected with an explicit message. Contrast warnings are advisory: valid RGB values are never silently changed or blocked. Keep text, selection, cursor and host colors distinct yourself when designing a low-contrast or experimental palette.
-
-Selecting a built-in application theme preserves the saved custom-theme library. Built-in application themes continue to use each profile's host palette. An active custom theme owns all sixteen host colors and supersedes that built-in profile palette; optional active tint uses its separate color instead of host slot 0 for the active pane's background. Disable tint to use host slot 0 exactly. Profile effects, zoom and host attributes are unchanged. Custom gradient stops blend with each host foreground; reverse video and non-display behavior are preserved. Windows-owned system menus and installer surfaces remain controlled by Windows.
+- **Automatic dark/light contrast**: Primary text (`slot 2`) and bright/intense primary text (`slot 10`) are perceptually tuned for crisp WCAG readability on both dark (`Charcoal`, `OLED`, `Midnight`) and light (`Light`, `Paper`, `Eye Saver`) application themes, lifting deep blues/indigos on dark surfaces and darkening bright hues on light surfaces.
+- **Automatic collision-free IBM accents**: Standard IBM secondary colors (Blue headers/F-keys, Cyan subfile accents, Yellow warnings, Magenta indicators, and Red errors) remain familiar—and whenever your chosen primary hue comes close to one of those secondary hues (for example, choosing a Crimson, Royal Blue, Cyan, or Amber primary), Fish automatically shifts the colliding secondary slot to a clean, distinct hue so headers, warnings, and especially Red error messages never blend into regular text.
+- **Live preview & built-in palettes**: The compact **Auto IBM palette** strip previews `Primary`, `Header`, `Accent`, `Warn`, and `Error` live on the current terminal background. Switching **Text palette** back to any built-in preset (`Phosphor`, `IBM vivid`, `Amber`, etc.) restores that preset immediately while remembering your last custom shade for the session. Legacy workspaces containing saved custom `ColorTheme` entries remain readable; selecting any built-in **Application theme** re-enables profile palettes and custom primary colors.
 
 ## Terminal fonts and local custom fonts
 

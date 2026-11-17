@@ -49,6 +49,51 @@ if ($AllUsers -and -not $isAdmin -and $env:FISH_TEST_NO_ELEVATE -ne '1') {
 
 $targetExe = Join-Path $targetDir 'Fish.exe'
 
+function Initialize-ShellNotify {
+    if ('FishShell.Notify' -as [type]) { return }
+    try {
+        Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
+namespace FishShell {
+    public static class Notify {
+        private const int SHCNE_DELETE = 0x00000004;
+        private const int SHCNE_UPDATEDIR = 0x00001000;
+        private const uint SHCNF_PATHW = 0x0005;
+        private const uint SHCNF_FLUSHNOWAIT = 0x2000;
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern void SHChangeNotify(int wEventId, uint uFlags, string dwItem1, string dwItem2);
+        public static void Deleted(string path) {
+            if (string.IsNullOrEmpty(path)) return;
+            SHChangeNotify(SHCNE_DELETE, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path, null);
+            string dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, dir, null);
+        }
+    }
+}
+'@ -ErrorAction SilentlyContinue
+    } catch {}
+}
+
+function Remove-TreeForce([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
+    Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            if ($_.Attributes -band [IO.FileAttributes]::ReadOnly) {
+                $_.Attributes = ($_.Attributes -bxor [IO.FileAttributes]::ReadOnly)
+            }
+        } catch {}
+    }
+    try {
+        $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        if ($rootItem -and ($rootItem.Attributes -band [IO.FileAttributes]::ReadOnly)) {
+            $rootItem.Attributes = ($rootItem.Attributes -bxor [IO.FileAttributes]::ReadOnly)
+        }
+    } catch {}
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $running = Get-Process -Name 'Fish' -ErrorAction SilentlyContinue | Where-Object {
     try { $_.MainModule.FileName -ieq $targetExe } catch { $false }
 }
@@ -68,15 +113,21 @@ if ($AllUsers) {
 }
 foreach ($folder in $shortcutDirs) {
     if (-not $folder -or -not (Test-Path -LiteralPath $folder)) { continue }
-    $shortcut = Join-Path $folder 'Fish.lnk'
-    if (Test-Path -LiteralPath $shortcut) {
+    foreach ($shortcut in @((Join-Path $folder 'Fish.lnk'), (Join-Path (Join-Path $folder 'Fish') 'Fish.lnk'))) {
+        if (-not (Test-Path -LiteralPath $shortcut)) { continue }
         try {
             $shell = New-Object -ComObject WScript.Shell
             $link = $shell.CreateShortcut($shortcut)
             if ($link.TargetPath -ieq $targetExe -or ($link.TargetPath -and $link.TargetPath.EndsWith('\Fish.exe', [StringComparison]::OrdinalIgnoreCase))) {
                 Remove-Item -LiteralPath $shortcut -Force -ErrorAction SilentlyContinue
+                Initialize-ShellNotify
+                if ('FishShell.Notify' -as [type]) { [FishShell.Notify]::Deleted($shortcut) }
             }
         } catch {}
+    }
+    $subFolder = Join-Path $folder 'Fish'
+    if ((Test-Path -LiteralPath $subFolder) -and @(Get-ChildItem -LiteralPath $subFolder -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+        Remove-Item -LiteralPath $subFolder -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -90,7 +141,10 @@ if ($startupDir -and (Test-Path -LiteralPath $startupDir)) {
             $isFishExe = $link.TargetPath -and ($link.TargetPath -ieq $targetExe -or $link.TargetPath.EndsWith('\Fish.exe', [StringComparison]::OrdinalIgnoreCase))
             $hasLayout = $link.Arguments -and $link.Arguments.IndexOf('--layout', [StringComparison]::OrdinalIgnoreCase) -ge 0
             if ($isFishExe -or ($hasLayout -and ($_.Name -like 'Fish*'))) {
-                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue
+                $fullPath = $_.FullName
+                Remove-Item -LiteralPath $fullPath -Force -ErrorAction SilentlyContinue
+                Initialize-ShellNotify
+                if ('FishShell.Notify' -as [type]) { [FishShell.Notify]::Deleted($fullPath) }
             }
         } catch {}
     }
@@ -101,7 +155,7 @@ $appDataBase = if ($env:FISH_TEST_APPDATA) { $env:FISH_TEST_APPDATA } else { $en
 if ($appDataBase) {
     $fishConfigDir = Join-Path $appDataBase 'Fish'
     if (Test-Path -LiteralPath $fishConfigDir) {
-        Remove-Item -LiteralPath $fishConfigDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-TreeForce -Path $fishConfigDir
     }
 }
 if ($AllUsers) {
@@ -109,7 +163,7 @@ if ($AllUsers) {
     if ($programDataBase) {
         $systemConfigDir = Join-Path $programDataBase 'Fish'
         if (Test-Path -LiteralPath $systemConfigDir) {
-            Remove-Item -LiteralPath $systemConfigDir -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-TreeForce -Path $systemConfigDir
         }
     }
 }
@@ -173,13 +227,35 @@ if (-not $NoRegistry -and $env:FISH_TEST_SKIP_REGISTRY -ne '1') {
     }
 }
 
+$localAppBase = if ($env:FISH_TEST_LOCALAPPDATA) {
+    $env:FISH_TEST_LOCALAPPDATA
+} elseif ($env:FISH_TEST_SKIP_REGISTRY -ne '1') {
+    $env:LOCALAPPDATA
+} else {
+    ''
+}
+if ($localAppBase) {
+    foreach ($alt in @((Join-Path $localAppBase 'Programs\Fish'), (Join-Path $localAppBase 'Fish'))) {
+        $altFull = [IO.Path]::GetFullPath($alt.TrimEnd('\'))
+        if ($altFull -ieq $targetDir) { continue }
+        $altExe = Join-Path $altFull 'Fish.exe'
+        if (-not (Test-Path -LiteralPath $altExe)) { continue }
+        $altRunning = Get-Process -Name 'Fish' -ErrorAction SilentlyContinue | Where-Object {
+            try { $_.MainModule.FileName -ieq $altExe } catch { $false }
+        }
+        if (-not $altRunning) {
+            Remove-TreeForce -Path $altFull
+        }
+    }
+}
+
 if ((Test-Path -LiteralPath $targetDir) -and (Test-Path -LiteralPath $targetExe)) {
     $scriptInsideTarget = $PSCommandPath -and ([IO.Path]::GetFullPath($PSCommandPath)).StartsWith(($targetDir + '\'), [StringComparison]::OrdinalIgnoreCase)
     if ($scriptInsideTarget) {
-        $cleanupCmd = "/c ping 127.0.0.1 -n 2 >nul & rmdir /s /q `"$targetDir`""
+        $cleanupCmd = "/c ping 127.0.0.1 -n 2 >nul & attrib -r `"$targetDir\*`" /s /d >nul 2>nul & rmdir /s /q `"$targetDir`""
         Start-Process -FilePath $env:ComSpec -ArgumentList $cleanupCmd -WindowStyle Hidden
     } else {
-        Remove-Item -LiteralPath $targetDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-TreeForce -Path $targetDir
     }
 }
 

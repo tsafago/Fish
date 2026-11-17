@@ -10,6 +10,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <shobjidl.h>
+#include <objidl.h>
 #include <msi.h>
 #include <tlhelp32.h>
 #include <dwmapi.h>
@@ -30,6 +31,7 @@
 #define CHANGE 103
 #define OPEN_APP 104
 #define ALL_USERS 105
+#define FISH_UPGRADE L"{55B0674D-E226-46CB-852F-6BEDDD35A74B}"
 static COLORREF background=RGB(17,21,25),panel=RGB(25,31,37),text=RGB(229,234,240),
     muted=RGB(154,167,180),accent=RGB(123,188,203),divider=RGB(53,66,79);
 static unsigned option_paints=0;
@@ -271,6 +273,204 @@ static BOOL location_test(void) {
     }
     RemoveDirectoryW(second); RemoveDirectoryW(first); RemoveDirectoryW(root); return valid;
 }
+static void delete_tree(const WCHAR *dir) {
+    if (!dir || !*dir) return;
+    DWORD root_attr=GetFileAttributesW(dir);
+    if (root_attr==INVALID_FILE_ATTRIBUTES) return;
+    if (!(root_attr&FILE_ATTRIBUTE_DIRECTORY)) {
+        if (root_attr&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(dir,root_attr&~FILE_ATTRIBUTE_READONLY);
+        DeleteFileW(dir); return;
+    }
+    if (!(root_attr&FILE_ATTRIBUTE_REPARSE_POINT)) {
+        WCHAR *pattern=HeapAlloc(GetProcessHeap(),0,32768*sizeof(WCHAR));
+        WCHAR *child=HeapAlloc(GetProcessHeap(),0,32768*sizeof(WCHAR));
+        if (pattern && child && wcslen(dir)+6<32768) {
+            swprintf(pattern,32768,L"%ls\\*",dir);
+            WIN32_FIND_DATAW entry; HANDLE search=FindFirstFileW(pattern,&entry);
+            if (search!=INVALID_HANDLE_VALUE) {
+                do {
+                    if (!wcscmp(entry.cFileName,L".") || !wcscmp(entry.cFileName,L"..")) continue;
+                    if (wcslen(dir)+1+wcslen(entry.cFileName)>=32768) continue;
+                    swprintf(child,32768,L"%ls\\%ls",dir,entry.cFileName);
+                    if (entry.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY) delete_tree(child);
+                    else {
+                        if (entry.dwFileAttributes&FILE_ATTRIBUTE_READONLY)
+                            SetFileAttributesW(child,entry.dwFileAttributes&~FILE_ATTRIBUTE_READONLY);
+                        DeleteFileW(child);
+                    }
+                } while (FindNextFileW(search,&entry));
+                FindClose(search);
+            }
+        }
+        if (pattern) HeapFree(GetProcessHeap(),0,pattern);
+        if (child) HeapFree(GetProcessHeap(),0,child);
+    }
+    if (root_attr&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(dir,root_attr&~FILE_ATTRIBUTE_READONLY);
+    RemoveDirectoryW(dir);
+}
+static void clean_fish_install_dir(const WCHAR *dir,BOOL remove_root) {
+    if (!dir || !*dir) return;
+    WCHAR path[MAX_PATH];
+    if (wcslen(dir)+32>=MAX_PATH) return;
+    swprintf(path,MAX_PATH,L"%ls\\Fish.exe",dir);
+    if (GetFileAttributesW(path)==INVALID_FILE_ATTRIBUTES || running_target(path)) return;
+    swprintf(path,MAX_PATH,L"%ls\\app",dir); delete_tree(path);
+    swprintf(path,MAX_PATH,L"%ls\\runtime",dir); delete_tree(path);
+    if (!remove_root) return;
+    static const WCHAR *const owned[]={L"Fish.exe",L"Fish.ico",L"Fish-config.cmd",L"Install-Fish.ps1",L"Uninstall-Fish.ps1"};
+    for (unsigned i=0;i<sizeof(owned)/sizeof(owned[0]);i++) {
+        swprintf(path,MAX_PATH,L"%ls\\%ls",dir,owned[i]);
+        DWORD a=GetFileAttributesW(path);
+        if (a!=INVALID_FILE_ATTRIBUTES && !(a&FILE_ATTRIBUTE_DIRECTORY)) {
+            if (a&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(path,a&~FILE_ATTRIBUTE_READONLY);
+            DeleteFileW(path);
+        }
+    }
+    RemoveDirectoryW(dir);
+}
+static void trim_trailing_slash(WCHAR *s) {
+    size_t n=wcslen(s);
+    while (n>3 && (s[n-1]==L'\\' || s[n-1]==L'/')) s[--n]=0;
+}
+static void remove_conflicting_msi_products(const WCHAR *msiexec_path,const WCHAR *dest_dir,WCHAR *cmd_buf) {
+    WCHAR products[16][39]; unsigned found=0;
+    for (DWORD idx=0;idx<16;idx++) {
+        if (MsiEnumRelatedProductsW(FISH_UPGRADE,0,idx,products[found])!=ERROR_SUCCESS) break;
+        found++;
+    }
+    BOOL admin=IsUserAnAdmin();
+    for (unsigned i=0;i<found;i++) {
+        WCHAR assign[16]=L"",loc[MAX_PATH]=L"";
+        DWORD assign_len=16,loc_len=MAX_PATH;
+        MsiGetProductInfoW(products[i],INSTALLPROPERTY_ASSIGNMENTTYPE,assign,&assign_len);
+        MsiGetProductInfoW(products[i],INSTALLPROPERTY_INSTALLLOCATION,loc,&loc_len);
+        trim_trailing_slash(loc);
+        BOOL machine_assigned=!wcscmp(assign,L"1");
+        if (machine_assigned && !admin) continue;
+        BOOL same_scope=system_wide_mode ? machine_assigned : !machine_assigned;
+        BOOL diff_loc=loc[0] && _wcsicmp(loc,dest_dir)!=0;
+        if (!same_scope || diff_loc) {
+            cmd_buf[0]=0;
+            BOOL ok=fish_quote(cmd_buf,32768,msiexec_path);
+            if (ok && wcslen(cmd_buf)+180<32768) {
+                wcscat(cmd_buf,L" /x "); wcscat(cmd_buf,products[i]);
+                wcscat(cmd_buf,L" /qn /norestart MSIRESTARTMANAGERCONTROL=Disable UPGRADINGPRODUCTCODE=");
+                wcscat(cmd_buf,FISH_UPGRADE);
+                STARTUPINFOW si={0}; si.cb=sizeof(si); PROCESS_INFORMATION pi={0};
+                if (CreateProcessW(msiexec_path,cmd_buf,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&si,&pi)) {
+                    WaitForSingleObject(pi.hProcess,INFINITE);
+                    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+                }
+            }
+            if (diff_loc) clean_fish_install_dir(loc,TRUE);
+        }
+    }
+}
+static void update_existing_shortcut(const WCHAR *lnk_path,const WCHAR *exe_path) {
+    DWORD a=GetFileAttributesW(lnk_path);
+    if (a==INVALID_FILE_ATTRIBUTES || (a&FILE_ATTRIBUTE_DIRECTORY)) return;
+    IShellLinkW *sl=NULL;
+    if (FAILED(CoCreateInstance(&CLSID_ShellLink,NULL,CLSCTX_INPROC_SERVER,&IID_IShellLinkW,(void **)&sl))) return;
+    WCHAR work[MAX_PATH]=L""; wcsncpy(work,exe_path,MAX_PATH-1);
+    WCHAR *slash=wcsrchr(work,L'\\'); if (slash && slash>work+2) *slash=0;
+    IShellLinkW_SetPath(sl,exe_path);
+    IShellLinkW_SetWorkingDirectory(sl,work);
+    IShellLinkW_SetIconLocation(sl,exe_path,0);
+    IShellLinkW_SetDescription(sl,L"Fish 5250 Workspace");
+    IPersistFile *pf=NULL;
+    if (SUCCEEDED(IShellLinkW_QueryInterface(sl,&IID_IPersistFile,(void **)&pf))) {
+        if (SUCCEEDED(IPersistFile_Save(pf,lnk_path,TRUE))) {
+            IPersistFile_SaveCompleted(pf,lnk_path);
+            SetFileAttributesW(lnk_path,FILE_ATTRIBUTE_ARCHIVE);
+            SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,lnk_path,NULL);
+            WCHAR parent[MAX_PATH]=L""; wcsncpy(parent,lnk_path,MAX_PATH-1);
+            WCHAR *ps=wcsrchr(parent,L'\\');
+            if (ps) { *ps=0; SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,parent,NULL); }
+        }
+        IPersistFile_Release(pf);
+    }
+    IShellLinkW_Release(sl);
+}
+static void reconcile_shortcuts_in_known_folder(const GUID *folder_id,BOOL is_programs,const WCHAR *exe_path) {
+    PWSTR base=NULL;
+    if (FAILED(SHGetKnownFolderPath(folder_id,0,NULL,&base)) || !base) return;
+    WCHAR path[MAX_PATH];
+    if (wcslen(base)+32<MAX_PATH) {
+        if (is_programs) {
+            /* MSI installs Start Menu\Programs\Fish\Fish.lnk; remove duplicate flat Programs\Fish.lnk if present. */
+            swprintf(path,MAX_PATH,L"%ls\\Fish.lnk",base);
+            DWORD a=GetFileAttributesW(path);
+            if (a!=INVALID_FILE_ATTRIBUTES && !(a&FILE_ATTRIBUTE_DIRECTORY)) {
+                if (a&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(path,a&~FILE_ATTRIBUTE_READONLY);
+                if (DeleteFileW(path)) SHChangeNotify(SHCNE_DELETE,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path,NULL);
+            }
+            swprintf(path,MAX_PATH,L"%ls\\Fish\\Fish.lnk",base);
+            if (GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES)
+                SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path,NULL);
+            swprintf(path,MAX_PATH,L"%ls\\Fish",base);
+            if (GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES)
+                SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path,NULL);
+            SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,base,NULL);
+        } else {
+            swprintf(path,MAX_PATH,L"%ls\\Fish.lnk",base);
+            update_existing_shortcut(path,exe_path);
+        }
+    }
+    CoTaskMemFree(base);
+}
+static void reconcile_post_install(const WCHAR *installed_exe,const WCHAR *dest_dir) {
+    PWSTR local=NULL;
+    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData,0,NULL,&local)) && local) {
+        WCHAR alt[MAX_PATH];
+        if (wcslen(local)+24<MAX_PATH) {
+            swprintf(alt,MAX_PATH,L"%ls\\Programs\\Fish",local);
+            if (_wcsicmp(alt,dest_dir)!=0) clean_fish_install_dir(alt,TRUE);
+            swprintf(alt,MAX_PATH,L"%ls\\Fish",local);
+            if (_wcsicmp(alt,dest_dir)!=0) clean_fish_install_dir(alt,TRUE);
+        }
+        CoTaskMemFree(local);
+    }
+    /* Remove stale script-installer Uninstall key if it points elsewhere so Installed Apps has one clean entry. */
+    HKEY key=NULL;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fish",0,KEY_QUERY_VALUE,&key)==ERROR_SUCCESS) {
+        WCHAR reg_loc[MAX_PATH]=L""; DWORD bytes=sizeof(reg_loc),type=0;
+        LONG q=RegQueryValueExW(key,L"InstallLocation",NULL,&type,(BYTE *)reg_loc,&bytes);
+        RegCloseKey(key);
+        trim_trailing_slash(reg_loc);
+        if (q!=ERROR_SUCCESS || _wcsicmp(reg_loc,dest_dir)!=0 || !system_wide_mode)
+            RegDeleteTreeW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fish");
+    }
+    HRESULT hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
+    reconcile_shortcuts_in_known_folder(&FOLDERID_Programs,TRUE,installed_exe);
+    reconcile_shortcuts_in_known_folder(&FOLDERID_Desktop,FALSE,installed_exe);
+    if (system_wide_mode) {
+        reconcile_shortcuts_in_known_folder(&FOLDERID_CommonPrograms,TRUE,installed_exe);
+        reconcile_shortcuts_in_known_folder(&FOLDERID_PublicDesktop,FALSE,installed_exe);
+    }
+    if (SUCCEEDED(hr)) CoUninitialize();
+}
+static BOOL cleanup_test(void) {
+    WCHAR temp[MAX_PATH],root[MAX_PATH],app[MAX_PATH],aot[MAX_PATH],exe[MAX_PATH];
+    DWORD count=GetTempPathW(MAX_PATH,temp);
+    if (!count || count>MAX_PATH-80) return FALSE;
+    swprintf(root,MAX_PATH,L"%lsFish-clean-%lu",temp,GetCurrentProcessId());
+    delete_tree(root);
+    if (!CreateDirectoryW(root,NULL)) return FALSE;
+    swprintf(app,MAX_PATH,L"%ls\\app",root);
+    swprintf(aot,MAX_PATH,L"%ls\\app\\Fish.aot",root);
+    swprintf(exe,MAX_PATH,L"%ls\\Fish.exe",root);
+    BOOL ok=CreateDirectoryW(app,NULL);
+    HANDLE h1=ok ? CreateFileW(exe,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL) : INVALID_HANDLE_VALUE;
+    if (h1!=INVALID_HANDLE_VALUE) CloseHandle(h1); else ok=FALSE;
+    HANDLE h2=ok ? CreateFileW(aot,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_READONLY,NULL) : INVALID_HANDLE_VALUE;
+    if (h2!=INVALID_HANDLE_VALUE) CloseHandle(h2); else ok=FALSE;
+    clean_fish_install_dir(root,FALSE);
+    ok=ok && GetFileAttributesW(app)==INVALID_FILE_ATTRIBUTES && GetFileAttributesW(exe)!=INVALID_FILE_ATTRIBUTES;
+    clean_fish_install_dir(root,TRUE);
+    ok=ok && GetFileAttributesW(root)==INVALID_FILE_ATTRIBUTES;
+    delete_tree(root);
+    return ok;
+}
 static BOOL version_ok(const WCHAR *path) {
     DWORD ignored=0,size=GetFileVersionInfoSizeW(path,&ignored);
     void *info=size ? HeapAlloc(GetProcessHeap(),0,size) : NULL;
@@ -297,6 +497,9 @@ static DWORD WINAPI install_worker(void *unused) {
         WCHAR system[MAX_PATH]; UINT count=GetSystemDirectoryW(system,MAX_PATH);
         if (count && count<MAX_PATH) {
             WCHAR program[MAX_PATH]; swprintf(program,MAX_PATH,L"%ls\\msiexec.exe",system);
+            remove_conflicting_msi_products(program,destination,command);
+            clean_fish_install_dir(destination,FALSE);
+            command[0]=0;
             BOOL valid=fish_quote(command,32768,program);
             if (valid) wcscat(command,L" /i ");
             valid=valid && fish_quote(command,32768,msi);
@@ -312,6 +515,7 @@ static DWORD WINAPI install_worker(void *unused) {
                     result=GetLastError();
                 CloseHandle(process.hThread); CloseHandle(process.hProcess);
                 if (result==ERROR_SUCCESS && !version_ok(target)) result=ERROR_PRODUCT_VERSION;
+                if (result==ERROR_SUCCESS) reconcile_post_install(target,destination);
             } else result=valid ? GetLastError() : ERROR_INVALID_PARAMETER;
         }
     }
@@ -659,7 +863,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     if (count==2 && !wcscmp(args[1],L"--self-test")) {
         WCHAR quote[100]=L"";
         BOOL valid=fish_quote(quote,100,L"C:\\path with space\\") && !wcscmp(quote,L"\"C:\\path with space\\\\\"");
-        valid=valid && !fish_quote(quote,4,L"too long") && location_test() && completion_test(); LocalFree(args); return valid ? 0 : 1;
+        valid=valid && !fish_quote(quote,4,L"too long") && location_test() && cleanup_test() && completion_test(); LocalFree(args); return valid ? 0 : 1;
     }
     if (count==2 && !wcscmp(args[1],L"--verify-payload")) {
         WCHAR self[32768]; GetModuleFileNameW(NULL,self,32768);

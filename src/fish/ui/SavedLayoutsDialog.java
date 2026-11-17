@@ -292,12 +292,18 @@ public final class SavedLayoutsDialog {
                 if (output==null) return;
                 if (!output.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".lnk"))
                     output=output.resolveSibling(output.getFileName()+".lnk");
+                if (!Boolean.getBoolean("fish.testMode") || Boolean.getBoolean("fish.test.remapDesktop"))
+                    output=LayoutShortcuts.remapInactiveDesktop(output);
                 if (Files.exists(output))
                     throw new IllegalArgumentException("That file already exists. Choose a new shortcut filename.");
                 if (current) value=workspace.saveCurrentLayout(null,title,currentAutostart.isSelected());
                 working=true; refresh(); showMessage("Saving layout and creating shortcut...",false);
                 shortcutExport.write(Objects.requireNonNull(value).id(),output,() -> {
-                    working=false; refresh(); showMessage("Shortcut created. Opens a new Fish window.",false);
+                    working=false; refresh();
+                    String iconHint=LayoutShortcuts.areDesktopIconsHidden()
+                            ? " Note: Windows \"Show desktop icons\" is off (right-click Desktop > View > Show desktop icons)."
+                            : "";
+                    showMessage("Shortcut created. Opens a new Fish window."+iconHint,false);
                     workspace.tutorialAction("layout-shortcut");
                 },error -> {
                     working=false; refresh(); showMessage("Layout kept; shortcut not created: "+error,true);

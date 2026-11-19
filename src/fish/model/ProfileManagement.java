@@ -22,8 +22,7 @@ public final class ProfileManagement {
         List<String> layouts=state.savedLayouts().stream().filter(s -> s.window().lastProfile().equals(id)
                 || s.window().addProfile().equals(id) || s.window().layout().leaves().stream().anyMatch(p -> p.profile().equals(id)))
                 .map(SavedLayout::name).toList();
-        if (!layouts.isEmpty()) throw new IllegalArgumentException("Profile is used by saved layouts: "+String.join(", ",layouts)
-                +". Update or delete those layouts in Panes > Saved layouts / shortcuts first.");
+        if (!layouts.isEmpty()) throw new IllegalArgumentException("Keep this profile: desktop shortcuts use it ("+String.join(", ",layouts)+").");
         List<String> dependents=state.profiles().stream().filter(p -> id.equals(p.loginSource())).map(Profile::name).toList();
         if (!dependents.isEmpty())
             throw new IllegalArgumentException("This login is used by: "+String.join(", ",dependents)+". Choose an independent or different login in those profiles first.");

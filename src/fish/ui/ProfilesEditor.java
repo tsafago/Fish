@@ -3,8 +3,6 @@ package fish.ui;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.geometry.Insets;
@@ -14,7 +12,6 @@ import javafx.scene.control.*;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
-import javafx.util.Duration;
 import fish.model.Profile;
 
 public final class ProfilesEditor extends BorderPane {
@@ -22,39 +19,29 @@ public final class ProfilesEditor extends BorderPane {
     private final Runnable close;
     private final ObservableList<Profile> items=FXCollections.observableArrayList();
     private final ListView<Profile> list=new ListView<>(items);
-    private final TextField name=new TextField(),host=new TextField(),port=new TextField();
+    private final TextField name=new TextField(),host=new TextField();
     private final TextField device=new TextField(),username=new TextField();
     private final PasswordField password=new PasswordField();
     private final HBox passwordWrapper;
     private final ComboBox<Profile.Authentication> authentication=new ComboBox<>(FXCollections.observableArrayList(Profile.Authentication.values()));
-    private final TextField kerberosServer=new TextField();
-    private Label kerberosLabel,usernameLabel,passwordLabel,loginLabel;
-    private final CheckBox automatic=new CheckBox("Automatic sign-in (recommended)");
-    private final CheckBox remember=new CheckBox("Save password (recommended)");
+    private final Label usernameLabel,passwordLabel,loginLabel;
+    private final CheckBox automatic=new CheckBox("Automatic sign-in");
+    private final CheckBox remember=new CheckBox("Save password");
     private final ComboBox<Object> loginFrom=new ComboBox<>();
-    private final Label loginHint=new Label();
     private final GridPane connection=new GridPane();
-    private final GridPane advanced=new GridPane();
-    private final HBox identity=new HBox(12);
-    private final ToggleButton disclosure=new ToggleButton("Advanced");
-    private final ComboBox<String> codePage=new ComboBox<>(FXCollections.observableArrayList(Profile.CODE_PAGES));
     private final Label error=new Label(" ");
-    private final Button save,done,use,cancel,add,duplicate,up,down,delete;
-    private Profile selected;
-    private List<Object> baseline;
-    private boolean loading,dirty,saving,credentialSaving,passwordModeInitialized;
-    private final boolean automaticEdits;
-    private final Timeline edits=new Timeline(new KeyFrame(Duration.millis(400),e -> autoSave()));
-    private final Timeline writes=new Timeline(new KeyFrame(Duration.millis(200),e -> persist(() -> {})));
+    private final Button save,done,use,discard,add,duplicate,up,down,delete;
+    private Profile selected,credentialOrigin;
+    private boolean loading,dirty,loginChanges,saving,credentialSaving,passwordModeInitialized;
     private long generation;
-    private boolean diskUnsaved,editPending;
-    private String saveFailure="";
+    private boolean diskUnsaved,closing;
+    private Profile connectAfterSave;
+    private String saveFailure="",draftError="";
     private Runnable onDraftChanged=() -> {};
 
     public ProfilesEditor(Workspace workspace,Profile initial,boolean embedded,Runnable close) {
         this.workspace=workspace;
         this.close=close;
-        this.automaticEdits=embedded;
         items.setAll(workspace.profileList());
 
         list.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
@@ -98,11 +85,11 @@ public final class ProfilesEditor extends BorderPane {
 
         authentication.setMaxWidth(Double.MAX_VALUE);
         loginFrom.setMaxWidth(Double.MAX_VALUE);
-        codePage.setMaxWidth(Double.MAX_VALUE);
 
         int row=0;
         field(connection,row++,"Name",name);
         field(connection,row++,"Host",host);
+        field(connection,row++,"Device (optional)",device);
         field(connection,row++,"Sign in with",authentication);
         loginLabel=field(connection,row++,"Use login from...",loginFrom);
         usernameLabel=field(connection,row++,"Username",username);
@@ -111,38 +98,6 @@ public final class ProfilesEditor extends BorderPane {
         password.setTooltip(new Tooltip("Leave blank to keep a saved password. Automatic sign-in supports 1-128 printable ASCII characters."));
         passwordWrapper=Ui.revealablePassword(password);
         passwordLabel=fieldNode(connection,row++,"Password",passwordWrapper,password);
-
-        loginHint.setWrapText(true);
-        Ui.role(loginHint,"muted");
-        wide(connection,row++,loginHint);
-
-        disclosure.setAccessibleText("Show advanced profile settings");
-        disclosure.setGraphic(Ui.icon("right"));
-        disclosure.setGraphicTextGap(6);
-        disclosure.setOnAction(e -> {
-            showAdvanced(disclosure.isSelected());
-            if (disclosure.isSelected()) workspace.tutorialAction("profile-advanced");
-        });
-        wide(connection,row++,disclosure);
-
-        advanced.setHgap(12); advanced.setVgap(10);
-        advanced.getColumnConstraints().addAll(new ColumnConstraints(125),col1);
-        kerberosLabel=new Label("Kerberos server"); kerberosLabel.setLabelFor(kerberosServer);
-        kerberosLabel.setMinWidth(125);
-        kerberosServer.setTooltip(new Tooltip("Optional fully qualified IBM i DNS name, separate from the TCP host. Blank: use the host name or forward-confirmed reverse DNS."));
-        HBox.setHgrow(kerberosServer,Priority.ALWAYS);
-        identity.setAlignment(Pos.CENTER_LEFT);
-        identity.getChildren().addAll(kerberosLabel,kerberosServer);
-        wide(advanced,0,identity);
-        field(advanced,1,"Port",port);
-        field(advanced,2,"Device (optional)",device);
-        field(advanced,3,"Code page",codePage);
-        Label appearanceHint=new Label("Colors and fonts: Settings > Appearance.");
-        Ui.role(appearanceHint,"muted");
-        wide(advanced,4,appearanceHint);
-        advanced.setVisible(false);
-        advanced.setManaged(false);
-        wide(connection,row,advanced);
 
         ScrollPane connectionScroll=new ScrollPane(connection);
         connectionScroll.setFitToWidth(true);
@@ -155,76 +110,64 @@ public final class ProfilesEditor extends BorderPane {
         body.setCenter(connectionScroll);
 
         Ui.role(error,"error");
-        cancel=Ui.button("Cancel",this::dismiss);
-        save=Ui.button("Apply",() -> save(false,false));
-        done=Ui.button("Done",() -> { if (dirty) save(false,true); else dismiss(); });
+        save=Ui.button("Save login changes",this::explicitSave);
+        discard=Ui.button("Discard edits",() -> { if (discardChanges()) refreshList(currentOrFirst()); });
+        done=Ui.button("Done",this::dismiss);
         done.setDefaultButton(!embedded);
-        use=Ui.button("Save & connect",() -> save(true,true));
+        use=Ui.button("Connect",this::connect);
 
         BorderPane bottom=new BorderPane();
         bottom.setPadding(embedded ? new Insets(8,0,0,0) : new Insets(4,8,8,8));
         bottom.setCenter(error);
         BorderPane.setAlignment(error,Pos.CENTER_LEFT);
-        if (!embedded) {
-            HBox buttons=new HBox(6,cancel,save,done,use);
-            buttons.setAlignment(Pos.CENTER_RIGHT);
-            bottom.setRight(buttons);
-        } else {
-            save.setText("Create profile");
-            Button discardBtn=Ui.button("Discard pending edits",() -> {
-                if (!saving && discardChanges()) {
-                    edits.stop(); saveFailure="";
-                    refreshList(workspace.profileList().stream().filter(p -> p.id().equals(selected.id())).findFirst().orElse(workspace.profileList().getFirst()));
-                }
-            });
-            HBox explicit=new HBox(6,discardBtn,save);
-            explicit.setAlignment(Pos.CENTER_RIGHT);
-            bottom.setRight(explicit);
-        }
+        HBox buttons=new HBox(6,discard,save);
+        if (!embedded) buttons.getChildren().addAll(done,use);
+        buttons.setAlignment(Pos.CENTER_RIGHT);
+        bottom.setRight(buttons);
+        error.setWrapText(true);
 
         setCenter(body);
         setBottom(bottom);
 
-        for (TextField tf:List.of(name,host,port,device,username,kerberosServer)) {
+        for (TextField tf:List.of(name,host,device,username)) {
             tf.textProperty().addListener((o,a,b) -> {
                 if (!loading) {
                     Ui.markInvalid(tf,false);
-                    updateIdentity();
-                    updateDirty();
+                    autoSave();
+                    if (tf==device) workspace.tutorialAction("profile-device");
                     if (tf==host) workspace.tutorialAction("profile-address");
                     if (tf==username) workspace.tutorialAction("profile-username");
                 }
             });
         }
         password.textProperty().addListener((o,a,b) -> {
-            if (!loading) { updateIdentity(); updateDirty(); }
-        });
-        codePage.valueProperty().addListener((obs,oldV,newV) -> {
-            if (!loading && newV!=null) { updateDirty(); autoSave(); }
+            if (!loading) autoSave();
         });
         automatic.selectedProperty().addListener((o,a,b) -> {
-            if (!loading) { updateDirty(); workspace.tutorialAction("profile-login-options"); autoSave(); }
+            if (!loading) { autoSave(); workspace.tutorialAction("profile-login-options"); }
         });
         remember.selectedProperty().addListener((o,a,b) -> {
-            if (!loading) { updateDirty(); workspace.tutorialAction("profile-login-options"); autoSave(); }
+            if (!loading) { autoSave(); workspace.tutorialAction("profile-login-options"); }
         });
         authentication.valueProperty().addListener((obs,oldV,newV) -> {
             if (loading || newV==null) return;
+            loading=true;
             if (kerberos()) {
-                loading=true; password.clear(); loading=false;
+                if (!discardPassword()) { authentication.setValue(oldV); loading=false; return; }
             } else if (!passwordModeInitialized) {
                 passwordModeInitialized=true;
                 automatic.setSelected(true);
                 remember.setSelected(true);
             }
+            loading=false;
             updateLoginControls();
-            updateDirty();
             autoSave();
             if (!kerberos()) workspace.tutorialAction("profile-password-mode");
         });
         loginFrom.valueProperty().addListener((obs,oldV,newV) -> {
             if (loading || newV==null) return;
             loading=true;
+            if (!discardPassword()) { loginFrom.setValue(oldV); loading=false; return; }
             if (newV instanceof Profile source) {
                 username.setText(source.username());
                 automatic.setSelected(source.automaticSignOn());
@@ -234,10 +177,8 @@ public final class ProfilesEditor extends BorderPane {
                 remember.setSelected(true);
                 passwordModeInitialized=true;
             }
-            password.clear();
             loading=false;
             updateLoginControls();
-            updateDirty();
             autoSave();
         });
         list.getSelectionModel().selectedItemProperty().addListener((obs,oldV,newV) -> {
@@ -260,38 +201,29 @@ public final class ProfilesEditor extends BorderPane {
     public Button upButton() { return up; }
     public Button downButton() { return down; }
     public Button deleteButton() { return delete; }
-    public ToggleButton disclosureButton() { return disclosure; }
-    public GridPane advancedPane() { return advanced; }
     public ListView<Profile> profileListView() { return list; }
     public TextField nameField() { return name; }
     public TextField hostField() { return host; }
-    public TextField portField() { return port; }
     public TextField deviceField() { return device; }
     public TextField usernameField() { return username; }
     public PasswordField passwordField() { return password; }
-    public TextField kerberosServerField() { return kerberosServer; }
     public ComboBox<Profile.Authentication> authenticationCombo() { return authentication; }
-    public ComboBox<String> codePageCombo() { return codePage; }
     public CheckBox automaticCheck() { return automatic; }
     public CheckBox rememberCheck() { return remember; }
     public Label errorLabel() { return error; }
 
     public boolean dirty() { return dirty || diskUnsaved; }
-    public boolean saving() { return saving || editPending || diskUnsaved && saveFailure.isEmpty(); }
-    public void flush() { if (editPending) autoSave(); if (diskUnsaved && !saving) persist(() -> {}); }
+    public boolean saving() { return saving || credentialSaving; }
     public boolean failedSave() { return !saveFailure.isEmpty(); }
     public String error() { return error.getText(); }
     public void discard() {
-        edits.stop(); writes.stop(); editPending=false;
         loading=true; password.clear(); loading=false;
-        updateDirty();
     }
 
     public void rebaseDisplay() {
-        if (dirty) return;
-        workspace.profileList().stream().filter(p -> p.id().equals(selected.id())).findFirst().ifPresent(current -> {
-            if (!current.equals(selected) || !new ArrayList<>(items).equals(workspace.profileList())) refreshList(current);
-        });
+        if (loading || dirty || credentialSaving) return;
+        Profile current=currentOrFirst();
+        if (!current.equals(selected) || !items.equals(workspace.profileList())) refreshList(current);
     }
 
     public void focusName() { name.requestFocus(); }
@@ -304,39 +236,35 @@ public final class ProfilesEditor extends BorderPane {
             case "username" -> username;
             case "password" -> password;
             case "remember" -> remember;
-            case "advanced" -> disclosure;
-            case "apply" -> save;
+            case "device" -> device;
             default -> list;
         };
     }
 
     public Node tutorialTarget(int step) {
-        if (step==0) return cancel;
+        if (step==0) return list;
         if (step>=3) return done;
         return step==1 ? host : kerberos() ? authentication : automatic;
     }
 
     public String tutorialSignInText() {
-        if (kerberos()) return "Kerberos uses your Windows sign-in. No password to type or save. Connect requests a ticket for this IBM i; your administrator must enable Kerberos and map your account. Advanced contains optional device, port and display settings. Terminal traffic is still unencrypted.";
+        if (kerberos()) return "Kerberos uses your Windows sign-in. No password to type or save. Connect requests a ticket for this IBM i. Terminal traffic is still unencrypted.";
         if (loginSource()!=null) return "This profile uses the selected login. Its username and saved password come from there; no need to enter them again.";
-        return (automatic.isSelected() && remember.isSelected() ? "Leave" : "Turn")
-                +" both recommended options on to skip typing your login next time. Enter your password below. Windows saves it; plain TCP is unencrypted.";
+        return "For automatic sign-in, enable both options, enter your password and choose Save login changes. Plain TCP is unencrypted.";
     }
 
     public boolean kerberos() { return authentication.getValue()==Profile.Authentication.KERBEROS; }
 
     public String tutorialConnectionText() {
-        return kerberos() ? "Check the host address. Advanced contains the optional separate Kerberos server DNS name, device and port."
-                : "Check the host address, then enter your username. Give the profile a name you'll recognize. Device is optional.";
+        return "Check the host address and give the profile a name you'll recognize. Device is optional.";
     }
 
     private void load(Profile profile) {
-        edits.stop(); editPending=false;
         selected=profile;
         loading=true;
-        name.setText(profile.name()); host.setText(profile.host()); port.setText(Integer.toString(profile.port()));
+        name.setText(profile.name()); host.setText(profile.host());
         device.setText(profile.device()); username.setText(profile.username()); password.clear();
-        authentication.setValue(profile.authentication()); kerberosServer.setText(profile.kerberosServer());
+        authentication.setValue(profile.authentication());
         List<Object> sources=new ArrayList<>();
         sources.add("Independent login");
         for (Profile source:workspace.profileList()) {
@@ -353,101 +281,84 @@ public final class ProfilesEditor extends BorderPane {
         username.setText(login.username());
         automatic.setSelected(login.automaticSignOn());
         remember.setSelected(login.rememberPassword());
-        codePage.setValue(profile.codePage());
         passwordModeInitialized=profile.authentication()==Profile.Authentication.PASSWORD;
-        error.setText(" ");
-        for (Node n:List.of(name,host,port,device,username,kerberosServer)) Ui.markInvalid(n,false);
-        baseline=fields();
-        dirty=false; loading=false;
+        credentialOrigin=hasPasswordTarget(profile) ? profile : null;
+        draftError="";
+        for (Node n:List.of(name,host,device,username)) Ui.markInvalid(n,false);
+        dirty=false; loginChanges=false; loading=false;
         updateLoginControls();
-        updateDirty();
+        refreshStatus();
     }
 
     private UUID loginSource() { return !kerberos() && loginFrom.getValue() instanceof Profile source ? source.id() : null; }
-
-    public void showAdvanced(boolean show) {
-        disclosure.setSelected(show);
-        advanced.setVisible(show);
-        advanced.setManaged(show);
-        disclosure.setGraphic(Ui.icon(show ? "down" : "right"));
-        disclosure.setAccessibleText(show ? "Hide advanced profile settings" : "Show advanced profile settings");
-    }
-
-    private void updateIdentity() {
-        boolean k=kerberos();
-        identity.setVisible(k);
-        identity.setManaged(k);
-    }
 
     private void updateLoginControls() {
         boolean independent=loginSource()==null;
         boolean windows=kerberos();
         for (Node input:List.of(username,passwordWrapper,automatic,remember)) {
-            input.setDisable(windows || saving || !independent);
+            input.setDisable(windows || credentialSaving || !independent);
             input.setVisible(!windows);
             input.setManaged(!windows);
         }
-        password.setDisable(windows || saving || !independent);
+        password.setDisable(windows || credentialSaving || !independent);
         usernameLabel.setVisible(!windows); usernameLabel.setManaged(!windows);
         passwordLabel.setVisible(!windows); passwordLabel.setManaged(!windows);
         boolean showLogin=!windows && loginFrom.getItems().size()>1;
         loginFrom.setVisible(showLogin); loginFrom.setManaged(showLogin);
         loginLabel.setVisible(showLogin); loginLabel.setManaged(showLogin);
-        kerberosServer.setVisible(windows); kerberosServer.setManaged(windows);
-        kerberosLabel.setVisible(windows); kerberosLabel.setManaged(windows);
-        kerberosServer.setDisable(!windows || saving);
-        updateIdentity();
-        loginHint.setText(windows ? "Use your Windows sign-in. No password saving or NTLM fallback. IBM i needs Kerberos and EIM set up; ask your administrator if Connect cannot sign you in. Terminal traffic is still unencrypted."
-                : independent
-                ? "Skip typing your login next time. Saved passwords stay in Windows Credential Manager. Plain TCP is unencrypted; automatic sign-in needs host support."
-                : "Uses the selected profile's username and saved password for this host. Choose Independent login to stop sharing. Plain TCP is unencrypted.");
     }
 
-    private List<Object> fields() {
-        return List.of(name.getText(),host.getText(),port.getText(),device.getText(),username.getText(),
-                password.getText().length(),automatic.isSelected(),remember.isSelected(),
-                Objects.toString(codePage.getValue(),""),
-                Objects.toString(loginSource(),""),Objects.toString(authentication.getValue(),""),kerberosServer.getText());
+    private boolean discardPassword() {
+        if (password.getLength()==0) return true;
+        if (!Ui.confirm(getScene().getWindow(),"Discard the password you entered?","Unsaved password")) return false;
+        password.clear();
+        return true;
     }
 
-    private void updateDirty() {
-        if (loading) return;
-        dirty=baseline==null || !baseline.equals(fields()) || workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()));
-        save.setDisable(!(dirty || diskUnsaved) || saving);
-        boolean isSaved=workspace.profileList().stream().anyMatch(p -> p.id().equals(selected.id()));
-        if (automaticEdits) {
-            save.setText(!saveFailure.isEmpty() ? "Retry save" : isSaved ? "Save login changes" : "Create profile");
-            boolean loginBoundary=!password.getText().isEmpty() || selected.authentication()==Profile.Authentication.PASSWORD
-                    && selected.rememberPassword() && !selected.username().isEmpty() && !kerberos()
-                    && (!remember.isSelected() || loginSource()!=null || !selected.username().equals(username.getText().strip())
-                    || !selected.host().equals(host.getText().strip()) || !Integer.toString(selected.port()).equals(port.getText().strip()));
-            boolean vis=!isSaved || loginBoundary || !saveFailure.isEmpty();
-            save.setVisible(vis);
-            save.setManaged(vis);
-            if (!credentialSaving && dirty && saveFailure.isEmpty()) { editPending=true; edits.playFromStart(); }
-        }
+    private void refreshStatus() {
+        boolean failed=failedSave();
+        String text=failed ? "Not saved: "+saveFailure : !draftError.isEmpty() ? draftError
+                : credentialSaving ? "Saving login..." : dirty ? "Login changes not saved."
+                : diskUnsaved ? "Saving..." : generation>0 ? "Saved" : "";
+        error.setText(text); Ui.role(error,failed || !draftError.isEmpty() ? "error" : "muted");
+        save.setText(failed ? "Retry save" : "Save login changes");
+        save.setVisible(failed || loginChanges); save.setManaged(save.isVisible());
+        save.setDisable(credentialSaving || !save.isVisible());
+        discard.setVisible(dirty); discard.setManaged(dirty);
+        discard.setDisable(credentialSaving);
         int selIdx=list.getSelectionModel().getSelectedIndex();
-        up.setDisable(saving || !isSaved || selIdx<=0);
-        down.setDisable(saving || !isSaved || selIdx<0 || selIdx>=workspace.profileList().size()-1);
-        delete.setDisable(saving || !isSaved);
+        up.setDisable(credentialSaving || selIdx<=0);
+        down.setDisable(credentialSaving || selIdx<0 || selIdx>=items.size()-1);
+        delete.setDisable(credentialSaving || selIdx<0);
         onDraftChanged.run();
     }
 
     private boolean discardChanges() {
-        return !dirty() || Ui.confirm(getScene()==null ? workspace.stage() : getScene().getWindow(),
+        return !dirty || Ui.confirm(getScene()==null ? workspace.stage() : getScene().getWindow(),
                 "Discard only unsaved profile edits? Already saved changes stay applied.","Unsaved edits");
     }
 
     public void dismiss() {
-        if (!saving && discardChanges()) { password.clear(); close.run(); }
+        connectAfterSave=null;
+        if (saving()) { closing=true; return; }
+        closing=false;
+        if (failedSave() && !Ui.confirm(getScene().getWindow(),
+                "The profile could not be saved to disk. Close without saving?","Profile not saved")) return;
+        if (discardChanges()) close.run();
     }
 
     public void addProfile(boolean copy) {
-        if (!discardChanges()) return;
+        if (credentialSaving || !discardChanges()) return;
         Profile profile=copy ? workspace.connectionProfile(selected).duplicate() : Profile.createKerberos("New workstation");
-        loading=true; items.add(profile); list.getSelectionModel().select(profile); loading=false;
-        load(profile); updateDirty(); name.requestFocus(); name.selectAll();
-        workspace.tutorialAction("profile-new");
+        try {
+            loading=true;
+            workspace.putProfile(profile);
+            refreshList(profile);
+            changed();
+            name.requestFocus(); name.selectAll();
+            workspace.tutorialAction("profile-new");
+        } catch (IllegalArgumentException ex) { problem(ex); }
+        finally { loading=false; }
     }
 
     public void refreshList(Profile profile) {
@@ -456,11 +367,11 @@ public final class ProfilesEditor extends BorderPane {
     }
 
     public void move(int direction) {
-        if (saving) return;
+        if (credentialSaving) return;
         try {
             workspace.moveProfile(selected.id(),direction);
             loading=true; items.setAll(workspace.profileList());
-            list.getSelectionModel().select(selected); loading=false; updateDirty();
+            list.getSelectionModel().select(selected); loading=false; changed();
             list.requestFocus();
         } catch (IllegalArgumentException e) {
             error.setText(e.getMessage());
@@ -469,14 +380,14 @@ public final class ProfilesEditor extends BorderPane {
     }
 
     public void delete() {
-        if (saving || !discardChanges()) return;
+        if (credentialSaving || !discardChanges()) return;
         try {
             workspace.validateDeleteProfile(selected.id());
             if (!Ui.confirm(getScene()==null ? workspace.stage() : getScene().getWindow(),
-                    "Delete \""+selected.name()+"\"?\nPanes using it will disconnect and select the first remaining profile. Legacy profile layouts will be updated; named layouts block deletion until updated or removed.\n"
-                    +"Windows saved passwords are kept; this never deletes another profile's login.","Delete profile")) return;
+                    "Delete \""+selected.name()+"\"?\nPanes using it will disconnect and select another profile. Saved passwords are kept.","Delete profile")) return;
             workspace.deleteProfile(selected.id());
             refreshList(workspace.profileList().getFirst());
+            changed();
             list.requestFocus();
         } catch (IllegalArgumentException e) {
             error.setText(e.getMessage());
@@ -484,175 +395,161 @@ public final class ProfilesEditor extends BorderPane {
         }
     }
 
-    static final class Pending implements AutoCloseable {
-        Profile updated;
-        final Profile previous;
-        final char[] secret;
-        Pending(Profile updated,Profile previous,char[] secret) { this.updated=updated; this.previous=previous; this.secret=secret; }
-        @Override public void close() { Arrays.fill(secret,'\0'); }
+    private Profile currentProfile() {
+        return workspace.profileList().stream().filter(p -> p.id().equals(selected.id())).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("This profile was deleted. Select another profile."));
     }
 
-    Pending prepare(boolean connect) {
-        char[] secret=password.getText().toCharArray();
-        try {
-            Profile previous=workspace.profileList().stream().filter(p -> p.id().equals(selected.id())).findFirst().orElse(null);
-            if (previous!=null && !previous.withDisplay(selected.theme(),selected.effect()).equals(selected))
-                throw new IllegalArgumentException("This profile changed elsewhere. Select it again before applying edits.");
-            Profile display=previous==null ? selected : previous;
-            UUID source=loginSource();
-            Profile updated=new Profile(selected.id(),name.getText(),host.getText(),Integer.parseInt(port.getText().strip()),
-                    device.getText(),source==null ? username.getText() : "",!kerberos() && source==null && automatic.isSelected(),!kerberos() && source==null && remember.isSelected(),
-                    Objects.requireNonNull(codePage.getValue()),display.theme(),
-                    display.effect(),display.zoom(),Map.of(),display.savedLayout(),source,
-                    Objects.requireNonNull(authentication.getValue()),kerberosServer.getText());
-            workspace.validateProfile(updated);
-            Profile login=workspace.loginProfile(updated);
-            if (secret.length>0 && login.username().isEmpty())
-                throw new IllegalArgumentException("Enter a username before saving a password.");
-            if (connect && login.automaticSignOn() && login.username().isEmpty())
-                throw new IllegalArgumentException("Enter a username for automatic sign-in, or turn it off.");
-            if (secret.length>0 && !updated.rememberPassword())
-                throw new IllegalArgumentException("Enable Save password, or clear the password field.");
-            error.setText(" ");
-            Ui.role(error,"muted");
-            return new Pending(updated,previous,secret);
-        } catch (IllegalArgumentException e) {
-            Arrays.fill(secret,'\0');
-            String msg=e instanceof NumberFormatException ? "Port must be a number." : e.getMessage();
-            error.setText(msg);
-            error.setTooltip(new Tooltip(msg));
-            Ui.role(error,"error");
-            if (e instanceof NumberFormatException || msg.startsWith("Port")) { showAdvanced(true); Ui.markInvalid(port,true); }
-            else if (msg.startsWith("Device")) { showAdvanced(true); Ui.markInvalid(device,true); }
-            else if (msg.startsWith("Kerberos server")) { showAdvanced(true); Ui.markInvalid(kerberosServer,true); kerberosServer.requestFocus(); }
-            else if (msg.startsWith("Username")) Ui.markInvalid(username,true);
-            else if (msg.startsWith("Profile name")) Ui.markInvalid(name,true);
-            else if (msg.contains("hostname")) Ui.markInvalid(host,true);
-            return null;
-        }
+    private Profile currentOrFirst() {
+        List<Profile> profiles=workspace.profileList();
+        return profiles.stream().filter(p -> p.id().equals(selected.id())).findFirst().orElse(profiles.getFirst());
     }
 
-    public void save(boolean connect,boolean finish) {
-        edits.stop(); editPending=false;
-        if (diskUnsaved && !dirty) {
-            saveFailure=""; persist(() -> { if (finish) { close.run(); if (connect) workspace.useProfile(selected); } }); return;
-        }
-        Pending pending=prepare(connect);
-        if (pending!=null) commit(pending,() -> {
-            diskUnsaved=true;
-            persist(() -> { if (finish) { close.run(); if (connect) workspace.useProfile(selected); } });
-        },msg -> {});
+    private Profile draft() {
+        Profile p=currentProfile();
+        if (!p.withDisplay(selected.theme(),selected.effect()).equals(selected))
+            throw new IllegalArgumentException("This profile changed elsewhere. Discard edits to reload it.");
+        UUID source=loginSource();
+        return new Profile(p.id(),name.getText(),host.getText(),p.port(),device.getText(),
+                source==null ? username.getText() : "",!kerberos() && source==null && automatic.isSelected(),
+                !kerberos() && source==null && remember.isSelected(),p.codePage(),p.theme(),p.effect(),
+                p.zoom(),p.keymap(),p.savedLayout(),source,authentication.getValue(),p.kerberosServer());
     }
 
-    private static boolean credentialChange(Pending value) {
-        Profile previous=value.previous,updated=value.updated;
-        return value.secret.length>0 || previous!=null && previous.authentication()==Profile.Authentication.PASSWORD
-                && updated.authentication()==Profile.Authentication.PASSWORD && previous.rememberPassword() && !previous.username().isEmpty()
-                && (!updated.rememberPassword() || !previous.credentialTarget().equals(updated.credentialTarget()));
+    private static boolean hasPasswordTarget(Profile p) {
+        return p.authentication()==Profile.Authentication.PASSWORD && p.rememberPassword() && !p.username().isEmpty();
+    }
+
+    private boolean retiresCredential(Profile p) {
+        // A newly typed username is not evidence that a Windows credential already exists for it.
+        return credentialOrigin!=null && p.authentication()==Profile.Authentication.PASSWORD
+                && (!hasPasswordTarget(p) || !p.credentialTarget().equals(credentialOrigin.credentialTarget()));
     }
 
     private void autoSave() {
-        edits.stop(); editPending=false;
-        if (!automaticEdits || loading || credentialSaving) return;
-        if (workspace.profileList().stream().noneMatch(p -> p.id().equals(selected.id()))) {
-            error.setText("New profile is not saved. Choose Create profile when ready.");
-            Ui.role(error,"muted");
-            onDraftChanged.run();
-            return;
-        }
-        if (dirty) {
-            Pending pending=prepare(false);
-            if (pending==null) { onDraftChanged.run(); return; }
-            try {
-                if (credentialChange(pending)) {
-                    error.setText("Login/password changes need Save login changes. Nothing in Windows was changed.");
-                    Ui.role(error,"muted");
-                    onDraftChanged.run();
-                    return;
-                }
-                Profile updated=pending.updated;
-                workspace.putProfile(updated);
-                selected=updated; baseline=fields(); dirty=false; diskUnsaved=true; generation++;
-                loading=true;
-                try {
-                    int index=list.getSelectionModel().getSelectedIndex();
-                    if (index>=0) items.set(index,updated);
-                } finally { loading=false; }
-            } finally { pending.close(); }
-        }
-        if (diskUnsaved) writes.playFromStart();
-        else if (!dirty) { error.setText("Saved"); Ui.role(error,"muted"); updateDirty(); }
+        if (loading || credentialSaving) return;
+        draftError=""; loginChanges=false;
+        try {
+            Profile p=draft();
+            boolean protectedLogin=retiresCredential(p);
+            dirty=loginChanges=protectedLogin || password.getLength()!=0;
+            if (protectedLogin) {
+                // Still autosave name and device; keep the saved login and its endpoint together.
+                Profile old=currentProfile();
+                p=new Profile(old.id(),p.name(),old.host(),old.port(),p.device(),old.username(),old.automaticSignOn(),
+                        old.rememberPassword(),old.codePage(),old.theme(),old.effect(),old.zoom(),old.keymap(),
+                        old.savedLayout(),old.loginSource(),old.authentication(),old.kerberosServer());
+            }
+            applyProfile(p);
+            refreshStatus();
+        } catch (IllegalArgumentException ex) { problem(ex); }
     }
 
-    private void persist(Runnable done) {
-        writes.stop();
-        if (saving || !diskUnsaved) return;
+    private void applyProfile(Profile p) {
+        if (p.equals(selected)) return;
+        // Updating the list/model must not reload the text fields mid-keystroke (e.g. trailing space).
+        loading=true;
+        try {
+            workspace.putProfile(p);
+            int index=items.indexOf(selected);
+            if (index>=0) items.set(index,p);
+            list.getSelectionModel().select(p);
+            selected=p;
+        } finally { loading=false; }
+        changed();
+    }
+
+    private void changed() {
+        generation++;
+        diskUnsaved=true;
+        persist();
+    }
+
+    private void persist() {
+        if (saving || !diskUnsaved || failedSave()) return;
         long written=generation;
         saving=true;
-        error.setText("Saving profile...");
-        Ui.role(error,"muted");
-        onDraftChanged.run();
+        refreshStatus();
         workspace.persistSettings(() -> {
-            saving=false; diskUnsaved=written!=generation; saveFailure="";
-            error.setText(dirty ? "Editing; not saved yet." : diskUnsaved ? "Saving profile..." : "Saved");
-            Ui.role(error,"muted");
-            updateDirty(); workspace.tutorialAction("profile-saved"); done.run();
-            if (diskUnsaved) writes.playFromStart();
+            saving=false;
+            diskUnsaved=written!=generation;
+            if (diskUnsaved) { persist(); return; }
+            refreshStatus();
+            finishIfReady();
         },message -> {
-            saving=false; saveFailure=message;
-            error.setText("Not saved: "+message+" Choose Retry save.");
-            error.setTooltip(new Tooltip(error.getText()));
-            Ui.role(error,"error");
-            save.setText("Retry save"); save.setVisible(true); save.setManaged(true); save.setDisable(false);
-            onDraftChanged.run(); workspace.refreshActions();
-            if (written!=generation) writes.playFromStart();
+            saving=false; closing=false; connectAfterSave=null;
+            saveFailure=Objects.toString(message,"Could not write profiles.");
+            refreshStatus();
         });
     }
 
-    void commit(Pending pending,Runnable success,java.util.function.Consumer<String> failed) {
-        Profile updated=pending.updated,previous=pending.previous; char[] secret=pending.secret;
-        setSaving(true);
-        CompletableFuture.runAsync(() -> {
-            try {
-                if (updated.rememberPassword() && secret.length>0) workspace.credentials().write(updated,secret);
-                if (previous!=null && previous.authentication()==Profile.Authentication.PASSWORD && updated.authentication()==Profile.Authentication.PASSWORD
-                        && previous.rememberPassword() && !previous.username().isEmpty() && (!updated.rememberPassword()
-                        || !previous.credentialTarget().equals(updated.credentialTarget()))) workspace.credentials().delete(previous);
-            } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
-        }).whenComplete((unused,err) -> Ui.runLater(() -> {
-            pending.close();
-            loading=true; password.clear(); loading=false;
-            setSaving(false);
-            try {
-                if (err!=null) throw err;
-                Profile current=workspace.profileList().stream().filter(p -> p.id().equals(updated.id())).findFirst().orElse(null);
-                if (!Objects.equals(current,previous))
-                    throw new IllegalArgumentException("Profile changed during save; reopen it to review the saved state.");
-                workspace.putProfile(updated);
-                dirty=false;
-                refreshList(updated);
-                success.run();
-            } catch (Throwable e) {
-                Throwable cause=e.getCause()==null ? e : e.getCause();
-                if (cause instanceof java.io.UncheckedIOException uio && uio.getCause()!=null) cause=uio.getCause();
-                error.setText("Not saved: "+cause.getMessage());
-                error.setTooltip(new Tooltip(error.getText()));
-                Ui.role(error,"error");
-                failed.accept(error.getText());
-            }
-        }));
+    private void finishIfReady() {
+        if (saving() || failedSave()) return;
+        if (closing) dismiss();
+        else if (connectAfterSave!=null) {
+            Profile requested=connectAfterSave;
+            connectAfterSave=null;
+            if (requested.equals(selected)) connect();
+        }
     }
 
-    private void setSaving(boolean value) {
-        saving=value; credentialSaving=value;
-        for (Button button:List.of(save,done,use,cancel,add,duplicate,up,down,delete)) button.setDisable(value);
-        for (Node input:List.of(name,host,port,device,username,password,passwordWrapper,codePage,automatic,remember,loginFrom,authentication,kerberosServer,disclosure))
-            input.setDisable(value);
+    private void connect() {
+        if (dirty || failedSave()) { refreshStatus(); return; }
+        Profile login=workspace.loginProfile(selected);
+        if (login.automaticSignOn() && login.username().isEmpty()) {
+            draftError="Enter a username for automatic sign-in, or turn it off.";
+            refreshStatus(); return;
+        }
+        if (saving()) { connectAfterSave=selected; return; }
+        close.run();
+        workspace.useProfile(selected);
+    }
+
+    private void explicitSave() {
+        if (credentialSaving) return;
+        if (failedSave()) { saveFailure=""; persist(); return; } // Disk retry never repeats credential operations.
+        try {
+            Profile p=draft(),previous=currentProfile(),retired=retiresCredential(p) ? credentialOrigin : null;
+            workspace.validateProfile(p);
+            if (password.getLength()>0 && !hasPasswordTarget(p))
+                throw new IllegalArgumentException("Enter a username and enable Save password, or clear the password.");
+            if (retired==null && password.getLength()==0) { autoSave(); return; }
+            char[] secret=password.getText().toCharArray();
+            setCredentialSaving(true);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    if (secret.length>0) workspace.credentials().write(p,secret);
+                    if (retired!=null) workspace.credentials().delete(retired);
+                } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
+                finally { Arrays.fill(secret,'\0'); }
+            }).whenComplete((unused,err) -> Ui.runLater(() -> {
+                setCredentialSaving(false);
+                try {
+                    if (err!=null) throw new IllegalArgumentException("Login not saved: "+err.getCause().getMessage());
+                    if (!previous.equals(currentProfile())) throw new IllegalArgumentException("Profile changed during login save. Review your edits.");
+                    applyProfile(p);
+                    refreshList(p); // Only clear the password after success.
+                    finishIfReady();
+                } catch (IllegalArgumentException ex) { closing=false; problem(ex); }
+            }));
+        } catch (IllegalArgumentException ex) { problem(ex); }
+    }
+
+    private void setCredentialSaving(boolean value) {
+        credentialSaving=value;
+        for (Node n:List.of(name,host,device,loginFrom,authentication,list,add,duplicate,done,use)) n.setDisable(value);
         updateLoginControls();
-        if (!value) updateDirty();
-        workspace.refreshActions();
-        list.setDisable(value);
-        error.setText(value ? "Saving..." : " ");
+        refreshStatus();
+    }
+
+    private void problem(IllegalArgumentException ex) {
+        dirty=true;
+        draftError=ex.getMessage();
+        if (draftError.startsWith("Device")) Ui.markInvalid(device,true);
+        else if (draftError.startsWith("Username")) Ui.markInvalid(username,true);
+        else if (draftError.startsWith("Profile name")) Ui.markInvalid(name,true);
+        else if (draftError.contains("hostname")) Ui.markInvalid(host,true);
+        refreshStatus();
     }
 
     private static Label field(GridPane grid,int row,String text,Control control) {

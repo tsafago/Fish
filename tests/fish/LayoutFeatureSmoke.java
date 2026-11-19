@@ -141,7 +141,7 @@ public final class LayoutFeatureSmoke {
             SavedLayout pair=edt(() -> {
                 check(w.sessionPanes().size()==2,"Later Add creates a separate pane, no blank third tile");
                 w.active().view().restoreDisplay(new SavedLayout.Display(false,1.65));
-                return w.saveCurrentLayout(null,"Pair / \u5317");
+                return ShortcutFixture.export(w,"Pair / \u5317",false);
             });
             Workspace other=edt(() -> {
                 check(fixture.app.newWindow(w),"New window action succeeds");
@@ -150,16 +150,13 @@ public final class LayoutFeatureSmoke {
             await(() -> a.activeConnections()==2 && other.active().connected(),"Explicit New window ignored startup-off");
             SavedLayout single=edt(() -> {
                 check(other.stage().getOwner()==null && other.sessionPanes().size()==1,"New window is ordinary and independent");
-                SavedLayout value=other.saveCurrentLayout(null,"Single");
-                check(w.savedLayouts().size()==2,"Named library refreshes across windows");
+                SavedLayout value=ShortcutFixture.export(other,"Single",false);
+                check(w.savedLayouts().size()==2,"New shortcut references propagate across windows");
                 selector(other).setValue(pb);
                 w.moveProfile(pb.id(),-1);
                 check(selector(other).getItems().getFirst().id().equals(pb.id()) && selector(other).getValue().id().equals(pb.id()),
                         "Reordered profiles refresh peers while retaining their own selected IDs");
                 check(selector(w).getValue().id().equals(pa.id()),"Per-window add choice stays independent");
-                w.renameSavedLayout(pair.id(),"Renamed \u5317");
-                check(other.savedLayouts().stream().anyMatch(s -> s.id().equals(pair.id()) && s.name().equals("Renamed \u5317")),
-                        "Layout rename retains ID and refreshes peers");
                 rejects(() -> { w.validateDeleteProfile(pb.id()); return null; },"Live named library blocks referenced deletion");
                 check(fixture.app.openRequest(UUID.randomUUID())==2,"Stale shortcut ID is explicitly unavailable");
                 check(fixture.app.openRequest(pair.id())==1,"Saved recipe requests a new window");
@@ -192,8 +189,7 @@ public final class LayoutFeatureSmoke {
                 Button addBtn=(Button)field(w,"addPane");
                 check(w.sessionPanes().size()==8 && addBtn.isDisabled(),"No ninth session/controller; plus is disabled");
                 check(addBtn.getTooltip().getText().contains("Eight"),"Disabled add explains the limit");
-                w.deleteSavedLayout(single.id());
-                check(other.savedLayouts().size()==1,"Delete refreshes shared library without deleting a window");
+                check(other.savedLayouts().contains(single),"Shortcut remains available after changing the live panes");
                 return null;
             });
             await(() -> a.activeConnections()==8,"All eight intended A sockets across independent windows did not connect");
@@ -298,11 +294,11 @@ public final class LayoutFeatureSmoke {
         if (destination.isBlank()) return;
         Path output=Path.of(destination); Files.createDirectories(output);
         w.setSize(1120,760); FxTestSupport.layout(w);
-        w.savedLayoutsDialog();
-        SavedLayoutsDialog dialog=(SavedLayoutsDialog)field(w,"layoutsDialog"); FxTestSupport.layout(dialog.stage());
+        w.preferences("General");
+        var dialog=w.tutorialPreferences(); FxTestSupport.layout(dialog.dialog());
         for (double scale:new double[]{1,1.5}) {
             FxTestSupport.writeSnapshot(w.scene().getRoot(),scale,output.resolve("window-"+scale+".png"));
-            FxTestSupport.writeSnapshot(dialog.stage().getScene().getRoot(),scale,output.resolve("saved-layouts-"+scale+".png"));
+            FxTestSupport.writeSnapshot(dialog.dialog().getScene().getRoot(),scale,output.resolve("desktop-shortcuts-"+scale+".png"));
         }
         for (int width:new int[]{330,680,1120}) {
             w.setSize(width,760); FxTestSupport.layout(w);
@@ -311,12 +307,12 @@ public final class LayoutFeatureSmoke {
             check(controls.getLayoutX()+controls.getWidth()<=chrome.getWidth()+1,"Native controls stay inside titlebar at width "+width);
             check(selector(w).getWidth()>=45,"Profile selector remains usable at width "+width);
         }
-        dialog.dispose();
+        dialog.forceDispose();
     }
     public static void main(String[] args) throws Exception {
         Ui.install();
         Path root=Files.createTempDirectory(Path.of("build"),"layouts-075-");
-        try {
+        try (ShortcutFixture ignored=new ShortcutFixture(root)) {
             model(root);
             try (DemoHost a=new DemoHost(); DemoHost b=new DemoHost()) {
                 StateStore.State state=live(root,a,b); cold(root,state,a,b);

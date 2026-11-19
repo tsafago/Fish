@@ -90,11 +90,7 @@ public final class AppCommand {
         item.getProperties().put("fish.title",title);
         item.disableProperty().bind(enabled.not());
         item.setText(displayText);
-        Runnable updateAccel=() -> {
-            String accel=primaryShortcut.get();
-            item.setAccelerator(accel.isEmpty() ? null : new DisplayAccelerator(item,accel));
-        };
-        primaryShortcut.addListener((obs,oldV,newV) -> updateAccel.run());
-        updateAccel.run();
+        item.acceleratorProperty().bind(primaryShortcut.map(accel ->
+                accel.isEmpty() ? null : new DisplayAccelerator(item,accel)));
     }
 }

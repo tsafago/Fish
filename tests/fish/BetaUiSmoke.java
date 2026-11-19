@@ -98,33 +98,18 @@ public final class BetaUiSmoke {
     private static void forms(Workspace w) throws Exception {
         for (AppTheme theme:List.of(AppTheme.Charcoal,AppTheme.Light,AppTheme.Slate)) {
             w.applyTheme(theme);
-            SavedLayoutsDialog dialog=new SavedLayoutsDialog(w); layout(dialog.stage());
-            TextField name=(TextField)field(dialog,"name");
-            Label summary=(Label)field(dialog,"context");
-            Button create=(Button)field(dialog,"create"),save=(Button)field(dialog,"save");
-            ToggleButton manage=(ToggleButton)field(dialog,"manage");
-            Node root=dialog.stage().getScene().getRoot();
+            Preferences dialog=new Preferences(w,"General"); layout(dialog.dialog());
+            TextField name=(TextField)dialog.tutorialTarget("shortcut-name");
+            Button create=(Button)dialog.tutorialTarget("shortcut-create");
+            Node root=dialog.dialog().getScene().getRoot();
             Rectangle box=FxTestSupport.boundsIn(name,root);
-            Rectangle context=FxTestSupport.boundsIn(summary,root);
             Rectangle primary=FxTestSupport.boundsIn(create,root);
-            Rectangle secondary=FxTestSupport.boundsIn(save,root);
-            check(box.x<40 && box.width>=dialog.stage().getScene().getWidth()-80 && context.y<box.y,
-                    "Referenced shortcut name is full width under profile context");
-            check(Math.abs(primary.x-box.x)<=2 && secondary.x>=primary.x+primary.width,
-                    "Primary and secondary actions are left aligned in requested order");
-            check(manage.getWidth()>=box.width-2 && !((Region)field(dialog,"library")).isVisible(),
-                    "Saved library is full-width and initially expandable");
-            name.setText("Synthetic layout \u5317");
+            check(Math.abs(primary.x-box.x)<=2 && primary.y>box.y && primary.width<=box.width,
+                    "Shortcut action and name field align in General");
+            name.setText("Synthetic shortcut \u5317");
             snapshot(root,"shortcuts-"+theme);
-            if (w.savedLayouts().isEmpty()) {
-                save.fire();
-                UsabilityIterationSmoke.settle(() -> !(boolean)field(dialog,"working"),"Synthetic saved layout did not persist");
-            } else manage.fire();
-            layout(dialog.stage());
-            TextField rename=(TextField)field(dialog,"existingName");
-            check(!rename.getText().isBlank(),"Saved Unicode names remain readable in the actual rename field");
-            snapshot(root,"shortcuts-expanded-"+theme);
-            dialog.dispose();
+            check(w.savedLayouts().isEmpty(),"Editing the name does not save anything");
+            dialog.forceDispose();
 
             Preferences preferences=new Preferences(w,"Appearance"); layout(preferences.dialog());
             snapshot(preferences.dialog().getScene().getRoot(),"settings-"+theme); preferences.forceDispose();

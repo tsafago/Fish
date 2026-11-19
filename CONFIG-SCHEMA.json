@@ -91,16 +91,6 @@
       "title": "Previous pane"
     },
     {
-      "default": "ctrl alt OPEN_BRACKET",
-      "hostAction": null,
-      "title": "Decrease divider"
-    },
-    {
-      "default": "ctrl alt CLOSE_BRACKET",
-      "hostAction": null,
-      "title": "Increase divider"
-    },
-    {
       "default": "ctrl alt S",
       "hostAction": null,
       "title": "Save layout to profile"
@@ -153,11 +143,6 @@
     {
       "default": "",
       "hostAction": null,
-      "title": "Configuration for external tools"
-    },
-    {
-      "default": "",
-      "hostAction": null,
       "title": "Tutorial: Appearance"
     },
     {
@@ -184,11 +169,6 @@
       "default": "",
       "hostAction": null,
       "title": "Keyboard reference"
-    },
-    {
-      "default": "",
-      "hostAction": null,
-      "title": "Compatibility and connection safety"
     },
     {
       "default": "",
@@ -1682,7 +1662,7 @@
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.10.2 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart), pane-size-relative per-pane zoom (100% auto fit), and per-profile #RRGGBB custom primary colors with automatic IBM 5250 palette synthesis, retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.10.3 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart), pane-size-relative per-pane zoom (100% auto fit), and per-profile #RRGGBB custom primary colors with automatic IBM 5250 palette synthesis, retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.",
   "windowPrefix": "window.{zero-based-index}.",
   "workspaceVersion": "21"
 }

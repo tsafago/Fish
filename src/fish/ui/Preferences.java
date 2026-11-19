@@ -45,7 +45,6 @@ public final class Preferences {
     private final ComboBox<Appearance.CursorStyle> cursorStyle=new ComboBox<>(FXCollections.observableArrayList(Appearance.CursorStyle.values()));
     private final ComboBox<String> family=new ComboBox<>();
     private final TextField fontPath=new TextField();
-    private final ComboBox<UpdateSettings.Channel> channel=new ComboBox<>(FXCollections.observableArrayList(UpdateSettings.Channel.values()));
     private final Map<UUID,Display> displays=new LinkedHashMap<>(),originalDisplays=new LinkedHashMap<>();
     private final Map<UUID,String> customColors=new LinkedHashMap<>();
     private final Map<String,Node> targets=new HashMap<>();
@@ -55,7 +54,6 @@ public final class Preferences {
     private final Timeline writes=new Timeline(new KeyFrame(Duration.millis(200),e -> persist()));
     private long generation;
     private String validation="",saveFailure="";
-    private String ignored;
     public final KeyboardEditor keyboard;
     public final ProfilesEditor profiles;
     private final Label error=new Label(" ");
@@ -88,8 +86,6 @@ public final class Preferences {
         reducedMotion=new CheckBox("Reduce motion"); reducedMotion.setSelected(a.reducedMotion());
         reducedMotion.setTooltip(new Tooltip("Skips in-window transitions and pauses animated terminal text effects."));
         checkUpdates=new CheckBox("Check for updates at startup"); checkUpdates.setSelected(workspace.updateSettings().startup());
-        ignored=workspace.updateSettings().ignoredVersion();
-        channel.setValue(workspace.updateSettings().channel());
 
         keyboard=new KeyboardEditor(workspace);
         profiles=new ProfilesEditor(workspace,workspace.active()==null ? workspace.lastProfile() : workspace.active().profile(),true,this::closeSettings);
@@ -141,7 +137,6 @@ public final class Preferences {
             }
         });
         cursorStyle.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) edited(false); });
-        channel.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) edited(false); });
 
         List<String> families=new ArrayList<>();
         families.add("Automatic");
@@ -237,9 +232,11 @@ public final class Preferences {
         fontPath.textProperty().addListener((o,oldV,newV) -> edited(true));
         keyboard.setOnDraftChanged(() -> edited(true));
         profiles.setOnDraftChanged(() -> {
-            syncProfiles();
             refresh();
-            if (closeRequested && !saving && !profiles.saving()) Ui.runLater(this::closeSettings);
+            if (profiles.failedSave()) closeRequested=false;
+            if (closeRequested && !saving && !profiles.saving()) Ui.runLater(() -> {
+                if (closeRequested && !ended) closeSettings();
+            });
         });
 
         select(category);
@@ -628,7 +625,13 @@ public final class Preferences {
         body.getChildren().add(section("Startup"));
         body.getChildren().add(startup);
         targets.put("startup",startup);
-        body.getChildren().add(note("Controls ordinary restored-window startup. Existing off choices are kept. Explicit +, New window and saved-layout launches still connect once; failures offer Reconnect."));
+
+        DesktopShortcutForm shortcut=new DesktopShortcutForm(workspace);
+        body.getChildren().addAll(section("Desktop shortcuts"),note("Open this window’s pane arrangement from your Desktop."),shortcut);
+        targets.put("shortcut-name",shortcut.name);
+        targets.put("shortcut-create",shortcut.create);
+        targets.put("shortcut-status",shortcut.status);
+        targets.put("shortcut-autostart",shortcut.autostart);
 
         body.getChildren().add(section("Installation"));
         Optional<Path> appImage=UserInstaller.currentAppImage();
@@ -637,12 +640,12 @@ public final class Preferences {
         boolean alreadyInstalled=appImage.isPresent() && UserInstaller.isInstalledLocation(appImage.get());
         boolean alreadySystemInstalled=appImage.isPresent() && UserInstaller.isSystemInstalledLocation(appImage.get());
         Label installStatus=note(appImage.isEmpty()
-                ? "Running from development classes/JAR. Package Fish (build.ps1 Package) or run Install-Fish.ps1 to install for your Windows account or system-wide."
+                ? "Development build"
                 : alreadySystemInstalled
-                ? "Installed system-wide for all users in: "+appImage.get()
+                ? "Installed for all users"
                 : alreadyInstalled
-                ? "Installed for your Windows account in: "+appImage.get()
-                : "Running in portable mode from: "+appImage.get()+"\nInstall for your Windows account ("+targetInstallDir+", no admin needed) or system-wide for all users ("+systemInstallDir+", requires Administrator).");
+                ? "Installed for this account"
+                : "Portable copy");
         CheckBox desktopLink=new CheckBox("Also create a Desktop shortcut");
         Label installFeedback=note("");
         installFeedback.setVisible(false); installFeedback.setManaged(false);
@@ -709,15 +712,11 @@ public final class Preferences {
         body.getChildren().addAll(installStatus,desktopLink,installActions,installFeedback);
 
         body.getChildren().add(section("Kiosk Mode (Administrator)"));
-        Label kioskNote=note("Locks Fish on this computer so it can only start from saved layout shortcuts, prevents layout/pane/zoom/settings changes, suppresses lasting workspace modifications, and hides all non-essential menus except Edit (Copy, Paste, Disable Kiosk Mode) and Inserts.");
-        Label kioskStatus=note("");
+        Label kioskNote=note("Only desktop shortcuts can open Fish. Panes and settings are locked.");
         Button kioskToggle=Ui.button("",() -> {});
         kioskToggle.setId("prefs-kiosk-toggle");
         Runnable syncKioskUi=() -> {
             boolean active=KioskMode.isEnabled();
-            kioskStatus.setText(active
-                    ? "Current status: Enabled (locked to saved layout shortcuts)."
-                    : "Current status: Disabled (standard workspace controls unlocked).");
             kioskToggle.setText(active ? "Disable Kiosk Mode (Administrator)..." : "Enable Kiosk Mode (Administrator)...");
         };
         syncKioskUi.run();
@@ -725,8 +724,8 @@ public final class Preferences {
             boolean target=!KioskMode.isEnabled();
             if (target) {
                 String warning=workspace.savedLayouts().isEmpty()
-                        ? "No saved layout shortcuts exist yet in this workspace! In Kiosk mode, Fish will only open from saved layout shortcuts.\n\nEnable Kiosk mode anyway (requires Administrator)?"
-                        : "Enable Kiosk mode for this computer (requires Administrator)?\n\nFish will immediately lock pane/layout/settings controls and require launching from saved layout shortcuts.";
+                        ? "No workspace shortcuts exist yet. Enable kiosk mode anyway? Fish won't open normally."
+                        : "Lock Fish to workspace shortcuts on this computer?";
                 if (!Ui.confirm(dialog,warning,"Enable Kiosk Mode")) return;
                 if (dirty()) persist();
             } else {
@@ -742,38 +741,24 @@ public final class Preferences {
             syncKioskUi.run();
         });
         targets.put("kiosk",kioskToggle);
-        body.getChildren().addAll(kioskNote,kioskStatus,kioskToggle);
+        body.getChildren().addAll(kioskNote,kioskToggle);
 
         body.getChildren().add(section("Reset"));
         body.getChildren().add(Ui.button("Revert to factory defaults...",workspace::factoryDefaults));
-        body.getChildren().add(note("After confirmation, ends sessions and exits. Profiles and named layouts are cleared. Windows passwords, local font files and exported shortcut files are kept."));
         return body;
     }
 
     private BorderPane updates() {
-        channel.setMaxWidth(Double.MAX_VALUE);
-        VBox settings=new VBox(9);
-        settings.getChildren().addAll(
-                checkUpdates,
-                row("Update channel",channel),
-                note("All releases includes experimental beta builds across minor and major versions. Stable selects non-prerelease versions across all versions. Never downgrades or reinstalls."));
-        Label hidden=new Label(ignored.isEmpty() ? "No hidden version" : "Hidden on startup: "+ignored);
-        Button showHidden=Ui.button("Show hidden updates",() -> {
-            ignored="";
-            hidden.setText("No hidden version");
-            edited(false);
-        });
-        BorderPane visibility=new BorderPane();
-        visibility.setLeft(hidden);
-        BorderPane.setAlignment(hidden,Pos.CENTER_LEFT);
-        visibility.setRight(showHidden);
-        settings.getChildren().add(visibility);
-
         BorderPane body=new BorderPane();
-        body.setTop(settings);
-        BorderPane.setMargin(settings,new Insets(0,0,14,0));
-        body.setCenter(workspace.updateController().panel(dialog,() -> dirty() || saving() || profiles.dirty(),channel::getValue));
+        body.setTop(checkUpdates);
+        BorderPane.setMargin(checkUpdates,new Insets(0,0,16,0));
+        body.setCenter(workspace.updateController().panel(dialog,() -> dirty() || saving() || profiles.dirty(),() -> workspace.updateSettings().channel()));
         return body;
+    }
+
+    private UpdateSettings updateChoices() {
+        UpdateSettings policy=workspace.updateSettings();
+        return new UpdateSettings(checkUpdates.isSelected(),policy.channel(),policy.ignoredVersion());
     }
 
     private static HBox row(String title,Control input) {
@@ -821,7 +806,7 @@ public final class Preferences {
                 new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                         info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                 cursorStyle.getValue(),
-                new UpdateSettings(checkUpdates.isSelected(),channel.getValue(),ignored),keyboard.draft(),Map.copyOf(displays));
+                updateChoices(),keyboard.draft(),Map.copyOf(displays));
     }
 
     private boolean dirty() {
@@ -884,7 +869,7 @@ public final class Preferences {
                     new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                             info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                     cursorStyle.getValue(),
-                    new UpdateSettings(checkUpdates.isSelected(),channel.getValue(),ignored),keys,Map.copyOf(displays));
+                    updateChoices(),keys,Map.copyOf(displays));
             for (Profile profile:workspace.profileList()) {
                 Display desired=next.displays().get(profile.id()),previous=saved.displays().get(profile.id());
                 Display live=new Display(profile.theme(),profile.effect());
@@ -952,7 +937,7 @@ public final class Preferences {
             saving=false; saveFailure=""; unsaved=written!=generation;
             refresh(); workspace.tutorialAction("settings-applied");
             if (unsaved) writes.playFromStart();
-            else if (closeRequested) forceDispose();
+            else if (closeRequested) closeSettings();
         },message -> {
             saving=false; closeRequested=false; saveFailure=message; refresh();
             if (written!=generation) writes.playFromStart();
@@ -960,7 +945,6 @@ public final class Preferences {
     }
 
     private boolean requestClose() {
-        profiles.flush();
         if (saving || profiles.saving()) { closeRequested=true; return false; }
         if (!saveFailure.isEmpty() || profiles.failedSave()) {
             closeRequested=false;
@@ -970,9 +954,9 @@ public final class Preferences {
         }
         apply();
         if (saving || unsaved) { closeRequested=true; persist(); return false; }
+        closeRequested=false;
         if ((conflict || !validation.isEmpty() || profiles.dirty()) && !Ui.confirm(dialog,
                 "Some edits could not be saved or need an explicit profile/login action.\nClose and discard only those edits? Already saved changes stay applied.","Unsaved edits")) return false;
-        closeRequested=false;
         return true;
     }
 
@@ -983,7 +967,6 @@ public final class Preferences {
             cursorStyle.setValue(a.cursorStyle());
             startup.setSelected(workspace.connectOnStartup()); window.setSelected(a.windowOutline()); pane.setSelected(a.outline());
             tint.setSelected(workspace.highlightActive()); reducedMotion.setSelected(a.reducedMotion()); checkUpdates.setSelected(workspace.updateSettings().startup());
-            channel.setValue(workspace.updateSettings().channel()); ignored=workspace.updateSettings().ignoredVersion();
             loadThemes(); flatThemes.clear(); flatThemes.addAll(a.flatThemes()); syncGradientCheck();
             family.setValue(a.font().family()); fontPath.setText(a.font().file());
             Ui.markInvalid(fontPath,false);

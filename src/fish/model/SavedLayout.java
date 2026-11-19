@@ -17,7 +17,7 @@ public record SavedLayout(UUID id,String name,StateStore.WindowState window,Map<
         Objects.requireNonNull(id); Objects.requireNonNull(name); Objects.requireNonNull(window);
         name=name.strip();
         if (name.isEmpty() || name.length()>80 || name.chars().anyMatch(Character::isISOControl))
-            throw new IllegalArgumentException("Layout name must be 1-80 printable characters.");
+            throw new IllegalArgumentException("Shortcut name must be 1-80 printable characters.");
         List<Layout.Leaf> leaves=window.layout().leaves();
         if (leaves.isEmpty() || leaves.size()>Layout.MAX_PANES || !Layout.normalize(window.layout()).equals(window.layout()))
             throw new IllegalArgumentException("A saved layout needs 1-8 bounded panes.");

@@ -101,6 +101,10 @@ public final class KeyboardPreferencesSmoke {
             check(KeyboardMigration.report(state.keyboardRecovery()).contains(first.id().toString()),"Original stable IDs recoverable");
             store.save(state); check(store.load().equals(state),"Format-12 exact lists and complete migration archive roundtrip");
             check(ProfileManagement.delete(state,second.id()).keyboardRecovery().equals(state.keyboardRecovery()),"Profile deletion cannot lose recovery archive");
+            Properties retired=StateStore.properties(state);
+            retired.setProperty("binding.Increase divider","ctrl F7");
+            retired.setProperty("binding.Compatibility and connection safety","ctrl F8");
+            check(store.decode(retired).shortcuts().equals(state.shortcuts()),"Removing obsolete menu actions preserves other bindings on upgrade");
             Properties bad=StateStore.properties(state); bad.setProperty("profile."+first.id()+".key.F1","PF1");
             rejects(() -> store.decode(bad),"New-format profile map rejected, never ignored");
             Properties relabeled=StateStore.properties(state); relabeled.setProperty("version","11");
@@ -177,40 +181,29 @@ public final class KeyboardPreferencesSmoke {
         button(invalid.dialog(),"Reload saved values").fire();
         invalid.forceDispose();
 
-        Preferences hidden=new Preferences(workspace,"Updates");
-        check(button(hidden.dialog(),"Show hidden updates")!=null,"Update preferences indexed as real controls");
-        button(hidden.dialog(),"Show hidden updates").fire(); hidden.closeSettings();
-        UsabilityIterationSmoke.settle(hidden::ended,"Hidden-update setting close did not settle");
         workspace.updateSettings(workspace.updateSettings().ignore("0.7.3"));
-        Preferences ignored=new Preferences(workspace,"Updates");
-        button(ignored.dialog(),"Show hidden updates").fire();
-        check(workspace.updateSettings().ignoredVersion().isEmpty() && ignored.saving(),"Clearing a hidden version applies immediately before persistence");
-        UsabilityIterationSmoke.settle(() -> !ignored.saving(),"Hidden update autosave did not settle");
-        check(workspace.updateSettings().ignoredVersion().isEmpty(),"Hidden-version edit automatically persists: "+((Label)field(ignored,"error")).getText()+"; ignored="+field(ignored,"ignored"));
-        ignored.forceDispose();
+        Preferences updates=new Preferences(workspace,"Updates");
+        CheckBox discover=(CheckBox)field(updates,"checkUpdates");
+        boolean wasEnabled=discover.isSelected(); discover.fire(); updates.closeSettings();
+        UsabilityIterationSmoke.settle(updates::ended,"Discovery preference did not persist on close");
+        check(workspace.updateSettings().startup()!=wasEnabled && workspace.updateSettings().ignoredVersion().equals("0.7.3"),
+                "Changing discovery does not discard an existing update policy.");
 
         ProfilesDialog profiles=new ProfilesDialog(workspace,workspace.profileList().getFirst());
-        ToggleButton disclosure=(ToggleButton)field(profiles,"disclosure");
-        Region advanced=(Region)field(profiles,"advanced");
-        check(!advanced.isVisible() && !disclosure.isSelected(),"Profile advanced options start collapsed");
+        check(profiles.editor.deviceField().isVisible(),"Optional device is beside the connection settings");
         check(((ComboBox<?>)field(profiles,"authentication")).isVisible() && !((TextField)field(profiles,"username")).isVisible(),
                 "Kerberos essentials, not password clutter");
         if (evidence!=null) snapshot(profiles.stage(),evidence.resolve("profiles.png"));
-        TextField port=(TextField)field(profiles,"port"); String portBefore=port.getText();
-        disclosure.fire(); port.setText("2323"); disclosure.fire(); disclosure.fire();
-        check(port.getText().equals("2323"),"Collapse/expand retains advanced draft values");
+        Profile originalProfile=workspace.profileList().getFirst();
         @SuppressWarnings("unchecked") ComboBox<Profile.Authentication> authentication=(ComboBox<Profile.Authentication>)field(profiles,"authentication");
         authentication.setValue(Profile.Authentication.PASSWORD);
         check(((TextField)field(profiles,"username")).isVisible() && ((Node)field(profiles,"passwordWrapper")).isVisible(),
                 "Password mode surfaces its required controls");
         authentication.setValue(Profile.Authentication.KERBEROS);
-        check(port.getText().equals("2323"),"Auth switching retains unrelated advanced values");
-        port.setText("not-a-port"); disclosure.fire(); button(profiles.stage(),"Apply").fire();
-        check(advanced.isVisible() && ((Label)field(profiles,"error")).getText().contains("Port"),"Validation reveals hidden corrective advanced field");
-        check(workspace.profileList().getFirst().port()==Integer.parseInt(portBefore),"Invalid profile draft never persisted");
-        port.setText(portBefore); ((TextField)field(profiles,"kerberosServer")).setText("not a DNS identity");
-        disclosure.fire(); button(profiles.stage(),"Apply").fire();
-        check(advanced.isVisible() && ((Label)field(profiles,"error")).getText().startsWith("Kerberos server"),"Invalid collapsed service DNS reveals its corrective field");
+        profiles.editor.deviceField().setText("not a device");
+        check(profiles.editor.error().startsWith("Device") && workspace.profileList().getFirst().device().equals(originalProfile.device()),
+                "Invalid device remains editable without changing the saved value");
+        profiles.editor.deviceField().setText(originalProfile.device());
         profiles.dispose();
 
         KeyRecorder recorder=new KeyRecorder();

@@ -256,7 +256,7 @@ public final class SimplePaneSmoke {
             check(w.dropTarget(w.sessionPanes().getFirst().id(),new Point(2,2)).scope()==Layout.Scope.PANE,"At eight panes outer edges remain local");
             snapshot(w,"eight-simple-panes");
             if (evidence!=null) { w.applyTheme(AppTheme.Paper); layout(w); snapshot(w,"eight-simple-panes-paper"); w.applyTheme(AppTheme.Charcoal); }
-            SavedLayout saved=w.saveCurrentLayout(null,"Eight simple panes");
+            SavedLayout saved=w.captureShortcut("Eight simple panes",false);
             check(saved.window().layout().equals(w.currentLayout()),"Named recipe captures actual simple geometry");
             content.resize(100,100);
             check(w.planDock(live.get(0).id(),live.get(1).id(),Layout.Dock.TOP)==null

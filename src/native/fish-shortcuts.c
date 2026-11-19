@@ -195,9 +195,10 @@ typedef struct {
     int updated;
 } border_update_ctx;
 
-// Before show, Glass has created the owned stage, but has not set its title.
-// Only act on an unambiguous, hidden, owned stage on the calling FX thread.
+// Before show, the Glass peer exists but may not have a title. Match only
+// one hidden stage with the requested ownership on this FX thread.
 typedef struct { HWND match; BOOL owned; } stage_search;
+static const WCHAR first_frame_property[]=L"Fish.FirstFrame";
 static BOOL CALLBACK find_new_stage(HWND hwnd,LPARAM data) {
     stage_search *search=(stage_search *)data;
     WCHAR name[96];
@@ -217,13 +218,13 @@ JNIEXPORT jlong JNICALL Java_fish_ui_WindowBorder_installStartupBrush0(JNIEnv *e
     // Glass registers a separate class per HWND. Never replace a toolkit brush.
     if (!window || GetClassLongPtrW(window,GCLP_HBRBACKGROUND)) return 0;
     HBRUSH brush=CreateSolidBrush(RGB((rgb>>16)&255,(rgb>>8)&255,rgb&255));
-    if (!brush || !SetPropW(window,L"Fish.Settings.FirstFrame",brush)) {
+    if (!brush || !SetPropW(window,first_frame_property,brush)) {
         if (brush) DeleteObject(brush);
         return 0;
     }
     SetLastError(0);
     if (!SetClassLongPtrW(window,GCLP_HBRBACKGROUND,(LONG_PTR)brush) && GetLastError()) {
-        RemovePropW(window,L"Fish.Settings.FirstFrame");
+        RemovePropW(window,first_frame_property);
         DeleteObject(brush);
         return 0;
     }
@@ -234,11 +235,11 @@ JNIEXPORT void JNICALL Java_fish_ui_WindowBorder_removeStartupBrush0(JNIEnv *env
     (void)env; (void)type;
     HWND window=(HWND)(intptr_t)handle;
     if (GetWindowThreadProcessId(window,NULL)!=GetCurrentThreadId()) return;
-    HBRUSH brush=(HBRUSH)GetPropW(window,L"Fish.Settings.FirstFrame");
+    HBRUSH brush=(HBRUSH)GetPropW(window,first_frame_property);
     if (!brush) return;
     if ((HBRUSH)GetClassLongPtrW(window,GCLP_HBRBACKGROUND)==brush
             && !SetClassLongPtrW(window,GCLP_HBRBACKGROUND,0)) return;
-    RemovePropW(window,L"Fish.Settings.FirstFrame");
+    RemovePropW(window,first_frame_property);
     DeleteObject(brush);
 }
 

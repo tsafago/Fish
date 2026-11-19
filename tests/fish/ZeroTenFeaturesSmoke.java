@@ -36,7 +36,7 @@ import fish.security.KioskMode;
  *  1. 8-pane 300% zoom viewport-clipped buffer sizing, zero crash/slowdown, per-pane relative 100% (auto) zoom, HUD popup & layout persistence
  *  2. scroll + / scroll - KeyChord parsing, KeyRecorder wheel capture, and hovered-pane Ctrl+Scroll dispatch
  *  3. Startup-error Factory reset (delete config) with Kiosk admin gate + Uninstall config/Startup deletion
- *  4. Per-layout Windows Autostart (.lnk creation/sync/rename/removal across multiple layouts + SavedLayoutsDialog UI)
+ *  4. Independent Windows sign-in shortcuts and Settings export.
  *  5. Admin-controlled Kiosk mode full UI/menu/logo/splitter/zoom/persistence/launch lockdown + live admin unlock
  *  6. Stuck / Reset callout ("Are you stuck? Press Enter or press this button!") with 0ms dismissal on Enter & button
  *  7. System-wide installation (-AllUsers) scripts & Preferences > General controls
@@ -286,7 +286,7 @@ public final class ZeroTenFeaturesSmoke {
                     panes.get(0).view().setRelativeZoom(1.0, true);
                     panes.get(1).view().setRelativeZoom(1.4, false);
                     panes.get(2).view().setRelativeZoom(0.8, false);
-                    SavedLayout saved = w.saveCurrentLayout(null, "Floor Zoom Recipe", false);
+                    SavedLayout saved = ShortcutFixture.export(w, "Floor Zoom Recipe", false);
                     w.persistSettings(() -> savedDone.set(true), err -> { throw new AssertionError(err); });
                     return saved.id();
                 });
@@ -356,8 +356,8 @@ public final class ZeroTenFeaturesSmoke {
                     "Connected 2 panes for autostart/kiosk/reset tests");
 
                 // --- Per-Layout Multi-Autostart Verification ---
-                UUID layoutAId = fx(() -> w.saveCurrentLayout(null, "Morning Receiving", true).id());
-                UUID layoutBId = fx(() -> w.saveCurrentLayout(null, "Afternoon Shipping", true).id());
+                UUID layoutAId = ShortcutFixture.export(w, "Morning Receiving", true).id();
+                UUID layoutBId = ShortcutFixture.export(w, "Afternoon Shipping", true).id();
                 List<Path> lnksAfterBoth = Files.list(startupDir).filter(f -> f.toString().endsWith(".lnk")).toList();
                 check(lnksAfterBoth.size() == 2, "Enabling autostart on 2 layouts creates 2 Startup .lnk files: " + lnksAfterBoth);
                 for (Path lnk : lnksAfterBoth) {
@@ -366,44 +366,18 @@ public final class ZeroTenFeaturesSmoke {
                             "Autostart .lnk points to --layout with --data-dir: " + inspected[1]);
                 }
 
-                // SavedLayoutsDialog UI check (both checkboxes exist & reflect state)
+                // Autostart is a choice for the new shortcut, not a global preference.
                 fx(() -> {
-                    SavedLayoutsDialog dlg = new SavedLayoutsDialog(w);
-                    Stage dlgStage = (Stage) field(dlg, "stage");
-                    CheckBox createCb = (CheckBox) field(dlg, "currentAutostart");
-                    CheckBox manageCb = (CheckBox) field(dlg, "existingAutostart");
-                    check(createCb != null && "Start automatically when Windows signs in".equals(createCb.getText()),
-                            "SavedLayoutsDialog has creation autostart checkbox");
-                    check(manageCb != null && "Autostart when Windows signs in".equals(manageCb.getText()) && manageCb.isSelected(),
-                            "SavedLayoutsDialog management autostart checkbox reflects selected autostart layout");
-                    dlg.dispose();
-                    check(!dlgStage.isShowing(), "SavedLayoutsDialog stayed hidden and disposed cleanly");
+                    w.preferences("General");
+                    CheckBox createCb=(CheckBox)w.tutorialPreferences().tutorialTarget("shortcut-autostart");
+                    check(!createCb.isSelected(),"Existing autostarts do not enable autostart for new shortcuts");
+                    w.tutorialPreferences().forceDispose();
                     return null;
                 });
 
-                // Rename layoutA updates its Startup .lnk; disable autostart on layoutA removes only layoutA's .lnk!
-                fx(() -> { w.renameSavedLayout(layoutAId, "Renamed Receiving"); return null; });
-                List<Path> lnksAfterRename = Files.list(startupDir).filter(f -> f.toString().endsWith(".lnk")).toList();
-                check(lnksAfterRename.size() == 2 && lnksAfterRename.stream().anyMatch(f -> f.getFileName().toString().contains("Renamed Receiving")),
-                        "Renaming autostart layout updates its Startup .lnk filename");
-
-                fx(() -> { w.setSavedLayoutAutostart(layoutAId, false); return null; });
-                List<Path> lnksAfterDisableOne = Files.list(startupDir).filter(f -> f.toString().endsWith(".lnk")).toList();
-                check(lnksAfterDisableOne.size() == 1 && LayoutShortcuts.inspect(lnksAfterDisableOne.getFirst())[1].contains(layoutBId.toString()),
-                        "Disabling autostart on Layout A removes only Layout A's .lnk while keeping Layout B's .lnk");
-
-                // Verify StateStore format 21 persists autostart flags cleanly
-                AtomicBoolean autostartPersisted = new AtomicBoolean(false);
-                fx(() -> {
-                    w.persistSettings(() -> autostartPersisted.set(true), err -> { throw new AssertionError(err); });
-                    return null;
-                });
-                UsabilityIterationSmoke.settle(autostartPersisted::get, "Settings persisted");
                 StateStore.State afterSave = store.load();
-                check(afterSave.savedLayouts().stream().filter(l -> l.id().equals(layoutBId)).findFirst().orElseThrow().autostart(),
-                        "StateStore v21 persists autostart=true on Layout B");
-                check(!afterSave.savedLayouts().stream().filter(l -> l.id().equals(layoutAId)).findFirst().orElseThrow().autostart(),
-                        "StateStore v21 persists autostart=false on Layout A");
+                check(afterSave.savedLayouts().stream().filter(l -> l.id().equals(layoutBId)||l.id().equals(layoutAId))
+                        .filter(SavedLayout::autostart).count()==2,"Both shortcuts persist independent Windows sign-in flags");
 
                 // --- Stuck / Reset Callout Verification (0ms synchronous dismissal on Enter AND button) ---
                 fx(() -> {
@@ -515,7 +489,7 @@ public final class ZeroTenFeaturesSmoke {
                             ComboBox<?> presets = (ComboBox<?>) field(sp, "presets");
                             check(!closeBtn.isVisible(), "Pane close button is hidden in Kiosk mode");
                             check(presets.isDisabled(), "Offline profile selector is disabled in Kiosk mode");
-                            List<String> ctxItems = sp.clipboardMenu().getItems().stream()
+                            List<String> ctxItems = w.clipboardMenu(sp).getItems().stream()
                                     .filter(i -> !(i instanceof SeparatorMenuItem)).map(MenuItem::getText).toList();
                             check(ctxItems.stream().allMatch(t -> t.startsWith("Copy") || t.startsWith("Paste") || t.startsWith("Reset")),
                                     "Kiosk terminal context menu only exposes Copy, Paste, Reset: " + ctxItems);
@@ -925,10 +899,7 @@ public final class ZeroTenFeaturesSmoke {
         Path activeDesktop = Files.createDirectories(root.resolve("OneDrive").resolve("Desktop"));
         Path inactiveHome = Files.createDirectories(root.resolve("UserHome"));
         Path inactiveHomeDesktop = Files.createDirectories(inactiveHome.resolve("Desktop"));
-        Path inactiveOneDrive = Files.createDirectories(root.resolve("OldOneDrive"));
-        Files.createDirectories(inactiveOneDrive.resolve("Desktop"));
         Path testStartMenu = Files.createDirectories(root.resolve("TestStartMenu"));
-        Path customFolder = Files.createDirectories(root.resolve("CustomFolder"));
 
         Path directLnk = activeDesktop.resolve("Fish - Direct.lnk");
         UUID layoutId = UUID.randomUUID();
@@ -947,32 +918,14 @@ public final class ZeroTenFeaturesSmoke {
                 && inspected[1].contains("--layout " + layoutId),
                 "Direct-saved Desktop .lnk round-trips layout UUID cleanly via LayoutShortcuts.inspect");
 
-        // 3. Verify inactive %USERPROFILE%\Desktop and inactive OneDrive\Desktop remap onto active FOLDERID_Desktop
-        check(LayoutShortcuts.resolveDesktopDestination(
-                inactiveHomeDesktop.resolve("Ops.lnk"), activeDesktop, inactiveHome, List.of(inactiveOneDrive))
-                .equals(activeDesktop.resolve("Ops.lnk").toAbsolutePath().normalize()),
-                "Saving into inactive %USERPROFILE%\\Desktop remaps to active FOLDERID_Desktop");
-        check(LayoutShortcuts.resolveDesktopDestination(
-                inactiveOneDrive.resolve("Desktop").resolve("Ops.lnk"), activeDesktop, inactiveHome, List.of(inactiveOneDrive))
-                .equals(activeDesktop.resolve("Ops.lnk").toAbsolutePath().normalize()),
-                "Saving into inactive OneDrive\\Desktop remaps to active FOLDERID_Desktop");
-        check(LayoutShortcuts.resolveDesktopDestination(
-                customFolder.resolve("Ops.lnk"), activeDesktop, inactiveHome, List.of(inactiveOneDrive))
-                .equals(customFolder.resolve("Ops.lnk").toAbsolutePath().normalize()),
-                "Saving into an explicit non-Desktop folder preserves that folder untouched");
-
-        // 4. Verify reconcileApplicationShortcuts & SavedLayoutsDialog Desktop remapping + HideIcons hint
+        // Verify app-link reconciliation and Settings export to the active Desktop.
         String prevDesk = System.getProperty("fish.test.desktopDir");
         String prevMenu = System.getProperty("fish.test.startMenuDir");
-        String prevHome = System.getProperty("fish.test.userHome");
         String prevHide = System.getProperty("fish.test.hideDesktopIcons");
-        String prevRemap = System.getProperty("fish.test.remapDesktop");
         String prevExe = System.getProperty("fish.test.executable");
         System.setProperty("fish.test.desktopDir", activeDesktop.toString());
         System.setProperty("fish.test.startMenuDir", testStartMenu.toString());
-        System.setProperty("fish.test.userHome", inactiveHome.toString());
         System.setProperty("fish.test.hideDesktopIcons", "true");
-        System.setProperty("fish.test.remapDesktop", "true");
         System.setProperty("fish.test.executable", aotExe.toString());
         try {
             Path oldExe = Files.writeString(Files.createDirectories(root.resolve("old-bin")).resolve("Fish.exe"), "MZ-old");
@@ -1007,34 +960,20 @@ public final class ZeroTenFeaturesSmoke {
                     return win;
                 });
                 try {
-                    AtomicReference<Path> writtenOutput = new AtomicReference<>();
-                    AtomicReference<String> statusText = new AtomicReference<>("");
                     fx(() -> {
-                        SavedLayoutsDialog dlg = new SavedLayoutsDialog(w, new SavedLayoutsDialog.ShortcutExport() {
-                            @Override public Path desktop() { return activeDesktop; }
-                            @Override public Path choose(Path initialDir, String initialFileName, Window owner) {
-                                // Simulate user picking inactive %USERPROFILE%\Desktop in FileChooser!
-                                return inactiveHomeDesktop.resolve(initialFileName);
-                            }
-                            @Override public void write(UUID id, Path output, Runnable done, java.util.function.Consumer<String> failed) {
-                                writtenOutput.set(output);
-                                done.run();
-                            }
-                        });
-                        Button createBtn = (Button) field(dlg, "create");
-                        createBtn.fire();
-                        Label msgLabel = (Label) field(dlg, "message");
-                        statusText.set(msgLabel.getText());
-                        ((Stage) field(dlg, "stage")).close();
+                        w.preferences("General");
+                        ((Button)w.tutorialPreferences().tutorialTarget("shortcut-create")).fire();
                         return null;
                     });
-                    check(activeDesktop.resolve("Fish - Desk Ops.lnk").toAbsolutePath().normalize().equals(writtenOutput.get()),
-                            "SavedLayoutsDialog remaps inactive %USERPROFILE%\\Desktop choice onto active FOLDERID_Desktop: " + writtenOutput.get());
-                    check(statusText.get().contains("Show desktop icons"),
-                            "SavedLayoutsDialog warns when Windows HideIcons is enabled: " + statusText.get());
+                    FxTestSupport.await(() -> !w.exportingShortcut(),"Desktop export did not finish");
+                    check(Files.isRegularFile(activeDesktop.resolve("Fish - Desk Ops.lnk"))
+                            && !Files.exists(inactiveHomeDesktop.resolve("Fish - Desk Ops.lnk")),
+                            "Settings writes directly to the active Windows Desktop");
+                    check(fx(() -> ((Label)w.tutorialPreferences().tutorialTarget("shortcut-status")).getText()).contains("Show desktop icons"),
+                            "Settings explains hidden desktop icons after export");
                 } finally {
                     fx(() -> { w.close(false); return null; });
-                    check(closed.await(8, TimeUnit.SECONDS), "SavedLayoutsDialog workspace closed cleanly");
+                    check(closed.await(8, TimeUnit.SECONDS), "Shortcut workspace closed cleanly");
                 }
             } finally {
                 try { store.close(); } catch (Exception ignored) {}
@@ -1042,18 +981,16 @@ public final class ZeroTenFeaturesSmoke {
         } finally {
             if (prevDesk == null) System.clearProperty("fish.test.desktopDir"); else System.setProperty("fish.test.desktopDir", prevDesk);
             if (prevMenu == null) System.clearProperty("fish.test.startMenuDir"); else System.setProperty("fish.test.startMenuDir", prevMenu);
-            if (prevHome == null) System.clearProperty("fish.test.userHome"); else System.setProperty("fish.test.userHome", prevHome);
             if (prevHide == null) System.clearProperty("fish.test.hideDesktopIcons"); else System.setProperty("fish.test.hideDesktopIcons", prevHide);
-            if (prevRemap == null) System.clearProperty("fish.test.remapDesktop"); else System.setProperty("fish.test.remapDesktop", prevRemap);
             if (prevExe == null) System.clearProperty("fish.test.executable"); else System.setProperty("fish.test.executable", prevExe);
         }
     }
 
     public static void main(String[] args) throws Exception {
         Ui.install();
-        check("0.10.2".equals(Main.VERSION), "Main.VERSION is 0.10.2: " + Main.VERSION);
+        check("0.10.3".equals(Main.VERSION), "Main.VERSION is 0.10.3: " + Main.VERSION);
         Path root = Files.createTempDirectory(Path.of("build"), "zero-ten-smoke-");
-        try (DemoHost host = new DemoHost()) {
+        try (ShortcutFixture ignored=new ShortcutFixture(root.resolve("shell-folders")); DemoHost host = new DemoHost()) {
             verifyScrollBindingsAndRecorder(root);
             verifyEightPaneSpatialTraversalAndCustomColorPersistence(root, host.port());
             verifyCodeSourceNullSafetyAndDesktopShortcutVisibility(root, host.port());
@@ -1069,7 +1006,7 @@ public final class ZeroTenFeaturesSmoke {
             FxTestSupport.closeAllWindows();
             FxTestSupport.deleteTree(root);
         }
-        System.out.println("PASS Fish 0.10.2 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
+        System.out.println("PASS Fish 0.10.3 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
         Ui.finishTestRun();
     }
 }

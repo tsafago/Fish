@@ -133,16 +133,17 @@ public final class MaintenanceUiSmoke {
                 Workspace w=fixture.workspace; Profile first=w.profileList().getFirst(),second=first.duplicate(),third=first.duplicate();
                 w.putProfile(second); w.putProfile(third);
                 ProfilesDialog editor=new ProfilesDialog(w,second);
-                ((TextField)field(editor,"name")).setText("Unapplied name fixture");
+                ((TextField)field(editor,"name")).setText("Moved name fixture");
                 button(editor.stage(),"Up").fire();
                 check(w.profileList().getFirst().id().equals(second.id()),"Real Up control persists stable-ID ordering");
-                check(((TextField)field(editor,"name")).getText().equals("Unapplied name fixture")
-                        && w.profileList().getFirst().name().equals(second.name()),"Reordering preserves draft fields without applying them");
+                check(((TextField)field(editor,"name")).getText().equals("Moved name fixture")
+                        && w.profileList().getFirst().name().equals("Moved name fixture"),"Reordering preserves autosaved fields");
                 ListView<?> list=(ListView<?>)field(editor,"list");
                 list.fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED,"","",KeyCode.DOWN,false,true,false,false));
                 check(w.profileList().get(1).id().equals(second.id()),"Scoped Ctrl+Down handler moves selected profile");
                 check(!button(editor.stage(),"Delete").isDisabled(),"Delete is wired to saved profiles");
                 editor.dispose();
+                FxTestSupport.settle(() -> !editor.editor.saving(),"Profile move did not persist");
                 w.commands().stream().filter(c -> c.title.equals("Add pane")).findFirst().orElseThrow().execute();
                 w.executeCommand("Add pane");
                 w.deleteProfile(first.id());

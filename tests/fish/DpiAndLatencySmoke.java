@@ -1060,20 +1060,19 @@ public final class DpiAndLatencySmoke {
                 notes.markdown("## Fish 0.9.0 Notes\n\n- Cross-major updates enabled\n- `Fish.aot` cache");
                 pRoot.applyCss();
                 pRoot.layout();
-                String charcoalFieldHex = hexOf(Ui.color(ColorRole.FIELD));
-                check(notes.contentBox().getStyle().contains(charcoalFieldHex),
-                        "Updates MarkdownView content uses Charcoal FIELD background (" + charcoalFieldHex + ").");
+                var charcoalFace = notes.getBackground().getFills().getLast().getFill();
+                check(charcoalFace instanceof javafx.scene.paint.LinearGradient && notes.contentBox().getBackground()==null,
+                        "Notes share one uninterrupted Charcoal field gradient.");
                 Ui.applyTheme(AppTheme.Paper);
                 pRoot.applyCss();
                 pRoot.layout();
-                String paperFieldHex = hexOf(Ui.color(ColorRole.FIELD));
-                check(!paperFieldHex.equals(charcoalFieldHex) && notes.contentBox().getStyle().contains(paperFieldHex),
-                        "Switching to Paper live-themes Updates MarkdownView immediately to " + paperFieldHex
-                                + ", style=" + notes.contentBox().getStyle());
+                var paperFace = notes.getBackground().getFills().getLast().getFill();
+                check(!paperFace.equals(charcoalFace) && paperFace instanceof javafx.scene.paint.LinearGradient,
+                        "Switching to Paper live-themes the release notes surface.");
                 Ui.applyTheme(AppTheme.Charcoal);
                 pRoot.applyCss();
                 pRoot.layout();
-                check(notes.contentBox().getStyle().contains(charcoalFieldHex),
+                check(notes.getBackground().getFills().getLast().getFill().equals(charcoalFace),
                         "Switching back to Charcoal restores Updates MarkdownView background immediately.");
 
                 // 6b. Reduce motion checkbox toggles Ui.reducedMotion() and Appearance immediately.

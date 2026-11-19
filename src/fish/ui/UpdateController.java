@@ -1,6 +1,5 @@
 package fish.ui;
 
-import java.awt.Desktop;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -117,9 +116,11 @@ public final class UpdateController implements AutoCloseable {
     BorderPane panel(Stage window,BooleanSupplier dirty,Supplier<UpdateSettings.Channel> channel) {
         if (dialog!=null) detach(dialog);
         this.dirty=dirty; this.channel=channel; dialog=window; checked=false;
-        Label status=new Label("Check public tsafago/Fish releases");
+        Label status=new Label("Fish "+Main.VERSION);
+        status.setWrapText(true);
         MarkdownView notes=new MarkdownView("Fish release notes");
-        notes.markdown("Only public release metadata is checked. No credentials or workspace data are sent.");
+        notes.setVisible(false);
+        notes.managedProperty().bind(notes.visibleProperty());
 
         ProgressBar progress=new ProgressBar(0);
         progress.setMaxWidth(Double.MAX_VALUE);
@@ -128,37 +129,30 @@ public final class UpdateController implements AutoCloseable {
 
         Button update=Ui.button("Update...",() -> {});
         update.setDisable(true);
+        update.setVisible(false); update.managedProperty().bind(update.visibleProperty());
         updateButton=update;
 
         Button retry=Ui.button("Check for updates",() -> {});
-        Button link=Ui.button("Release notes online",() -> {
-            if (offered==null) return;
-            try { Desktop.getDesktop().browse(offered.url()); }
-            catch (IOException | UnsupportedOperationException e) { Ui.error(window,"Could not open release notes: "+e.getMessage()); }
-        });
-        link.setDisable(true);
-
-        Button close=Ui.button("Cancel download",() -> {
+        Button close=Ui.button("Cancel download",() -> {});
+        close.setOnAction(e -> {
             if (workspace.closing() && !closed) return;
             if (dialogCancel!=null) dialogCancel.cancel();
             dialogCancel=null; busy=false;
             if (download!=null && !handedOff) { cleanup(download); download=null; }
             progress.setVisible(false); progress.setManaged(false);
+            close.setVisible(false);
             status.setText("Download canceled. Check again to retry.");
             retry.setDisable(false); refreshAvailability();
         });
-        close.setVisible(false); close.setManaged(false);
+        close.setVisible(false); close.managedProperty().bind(close.visibleProperty());
 
-        HBox links=new HBox(8,link,retry); links.setAlignment(Pos.CENTER_RIGHT);
-        HBox operations=new HBox(8,close,update); operations.setAlignment(Pos.CENTER_RIGHT);
-        VBox bottom=new VBox(8,progress,links,operations);
+        HBox operations=new HBox(8,retry,update,close); operations.setAlignment(Pos.CENTER_LEFT);
+        VBox top=new VBox(10,status,operations,progress);
 
         BorderPane body=new BorderPane();
-        body.setTop(status);
-        BorderPane.setMargin(status,new javafx.geometry.Insets(0,0,10,0));
+        body.setTop(top);
+        BorderPane.setMargin(top,new javafx.geometry.Insets(0,0,16,0));
         body.setCenter(notes);
-        body.setBottom(bottom);
-        BorderPane.setMargin(bottom,new javafx.geometry.Insets(10,0,0,0));
 
         Runnable check=() -> {
             if (download!=null && !handedOff) { cleanup(download); download=null; }
@@ -167,9 +161,9 @@ public final class UpdateController implements AutoCloseable {
             UpdateSettings.Channel requestedChannel=channel.get(); offeredChannel=null;
             busy=true;
             status.setText("Checking for updates...");
-            update.setDisable(true); retry.setDisable(true); link.setDisable(true);
+            update.setDisable(true); update.setVisible(false); retry.setDisable(true); notes.setVisible(false);
             progress.setVisible(false); progress.setManaged(false); progress.setProgress(0);
-            close.setVisible(false); close.setManaged(false);
+            close.setVisible(false);
             CompletableFuture.supplyAsync(() -> {
                 try { return service.check(Main.VERSION,requestedChannel,cancel); }
                 catch (IOException e) { throw new java.io.UncheckedIOException(e); }
@@ -181,20 +175,17 @@ public final class UpdateController implements AutoCloseable {
                     Throwable cause=err.getCause()!=null ? err.getCause() : err;
                     if (cause instanceof java.io.UncheckedIOException uio && uio.getCause()!=null) cause=uio.getCause();
                     status.setText("Update check failed. Check again to retry.");
+                    notes.setVisible(true);
                     notes.markdown(cause.getMessage()==null ? cause.toString() : cause.getMessage());
                     return;
                 }
                 offered=found.orElse(null);
                 offeredChannel=requestedChannel;
-                status.setText(found.isEmpty() ? "Fish "+Main.VERSION+" is up to date in this channel."
-                        : "Fish "+offered.version()+(offered.preview() ? " - experimental preview" : "")+" is available");
-                notes.markdown(found.isEmpty() ? "No newer eligible Windows x64 release in the selected channel.\n"
-                        +"All releases includes experimental betas across minor and major versions; Stable selects non-prerelease versions."
-                        : "**Verified current-user update:** SHA-256 checksums and PE64 headers are verified before direct launch without Mark-of-the-Web SmartScreen prompts.\n\n"
-                        +"Updates install Fish for this Windows user. Portable folders are kept; the installed copy opens afterward with this workspace.\n\n"
-                        +offered.notes());
+                status.setText(found.isEmpty() ? "Fish "+Main.VERSION+" is up to date."
+                        : "Fish "+offered.version()+(offered.preview() ? " beta" : "")+" is available.");
+                if (found.isPresent()) notes.markdown(offered.notes().isBlank() ? "No patch notes for this version." : offered.notes());
+                notes.setVisible(found.isPresent()); update.setVisible(found.isPresent());
                 refreshAvailability();
-                link.setDisable(found.isEmpty());
             }));
         };
         checkAction=check;
@@ -202,14 +193,12 @@ public final class UpdateController implements AutoCloseable {
         update.setOnAction(e -> {
             Updates.Release release=offered;
             if (release==null || busy || dirty.getAsBoolean() || offeredChannel!=channel.get()
-                    || !confirm.test(window,"Download Fish "+release.version()+" and install it for this Windows user?\n"
-                    +"After SHA-256 verification, your layouts will be saved and ALL Fish windows and sessions will close.\n"
-                    +"The installer waits for Fish to exit, installs per-user without admin, and reopens Fish on success.")) return;
+                    || !confirm.test(window,"Install Fish "+release.version()+" for this account? All sessions will close. Fish will reopen after the update.")) return;
             Updates.Cancel cancel=new Updates.Cancel(); dialogCancel=cancel;
             busy=true;
             update.setDisable(true); retry.setDisable(true);
             progress.setVisible(true); progress.setManaged(true);
-            close.setVisible(true); close.setManaged(true);
+            close.setVisible(true); close.setDisable(false);
             status.setText("Downloading and verifying Fish "+release.version()+"...");
             CompletableFuture.supplyAsync(() -> {
                 try {
@@ -228,6 +217,7 @@ public final class UpdateController implements AutoCloseable {
                         notes.markdown(cause.getMessage()==null ? cause.toString() : cause.getMessage());
                         retry.setDisable(false);
                         progress.setVisible(false); progress.setManaged(false);
+                        close.setVisible(false); refreshAvailability();
                     }
                     return;
                 }
@@ -246,13 +236,13 @@ public final class UpdateController implements AutoCloseable {
                         notes.markdown(message);
                         retry.setDisable(false);
                         progress.setVisible(false); progress.setManaged(false);
-                        close.setDisable(false);
+                        close.setVisible(false); refreshAvailability();
                     }
                 });
                 if (!starting) {
                     busy=false;
                     status.setText("Update not started. Finish the pending login, then check again.");
-                    retry.setDisable(false); close.setDisable(false);
+                    retry.setDisable(false); close.setVisible(false); refreshAvailability();
                     progress.setVisible(false); progress.setManaged(false);
                 }
             }));

@@ -28,6 +28,13 @@ public final class SettingsTutorialSmoke {
     private static ButtonBase button(Stage stage,String text) { return FxTestSupport.button(stage,text); }
     private static List<Node> children(Stage stage) { return FxTestSupport.children(stage); }
     private static void layout(Workspace w) { FxTestSupport.layout(w); }
+    private static void dragDivider(Workspace w,boolean horizontal) {
+        Node divider=Objects.requireNonNull(w.tutorialDivider(horizontal));
+        var split=(Workspace.WorkspaceSplit)divider.getParent();
+        divider.getOnMousePressed().handle(null);
+        w.resizeDividerLive(split,split.getDividerLocation()+25);
+        divider.getOnMouseReleased().handle(null);
+    }
     private static void layout(Stage s) { FxTestSupport.layout(s); }
     private static void snapshot(Stage window,String name) throws Exception {
         if (evidence==null) return;
@@ -218,20 +225,20 @@ public final class SettingsTutorialSmoke {
 
         w.openTutorial(TutorialDialog.Guide.PASSWORD_PROFILE,false); button(guide(w).stage(),"Show control").fire();
         check(step(w)==1,"Profile guide selects actual inline editor");
-        button(p.dialog(),"New").fire(); check(step(w)==2 && w.profileList().size()==profilesBefore,"New is a draft, not a duplicate save");
+        button(p.dialog(),"New").fire(); check(step(w)==2 && w.profileList().size()==profilesBefore+1,"New creates one profile");
         @SuppressWarnings("unchecked") ComboBox<Profile.Authentication> auth=(ComboBox<Profile.Authentication>)field(p.profiles,"authentication");
         auth.setValue(Profile.Authentication.PASSWORD); check(step(w)==3,"Actual mode change progresses");
         ((TextField)field(p.profiles,"host")).setText("127.0.0.1"); check(step(w)==4,"Actual host edit progresses");
         ((TextField)field(p.profiles,"username")).setText("FIXTURE"); check(step(w)==5,"Actual username edit progresses without reading password");
         ((CheckBox)field(p.profiles,"remember")).fire(); check(step(w)==6,"Actual login preference progresses");
-        ((ToggleButton)field(p.profiles,"disclosure")).fire(); check(step(w)==7,"Actual Advanced disclosure progresses");
+        p.profiles.deviceField().setText("DSP1"); check(step(w)==7,"Editing optional device progresses");
         snapshot(p.dialog(),"profiles-inline");
-        button(p.dialog(),"Create profile").fire();
+        button(guide(w).stage(),"Done").fire();
     }
 
     private static void keyboardAndPanes(Fixture fixture) throws Exception {
         Workspace w=fixture.workspace; Preferences p=w.tutorialPreferences();
-        check(guide(w).ended() && w.profileList().size()==3,"Explicit Create saves exactly once, with no password/ticket operation");
+        check(guide(w).ended() && w.profileList().size()==3,"Autosave keeps one new profile, with no password/ticket operation");
         check(((ComboBox<?>)field(p,"scope")).getItems().size()==3,"New profile immediately available for appearance in same Settings");
 
         w.openTutorial(TutorialDialog.Guide.KEYBOARD,false); button(guide(w).stage(),"Show control").fire();
@@ -252,10 +259,10 @@ public final class SettingsTutorialSmoke {
         p.closeSettings();
 
         w.openTutorial(TutorialDialog.Guide.PANES,false); w.executeCommand("Add pane"); layout(w); check(step(w)==1,"Pane guide progresses actual add");
-        w.executeCommand("Decrease divider"); check(step(w)==2,"Horizontal keyboard resize progresses");
+        dragDivider(w,true); check(step(w)==2,"Resizing columns progresses");
         List<SessionPane> pair=w.sessionPanes(); w.dock(pair.getFirst().id(),pair.getLast().id(),Layout.Dock.TOP);
         layout(w); check(step(w)==3,"Actual top-edge placement progresses");
-        w.executeCommand("Increase divider"); check(step(w)==4,"Vertical keyboard resize progresses");
+        dragDivider(w,false); check(step(w)==4,"Resizing rows progresses");
         List<SessionPane> order=w.sessionPanes(); w.dock(order.get(0).id(),order.get(1).id(),Layout.Dock.CENTER);
         check(step(w)==5,"Only an actual swap progresses");
         button(guide(w).stage(),"Show control").fire(); p=w.tutorialPreferences();
@@ -263,8 +270,10 @@ public final class SettingsTutorialSmoke {
         Preferences startupEditor=p; UsabilityIterationSmoke.settle(() -> !startupEditor.saving(),"Startup setting did not autosave");
         snapshot(guide(w).stage(),"tutorial");
         w.executeCommand("Fit host screen"); check(step(w)==7,"Actual Fit advances to reusable shortcuts");
-        SavedLayout saved=w.saveCurrentLayout(null,"Tutorial synthetic layout");
-        check(guide(w).ended(),"Actual named layout save finishes pane guide"); w.deleteSavedLayout(saved.id());
+        ((TextField)p.tutorialTarget("shortcut-name")).setText("Tutorial synthetic shortcut");
+        ((Button)p.tutorialTarget("shortcut-create")).fire();
+        UsabilityIterationSmoke.settle(() -> !w.exportingShortcut(),"Shortcut export did not finish");
+        check(guide(w).ended(),"Creating the desktop shortcut finishes the pane guide");
 
         for (TutorialDialog.Guide type:TutorialDialog.Guide.values()) {
             int count=w.profileList().size(); w.openTutorial(type,false); check(step(w)==0,"Replay restarts "+type);
@@ -290,11 +299,11 @@ public final class SettingsTutorialSmoke {
             return null;
         });
         Path root=Files.createTempDirectory("Fish-settings-tutorial-fixtures-");
-        try {
+        try (ShortcutFixture ignored=new ShortcutFixture(root.resolve("shell-folders"))) {
             migration(root);
             try (Fixture fixture=new Fixture(root,"flows",false)) {
                 edt(() -> { topology(fixture); tutorials(fixture); return null; });
-                await(() -> !fixture.workspace.tutorialPreferences().saving(),"Profile Apply did not settle");
+                await(() -> !fixture.workspace.tutorialPreferences().saving(),"Profile autosave did not settle");
                 edt(() -> { keyboardAndPanes(fixture); fixture.workspace.preferences("Updates"); return null; });
                 await(() -> !button(fixture.workspace.tutorialPreferences().dialog(),"Update...").isDisabled(),"Injected release notes did not arrive");
                 edt(() -> {
@@ -310,7 +319,7 @@ public final class SettingsTutorialSmoke {
                     snapshot(p.dialog(),"updates"); p.forceDispose(); return null;
                 });
             }
-            try (Fixture fixture=new Fixture(root,"startup",true)) {
+            try (Fixture fixture=new Fixture(root,"startup-workspace",true)) {
                 edt(() -> {
                     fixture.workspace.startup(); SessionPane pane=fixture.workspace.active();
                     check(!pane.busy() && !pane.connected(),"Incomplete startup login remains offline without credential lookup");
@@ -327,6 +336,7 @@ public final class SettingsTutorialSmoke {
                     check(!((CheckBox)field(editor.editor,"automatic")).isSelected() && !((CheckBox)field(editor.editor,"remember")).isSelected(),
                             "Existing explicit PASSWORD off choices survive mode toggles");
                     snapshot(editor.stage(),"profiles-dialog"); editor.dispose();
+                    FxTestSupport.settle(() -> !editor.editor.saving(),"Mode changes did not persist");
                     return null;
                 });
             }

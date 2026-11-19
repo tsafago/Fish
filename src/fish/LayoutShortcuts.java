@@ -71,11 +71,51 @@ public final class LayoutShortcuts {
         if (!target.getFileName().toString().equalsIgnoreCase("Fish.exe") || !Files.isRegularFile(target,LinkOption.NOFOLLOW_LINKS))
             throw new IOException("Run the installed or portable Fish.exe before exporting a shortcut. Java/source launches are not shortcut targets.");
         if (!output.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".lnk")
-                || !Files.isDirectory(output.getParent()) || Files.exists(output,LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("Choose a new .lnk file in an existing folder; existing shortcuts are never overwritten.");
+                || !Files.isDirectory(output.getParent()))
+            throw new IOException("The shortcut folder is unavailable: "+output.getParent());
+        if (Files.exists(output,LinkOption.NOFOLLOW_LINKS)) throw new FileAlreadyExistsException(output.toString());
         String args=arguments(layout,directory);
         load();
-        create0(output.toString(),target.toString(),args,target.getParent().toString());
+        // IPersistFile.Save replaces an existing link. Publish a finished link with a no-replace move instead.
+        Path staging=Files.createTempFile(output.getParent(),".fish-", ".lnk");
+        try {
+            create0(staging.toString(),target.toString(),args,target.getParent().toString());
+            Files.move(staging,output);
+        } finally { Files.deleteIfExists(staging); }
+    }
+
+    private static Path numberedLink(Path folder,String name,int number) {
+        String file=SavedLayout.shortcutFileName(name);
+        return folder.resolve(number==1 ? file : file.substring(0,file.length()-4)+" ("+number+").lnk");
+    }
+
+    private static Path createAvailable(Path folder,Path exe,Path data,SavedLayout shortcut) throws IOException {
+        for (int n=1;;n++) {
+            Path file=numberedLink(folder,shortcut.name(),n);
+            try { create(file,exe,data,shortcut.id()); return file; }
+            catch (FileAlreadyExistsException collision) { /* Keep both shortcuts. */ }
+        }
+    }
+
+    @FunctionalInterface public interface Save { void run() throws IOException; }
+
+    /** Publish the link(s) before committing their backing recipe; undo this export if the commit fails. */
+    public static Path export(Path data,SavedLayout shortcut,Save commit) throws IOException {
+        Path exe=executable(),desk=createAvailable(desktop(),exe,data,shortcut),signIn=null;
+        try {
+            if (shortcut.autostart()) {
+                Path folder=Files.createDirectories(startup());
+                signIn=createAvailable(folder,exe,data,shortcut);
+            }
+            commit.run();
+            return desk;
+        } catch (IOException | RuntimeException failure) {
+            for (Path link:new Path[]{signIn,desk}) {
+                if (link==null || !matchesOwnedLink(link,data,shortcut.id())) continue;
+                try { deleteShortcut(link); } catch (IOException cleanup) { failure.addSuppressed(cleanup); }
+            }
+            throw failure;
+        }
     }
     public static void createApplicationLink(Path destination,Path executable) throws IOException {
         for (Path part:destination) if (part.toString().equals("..")) throw new IOException("Choose a shortcut destination without parent traversal.");
@@ -114,56 +154,6 @@ public final class LayoutShortcuts {
             catch (IOException | UnsatisfiedLinkError ignored) {}
         }
         return removed;
-    }
-
-    /**
-     * If {@code chosen} sits inside an inactive local/OneDrive Desktop folder (e.g. {@code %USERPROFILE%\Desktop}
-     * while OneDrive Known Folder Move redirected the active Shell Desktop to {@code OneDrive\Desktop}),
-     * remaps {@code chosen} onto {@code activeDesktop} so the icon renders on the user's real Windows Desktop.
-     */
-    public static Path resolveDesktopDestination(Path chosen,Path activeDesktop,Path userHome,Collection<Path> oneDriveRoots) {
-        if (chosen==null) return null;
-        Path normChosen=chosen.toAbsolutePath().normalize();
-        Path parent=normChosen.getParent();
-        Path fileName=normChosen.getFileName();
-        if (parent==null || fileName==null || activeDesktop==null) return normChosen;
-        Path normActive=activeDesktop.toAbsolutePath().normalize();
-        if (parent.equals(normActive) || !Files.isDirectory(normActive)) return normChosen;
-        List<Path> candidates=new ArrayList<>();
-        if (userHome!=null) candidates.add(userHome.toAbsolutePath().normalize().resolve("Desktop"));
-        if (oneDriveRoots!=null) {
-            for (Path root:oneDriveRoots) {
-                if (root!=null) candidates.add(root.toAbsolutePath().normalize().resolve("Desktop"));
-            }
-        }
-        for (Path inactiveDesktop:candidates) {
-            if (parent.equals(inactiveDesktop)) return normActive.resolve(fileName);
-        }
-        return normChosen;
-    }
-
-    public static Path remapInactiveDesktop(Path chosen) {
-        if (chosen==null) return null;
-        try {
-            Path active=desktop();
-            Path testHome=testOverridePath("fish.test.userHome");
-            String profileEnv=System.getenv("USERPROFILE");
-            Path home=testHome!=null ? testHome
-                    : profileEnv!=null && !profileEnv.isBlank()
-                    ? Path.of(profileEnv)
-                    : Path.of(System.getProperty("user.home","."));
-            List<Path> oneDrives=new ArrayList<>();
-            for (String envName:List.of("OneDrive","OneDriveCommercial","OneDriveConsumer")) {
-                String val=System.getenv(envName);
-                if (val!=null && !val.isBlank()) {
-                    try { oneDrives.add(Path.of(val.strip())); }
-                    catch (InvalidPathException ignored) {}
-                }
-            }
-            return resolveDesktopDestination(chosen,active,home,oneDrives);
-        } catch (IOException | RuntimeException e) {
-            return chosen.toAbsolutePath().normalize();
-        }
     }
 
     public static boolean areDesktopIconsHidden() {
@@ -246,37 +236,29 @@ public final class LayoutShortcuts {
         Path startupDir=startup().toAbsolutePath().normalize();
         Files.createDirectories(startupDir);
         Path normalizedData=directory.toAbsolutePath().normalize();
-        Map<Path,SavedLayout> desired=new LinkedHashMap<>();
+        Set<Path> desired=new HashSet<>();
         if (layouts!=null) {
             for (SavedLayout layout:layouts) {
                 if (!layout.autostart()) continue;
-                String fileName=SavedLayout.shortcutFileName(layout.name());
-                Path destination=startupDir.resolve(fileName).toAbsolutePath().normalize();
-                if (desired.containsKey(destination)) {
-                    String stem=fileName.substring(0,fileName.length()-4);
-                    destination=startupDir.resolve(stem+" ("+layout.id().toString().substring(0,8)+").lnk").toAbsolutePath().normalize();
+                for (int n=1;;n++) {
+                    Path destination=numberedLink(startupDir,layout.name(),n);
+                    if (matchesOwnedLink(destination,normalizedData,layout.id())) {
+                        if (Path.of(inspect(destination)[0]).equals(target)) { desired.add(destination); break; }
+                        // Fish moved. Replace only this workspace's verified Startup link.
+                        deleteShortcut(destination);
+                    }
+                    try { create(destination,target,normalizedData,layout.id()); desired.add(destination); break; }
+                    catch (FileAlreadyExistsException collision) { /* Skip unrelated links, including other workspaces. */ }
                 }
-                desired.put(destination,layout);
             }
         }
         try (var entries=Files.list(startupDir)) {
             for (Path entry:entries.toList()) {
                 if (!entry.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".lnk")) continue;
                 Path normalizedEntry=entry.toAbsolutePath().normalize();
-                if (matchesWorkspaceLayoutLink(normalizedEntry,normalizedData)) {
-                    SavedLayout wanted=desired.get(normalizedEntry);
-                    if (wanted==null || !matchesLayoutId(normalizedEntry,wanted.id())) {
-                        deleteShortcut(normalizedEntry);
-                    }
-                }
+                if (!desired.contains(normalizedEntry) && matchesWorkspaceLayoutLink(normalizedEntry,normalizedData))
+                    deleteShortcut(normalizedEntry);
             }
-        }
-        if (desired.isEmpty()) return;
-        load();
-        for (Map.Entry<Path,SavedLayout> item:desired.entrySet()) {
-            Path output=item.getKey();
-            String args=arguments(item.getValue().id(),normalizedData);
-            create0(output.toString(),target.toString(),args,target.getParent().toString());
         }
     }
 
@@ -301,22 +283,20 @@ public final class LayoutShortcuts {
     }
 
     private static boolean matchesWorkspaceLayoutLink(Path shortcut,Path normalizedData) {
-        try {
-            String[] info=inspect(shortcut);
-            if (info==null || info.length<2 || info[1]==null || !info[1].contains("--layout ")) return false;
-            Path linkData=extractDataDirectory(info[1]);
-            if (linkData!=null) return linkData.equals(normalizedData);
-            Path defaultBase=Path.of(java.util.Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home")));
-            return Main.defaultDirectory(defaultBase).toAbsolutePath().normalize().equals(normalizedData);
-        } catch (IOException | RuntimeException e) {
-            return false;
-        }
+        return matchesOwnedLink(shortcut,normalizedData,null);
     }
-
-    private static boolean matchesLayoutId(Path shortcut,UUID id) {
+    private static boolean matchesOwnedLink(Path shortcut,Path data,UUID id) {
+        if (!Files.isRegularFile(shortcut,LinkOption.NOFOLLOW_LINKS)) return false;
         try {
             String[] info=inspect(shortcut);
-            return info!=null && info.length>=2 && info[1]!=null && info[1].contains("--layout "+id);
+            if (info==null || info.length<2 || !Path.of(info[0]).getFileName().toString().equalsIgnoreCase("Fish.exe")
+                    || !info[1].startsWith("--layout ")) return false;
+            String[] parts=info[1].split(" ",3);
+            UUID actual=SavedLayout.reference(parts[1]);
+            if (id!=null && !actual.equals(id)) return false;
+            if (parts.length==3) return info[1].equalsIgnoreCase(arguments(actual,data));
+            Path defaultBase=Path.of(java.util.Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home")));
+            return Main.defaultDirectory(defaultBase).toAbsolutePath().normalize().equals(data.toAbsolutePath().normalize());
         } catch (IOException | RuntimeException e) {
             return false;
         }
@@ -333,24 +313,6 @@ public final class LayoutShortcuts {
         } catch (IOException | RuntimeException e) {
             return false;
         }
-    }
-
-    private static Path extractDataDirectory(String args) {
-        int idx=args.indexOf("--data-dir ");
-        if (idx<0) return null;
-        String rest=args.substring(idx+"--data-dir ".length()).stripLeading();
-        if (rest.isEmpty()) return null;
-        String raw;
-        if (rest.startsWith("\"")) {
-            int end=rest.indexOf('"',1);
-            raw=end>1 ? rest.substring(1,end) : rest.substring(1);
-            while (raw.endsWith("\\\\")) raw=raw.substring(0,raw.length()-1);
-        } else {
-            int sp=rest.indexOf(' ');
-            raw=sp>0 ? rest.substring(0,sp) : rest;
-        }
-        try { return Path.of(raw).toAbsolutePath().normalize(); }
-        catch (RuntimeException e) { return null; }
     }
 
     public static String[] inspect(Path shortcut) throws IOException { load(); return inspect0(shortcut.toAbsolutePath().toString()); }

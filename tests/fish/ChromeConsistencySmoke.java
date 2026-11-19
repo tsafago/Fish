@@ -31,6 +31,22 @@ public final class ChromeConsistencySmoke {
             check(image.getWidth()>=Math.round(180*scale)-1 && image.getHeight()>=Math.round(61*scale)-1,
                     "JavaFX control snapshots cleanly at scale "+scale+": "+control.getClass().getSimpleName());
         }
+
+    }
+
+    private static void fieldFaces(boolean gradient) {
+        for (Control control:List.of(new TextField(),new PasswordField(),new TextArea(),new ComboBox<>(),
+                new ListView<>(),new MarkdownView("Notes"))) {
+            control.setPrefSize(220,58);
+            StackPane root=new StackPane(control);
+            Ui.styleScene(new Scene(root,220,58));
+            BufferedImage image=FxTestSupport.snapshot(root,1.0);
+            int y=image.getHeight()/2;
+            int a=image.getRGB(16,y-6),b=image.getRGB(image.getWidth()-32,y+6);
+            int left=(a>>16&255)+(a>>8&255)+(a&255),right=(b>>16&255)+(b>>8&255)+(b&255);
+            check(gradient ? left>right : left==right,control.getClass().getSimpleName()
+                    +" field pixels in "+(gradient?"gradient":"flat")+" mode: "+left+"/"+right);
+        }
     }
 
     private static void migration(Path root) throws Exception {
@@ -174,11 +190,14 @@ public final class ChromeConsistencySmoke {
         check(!paletteCombo.isDisabled(),"Switching to a built-in theme immediately enables its dependent host-palette choice.");
         prefs.gradientCheck().fire();
         check(w.appearanceSettings().flatThemes().contains(AppTheme.Charcoal),"Gradient choice applies to this theme.");
+        fieldFaces(false);
         themeCombo.setValue(AppTheme.Paper);
         check(prefs.gradientCheck().isSelected(),"Another theme still uses gradients.");
+        fieldFaces(true);
         themeCombo.setValue(AppTheme.Charcoal);
         check(!prefs.gradientCheck().isSelected(),"Switching back restores the flat preference.");
         prefs.gradientCheck().fire();
+        fieldFaces(true);
         themeCombo.setValue(synthetic);
         check(paletteCombo.isDisabled(),"Switching to a custom theme immediately disables the superseded profile palette.");
         themeCombo.setValue(AppTheme.Charcoal);

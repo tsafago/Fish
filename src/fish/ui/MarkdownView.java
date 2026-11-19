@@ -113,7 +113,6 @@ public final class MarkdownView extends ScrollPane {
 
     public void themeChanged() {
         double v=getVvalue();
-        container.setStyle("-fx-background-color: "+Ui.hex(ColorRole.FIELD)+";");
         if (sectionDocTitle!=null && sectionTopics!=null) {
             renderSections(sectionDocTitle,sectionTopics);
         } else {

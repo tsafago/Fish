@@ -204,27 +204,25 @@ public final class KerberosSmoke {
                 window.startup();
                 check(calls.get()==0 && !window.active().busy(),"Default startup-off state acquires no credentials and opens no socket.");
                 ProfilesDialog editor=new ProfilesDialog(window,p);
-                ToggleButton disclosure=(ToggleButton)field(editor,"disclosure");
-                disclosure.fire();
                 check(!((CheckBox)field(editor,"remember")).isVisible() && !((Node)field(editor,"passwordWrapper")).isVisible()
-                        && ((TextField)field(editor,"kerberosServer")).isVisible(),"Kerberos editor shows DNS identity under Advanced, not password recommendations.");
+                        && editor.editor.deviceField().isVisible(),"Kerberos editor shows optional device without password controls.");
                 check(editor.tutorialSignInText().contains("Windows sign-in") && editor.tutorialTarget(2)==field(editor,"authentication"),
                         "Tutorial explains/anchors the actual Kerberos controls.");
                 image(editor.stage(),"profile-100",1); image(editor.stage(),"profile-150",1.5);
                 @SuppressWarnings("unchecked") ComboBox<Profile.Authentication> auth=(ComboBox<Profile.Authentication>)field(editor,"authentication");
                 auth.setValue(Profile.Authentication.PASSWORD);
-                check(((Node)field(editor,"passwordWrapper")).isVisible() && !((TextField)field(editor,"kerberosServer")).isVisible(),
+                check(((Node)field(editor,"passwordWrapper")).isVisible() && editor.editor.deviceField().isVisible(),
                         "Password/manual UI stays available without an implicit connection.");
+                auth.setValue(Profile.Authentication.KERBEROS);
                 editor.dispose();
                 ProfilesDialog conversion=new ProfilesDialog(window,passwordProfile);
                 @SuppressWarnings("unchecked") ComboBox<Profile.Authentication> convAuth=(ComboBox<Profile.Authentication>)field(conversion,"authentication");
                 convAuth.setValue(Profile.Authentication.KERBEROS);
-                ((Button)field(conversion,"save")).fire();
                 conversionEditor.set(conversion);
                 return window;
             });
             try {
-                await(() -> edt(() -> !(boolean)field(conversionEditor.get(),"saving")),"Actual profile Apply finishes without touching a password helper.");
+                await(() -> edt(() -> !conversionEditor.get().editor.saving()),"Profile autosave finishes without touching a password helper.");
                 edt(() -> {
                     Profile converted=w.profileList().stream().filter(value -> value.id().equals(passwordProfile.id())).findFirst().orElseThrow();
                     check(converted.authentication()==Profile.Authentication.KERBEROS && !converted.rememberPassword()

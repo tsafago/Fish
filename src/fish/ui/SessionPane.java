@@ -491,7 +491,10 @@ public final class SessionPane extends BorderPane {
     public boolean busy() { return connecting || connected(); }
     public boolean pristine() { return !attempted && !busy() && core==null; }
     public void activate() { workspace.activate(this); }
-    public ContextMenu clipboardMenu() { return workspace.clipboardMenu(this); }
+    void showClipboardMenu(double screenX,double screenY) {
+        if (!workspace.popupAt(view))
+            workspace.showPopup(workspace.clipboardMenu(this),view,screenX,screenY);
+    }
     public java.awt.Color paneSurfaceColor() { return surfaceColor; }
 
     public Button closeButton() { return close; }
@@ -1274,15 +1277,16 @@ public final class SessionPane extends BorderPane {
         for (Node source:List.of(header,dragZone)) {
             double[] pressScene={0,0};
             boolean[] activeDrag={false};
+            source.setOnContextMenuRequested(e -> {
+                if (!KioskMode.isEnabled()) {
+                    showHeaderMenu(source,e.getScreenX(),e.getScreenY());
+                    e.consume();
+                }
+            });
             source.setOnMousePressed(e -> {
                 activate();
                 if (KioskMode.isEnabled()) {
                     activeDrag[0]=false;
-                    return;
-                }
-                if (e.getButton()==MouseButton.SECONDARY) {
-                    workspace.paneMenu(this).show(source,e.getScreenX(),e.getScreenY());
-                    e.consume();
                     return;
                 }
                 if (e.getButton()==MouseButton.PRIMARY) {
@@ -1301,6 +1305,11 @@ public final class SessionPane extends BorderPane {
                 e.consume();
             });
             source.setOnMouseReleased(e -> {
+                if (e.getButton()==MouseButton.SECONDARY && !KioskMode.isEnabled()) {
+                    showHeaderMenu(source,e.getScreenX(),e.getScreenY());
+                    e.consume();
+                    return;
+                }
                 if (e.getButton()!=MouseButton.PRIMARY || !activeDrag[0]) return;
                 activeDrag[0]=false;
                 try {
@@ -1316,6 +1325,10 @@ public final class SessionPane extends BorderPane {
     }
 
     public void clearPreview() { workspace.clearPreviews(); }
+
+    private void showHeaderMenu(Node owner,double x,double y) {
+        if (!workspace.popupAt(owner)) workspace.showPopup(workspace.paneMenu(this),owner,x,y);
+    }
 
     private static String message(Throwable e) {
         Throwable cause=e.getCause()==null ? e : e.getCause();

@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.10.2'
+$version = '0.10.3'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 $distribution = Split-Path -Parent $image
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
@@ -74,7 +74,7 @@ $sourceList = Join-Path $PSScriptRoot 'build\sources.txt'
 [IO.File]::WriteAllLines($sourceList, $sources, [Text.UTF8Encoding]::new($false))
 & "$Jdk\bin\javac.exe" --release 25 -encoding UTF-8 -Xlint:unchecked,-deprecation,-removal --module-path $fxLib --add-modules $fxModules -d build\classes "@$sourceList"
 if ($LASTEXITCODE -ne 0) { throw 'Compilation failed.' }
-Copy-Item MANUAL.md,AI-CONFIG.md build\classes
+Copy-Item MANUAL.md build\classes
 & "$Jdk\bin\java.exe" @fxJvmArgs -cp build\classes fish.Main --config schema --file build\classes\CONFIG-SCHEMA.json
 if ($LASTEXITCODE -ne 0) { throw 'Configuration catalog generation failed.' }
 Copy-Item build\classes\CONFIG-SCHEMA.json CONFIG-SCHEMA.json -Force
@@ -84,8 +84,7 @@ Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
 Copy-Item build\fish-native.dll dist\fish-native.dll -Force
 Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
 if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
-    $testFiles = if ($Task -eq 'Maintenance') { Get-Item tests\fish\FxTestSupport.java,tests\fish\Tests.java,tests\fish\MaintenanceSmoke.java,tests\fish\MaintenanceUiSmoke.java,tests\fish\NoticeSmoke.java,tests\fish\NativeUpdateSmoke.java,tests\fish\KeyboardPreferencesSmoke.java,tests\fish\SettingsTutorialSmoke.java,tests\fish\LaunchBrokerSmoke.java,tests\fish\WindowRevisionSmoke.java,tests\fish\LayoutFeatureSmoke.java,tests\fish\ShortcutRefinementSmoke.java,tests\fish\UsabilityIterationSmoke.java,tests\fish\SimplePaneSmoke.java,tests\fish\CursorRenderingSmoke.java,tests\fish\BetaSettingsSmoke.java,tests\fish\BetaRecoverySmoke.java,tests\fish\BetaUiSmoke.java,tests\fish\ZeroTenFeaturesSmoke.java }
-        elseif ($Task -eq 'Smoke') { Get-Item tests\fish\FxTestSupport.java,tests\fish\Tests.java,tests\fish\FishSmoke.java,tests\fish\StreamliningSmoke.java,tests\fish\CustomizationSmoke.java,tests\fish\ChromeConsistencySmoke.java,tests\fish\RefinementSmoke.java,tests\fish\UsabilitySmoke.java,tests\fish\KerberosSmoke.java,tests\fish\UsabilityIterationSmoke.java,tests\fish\ZeroTenFeaturesSmoke.java } else { Get-ChildItem tests -Recurse -Filter *.java }
+    $testFiles = Get-ChildItem tests -Recurse -Filter *.java
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 25 -encoding UTF-8 -Xlint:-deprecation,-removal --module-path $fxLib --add-modules $fxModules -cp build\classes -d build\test-classes '@build\tests.txt'
@@ -127,7 +126,7 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.DpiAndLatencySmoke
     if ($LASTEXITCODE -ne 0) { throw 'DPI 1px border and latency smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.ZeroTenFeaturesSmoke
-    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.2 feature and stress checks failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.3 feature and stress checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }

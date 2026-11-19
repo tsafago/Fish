@@ -20,6 +20,7 @@ import javafx.stage.*;
 
 /** Shown production windows, synthetic state, targeted JavaFX events. No global input or external services. */
 public final class DialogPathsSmoke {
+    private final StateStore store;
     private final Workspace w;
     private final AppTheme theme;
     private final double scale;
@@ -29,7 +30,7 @@ public final class DialogPathsSmoke {
 
     DialogPathsSmoke(Path directory,AppTheme theme,double scale) throws Exception {
         this.theme=theme; this.scale=scale;
-        var store=new StateStore(directory);
+        store=new StateStore(directory);
         Profile p=new Profile(UUID.randomUUID(),"Fixture offline","",23,"","",false,false,"37","Phosphor","None",1,Map.of(),"");
         var state0=new StateStore.State(List.of(p),new Layout.Split(true,.5,new Layout.Leaf(UUID.randomUUID(),p.id()),
                 new Layout.Leaf(UUID.randomUUID(),p.id())),1030,660);
@@ -113,7 +114,7 @@ public final class DialogPathsSmoke {
                         heading instanceof Label l && stage.getTitle().equals(l.getText())
                         && bounds(heading).getMinY()>=bounds(header).getMaxY()-1,state+": page heading must sit below caption (none for Settings)");
                 var buttons=((Parent)header).lookupAll(".fish-chrome-button");
-                expect(buttons.contains(close) && buttons.size()==(stage.getModality()==Modality.NONE ? 3 : 1),
+                expect(buttons.contains(close) && buttons.size()==(stage.getModality()==Modality.NONE ? 2 : 1),
                         state+": incorrect modal/modeless caption controls");
             }
             return new Frame(scene.getWidth(),scene.getHeight(),bounds(close).getMaxX(),bounds(close).getMinY(),
@@ -176,42 +177,15 @@ public final class DialogPathsSmoke {
         expect(fx(() -> !p.isShowing()),label+": popup did not hide");
     }
     void saved() throws Exception {
-        AtomicInteger choices=new AtomicInteger();
-        var d=fx(() -> new SavedLayoutsDialog(w,new SavedLayoutsDialog.ShortcutExport() {
-            public Path desktop() { return w.dataDirectory(); }
-            public Path choose(Path initial,String name,Window owner) { choices.incrementAndGet(); return null; }
-            public void write(UUID id,Path output,Runnable done,Consumer<String> failed) { throw new AssertionError("Unexpected shell write"); }
-        })); var s=d.stage(); painted(s,d::show);
-        frame(s,"Saved collapsed empty");
-        expect(fx(() -> Math.abs(s.getWidth()-500)<5 && s.getMinWidth()==420),"Saved layouts default/minimum width");
-        expect(fx(() -> !d.libraryBox().isManaged() && d.layoutsCombo().isDisabled()),"empty library initial state");
-        run(() -> { d.nameField().clear(); d.createButton().fire(); });
-        expect(fx(() -> choices.get()==0 && d.messageLabel().getText().contains("1-80")),"invalid name opened shortcut chooser");
-        run(() -> { d.nameField().setText("Fixture two panes"); d.createButton().requestFocus(); key(s,KeyCode.ENTER); });
-        expect(fx(() -> choices.get()==1 && w.savedLayouts().isEmpty()),"cancelled shortcut destination did not leave workspace unchanged");
-        double collapsed=fx(s::getHeight);
-        run(d.manageButton()::fire);
-        frame(s,"Saved expanded empty");
-        expect(fx(() -> d.libraryBox().isManaged() && s.getHeight()>collapsed+45),"expanding library must increase native height");
-        run(() -> {d.nameField().setText("Fixture two panes"); d.saveButton().fire();});
-        waitFor(() -> !d.isWorking() && d.layoutsCombo().getItems().size()==1,"local save did not populate library");
-        frame(s,"Saved expanded populated");
-        double expanded=fx(s::getHeight);
-        inside(s,d.layoutsCombo(),"Saved layout selector");
-        inside(s,fx(() -> button(s,"Delete")),"Delete saved layout");
-        inside(s,fx(() -> button(s,"Close")),"Saved layouts footer");
-        combo(d.layoutsCombo(),"Saved layout choices");
-        modal("Delete saved layout",() -> button(s,"Delete").fire(),KeyCode.ESCAPE,0);
-        expect(fx(() -> d.layoutsCombo().getItems().size()==1),"cancelled delete removed a layout");
-        run(d.manageButton()::fire); frame(s,"Saved collapsed populated");
-        expect(fx(() -> s.getHeight()<expanded-25),"collapse must shrink, not grow, the Saved layouts window");
-        run(d.manageButton()::fire); minimum(s,"Saved layouts");
-        var scroll=fx(() -> (ScrollPane)s.getScene().lookup(".scroll-pane"));
-        run(() -> scroll.setVvalue(scroll.getVmax()));
-        Thread.sleep(100);
-        inside(s,fx(() -> button(s,"Delete")),"Delete reachable after scrolling at minimum");
-        inside(s,fx(() -> button(s,"Close")),"Footer visible while scrolling at minimum");
-        run(() -> scroll.setVvalue(scroll.getVmin()));
+        var s=fx(() -> w.preferencesDialog("General")); painted(s,() -> w.preferences("General"));
+        var p=fx(w::tutorialPreferences);
+        frame(s,"Desktop shortcuts");
+        TextField name=fx(() -> (TextField)p.tutorialTarget("shortcut-name"));
+        Button create=fx(() -> (Button)p.tutorialTarget("shortcut-create"));
+        inside(s,name,"Shortcut name"); inside(s,create,"Create desktop shortcut");
+        run(() -> { name.setText("Fixture two panes"); create.fire(); });
+        expect(fx(() -> ((Label)p.tutorialTarget("shortcut-status")).getText().contains("Demo")
+                && w.savedLayouts().isEmpty()),"demo export must fail inline without creating a shortcut");
         dismiss(s,() -> button(s,"Close dialog").fire(),"caption X");
     }
     void settings() throws Exception {
@@ -242,8 +216,8 @@ public final class DialogPathsSmoke {
                 modal("Enable Kiosk Mode",() -> ((Button)s.getScene().lookup("#prefs-kiosk-toggle")).fire(),KeyCode.ESCAPE,0);
                 modal("Factory defaults",() -> button(s,"Revert to factory defaults...").fire(),KeyCode.ESCAPE,0);
             } else if (page.equals("Updates")) {
-                var channel=fx(() -> (ComboBox<?>)FxTestSupport.field(p,"channel"));
-                combo(channel,"Update channel");
+                expect(fx(() -> s.getScene().getRoot().lookupAll(".check-box").stream().anyMatch(n -> n instanceof CheckBox c
+                        && c.getText().equals("Check for updates at startup"))),"missing update discovery control");
             }
         }
         waitFor(() -> updateAttempts.get()>0 && FxTestSupport.children(s).stream().anyMatch(n -> n instanceof Label l
@@ -299,8 +273,11 @@ public final class DialogPathsSmoke {
         expect(modal("Text fixture",() -> Ui.input(w.stage(),"Text fixture","Synthetic text"),KeyCode.ESCAPE,0)==null,
                 "Escape accepted input");
         modal("Fish",() -> Ui.error(w.stage(),"Synthetic error; nothing was changed."),KeyCode.ENTER,0);
-        modal("Compatibility",() -> w.executeCommand("Compatibility and connection safety"),KeyCode.ESCAPE,0);
-        modal("Keyboard reference",() -> w.executeCommand("Keyboard reference"),KeyCode.ENTER,0);
+        run(() -> w.executeCommand("Keyboard reference"));
+        waitFor(() -> w.tutorialPreferences()!=null && w.tutorialPreferences().category().equals("Keyboard Shortcuts"),
+                "Keyboard reference did not show the current shortcut assignments");
+        var editor=fx(() -> w.tutorialPreferences().dialog());
+        dismiss(editor,() -> key(editor,KeyCode.ESCAPE),"Escape");
         run(() -> w.active().problem("Synthetic pane warning"));
         modal("Last pane notice",() -> w.active().showLastNotice(),KeyCode.ESCAPE,0);
     }
@@ -316,14 +293,12 @@ public final class DialogPathsSmoke {
     void profiles() throws Exception {
         var d=fx(() -> new ProfilesDialog(w,w.lastProfile())); var s=d.stage(); run(s::show);
         frame(s,"Profiles password"); combo(d.editor.authenticationCombo(),"Profile authentication");
-        run(() -> d.editor.showAdvanced(true)); combo(d.editor.codePageCombo(),"Code page");
+        inside(s,d.editor.deviceField(),"Optional device in main form");
         run(() -> { d.editor.authenticationCombo().setValue(Profile.Authentication.KERBEROS); });
         expect(fx(d.editor::kerberos),"Kerberos form not selected");
         minimum(s,"Profiles"); inside(s,d.editor.doneButton(),"Profile actions at minimum");
-        run(() -> d.editor.nameField().setText("Unsaved fixture profile"));
-        modal("Unsaved edits",() -> { key(s,KeyCode.ESCAPE); return null; },KeyCode.ENTER,0,
-                dialog -> button(dialog,"OK").requestFocus());
-        expect(!fx(s::isShowing),"discard profile edits did not close dialog");
+        dismiss(s,() -> { d.editor.nameField().setText("Renamed fixture profile"); key(s,KeyCode.ESCAPE); },"immediate Escape after rename");
+        expect(store.load().profiles().getFirst().name().equals("Renamed fixture profile"),"Escape lost profile rename");
     }
     void docs(String resource,String title) throws Exception {
         var d=fx(() -> new ManualDialog(w,resource,title)); var s=d.stage(); run(() -> d.setVisible(true));
@@ -424,11 +399,10 @@ public final class DialogPathsSmoke {
         expect(fx(() -> tip.isShowing() && !tip.getScene().getStylesheets().isEmpty()),"profile tooltip not styled"); run(tip::hide);
     }
     void suite(boolean full) {
-        group("Saved layouts",this::saved); group("Settings",this::settings);
+        group("Desktop shortcuts",this::saved); group("Settings",this::settings);
         if (full) {
             group("Workspace forms",this::forms); group("Prompts and notices",this::prompts); group("Profile editor",this::profiles);
             group("Manual",() -> docs("/MANUAL.md","Fish manual"));
-            group("External config guide",() -> docs("/AI-CONFIG.md","Configuration for external tools"));
             for (var g:TutorialDialog.Guide.values()) group("Tutorial "+g.title,() -> guide(g));
             group("Key reference and recorder",this::keys); group("Recovery warnings",this::warnings);
         }

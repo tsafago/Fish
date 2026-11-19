@@ -1,7 +1,7 @@
 # Interactive Windows desktop only. Uses its own workspace, never global input.
 param([Parameter(Mandatory=$true)][string]$ImageFolder,
     [ValidateSet('Charcoal','Midnight','Paper')][string]$Theme='Charcoal',
-    [ValidateSet('Settings','Saved layouts / shortcuts','Fish manual','Keyboard reference')][string]$Surface='Settings')
+    [ValidateSet('Fish','Settings','Fish manual')][string]$Surface='Settings')
 $ErrorActionPreference='Stop'
 $exe=(Resolve-Path (Join-Path $ImageFolder 'Fish.exe')).Path
 $data=Join-Path (Resolve-Path build) ('first-paint-'+[guid]::NewGuid().ToString('N'))
@@ -31,9 +31,11 @@ public class FishFrame {
   [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h,int a,out int val,int n);
   [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
   public IntPtr Dialog; public int Frames, White, First=-1, Last=-1;
+  public int Pid;
   public string Geometry() { Rect r; int c; GetWindowRect(Dialog,out r); DwmGetWindowAttribute(Dialog,14,out c,4); return String.Format("hwnd={0} [{1},{2}..{3},{4}] cloak={5} dpi={6}",Dialog,r.l,r.t,r.r,r.b,c,GetDpiForWindow(Dialog)); }
   volatile bool done; Thread sampler;
-  public FishFrame(int pid,string surface) {
+  public FishFrame(int pid,string surface,string executable=null) {
+    var started=DateTime.UtcNow;
     sampler=new Thread(delegate() {
       SetThreadDpiAwarenessContext(new IntPtr(-4));
       var dc=GetDC(IntPtr.Zero);
@@ -41,15 +43,24 @@ public class FishFrame {
         if (Dialog==IntPtr.Zero) {
           EnumWindows(delegate(IntPtr h,IntPtr unused) {
             int id; GetWindowThreadProcessId(h,out id);
-            if(id!=pid || !IsWindowVisible(h)) return true;
+            if((pid!=0 && id!=pid) || !IsWindowVisible(h)) return true;
             var s=new StringBuilder(160); GetWindowText(h,s,s.Capacity);
             if(s.ToString()!=surface) return true;
-            Dialog=h; return false;
+            if(pid==0) {
+              try { using(var proc=System.Diagnostics.Process.GetProcessById(id)) {
+                if(proc.StartTime.ToUniversalTime()<started ||
+                   !String.Equals(proc.MainModule.FileName,executable,StringComparison.OrdinalIgnoreCase)) return true;
+              }} catch(System.ComponentModel.Win32Exception) { return true; }
+                 catch(InvalidOperationException) { return true; }
+                 catch(ArgumentException) { return true; }
+            }
+            if(pid==0) SetWindowPos(h,new IntPtr(-1),0,0,0,0,0x13);
+            Pid=id; Dialog=h; return false;
           },IntPtr.Zero);
         }
         Rect r; if(Dialog!=IntPtr.Zero && GetWindowRect(Dialog,out r)) {
           // Blank left side of the integrated caption, away from text and buttons.
-          var p=new Pt{x=r.l+36,y=r.t+20};
+          var p=new Pt{x=surface=="Fish" ? r.r-220 : r.l+36,y=r.t+20};
           if(GetAncestor(WindowFromPoint(p),2)==Dialog) {
             uint c=GetPixel(dc,p.x,p.y);
             if(c!=0xffffffff) {
@@ -70,7 +81,7 @@ public class FishFrame {
 [void](New-Item $data -ItemType Directory)
 $image=Split-Path -Parent $exe
 $config=Join-Path $data 'candidate.xml'
-$action=@{'Settings'='Settings...'; 'Fish manual'='Full manual / Getting Started'; 'Saved layouts / shortcuts'='Saved layouts / shortcuts...'; 'Keyboard reference'='Keyboard reference'}[$Surface]
+$action=if ($Surface -eq 'Fish manual') {'Full manual / Getting Started'} else {'Settings...'}
 & "$image\runtime\bin\java.exe" '--enable-native-access=ALL-UNNAMED' -cp "$image\app\Fish.jar" fish.Main --config export --data-dir $data --file $config
 if ($LASTEXITCODE) {throw 'Isolated fixture export failed.'}
 $settings=[xml](Get-Content -LiteralPath $config -Raw)
@@ -82,6 +93,7 @@ foreach ($key in @('updates.startup','connectOnStartup','binding.Host F9',"bindi
 [IO.File]::WriteAllText($config,$settings.OuterXml.Replace('properties.dtd"[]>','properties.dtd">'),[Text.UTF8Encoding]::new($false))
 & "$image\runtime\bin\java.exe" '--enable-native-access=ALL-UNNAMED' -cp "$image\app\Fish.jar" fish.Main --config apply --data-dir $data --file $config
 if ($LASTEXITCODE) {throw 'Isolated fixture setup failed.'}
+$startup=if ($Surface -eq 'Fish') {[FishFrame]::new(0,'Fish',$exe)}
 $launcher=Start-Process -FilePath $exe -ArgumentList "--data-dir `"$data`"" -PassThru
 $child=$null
 try {
@@ -95,11 +107,21 @@ try {
     if (!$child -or !$child.Responding -or $child.MainWindowTitle -ne 'Fish') { throw "Packaged fixture not responsive: $($child.MainWindowTitle)" }
     Write-Output "Responsive packaged fixture PID $($child.Id)"
     $handle=$child.MainWindowHandle
+    if ($startup) {
+        $deadline=(Get-Date).AddSeconds(4)
+        do { Start-Sleep -Milliseconds 50 } while ($startup.Frames -lt 40 -and (Get-Date) -lt $deadline)
+        $startup.Stop()
+        Write-Output "Cold $Theme workspace: $($startup.Geometry()); samples=$($startup.Frames); first=$($startup.First); last=$($startup.Last); white=$($startup.White)"
+        if ($startup.Pid -ne $child.Id -or $startup.Frames -lt 8) {throw 'Could not sample the newly launched workspace.'}
+        if ($Theme -ne 'Paper' -and ($startup.White -gt 0 -or $startup.Last -gt 90)) {throw 'Bright native frame at workspace startup.'}
+        if ($Theme -eq 'Paper' -and $startup.Last -lt 180) {throw 'Workspace did not render its light caption.'}
+        return
+    }
     # Keep only our disposable fixture on screen; never sample obscuring windows.
     [void][FishFrame]::SetWindowPos($handle,[IntPtr](-1),0,0,0,0,0x13)
     Start-Sleep -Milliseconds 1400
     foreach($n in 1..3) {
-        $sample=[FishFrame]::new($child.Id,$Surface)
+        $sample=[FishFrame]::new($child.Id,$Surface,$null)
         try {
             [void][FishFrame]::PostMessage($handle,256,[IntPtr]0x78,[IntPtr]0x430001)
             [void][FishFrame]::PostMessage($handle,257,[IntPtr]0x78,[IntPtr](-1069350911))
@@ -120,6 +142,7 @@ try {
         } elseif ($sample.White -gt 0 -or $sample.Last -gt 90) { throw "White or unthemed Settings frame: $Theme." }
     }
 } finally {
+    if ($startup) { $startup.Stop() }
     if ($handle -and $handle -ne [IntPtr]::Zero) { [void][FishFrame]::PostMessage($handle,16,[IntPtr]::Zero,[IntPtr]::Zero) }
     elseif ($child -and !$child.HasExited) { [void]$child.CloseMainWindow() }
     if (!$launcher.WaitForExit(12000)) { if ($child -and !$child.HasExited) { $child.Kill() }; throw 'Packaged fixture failed to close.' }

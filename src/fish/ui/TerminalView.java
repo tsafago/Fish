@@ -207,7 +207,7 @@ public class TerminalView extends Region {
                 suppressTyped[0]=true;
                 event.consume();
                 Point2D screenPt=localToScreen(originX,Math.min(Math.max(1,getHeight()-1),originY+cellHeight));
-                if (screenPt!=null) pane.clipboardMenu().show(this,screenPt.getX(),screenPt.getY());
+                if (screenPt!=null) pane.showClipboardMenu(screenPt.getX(),screenPt.getY());
                 return;
             }
             if (event.isShiftDown() && (event.getCode()==KeyCode.LEFT || event.getCode()==KeyCode.RIGHT
@@ -240,13 +240,6 @@ public class TerminalView extends Region {
         boolean[] paneDrag={false};
         double[] pressPt={0,0};
         setOnMousePressed(event -> {
-            if (event.getButton()==MouseButton.SECONDARY) {
-                pane.activate();
-                requestFocus();
-                pane.clipboardMenu().show(this,event.getScreenX(),event.getScreenY());
-                event.consume();
-                return;
-            }
             if (event.getButton()!=MouseButton.PRIMARY) return;
             pane.activate();
             requestFocus();
@@ -301,7 +294,11 @@ public class TerminalView extends Region {
             requestRender();
         });
         setOnMouseReleased(event -> {
-            if (event.getButton()==MouseButton.SECONDARY) { event.consume(); return; }
+            if (event.getButton()==MouseButton.SECONDARY) {
+                pane.showClipboardMenu(event.getScreenX(),event.getScreenY());
+                event.consume();
+                return;
+            }
             if (event.getButton()!=MouseButton.PRIMARY) return;
             event.consume();
             if (paneDrag[0]) {
@@ -328,7 +325,7 @@ public class TerminalView extends Region {
             dragging=false;
         });
         setOnContextMenuRequested(event -> {
-            pane.clipboardMenu().show(this,event.getScreenX(),event.getScreenY());
+            pane.showClipboardMenu(event.getScreenX(),event.getScreenY());
             event.consume();
         });
 

@@ -326,9 +326,10 @@ public final class Ui {
             while (change.next()) {
                 for (Window w:change.getAddedSubList()) {
                     preparePopup(w);
-                    if (dark() && w instanceof Stage s && s.getScene()!=null
-                            && s.getScene().getRoot().getStyleClass().contains("fish-dialog-shell")) {
-                        WindowBorder.prepareDialogFrame(s);
+                    if (dark() && w instanceof Stage s && s.getScene()!=null) {
+                        var classes=s.getScene().getRoot().getStyleClass();
+                        if (classes.contains("fish-dialog-shell")) WindowBorder.prepareFirstFrame(s,ColorRole.DIALOG);
+                        else if (classes.contains("fish-window-shell")) WindowBorder.prepareFirstFrame(s,ColorRole.BACKGROUND);
                     }
                 }
             }
@@ -502,6 +503,8 @@ public final class Ui {
                 -fish-bg: %s;
                 -fish-panel: %s;
                 -fish-field: %s;
+                -fish-field-face: __FIELD_SURFACE__;
+                -fish-hover-face: __HOVER_SURFACE__;
                 -fish-dialog: %s;
                 -fish-text: %s;
                 -fish-muted: %s;
@@ -515,7 +518,7 @@ public final class Ui {
                 -fish-chrome: %s;
                 -fish-chrome-text: %s;
                 -fish-chrome-inactive: %s;
-                -fish-menu: %s;
+                -fish-pill: __PILL__;
                 -fish-menu-text: %s;
                 -fish-menu-hover: %s;
                 -fish-menu-selected-text: %s;
@@ -593,7 +596,7 @@ public final class Ui {
                 -fx-text-fill: -fish-text;
             }
             .button, .toggle-button {
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-divider, -fish-field-face;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 4, 3;
                 -fx-text-fill: -fish-text;
@@ -601,13 +604,13 @@ public final class Ui {
                 -fx-cursor: hand;
             }
             .button:hover, .toggle-button:hover {
-                -fx-background-color: -fish-divider, -fish-hover;
+                -fx-background-color: -fish-divider, -fish-hover-face;
             }
             .button:armed, .toggle-button:armed, .toggle-button:selected {
                 -fx-background-color: -fish-focus, -fish-pressed;
             }
             .button:focused, .toggle-button:focused {
-                -fx-background-color: -fish-focus, -fish-field;
+                -fx-background-color: -fish-focus, -fish-field-face;
             }
             .button:default {
                 -fx-background-color: -fish-focus, -fish-selection;
@@ -659,7 +662,7 @@ public final class Ui {
                 -fx-background-color: -fish-error;
             }
             .text-field, .password-field, .text-area {
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-divider, -fish-field-face;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 4, 3;
                 -fx-text-fill: -fish-text;
@@ -668,10 +671,10 @@ public final class Ui {
                 -fx-highlight-text-fill: -fish-selection-text;
             }
             .text-field:focused, .password-field:focused, .text-area:focused {
-                -fx-background-color: -fish-focus, -fish-field;
+                -fx-background-color: -fish-focus, -fish-field-face;
             }
             .text-area .content {
-                -fx-background-color: -fish-field;
+                -fx-background-color: transparent;
                 -fx-background-radius: 3;
             }
             .fish-tutorial-card.text-area {
@@ -689,18 +692,18 @@ public final class Ui {
                 -fx-background-color: transparent;
             }
             .invalid-field {
-                -fx-background-color: -fish-error, -fish-field !important;
+                -fx-background-color: -fish-error, -fish-field-face !important;
             }
             .combo-box-base {
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-divider, -fish-field-face;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 4, 3;
             }
             .combo-box-base:hover {
-                -fx-background-color: -fish-divider, -fish-hover;
+                -fx-background-color: -fish-divider, -fish-hover-face;
             }
             .combo-box-base:focused {
-                -fx-background-color: -fish-focus, -fish-field;
+                -fx-background-color: -fish-focus, -fish-field-face;
             }
             .combo-box .list-cell {
                 -fx-text-fill: -fish-text;
@@ -708,7 +711,7 @@ public final class Ui {
                 -fx-padding: 4 8 4 8;
             }
             .combo-box-popup .list-view {
-                -fx-background-color: -fish-divider, -fish-menu;
+                -fx-background-color: -fish-divider, __MENU_SURFACE__;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 5, 4;
                 -fx-padding: 3;
@@ -746,7 +749,7 @@ public final class Ui {
                 -fx-padding: 2 6 2 8;
             }
             .fish-chrome-pill-combo {
-                -fx-background-color: -fish-field, -fish-field;
+                -fx-background-color: -fish-pill, -fish-pill;
                 -fx-background-insets: 0, __PX__ 0 __PX__ __PX__;
                 -fx-background-radius: 4 0 0 4, 3 0 0 3;
                 -fx-border-width: 0;
@@ -758,7 +761,7 @@ public final class Ui {
                 -fx-background-color: -fish-focus, -fish-pressed;
             }
             .fish-chrome-pill-combo:focused {
-                -fx-background-color: -fish-focus, -fish-field;
+                -fx-background-color: -fish-focus, -fish-pill;
                 -fx-border-width: 0;
             }
             .fish-chrome-pill-combo > .list-cell {
@@ -770,7 +773,7 @@ public final class Ui {
                 -fx-padding: 0 7 0 4;
             }
             .fish-chrome-pill-join {
-                -fx-background-color: -fish-field;
+                -fx-background-color: -fish-pill;
                 -fx-background-radius: 0;
                 -fx-padding: 0;
             }
@@ -781,7 +784,7 @@ public final class Ui {
                 -fx-background-color: -fish-focus;
             }
             .fish-chrome-pill-add {
-                -fx-background-color: -fish-field, -fish-field;
+                -fx-background-color: -fish-pill, -fish-pill;
                 -fx-background-insets: 0, __PX__ __PX__ __PX__ 0;
                 -fx-background-radius: 0 4 4 0, 0 3 3 0;
                 -fx-padding: 0 8 0 8;
@@ -794,7 +797,7 @@ public final class Ui {
                 -fx-background-color: -fish-focus, -fish-pressed;
             }
             .fish-chrome-pill-add:focused {
-                -fx-background-color: -fish-focus, -fish-field;
+                -fx-background-color: -fish-focus, -fish-pill;
                 -fx-border-width: 0;
             }
             .fish-chrome-pill-add:disabled {
@@ -833,6 +836,12 @@ public final class Ui {
                 -fx-background-radius: 4;
                 -fx-padding: 6 10 6 10;
             }
+            .fish-workspace-header .menu-bar {
+                -fx-padding: 0 2 __PX__ 2;
+            }
+            .fish-workspace-header .menu-bar > .container > .menu-button {
+                -fx-max-height: infinity;
+            }
             .menu-bar > .container > .menu-button > .label {
                 -fx-text-fill: -fish-chrome-text;
             }
@@ -842,7 +851,7 @@ public final class Ui {
                 -fx-background-color: -fish-menu-hover;
             }
             .context-menu {
-                -fx-background-color: -fish-divider, -fish-menu;
+                -fx-background-color: -fish-divider, __MENU_SURFACE__;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 5, 4;
                 -fx-padding: 5 4 5 4;
@@ -893,16 +902,16 @@ public final class Ui {
                 -fx-padding: 5 10 5 10;
             }
             .list-view, .table-view {
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-divider, -fish-field-face;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 4, 3;
                 -fx-table-cell-border-color: -fish-divider;
             }
             .list-view:focused, .table-view:focused {
-                -fx-background-color: -fish-focus, -fish-field;
+                -fx-background-color: -fish-focus, -fish-field-face;
             }
             .list-cell {
-                -fx-background-color: -fish-field;
+                -fx-background-color: transparent;
                 -fx-text-fill: -fish-text;
                 -fx-padding: 5 10 5 10;
             }
@@ -986,7 +995,7 @@ public final class Ui {
             }
             .fish-spectrum-field {
                 -fx-padding: 0 7;
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-divider, -fish-field-face;
                 -fx-background-insets: 0, __PX__;
             }
             .fish-fields-disclosure > .title, .fish-fields-disclosure > .content {
@@ -1056,7 +1065,7 @@ public final class Ui {
                 -fx-padding: 5 8 5 8;
             }
             .table-row-cell {
-                -fx-background-color: -fish-field;
+                -fx-background-color: transparent;
                 -fx-border-color: transparent transparent -fish-divider transparent;
                 -fx-border-width: 0 0 __PX__ 0;
             }
@@ -1093,13 +1102,13 @@ public final class Ui {
                 -fx-background-color: transparent;
             }
             .fish-markdown-view.scroll-pane {
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-divider, -fish-field-face;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 4, 3;
                 -fx-padding: __PX__;
             }
             .fish-markdown-view.scroll-pane > .viewport {
-                -fx-background-color: -fish-field;
+                -fx-background-color: transparent;
                 -fx-background-radius: 3;
             }
             .scroll-bar {
@@ -1189,10 +1198,14 @@ public final class Ui {
                 -fx-font-size: 12px;
             }
             """;
+        int pill=pillColor();
         String css = cssTemplate
                 .replace("__SURFACE__",surfacePaint(ColorRole.DIALOG))
-                .replace("__PILL_JOIN__",colorTheme().rgb(ColorRole.FIELD)==0 ? hex(ColorRole.DIVIDER)
-                        : String.format(Locale.ROOT,"#%06x",ColorTheme.mix(colorTheme().rgb(ColorRole.FIELD),0,.55)))
+                .replace("__FIELD_SURFACE__",surfacePaint(ColorRole.FIELD))
+                .replace("__HOVER_SURFACE__",surfacePaint(ColorRole.HOVER))
+                .replace("__MENU_SURFACE__",surfacePaint(ColorRole.MENU))
+                .replace("__PILL__",rgbHex(pill))
+                .replace("__PILL_JOIN__",rgbHex(ColorTheme.mix(pill,0,.55)))
                 .replace("__RAIL__",surfacePaint(ColorRole.PANEL))
                 .replace("__PX__", px)
                 .replace("__SPLIT_INSET__", splitInset)
@@ -1202,7 +1215,7 @@ public final class Ui {
                     hex(ColorRole.HOVER), hex(ColorRole.PRESSED), hex(ColorRole.FOCUS), hex(ColorRole.ERROR),
                     hex(ColorRole.SELECTION), hex(ColorRole.SELECTION_TEXT),
                     hex(ColorRole.CHROME), hex(ColorRole.CHROME_TEXT), hex(ColorRole.CHROME_INACTIVE),
-                    hex(ColorRole.MENU), hex(ColorRole.MENU_TEXT), hex(ColorRole.MENU_HOVER), hex(ColorRole.MENU_SELECTED_TEXT),
+                    hex(ColorRole.MENU_TEXT), hex(ColorRole.MENU_HOVER), hex(ColorRole.MENU_SELECTED_TEXT),
                     hex(ColorRole.TOOLTIP), hex(ColorRole.TOOLTIP_TEXT),
                     hex(ColorRole.HEADER), hex(ColorRole.HEADER_TEXT), hex(ColorRole.HEADER_MUTED),
                     hex(ColorRole.FOOTER), hex(ColorRole.FOOTER_TEXT), hex(ColorRole.STATUS_ERROR), hex(ColorRole.STATUS_WAIT),
@@ -1210,11 +1223,34 @@ public final class Ui {
         return "data:text/css;base64," + Base64.getEncoder().encodeToString(css.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String surfacePaint(ColorRole base) {
-        if (!gradients()) return hex(base);
-        var start=fxColor(base).interpolate(fxColor(ColorRole.FOCUS),.075);
-        String tint=String.format(Locale.ROOT,"#%02x%02x%02x",Math.round(start.getRed()*255),Math.round(start.getGreen()*255),Math.round(start.getBlue()*255));
-        return "linear-gradient(to bottom right,"+tint+", "+hex(base)+", "+hex(ColorRole.CHROME)+")";
+    private static String rgbHex(int rgb) { return String.format(Locale.ROOT,"#%06x",rgb&0xffffff); }
+
+    private static int highlight(int base) {
+        return ColorTheme.mix(base,theme.dark ? colors.rgb(ColorRole.FOCUS) : 0xffffff,theme.dark ? .075 : .36);
+    }
+
+    private static int shade(int base) { return ColorTheme.mix(base,0,theme.dark ? .22 : .055); }
+
+    private static String surfacePaint(ColorRole role) {
+        if (!gradients()) return hex(role);
+        int base=colors.rgb(role);
+        int light=highlight(base),dark=shade(base);
+        // On black OLED or white Paper the base is already an endpoint; avoid a half-flat ramp.
+        String middle=(base==light || base==dark) ? "" : hex(role)+", ";
+        return "linear-gradient(to bottom right,"+rgbHex(light)+", "+middle+rgbHex(dark)+")";
+    }
+
+    private static int pillColor() {
+        int base=colors.rgb(ColorRole.DIALOG);
+        boolean dark=HostPalette.contrastRatio(base,0xffffff)>HostPalette.contrastRatio(base,0);
+        // Measure against the closest corner, not just the middle of the chrome.
+        int edge=!gradients() ? base : dark ? highlight(base) : shade(base);
+        int target=dark ? 0xffffff : 0;
+        for (int step=1;step<=100;step++) {
+            int fill=ColorTheme.mix(edge,target,step/100.0);
+            if (HostPalette.contrastRatio(fill,edge)>=1.15) return fill;
+        }
+        return target;
     }
 
     public static Node icon(String kind) {
@@ -1442,19 +1478,18 @@ public final class Ui {
             controls.setCenter(page);
         }
         if (dialog.getModality()==Modality.NONE) {
-            Button minimize=iconButton("Minimize "+dialog.getTitle(),"minimize",ColorRole.CHROME_TEXT,() -> dialog.setIconified(true));
             Button maximize=iconButton("Maximize "+dialog.getTitle(),"maximize",ColorRole.CHROME_TEXT,() -> dialog.setMaximized(!dialog.isMaximized()));
-            bindHeaderButton(minimize,HeaderButtonType.ICONIFY);
             bindHeaderButton(maximize,HeaderButtonType.MAXIMIZE);
             dialog.maximizedProperty().addListener((o,old,max) -> {
                 updateIcon(maximize,max ? "restore" : "maximize",ColorRole.CHROME_TEXT);
                 String name=(max ? "Restore " : "Maximize ")+dialog.getTitle();
                 maximize.setAccessibleText(name); maximize.getTooltip().setText(name);
             });
-            for (Button b:List.of(minimize,maximize)) {
-                b.getStyleClass().add("fish-chrome-button"); b.setPrefSize(38,31);
-            }
-            header.setTrailing(new HBox(minimize,maximize,close));
+            maximize.getStyleClass().add("fish-chrome-button"); maximize.setPrefSize(38,31);
+            maximize.visibleProperty().bind(dialog.resizableProperty());
+            maximize.managedProperty().bind(maximize.visibleProperty());
+            // An owned tool window has no independent taskbar entry to restore it.
+            header.setTrailing(new HBox(maximize,close));
         }
         if (settings) {
             header.getStyleClass().add("fish-settings-header"); header.setMaxHeight(32);

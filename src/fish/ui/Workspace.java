@@ -21,6 +21,7 @@ import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.*;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.*;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
@@ -222,12 +223,13 @@ public final class Workspace {
     private PreviewKey lastPreviewKey;
     private boolean lastPreviewValid;
     private long stateBuildCount;
-    private boolean refreshingAdd,exportingLayout;
-    private SavedLayoutsDialog layoutsDialog;
+    private boolean refreshingAdd;
+    private CompletableFuture<Void> shortcutWrite;
     private ApplicationWindows application;
     private Preferences preferences;
     private ProfilesEditor profileEditor;
     private final MenuBar menuBar;
+    private ContextMenu openPopup;
     private final HBox toolsBox;
     private Menu sessionMenu,editMenu,insertsMenu,panesMenu,viewMenu,hostMenu,helpMenu;
     private List<MenuItem> normalEditItems=List.of(),kioskEditItems=List.of();
@@ -395,6 +397,9 @@ public final class Workspace {
 
         scene=new Scene(shell,logicalWidth,logicalHeight);
         Ui.styleScene(scene);
+        // JavaFX auto-hide exempts presses on the anchor (which can be an entire terminal).
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED,e -> hidePopup());
+        scene.focusOwnerProperty().addListener((o,old,node) -> hidePopup());
 
         shortcuts=new AppShortcuts(this,commands,state.shortcuts());
         shortcuts.attach(scene);
@@ -425,7 +430,8 @@ public final class Workspace {
             close(false);
         });
         stage.focusedProperty().addListener((o,a,focused) -> {
-            if (focused && active!=null) active.view().restartCursor();
+            if (!focused) hidePopup();
+            else if (active!=null) active.view().restartCursor();
         });
         stage.showingProperty().addListener((o,a,showing) -> {
             Ui.syncSceneStylesheet(scene);
@@ -632,16 +638,8 @@ public final class Workspace {
                 ? preferences.profiles : null;
     }
     public Preferences tutorialPreferences() { return preferences!=null && !preferences.ended() ? preferences : null; }
-    public SavedLayoutsDialog openLayoutsDialogInstance() { return layoutsDialog; }
-
-    void layoutsDialogClosed(SavedLayoutsDialog dialog) { if (layoutsDialog==dialog) layoutsDialog=null; tutorialChanged(); }
-
     Node tutorialAddTarget() { return addPane; }
     Node tutorialProfileTarget() { return addProfileSelector; }
-    Node tutorialLayoutTarget(String control) {
-        return layoutsDialog!=null && layoutsDialog.isOpen() ? layoutsDialog.tutorialTarget(control)
-                : tutorialMenuTarget("Panes","Saved layouts / shortcuts...");
-    }
     Node tutorialSettingsTarget() { return tutorialMenuTarget("Edit","Settings..."); }
     void showTutorialSettings() { showTutorialMenu("Edit"); }
     public Node tutorialDivider(boolean horizontal) { return dividerTarget(tree,horizontal); }
@@ -653,11 +651,6 @@ public final class Workspace {
     }
     Node tutorialMenuTarget(String menu,String action) { return chrome.tutorialMenuTarget(menu,action); }
     void showTutorialMenu(String menu) { chrome.showTutorialMenu(menu); }
-
-    public void configurationGuide() {
-        try { new ManualDialog(this,"/AI-CONFIG.md","Configuration for external tools").setVisible(true); }
-        catch (java.io.IOException e) { Ui.error(stage,"Configuration guide could not be opened: "+e.getMessage()); }
-    }
 
     public void selectProfile(SessionPane pane,Profile profile) {
         if (KioskMode.isEnabled()) return;
@@ -744,7 +737,7 @@ public final class Workspace {
 
     void preferencesClosed(Preferences value) { if (preferences==value) preferences=null; tutorialChanged(); }
     public UpdateController updateController() { return updates; }
-    boolean localSettingsSaving() { return exportingLayout || preferences!=null && preferences.saving() || profileEditor!=null && profileEditor.saving(); }
+    boolean localSettingsSaving() { return exportingShortcut() || preferences!=null && preferences.saving() || profileEditor!=null && profileEditor.saving(); }
     boolean settingsSaving() { return localSettingsSaving() || application!=null && application.saving(); }
     void refreshActions() { if (application==null) refreshCommands(); else application.refreshActions(); }
     public Map<String,String> keyboardRecovery() { return keyboardRecovery; }
@@ -973,7 +966,6 @@ public final class Workspace {
         if (settingsBatch>0) return;
         if (application!=null) application.changed(this); else saveTimer.playFromStart();
         if (preferences!=null) preferences.sharedChanged();
-        if (layoutsDialog!=null) layoutsDialog.refresh();
     }
 
     void beginSettings() { settingsBatch++; }
@@ -1078,6 +1070,7 @@ public final class Workspace {
         if (KioskMode.isEnabled()) return;
         if (application!=null) { application.saveAsync(); return; }
         if (closing) return;
+        if (exportingShortcut()) { saveTimer.playFromStart(); return; }
         StateStore.State snapshot=state();
         persistence.submit(() -> {
             try { store.save(snapshot); }
@@ -1092,6 +1085,11 @@ public final class Workspace {
 
     void persistSettings(Runnable done,java.util.function.Consumer<String> failed) {
         if (KioskMode.isEnabled()) { failed.accept("Settings and layouts cannot be modified while Kiosk mode is enabled."); return; }
+        // Take this settings snapshot after a pending export publishes its UUID, not before.
+        Workspace exporter=application==null ? this : application.shortcutWriter();
+        if (exporter!=null && exporter.exportingShortcut()) {
+            exporter.shortcutWrite.thenRun(() -> persistSettings(done,failed)); return;
+        }
         saveTimer.stop();
         if (application!=null) { application.persistTask(() -> {},done,failed); return; }
         StateStore.State snapshot=state();
@@ -1401,18 +1399,6 @@ public final class Workspace {
         return -1;
     }
 
-    private void adjustDivider(double delta) {
-        if (KioskMode.isEnabled()) return;
-        Node parent=active==null ? null : active.getParent();
-        if (parent instanceof WorkspaceSplit split) {
-            int before=split.getDividerLocation();
-            int length=(int)Math.round(split.isHorizontal() ? split.getWidth() : split.getHeight());
-            int next=(int)Math.round(length*Math.max(.05,Math.min(.95,before/(double)Math.max(1,length)+delta)));
-            resizeDivider(split,next);
-            if (before!=split.getDividerLocation()) tutorialAction(split.isHorizontal() ? "divider-horizontal" : "divider-vertical");
-        } else if (active!=null) active.problem("Add another pane first; there is no divider to adjust.");
-    }
-
     private void dockingDialog() {
         if (panes.size()==1) return;
         SessionPane source=active;
@@ -1490,6 +1476,8 @@ public final class Workspace {
     }
 
     public void validateDeleteProfile(UUID id) {
+        if (exportingShortcut() || application!=null && application.shortcutWriter()!=null)
+            throw new IllegalArgumentException("Wait for the desktop shortcut to finish before deleting a profile.");
         ProfileManagement.delete(state(),id);
         if (allPanes().stream().anyMatch(p -> p.profile().id().equals(id) && p.connecting()))
             throw new IllegalArgumentException("This profile has a pending login operation. Cancel it or wait for it to finish before deleting.");
@@ -1562,15 +1550,9 @@ public final class Workspace {
             useProfile(choices.getValue());
     }
 
-    private void saveProfileLayout() {
-        Profile updated=active.profile().withLayout(currentLayout().encode());
-        putProfile(updated);
-        active.problem("Layout saved to "+updated.name()+".");
-    }
-
     private void restoreProfileLayout() {
         String saved=active.profile().savedLayout();
-        if (saved.isEmpty()) { active.problem("This profile has no saved layout. Ctrl+Alt+S saves the current layout."); return; }
+        if (saved.isEmpty()) { active.problem("This profile has no legacy layout."); return; }
         try {
             Layout restored=Layout.normalize(Layout.decode(saved));
             for (Layout.Leaf leaf:restored.leaves()) {
@@ -1665,7 +1647,6 @@ public final class Workspace {
             saveTimer.stop();
             if (tutorial!=null) tutorial.dispose();
             if (preferences!=null && !preferences.ended()) preferences.forceDispose();
-            if (layoutsDialog!=null) layoutsDialog.dispose();
             if (profileEditor!=null && profileEditor.getScene()!=null
                     && profileEditor.getScene().getWindow() instanceof Stage editorStage) editorStage.close();
             editMenu.getItems().setAll(kioskEditItems);
@@ -1769,13 +1750,10 @@ public final class Workspace {
         layoutMenu.getItems().add(new SeparatorMenuItem());
         action(layoutMenu,"Next pane",() -> cycle(1));
         action(layoutMenu,"Previous pane",() -> cycle(-1));
-        layoutMenu.getItems().add(new SeparatorMenuItem());
-        action(layoutMenu,"Decrease divider",() -> adjustDivider(-.05));
-        action(layoutMenu,"Increase divider",() -> adjustDivider(.05));
-        layoutMenu.getItems().add(new SeparatorMenuItem());
-        action(layoutMenu,"Save layout to profile",this::saveProfileLayout);
-        action(layoutMenu,"Restore profile layout",this::restoreProfileLayout);
-        action(layoutMenu,"Saved layouts / shortcuts...",this::savedLayoutsDialog);
+        // Keep persisted command IDs and custom chords without exposing a layout library.
+        action(null,"Save layout to profile",() -> preferences("General"));
+        action(null,"Restore profile layout",this::restoreProfileLayout);
+        action(null,"Saved layouts / shortcuts...",() -> preferences("General"));
 
         Menu view=menu(bar,"View");
         this.viewMenu=view;
@@ -1812,26 +1790,12 @@ public final class Workspace {
             AppCommand cmd=action(null,tutorialActions[n],() -> openTutorial(guide,false));
             tutorials.getItems().add(cmd.createMenuItem(guide.title));
         }
-        action(help,"Full manual / Getting Started",() -> {
+        AppCommand guideCommand=action(null,"Full manual / Getting Started",() -> {
             try { new ManualDialog(this).setVisible(true); }
             catch (java.io.IOException e) { Ui.error(stage,"The manual could not be opened: "+e.getMessage()); }
         });
-        action(help,"Configuration for external tools",this::configurationGuide);
-        action(help,"Keyboard reference",() -> Ui.message(stage,
-                Keymap.describeDefaults()+"\n\nCtrl+Alt+M: Menu     Ctrl+Alt+P: Profiles\nCtrl+N: Add pane (max 8)     Ctrl+Alt+D: Swap\n"
-                +"Ctrl+Tab / Ctrl+Shift+Tab: Focus pane     Ctrl+Alt+1..8: Focus pane number\n"
-                +"Ctrl+Alt+[/]: Resize divider     Ctrl+0: Fit\nCtrl+C/V: Copy/paste\n"
-                +"Shift+Arrows: Rectangular selection     Drag: Mouse selection\n"
-                +"Ctrl+Alt+Space: Window menu     Alt+Space: Windows menu     Alt+F4: Close\n"
-                +"Window Move/Size: Arrows (Shift for 1px), Enter commits, Esc cancels\n"
-                +"Ctrl+comma: Settings     Appearance, Profiles, Keyboard Shortcuts, General, Updates\n"
-                +"Your saved custom bindings take precedence; Settings > Keyboard Shortcuts shows every exact assignment.",
-                "Keyboard reference"));
-        action(help,"Compatibility and connection safety",() -> Ui.message(stage,
-                "TN5250J-based 5250 engine; only IBM-3477-FC.\nPlain TCP is not encrypted. Use only on a trusted network.\n"
-                +"No real IBM i / ACS acceptance has been performed.\nEnhanced display structured fields and WEA stop the session explicitly.\n"
-                +"See COMPATIBILITY.md for the demonstrated scope and acceptance checklist.\n"
-                +"GPL-2.0-or-later. No warranty.","Compatibility"));
+        help.getItems().addFirst(guideCommand.createMenuItem("Quick guide"));
+        action(help,"Keyboard reference",() -> preferences("Keyboard Shortcuts"));
 
         for (int i=1;i<=24;i++) {
             KeyMnemonic key=KeyMnemonic.valueOf("PF"+i);
@@ -1889,8 +1853,8 @@ public final class Workspace {
                 return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
             if (List.of("Profiles...","New window","Saved layouts / shortcuts...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
-                    "Compatibility and connection safety","Shortcuts...","Full manual / Getting Started",
-                    "Getting started tutorial","Configuration for external tools","Application settings...","Check for updates...","Last pane notice...",Shortcuts.SETTINGS).contains(text)
+                    "Shortcuts...","Full manual / Getting Started",
+                    "Getting started tutorial","Application settings...","Check for updates...","Last pane notice...",Shortcuts.SETTINGS).contains(text)
                     || text.startsWith("Tutorial:")) return true;
             if (active==null) return false;
             if (text.startsWith("Insert ") && connectionProfile(active.profile()).authentication()==Profile.Authentication.KERBEROS)
@@ -1933,6 +1897,26 @@ public final class Workspace {
             menu.getItems().add(action.createMenuItem(displayText));
         }
         return action;
+    }
+
+    void hidePopup() {
+        if (openPopup!=null) openPopup.hide();
+    }
+
+    boolean popupAt(Node owner) {
+        // A single native gesture can deliver both secondary release and a context-menu request.
+        // A fresh press already retired the old popup, including presses on the same anchor.
+        return openPopup!=null && openPopup.isShowing() && openPopup.getOwnerNode()==owner;
+    }
+
+    void showPopup(ContextMenu popup,Node owner,double screenX,double screenY) {
+        hidePopup();
+        menuBar.getMenus().forEach(Menu::hide);
+        // Dismiss AND deliver the original click to the next pane/control.
+        popup.setConsumeAutoHidingEvents(false);
+        popup.setOnHidden(e -> { if (openPopup==popup) openPopup=null; });
+        openPopup=popup;
+        popup.show(owner,screenX,screenY);
     }
 
     public ContextMenu paneMenu(SessionPane pane) {
@@ -1986,12 +1970,12 @@ public final class Workspace {
     }
 
     private void disposeWorkspace() {
+        hidePopup();
         Ui.removeThemeListener(themeListener);
         KioskMode.removeListener(kioskListener);
         updates.close();
         if (tutorial!=null) tutorial.dispose();
         if (preferences!=null && !preferences.ended()) preferences.forceDispose();
-        if (layoutsDialog!=null) layoutsDialog.dispose();
         shortcuts.dispose();
         panes.values().forEach(SessionPane::dispose);
         stage.close();
@@ -1999,6 +1983,10 @@ public final class Workspace {
 
     void pauseSaving() { saveTimer.stop(); }
     boolean closeSettings() {
+        if (profileEditor!=null) {
+            profileEditor.dismiss();
+            if (profileEditor!=null) return false;
+        }
         if (preferences==null) return true;
         Preferences current=preferences;
         current.closeSettings();
@@ -2030,103 +2018,53 @@ public final class Workspace {
         }
         updateWindowOutline(); refreshShortcutLabels(); refreshCommands();
         if (preferences!=null) { preferences.syncProfiles(); preferences.sharedChanged(); }
-        if (layoutsDialog!=null && layoutsDialog.isOpen()) layoutsDialog.refresh();
     }
 
     public List<SavedLayout> savedLayouts() { return savedLayouts; }
-    public UUID selectedLayout() { return selectedLayout; }
-    public void selectSavedLayout(UUID id) { if (!Objects.equals(selectedLayout,id)) { selectedLayout=id; changed(); } }
-
-    public SavedLayout saveCurrentLayout(UUID id,String name) {
-        boolean existingAutostart=id!=null && savedLayouts.stream().filter(s -> s.id().equals(id))
-                .map(SavedLayout::autostart).findFirst().orElse(false);
-        return saveCurrentLayout(id,name,existingAutostart);
-    }
-
-    public SavedLayout saveCurrentLayout(UUID id,String name,boolean autostart) {
-        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
-        if (settingsSaving()) throw new IllegalArgumentException("Wait for the pending save to finish.");
+    SavedLayout captureShortcut(String name,boolean autostart) {
         StateStore.State current=state();
-        Map<UUID,SavedLayout.Display> displays=new LinkedHashMap<>();
-        sessionPanes().forEach(p -> displays.put(p.id(),new SavedLayout.Display(p.view().isFit(),p.view().zoomValue())));
-        SavedLayout value=new SavedLayout(id==null ? UUID.randomUUID() : id,name,
-                new StateStore.WindowState(current.layout(),current.width(),current.height(),current.lastProfile(),current.addProfile()),displays,autostart);
-        List<SavedLayout> next=new ArrayList<>(savedLayouts);
-        if (id!=null && next.stream().noneMatch(s -> s.id().equals(id))) throw new IllegalArgumentException("Saved layout was deleted. Save as new instead.");
-        next.removeIf(s -> s.id().equals(value.id())); next.add(value);
-        updateSavedLayouts(next,value.id());
-        tutorialAction("layout-saved");
-        return value;
+        return new SavedLayout(UUID.randomUUID(),name,
+                new StateStore.WindowState(current.layout(),current.width(),current.height(),current.lastProfile(),current.addProfile()),
+                current.displays(),autostart);
     }
 
-    public void setSavedLayoutAutostart(UUID id,boolean autostart) {
-        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
-        if (savedLayouts.stream().noneMatch(s -> s.id().equals(id))) throw new IllegalArgumentException("Saved layout is unavailable.");
-        List<SavedLayout> next=savedLayouts.stream().map(s -> s.id().equals(id) ? s.withAutostart(autostart) : s).toList();
-        updateSavedLayouts(next,id);
+    boolean exportingShortcut() { return shortcutWrite!=null; }
+
+    private void finishShortcutWrite() {
+        var finished=shortcutWrite;
+        shortcutWrite=null; refreshActions(); finished.complete(null);
     }
 
-    public void renameSavedLayout(UUID id,String name) {
-        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
-        List<SavedLayout> next=savedLayouts.stream().map(s -> s.id().equals(id) ? s.renamed(name) : s).toList();
-        updateSavedLayouts(next,id);
-    }
-
-    public void deleteSavedLayout(UUID id) {
-        if (KioskMode.isEnabled()) throw new IllegalArgumentException("Layouts cannot be modified while Kiosk mode is enabled.");
-        List<SavedLayout> next=savedLayouts.stream().filter(s -> !s.id().equals(id)).toList();
-        updateSavedLayouts(next,next.isEmpty() ? null : next.getFirst().id());
-    }
-
-    private void updateSavedLayouts(List<SavedLayout> next,UUID selection) {
-        if (settingsSaving()) throw new IllegalArgumentException("Wait for the pending save to finish.");
-        state().withSavedLayouts(next,selection);
-        savedLayouts=List.copyOf(next); selectedLayout=selection;
-        syncAutostartShortcuts(savedLayouts);
-        changed();
-    }
-
-    private void syncAutostartShortcuts(List<SavedLayout> layouts) {
-        if (demonstration) return;
-        try {
-            fish.LayoutShortcuts.syncAutostart(dataDirectory(),fish.LayoutShortcuts.executable(),layouts);
-        } catch (java.io.IOException e) {
-            throw new IllegalArgumentException("Could not update Windows Startup shortcut: "+e.getMessage(),e);
-        }
-    }
-
-    public boolean openSavedLayout(UUID id) {
-        if (application==null) throw new IllegalArgumentException("Launch Fish normally to open saved layouts in independent windows.");
-        return application.openLayout(id);
-    }
-
-    public void exportSavedLayout(UUID id,Path destination,Runnable done,java.util.function.Consumer<String> failed) {
+    void exportDesktopShortcut(String name,boolean autostart,java.util.function.Consumer<Path> done,java.util.function.Consumer<String> failed) {
+        if (KioskMode.isEnabled()) { failed.accept("Shortcuts cannot be changed in Kiosk mode."); return; }
         if (demonstration) { failed.accept("Shortcuts require a normal saved workspace, not a temporary Demo host."); return; }
-        if (settingsSaving()) { failed.accept("Wait for the pending save to finish."); return; }
-        if (savedLayouts.stream().noneMatch(s -> s.id().equals(id))) { failed.accept("Saved layout is unavailable."); return; }
-        final Path executable;
-        try { executable=fish.LayoutShortcuts.executable(); }
-        catch (java.io.IOException e) { failed.accept(e.getMessage()); return; }
-        exportingLayout=true; refreshActions();
-        Runnable success=() -> { exportingLayout=false; refreshActions(); done.run(); };
-        java.util.function.Consumer<String> failure=message -> { exportingLayout=false; refreshActions(); failed.accept(message); };
-        Maintenance task=() -> fish.LayoutShortcuts.create(destination,executable,dataDirectory(),id);
-        if (application!=null) application.persistTask(task,success,failure);
-        else {
-            StateStore.State snapshot=state();
-            persistence.submit(() -> {
-                try { store.save(snapshot); task.run(); Ui.runLater(success); }
-                catch (java.io.IOException | RuntimeException e) { Ui.runLater(() -> failure.accept(e.getMessage())); }
-            });
-        }
-    }
-
-    public void savedLayoutsDialog() {
-        if (KioskMode.isEnabled()) return;
-        if (layoutsDialog==null || !layoutsDialog.isOpen()) layoutsDialog=new SavedLayoutsDialog(this);
-        else layoutsDialog.refresh();
-        if (isShowing()) layoutsDialog.show();
-        tutorialAction("layouts-opened");
+        if (closing() || settingsSaving()) { failed.accept("Wait for the pending save to finish."); return; }
+        final SavedLayout value;
+        final StateStore.State snapshot;
+        try {
+            value=captureShortcut(name,autostart);
+            if (savedLayouts.stream().anyMatch(s -> s.name().equalsIgnoreCase(value.name())))
+                throw new IllegalArgumentException("A shortcut already uses that name. Enter another name.");
+            List<SavedLayout> next=new ArrayList<>(savedLayouts); next.add(value);
+            snapshot=(application==null ? state() : application.snapshot()).withSavedLayouts(next,value.id());
+        } catch (IllegalArgumentException e) { failed.accept(e.getMessage()); return; }
+        shortcutWrite=new CompletableFuture<>(); refreshActions();
+        java.util.function.Consumer<ApplicationWindows.Writer> export=writer -> {
+            try {
+                Path file=fish.LayoutShortcuts.export(dataDirectory(),value,() -> {
+                    if (KioskMode.isEnabled()) throw new java.io.IOException("Shortcuts cannot be changed in Kiosk mode.");
+                    writer.save(snapshot);
+                });
+                Ui.runLater(() -> {
+                    savedLayouts=snapshot.savedLayouts(); selectedLayout=value.id();
+                    changed(); finishShortcutWrite(); done.accept(file);
+                });
+            } catch (java.io.IOException | RuntimeException e) {
+                Ui.runLater(() -> { finishShortcutWrite(); failed.accept(e.getMessage()); });
+            }
+        };
+        if (application!=null) application.submitWrite(export);
+        else persistence.submit(() -> export.accept(store::save));
     }
 
     public boolean updateAndExit(Maintenance launch,java.util.function.Consumer<String> failed) {
@@ -2136,9 +2074,7 @@ public final class Workspace {
     }
 
     public void factoryDefaults() {
-        if (!Ui.confirm(stage,"Remove all profiles, layouts, themes, font choices and preferences, then close ALL Fish windows?\n"
-                +"Active sessions in every Fish window will end. Next launch starts the getting-started guide with the default Kerberos profile.\n"
-                +"Windows saved passwords, font files and other workspaces are kept. No backup is created.","Factory defaults")) return;
+        if (!Ui.confirm(stage,"Close all sessions and erase this workspace's profiles, shortcuts and settings? This can't be undone. Saved Windows passwords are kept.","Factory defaults")) return;
         if (application!=null) {
             if (!application.maintenance(this,() -> {},true,message -> Ui.error(stage,"Factory defaults could not be saved: "+message)))
                 Ui.error(stage,"Finish pending profile saves/login operations in all Fish windows before resetting.");

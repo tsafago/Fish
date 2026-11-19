@@ -115,7 +115,7 @@ public final class ApplicationWindows {
 
     private SavedLayout recipe(UUID id) {
         return shared.savedLayouts().stream().filter(s -> s.id().equals(id)).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Saved layout is unavailable. Open Fish normally and use Panes > Saved layouts / shortcuts to recreate it."));
+                .orElseThrow(() -> new IllegalArgumentException("Shortcut is unavailable. Open Fish normally and create a new shortcut in Settings > General."));
     }
 
     public boolean openLayout(UUID id) {
@@ -160,6 +160,7 @@ public final class ApplicationWindows {
 
     public boolean closing() { return closing; }
     public boolean saving() { return windows.stream().anyMatch(Workspace::localSettingsSaving); }
+    Workspace shortcutWriter() { return windows.stream().filter(Workspace::exportingShortcut).findFirst().orElse(null); }
     public List<SessionPane> panes() { return windows.stream().flatMap(w -> w.sessionPanes().stream()).toList(); }
     boolean checkStartupUpdates(Workspace window) { return !windows.isEmpty() && windows.getFirst()==window; }
 
@@ -214,11 +215,16 @@ public final class ApplicationWindows {
 
     public void saveAsync() {
         if (closing || KioskMode.isEnabled()) return;
+        if (shortcutWriter()!=null) { saveTimer.playFromStart(); return; }
         StateStore.State snap=snapshot();
         persistence.submit(() -> {
             try { writer.save(snap); }
             catch (IOException e) { reportSave(e); }
         });
+    }
+
+    void submitWrite(java.util.function.Consumer<Writer> work) {
+        persistence.submit(() -> work.accept(writer));
     }
 
     private void reportSave(IOException error) {

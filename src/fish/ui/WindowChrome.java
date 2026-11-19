@@ -45,6 +45,7 @@ public final class WindowChrome extends HeaderBar {
         this.menus=menus;
         this.tools=tools;
         menus.setFocusTraversable(false);
+        menus.setMaxHeight(Double.MAX_VALUE);
         menus.skinProperty().addListener((o,a,b) -> workspace.tutorialChanged());
         getStyleClass().addAll("fish-header-bar","fish-workspace-header");
         setSnapToPixel(true);
@@ -234,6 +235,7 @@ public final class WindowChrome extends HeaderBar {
     }
 
     public void openMenus() {
+        workspace.hidePopup();
         if (menus.isVisible() && !menus.getMenus().isEmpty()) {
             menus.getMenus().getFirst().show();
         } else {
@@ -244,7 +246,7 @@ public final class WindowChrome extends HeaderBar {
     public ContextMenu openCompactMenu() {
         ContextMenu popup=new ContextMenu();
         for (Menu m:menus.getMenus()) popup.getItems().add(copyMenu(m));
-        popup.show(menuButton,Side.BOTTOM,0,0);
+        showAtDivider(popup,menuButton);
         return popup;
     }
 
@@ -268,6 +270,7 @@ public final class WindowChrome extends HeaderBar {
 
     public void showTutorialMenu(String title) {
         if (!stage.isShowing()) return;
+        workspace.hidePopup();
         if (menus.isVisible()) {
             for (Menu m:menus.getMenus()) if (m.getText().equals(title)) { m.show(); return; }
         } else {
@@ -302,8 +305,12 @@ public final class WindowChrome extends HeaderBar {
     }
 
     public void showSystemMenu() {
-        ContextMenu menu=systemMenu();
-        menu.show(this,Side.BOTTOM,0,0);
+        showAtDivider(systemMenu(),caption);
+    }
+
+    private void showAtDivider(ContextMenu popup,Node owner) {
+        Point2D line=bottomLine.localToScreen(0,0);
+        if (line!=null) workspace.showPopup(popup,owner,owner.localToScreen(0,0).getX(),line.getY());
     }
 
     public void toggleMaximize() {

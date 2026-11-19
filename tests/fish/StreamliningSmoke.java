@@ -166,9 +166,9 @@ public final class StreamliningSmoke {
                 check(!(view.getItems().getLast() instanceof SeparatorMenuItem),"View menu has no trailing separator.");
 
                 List<ManualDialog.Topic> topics=ManualDialog.topics();
-                check(topics.size()>=25 && topics.getFirst().title().equals("Getting Started"),"Full bundled manual starts with absolute sign-on basics.");
-                check(topics.stream().anyMatch(t -> t.matches("Ctrl Tab")) && topics.stream().anyMatch(t -> t.matches("installer administrator")),
-                        "Full-text topic index finds shortcut and user-wide installation instructions.");
+                check(topics.size()<=6 && topics.getFirst().title().equals("Getting Started"),"Quick guide starts with sign-on basics.");
+                check(topics.stream().anyMatch(t -> t.matches("Ctrl Tab")) && topics.stream().anyMatch(t -> t.matches("desktop shortcut")),
+                        "Full-text topic index finds keyboard and desktop shortcut instructions.");
                 allocationChecks(workspace,first,preset);
 
                 ManualDialog manual=new ManualDialog(workspace); FxTestSupport.layout(manual.stage());

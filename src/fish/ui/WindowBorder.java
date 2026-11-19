@@ -30,15 +30,15 @@ public final class WindowBorder {
         return sync(lastWorkspaceOutline);
     }
 
-    static void prepareDialogFrame(javafx.stage.Stage stage) {
+    static void prepareFirstFrame(javafx.stage.Stage stage,ColorRole background) {
         if (!isWindows11OrNewer()) return;
         final long window;
         try {
             NativeLibrary.load();
-            window=installStartupBrush0(Ui.color(ColorRole.DIALOG).getRGB(),stage.getOwner()!=null);
+            window=installStartupBrush0(Ui.color(background).getRGB(),stage.getOwner()!=null);
         } catch (IllegalStateException | UnsatisfiedLinkError unavailable) {
             System.getLogger(WindowBorder.class.getName()).log(System.Logger.Level.DEBUG,
-                    "Native dialog presentation unavailable; using JavaFX presentation.",unavailable);
+                    "Native first-frame color unavailable; using JavaFX presentation.",unavailable);
             return;
         }
         if (window==0) return;

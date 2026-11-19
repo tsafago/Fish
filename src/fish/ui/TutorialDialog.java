@@ -25,7 +25,7 @@ public final class TutorialDialog {
     public enum Guide {
         GETTING_STARTED("Getting started"),APPEARANCE("Appearance, colors and pane info"),
         PASSWORD_PROFILE("Non-Kerberos profile"),KEYBOARD("Keyboard shortcuts"),PANES("Pane tips and tricks"),
-        DESKTOP_SHORTCUTS("Desktop profile / layout shortcuts");
+        DESKTOP_SHORTCUTS("Desktop shortcuts");
         public final String title;
         Guide(String title) { this.title=title; }
     }
@@ -178,7 +178,6 @@ public final class TutorialDialog {
         switch (current.surface()) {
             case "Appearance","Profiles","Keyboard Shortcuts","General" -> workspace.preferences(current.surface());
             case "settings" -> workspace.showTutorialSettings();
-            case "layouts","layout-destination" -> workspace.savedLayoutsDialog();
             case "Help","Panes","View","Session" -> workspace.showTutorialMenu(current.surface());
             default -> { if (workspace.isShowing()) workspace.toFront(); }
         }
@@ -207,13 +206,13 @@ public final class TutorialDialog {
                     s("Auto-save status","Valid changes apply right away and persist automatically when the footer shows Saved.","Appearance","apply","settings-applied"));
             case PASSWORD_PROFILE -> List.of(
                     s("Open Profiles","Open Edit > Settings > Profiles to create or edit workstation profiles.","Profiles","list","settings-Profiles"),
-                    s("Start a draft","Click New to start a profile draft, or select an existing profile and click Next.","Profiles","new","profile-new"),
+                    s("Choose a profile","Click New to create a profile, or select an existing one and click Next. Profile changes save automatically.","Profiles","new","profile-new"),
                     s("Password sign-in","Set Sign in with to Password / manual to reveal username and password fields.","Profiles","authentication","profile-password-mode"),
                     s("Host & name","Enter your IBM i hostname or IP address and a clear profile name.","Profiles","host","profile-address"),
                     s("Username","Enter your IBM i user profile (or pick an existing saved login).","Profiles","username","profile-username"),
                     s("Sign-in options","Choose whether Fish signs in automatically and stores your password in Windows Credential Manager.","Profiles","remember","profile-login-options"),
-                    s("Advanced options","Expand Advanced only if you need a custom port, device name, or EBCDIC code page.","Profiles","advanced","profile-advanced"),
-                    s("Create profile","Click Create profile to save—then pick it beside + whenever you're ready to connect.","Profiles","apply","profile-saved"));
+                    s("Device (optional)","Enter a device name if your workstation requires one. Otherwise, click Next.","Profiles","device","profile-device"),
+                    s("Save a password","To store a password, enter it and choose Save login changes. Otherwise you're done. Pick the profile beside + when you're ready to connect.","Profiles","password",""));
             case KEYBOARD -> List.of(
                     s("Open Keyboard Shortcuts","Open Edit > Settings > Keyboard Shortcuts to customize app and 5250 host keys.","Keyboard Shortcuts","keyboard-search","settings-Keyboard Shortcuts"),
                     s("Filter actions","Type an action name or key in Find action to narrow the list.","Keyboard Shortcuts","keyboard-search","keyboard-search"),
@@ -222,21 +221,20 @@ public final class TutorialDialog {
                     s("Auto-save check","Conflict-free bindings apply automatically and confirm Saved in the footer.","Keyboard Shortcuts","apply","settings-applied"));
             case PANES -> List.of(
                     s("Add a pane","Pick a profile beside + and click + to open up to eight independent panes.","add","","Add pane"),
-                    s("Resize side-by-side","Drag the vertical divider (or use Panes > Decrease / Increase divider) to resize columns.","divider-horizontal","","divider-horizontal"),
+                    s("Resize side-by-side","Drag the divider left or right.","divider-horizontal","","divider-horizontal"),
                     s("Split or arrange","Drag a pane header toward a window or pane edge—or use Panes > Arrange pane—to split cleanly.","Panes","Arrange pane...","panes-arranged"),
                     s("Resize stacked rows","Drag the horizontal divider vertically to adjust stacked pane heights.","divider-vertical","","divider-vertical"),
                     s("Swap or undo","Drop onto another pane's center (or use Panes > Swap panes) to swap; Undo restores the prior layout.","Panes","Swap panes...","panes-swapped"),
                     s("Startup behavior","In Edit > Settings > General, choose whether restored panes reconnect automatically on launch.","General","startup","startup-changed"),
                     s("Fit & navigate","Use View > Fit host screen to scale text to the pane, and Ctrl+Tab to cycle panes.","View","Fit host screen","Fit host screen"),
-                    s("Save a layout","Open Panes > Saved layouts / shortcuts to save this arrangement or export a Desktop .lnk.","Panes","Saved layouts / shortcuts...","layout-saved"));
+                    s("Create a desktop shortcut","In Settings > General, name your shortcut and click Create desktop shortcut to reopen these panes.","General","shortcut-create","shortcut-created"));
             case DESKTOP_SHORTCUTS -> List.of(
                     s("Pick a profile (optional)","For a single-profile launcher, select that profile beside +; for your current layout, click Skip step.","add-profile","","add-profile-selected"),
-                    s("Set up panes","Click + to open the pane you want in the recipe, or Skip step if your layout is ready.","add","","Add pane"),
-                    s("Open Saved layouts","Open Panes > Saved layouts / shortcuts to name and export this window's layout.","Panes","Saved layouts / shortcuts...","layouts-opened"),
-                    s("Name the layout","Enter a descriptive name (such as Morning work) under Shortcut for this window.","layouts","name","layout-named"),
-                    s("Export shortcut","Click Create desktop shortcut to save the layout and choose where to write the .lnk file.","layouts","export","layout-destination-open"),
-                    s("Confirm destination","Pick Desktop or another folder and confirm—Cancel leaves disk and saved layouts untouched.","layout-destination","destination","layout-shortcut"),
-                    s("Launch anytime","Double-click the .lnk anytime to open a fresh Fish window with that saved layout.","layouts","message",""));
+                    s("Set up panes","Click + to open a pane, or skip this step if your panes are ready.","add","","Add pane"),
+                    s("Open Settings","Open Edit > Settings > General and find Desktop shortcuts.","General","shortcut-name","settings-General"),
+                    s("Name your shortcut","Enter a name you will recognize on your Desktop, such as Morning work.","General","shortcut-name","shortcut-named"),
+                    s("Create your shortcut","To open these panes at Windows sign-in, select the checkbox. Then click Create desktop shortcut.","General","shortcut-create","shortcut-created"),
+                    s("Open from your Desktop","Double-click the shortcut on your Desktop to open these panes in a new Fish window.","General","shortcut-status",""));
         };
     }
 
@@ -246,7 +244,6 @@ public final class TutorialDialog {
             case "connect" -> workspace.active().tutorialConnectionTarget();
             case "add" -> workspace.tutorialAddTarget();
             case "add-profile" -> workspace.tutorialProfileTarget();
-            case "layouts","layout-destination" -> workspace.tutorialLayoutTarget(current.control());
             case "close" -> workspace.active().tutorialCloseTarget();
             case "settings" -> workspace.tutorialSettingsTarget();
             case "divider-horizontal","divider-vertical" -> {

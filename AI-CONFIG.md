@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.10.2 beta exposes its complete local configuration without an AI service, network
+Fish 0.10.3 beta exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -10,7 +10,7 @@ partial workspace or replace settings with defaults to fix a parse error.**
 Read `CONFIG-SCHEMA.json` for the machine-readable **typed field catalog**. It
 describes XML properties, not JSON instance data or a JSON Schema. The catalog is
 generated from the same model/enums/action catalog as the application.
-Help > Configuration for external tools opens this guide offline.
+This reference is for tools that manage Fish configuration; it isn't part of the in-app quick guide.
 
 The portable/current-user installation includes `Fish-config.cmd` beside Fish.exe.
 The guide and catalog are in `app`; matching sources include both at their root.
@@ -213,7 +213,7 @@ No screen contents, live sessions, credentials or authenticated state are stored
 auto-connecting window from that recipe. It does not import/execute files or
 interpret names, paths, hosts or commands as recipes. Rename retains the UUID;
 update changes what its shortcuts open; deleted IDs fail actionably. Actual .lnk
-export is under Panes > Saved layouts / shortcuts; arguments contain only UUID
+export is under Settings > General; arguments contain only UUID
 and data directory. Portable moves require new links. A cold shortcut launch
 retains previous ordinary-window restoration without opening it and appends its
 open windows for the next ordinary launch. Named recipes update only explicitly.

@@ -4,7 +4,7 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicReference;
 import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
@@ -108,61 +108,82 @@ public final class ShortcutRefinementSmoke {
     private static TutorialDialog guide(Workspace w) throws Exception { return (TutorialDialog)field(w,"tutorial"); }
     private static int step(Workspace w) throws Exception { return (int)field(guide(w),"step"); }
 
-    private static void tutorial(Fixture f,Path root) throws Exception {
+    private static void tutorial(Fixture f) throws Exception {
         Workspace w=f.workspace; int profiles=w.profileList().size();
         w.executeCommand("Tutorial: Desktop shortcuts");
         check(step(w)==0 && w.savedLayouts().isEmpty() && !w.active().busy(),"Opening guide has no session, profile or recipe side effects");
         button(guide(w).stage(),"Skip step").fire(); button(guide(w).stage(),"Skip step").fire();
-        check(step(w)==2,"Existing-layout path can skip profile/add without connecting");
+        check(step(w)==2,"Shortcut guide can skip profile/add without connecting");
         w.executeCommand("Saved layouts / shortcuts...");
-        check(step(w)==3,"Actual menu action opens manager and advances");
-        SavedLayoutsDialog previous=(SavedLayoutsDialog)field(w,"layoutsDialog"); previous.dispose();
-        String image=System.getProperty("fish.test.image","");
-        Path target=image.isBlank() ? Files.createFile(root.resolve("Fish.exe")) : Path.of(image).toAbsolutePath().resolve("Fish.exe");
-        check(Files.isRegularFile(target),"Explicit packaged target or synthetic fixture file exists; it is never executed");
-        int[] mode={0},writes={0},choices={0};
-        SavedLayoutsDialog manager=new SavedLayoutsDialog(w,new SavedLayoutsDialog.ShortcutExport() {
-            @Override public Path desktop() { return root; }
-            @Override public Path choose(Path initialDir,String initialFileName,Window owner) {
-                choices[0]++;
-                check(initialDir.equals(root),"Production chooser starts in the injected destination, never actual Desktop");
-                check(initialFileName.endsWith(".lnk"),"Production filename is a Windows link");
-                return mode[0]==0 ? null : root.resolve("Synthetic tutorial shortcut.lnk");
-            }
-            @Override public void write(UUID id,Path output,Runnable done,Consumer<String> failed) {
-                writes[0]++;
-                if (mode[0]==1) { failed.accept("Synthetic export refused; choose another folder."); return; }
-                try {
-                    f.store.save(w.state()); LayoutShortcuts.create(output,target,w.dataDirectory(),id); done.run();
-                } catch (java.io.IOException e) { throw new IllegalStateException(e); }
-            }
-        });
-        set(w,"layoutsDialog",manager);
-        TextField name=(TextField)field(manager,"name"); name.setText("Synthetic tutorial layout");
+        Preferences p=w.tutorialPreferences();
+        check(step(w)==3 && p.category().equals("General"),"Legacy action routes to General and advances");
+        TextField name=(TextField)p.tutorialTarget("shortcut-name"); name.setText("Synthetic tutorial shortcut");
         check(step(w)==4 && w.savedLayouts().isEmpty(),"Real name entry advances without saving");
-        check(w.tutorialLayoutTarget("export")==field(manager,"create"),"Guide anchor is the direct current-window export button");
-        button(manager.stage(),"Create desktop shortcut...").fire();
-        check(step(w)==5 && w.savedLayouts().isEmpty() && writes[0]==0 && !Files.exists(root.resolve("Synthetic tutorial shortcut.lnk")),
-                "Cancel creates no recipe or file and never claims success");
-        mode[0]=1; button(manager.stage(),"Create desktop shortcut...").fire();
-        check(step(w)==5 && w.savedLayouts().size()==1 && ((Label)field(manager,"message")).getText().contains("refused"),
-                "Failed export keeps the saved recipe and stays actionable");
-        ((ToggleButton)field(manager,"manage")).fire();
-        mode[0]=2; button(manager.stage(),"Create shortcut...").fire();
-        check(step(w)==6 && writes[0]==2 && choices[0]==3,"Only actual successful native export advances to the launch instructions");
-        String[] link=LayoutShortcuts.inspect(root.resolve("Synthetic tutorial shortcut.lnk"));
-        check(link[0].equals(target.toString()) && link[1].equals(LayoutShortcuts.arguments(w.savedLayouts().getFirst().id(),w.dataDirectory())),
-                "Guided production chooser/export path produces a real native link with exact stable recipe reference");
-        layout(manager.stage()); layout(guide(w).stage());
-        image(manager.stage().getScene().getRoot(),"layout-manager");
+        Button create=(Button)p.tutorialTarget("shortcut-create");
+        check(guide(w).currentAnchor()==create,"Guide highlights the actual Settings button");
+        Path desktop=LayoutShortcuts.desktop(),target=LayoutShortcuts.executable();
+        System.setProperty("fish.test.desktopDir",target.toString()); // a file, not a folder
+        try {
+            create.fire();
+            FxTestSupport.await(() -> !w.exportingShortcut(),"Failed export did not finish");
+            check(step(w)==4 && w.savedLayouts().isEmpty() && f.store.load().savedLayouts().isEmpty()
+                    && ((Label)p.tutorialTarget("shortcut-status")).getText().contains("not created"),
+                    "Failure creates no phantom recipe and does not advance the guide");
+        } finally { System.setProperty("fish.test.desktopDir",desktop.toString()); }
+        Path occupied=desktop.resolve(SavedLayout.shortcutFileName(name.getText()));
+        Files.writeString(occupied,"unrelated link");
+        create.fire();
+        FxTestSupport.await(() -> !w.exportingShortcut(),"Shortcut export did not finish");
+        check(step(w)==5 && Files.readString(occupied).equals("unrelated link"),"Successful export advances without overwriting existing files");
+        String[] link=LayoutShortcuts.inspect(desktop.resolve("Fish - Synthetic tutorial shortcut (2).lnk"));
+        check(link[0].equals(target.toString()) && link[1].equals(LayoutShortcuts.arguments(f.store.load().savedLayouts().getFirst().id(),w.dataDirectory())),
+                "Guided export produces a native link to the persisted UUID");
+        layout(p.dialog()); layout(guide(w).stage());
+        image(p.dialog().getScene().getRoot(),"shortcut-settings");
         image(guide(w).stage().getScene().getRoot(),"desktop-guide");
-        button(guide(w).stage(),"Back").fire(); check(step(w)==5,"Back remains available after actual export");
+        button(guide(w).stage(),"Back").fire(); check(step(w)==4,"Back remains available after actual export");
         button(guide(w).stage(),"Skip tutorial").fire(); check(guide(w).ended(),"Guide is skippable at export stage");
         int saved=w.savedLayouts().size();
         w.executeCommand("Tutorial: Desktop shortcuts");
         check(step(w)==0 && w.profileList().size()==profiles && w.savedLayouts().size()==saved && !w.active().busy(),
                 "Replay resets progress without new sessions, recipes or profile changes");
-        button(guide(w).stage(),"Skip tutorial").fire(); manager.dispose();
+        button(guide(w).stage(),"Skip tutorial").fire(); p.closeSettings();
+    }
+
+    private static void transactions(Path root,ShortcutFixture shell) throws Exception {
+        try (var f=new UsabilityIterationSmoke.Fixture(root.resolve("transaction workspace"),s -> state -> {
+            if (state.savedLayouts().stream().anyMatch(r -> r.name().equals("Refused"))) throw new java.io.IOException("fixture save failure");
+            s.save(state);
+        })) {
+            Workspace w=f.first(); Path data=w.dataDirectory();
+            Path collision=shell.startup.resolve("Fish - Shift_A.lnk");
+            // Genuine Fish link, even the same filename, but belonging to a different workspace.
+            LayoutShortcuts.create(collision,shell.exe,root.resolve("other workspace"),UUID.randomUUID());
+            byte[] original=Files.readAllBytes(collision);
+            SavedLayout a=ShortcutFixture.export(w,"Shift/A",true);
+            SavedLayout b=ShortcutFixture.export(w,"Shift:A",true);
+            LayoutShortcuts.syncAutostart(data,shell.exe,f.store.load().savedLayouts());
+            check(Arrays.equals(original,Files.readAllBytes(collision)),"Startup reconciliation preserves other workspaces' links");
+            for (var entry:Map.of(a,2,b,3).entrySet()) {
+                Path link=shell.startup.resolve("Fish - Shift_A ("+entry.getValue()+").lnk");
+                check(LayoutShortcuts.inspect(link)[1].equals(LayoutShortcuts.arguments(entry.getKey().id(),data)),
+                        "Sanitized names can collide without losing either sign-in shortcut");
+            }
+            AtomicReference<String> error=new AtomicReference<>();
+            edt(() -> { w.exportDesktopShortcut("Refused",true,path -> { throw new AssertionError(path); },error::set); return null; });
+            FxTestSupport.await(() -> error.get()!=null,"Expected injected persistence failure");
+            check(error.get().contains("fixture save failure") && edt(() -> w.savedLayouts().equals(List.of(a,b)))
+                    && f.store.load().savedLayouts().equals(List.of(a,b)),"A refused commit changes neither live nor persisted recipes");
+            check(!Files.exists(shell.desktop.resolve("Fish - Refused.lnk")) && !Files.exists(shell.startup.resolve("Fish - Refused.lnk")),
+                    "A refused commit rolls back both of its links");
+            String old=System.getProperty("fish.test.kiosk"); System.setProperty("fish.test.kiosk","true");
+            try {
+                error.set(null);
+                edt(() -> { w.exportDesktopShortcut("Blocked",false,path -> { throw new AssertionError(path); },error::set); return null; });
+                check(error.get()!=null && !Files.exists(shell.desktop.resolve("Fish - Blocked.lnk")),"Kiosk rejects even a direct export call");
+                check(edt(() -> f.app.openRequest(a.id())==1),"A deployed UUID can still launch in kiosk");
+            } finally { if (old==null) System.clearProperty("fish.test.kiosk"); else System.setProperty("fish.test.kiosk",old); }
+        }
     }
 
     private static void chrome(Workspace w) throws Exception {
@@ -192,8 +213,9 @@ public final class ShortcutRefinementSmoke {
         Ui.install(); syntax(); String path=System.getProperty("fish.test.evidence","");
         if (!path.isBlank()) { evidence=Path.of(path); Files.createDirectories(evidence); }
         Path root=Files.createTempDirectory(Path.of("build"),"shortcut-refinement-").toAbsolutePath();
-        try (Fixture fixture=new Fixture(root.resolve("workspace"))) {
-            edt(() -> { chrome(fixture.workspace); keyboard(fixture.workspace); tutorial(fixture,root); return null; });
+        try (ShortcutFixture shell=new ShortcutFixture(root); Fixture fixture=new Fixture(root.resolve("workspace"))) {
+            edt(() -> { chrome(fixture.workspace); keyboard(fixture.workspace); tutorial(fixture); return null; });
+            transactions(root,shell);
             check(Window.getWindows().stream().noneMatch(Window::isShowing),"No test window was ever shown");
         } finally {
             FxTestSupport.closeAllWindows();

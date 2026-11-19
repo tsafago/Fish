@@ -196,21 +196,21 @@ public final class UsabilityIterationSmoke {
         edt(() -> { ((Button)field(p.profiles,"save")).fire(); return null; });
         await(() -> !p.profiles.saving() && !p.profiles.failedSave(),"Profile retry did not persist retained state");
         check(f.store.load().profiles().getFirst().name().equals("Retained after failed profile save"),"Disk-only Retry saves the already applied profile without repeating password operations");
-        edt(() -> { ((TextField)field(p.profiles,"port")).setText("not-a-port"); return null; });
-        await(() -> !p.profiles.saving() && p.profiles.error().contains("Port"),"Invalid profile field stays actionable");
-        check(w.profileList().getFirst().port()==23,"Invalid profile typing preserves last valid connection state");
+        edt(() -> { p.profiles.deviceField().setText("not a device"); return null; });
+        await(() -> !p.profiles.saving() && p.profiles.error().contains("Device"),"Invalid profile field stays actionable");
+        check(w.profileList().getFirst().device().isEmpty(),"Invalid profile typing preserves last valid connection state");
         edt(() -> {
-            ((TextField)field(p.profiles,"port")).setText("23");
+            p.profiles.deviceField().clear();
             ((PasswordField)field(p.profiles,"password")).setText("synthetic-no-credential-operation");
             return null;
         });
         await(() -> !p.profiles.saving(),"Profile buffer settles without invoking missing credential helper");
         check(edt(() -> p.profiles.dirty()),"Password entry remains an explicit unsaved operation");
-        edt(() -> { p.profiles.discard(); ((TextField)field(p.profiles,"port")).setText("23"); return null; });
+        edt(() -> { p.profiles.passwordField().clear(); return null; });
         await(() -> !p.profiles.saving(),"Clean profile settles");
         edt(() -> { button(p.dialog(),"New").fire(); return null; });
-        await(() -> !p.profiles.saving(),"New profile draft settles without creation or connection");
-        check(w.profileList().size()==1 && edt(() -> ((Label)field(p,"error")).getText().contains("Profile edits")),"New profile is explicit and never reported Saved");
+        await(() -> !p.profiles.saving(),"New profile autosaves without connecting");
+        check(f.store.load().profiles().size()==2 && !p.profiles.dirty(),"New creates one durable profile");
         edt(() -> {
             var reload=ProfilesEditor.class.getDeclaredMethod("refreshList",Profile.class); reload.setAccessible(true);
             reload.invoke(p.profiles,w.profileList().getFirst()); return null;
@@ -254,7 +254,7 @@ public final class UsabilityIterationSmoke {
             check(!w.previewDock(source,source,Layout.Dock.BOTTOM),"Self-drop has no valid-looking preview");
             w.undoArrangement(); layout(w); check(w.currentLayout() instanceof Layout.Split split && split.horizontal(),"Keyboard undo restores preceding geometry");
             w.dock(source,target,Layout.Dock.BOTTOM); layout(w);
-            SavedLayout recipe=w.saveCurrentLayout(null,"Stacked loopback");
+            SavedLayout recipe=w.captureShortcut("Stacked loopback",false);
             check(recipe.window().layout().equals(w.currentLayout()),"Named recipe captures directional orientation and ratios");
             for (int n=2;n<8;n++) { w.split(true); layout(w); }
             check(w.sessionPanes().size()==8,"Constrained add reaches eight without an impossible grid");
@@ -275,58 +275,26 @@ public final class UsabilityIterationSmoke {
             w.executeCommand("Tutorial: Desktop shortcuts");
             TutorialDialog guide=(TutorialDialog)field(w,"tutorial");
             button(guide.stage(),"Skip step").fire(); button(guide.stage(),"Skip step").fire();
-            w.savedLayoutsDialog();
-            ((SavedLayoutsDialog)field(w,"layoutsDialog")).dispose();
-            Path exe=root.resolve("Fish.exe");
-            String image=System.getProperty("fish.test.image","");
-            if (image.isBlank()) Files.createFile(exe); else exe=Path.of(image).toAbsolutePath().resolve("Fish.exe");
-            Path executable=exe;
-            int[] mode={0},writes={0};
-            SavedLayoutsDialog manager=new SavedLayoutsDialog(w,new SavedLayoutsDialog.ShortcutExport() {
-                @Override public Path desktop() { return root; }
-                @Override public Path choose(Path initialDir,String initialFileName,Window owner) {
-                    check(initialDir.equals(root),"Chooser never writes to the actual Desktop");
-                    check(initialFileName.endsWith(".lnk"),"Production filename is a Windows link");
-                    return mode[0]==0 ? null : root.resolve("Synthetic direct shortcut.lnk");
-                }
-                @Override public void write(UUID id,Path output,Runnable done,Consumer<String> failed) {
-                    writes[0]++;
-                    if (mode[0]==1) { failed.accept("Synthetic export refusal"); return; }
-                    try { LayoutShortcuts.create(output,executable,w.dataDirectory(),id); done.run(); }
-                    catch (java.io.IOException e) { throw new IllegalStateException(e); }
-                }
-            });
-            FxTestSupport.setField(w,"layoutsDialog",manager);
-            ((TextField)field(manager,"name")).setText("Direct synthetic shortcut");
+            w.preferences("General");
+            var manager=w.tutorialPreferences();
+            ((TextField)manager.tutorialTarget("shortcut-name")).setText("Direct synthetic shortcut");
             int before=w.savedLayouts().size();
-            button(manager.stage(),"Create desktop shortcut...").fire();
-            check(w.savedLayouts().size()==before && writes[0]==0,"Cancel direct creation neither saves recipe nor exports a file");
-            mode[0]=1; button(manager.stage(),"Create desktop shortcut...").fire();
-            check(w.savedLayouts().size()==before+1 && ((Label)field(manager,"message")).getText().contains("not created"),"Failed file export reports saved recipe separately from missing shortcut");
-            check((int)field(guide,"step")==5,"Failed export cannot complete the actual guide");
-            ((TextField)field(manager,"name")).setText("Direct synthetic success"); mode[0]=2;
-            button(manager.stage(),"Create desktop shortcut...").fire();
-            check((int)field(guide,"step")==6 && Files.isRegularFile(root.resolve("Synthetic direct shortcut.lnk")),"Direct creation saves a real native link and advances only on success");
-            String[] properties=LayoutShortcuts.inspect(root.resolve("Synthetic direct shortcut.lnk"));
+            Button create=(Button)manager.tutorialTarget("shortcut-create");
+            create.fire(); settle(() -> !w.exportingShortcut(),"Shortcut export did not finish");
+            Path file=LayoutShortcuts.desktop().resolve("Fish - Direct synthetic shortcut.lnk");
+            check(w.savedLayouts().size()==before+1 && (int)field(guide,"step")==5 && Files.isRegularFile(file),"Direct creation advances only after native export");
+            String[] properties=LayoutShortcuts.inspect(file);
             SavedLayout last=w.savedLayouts().getLast();
             check(properties[1].equals(LayoutShortcuts.arguments(last.id(),w.dataDirectory())),"Direct flow exports exact stable reference without hosts/secrets");
-            check(button(manager.stage(),"Save layout only")!=null && field(manager,"manage") instanceof ToggleButton,"Existing recipe operations remain discoverable without a button grid up front");
-            layout(manager.stage()); snapshot(manager.stage(),"shortcut-current");
-            ((ToggleButton)field(manager,"manage")).fire(); layout(manager.stage()); snapshot(manager.stage(),"shortcut-library");
+            layout(manager.dialog()); snapshot(manager.dialog(),"shortcut-current");
             layout(guide.stage()); snapshot(guide.stage(),"shortcut-guide");
             if (evidence!=null) {
-                w.applyTheme(AppTheme.Paper); layout(manager.stage()); snapshot(manager.stage(),"shortcut-library-paper");
+                w.applyTheme(AppTheme.Paper); layout(manager.dialog()); snapshot(manager.dialog(),"shortcut-settings-paper");
                 w.setSize(520,360); layout(w); snapshot(w.stage(),"window-minimum-paper");
                 w.applyTheme(AppTheme.Charcoal); layout(w);
             }
             button(guide.stage(),"Back").fire(); button(guide.stage(),"Skip tutorial").fire();
-            ((TextField)field(manager,"name")).setText("Saved only after acknowledged write");
-            button(manager.stage(),"Save layout only").fire();
-            settle(() -> !(boolean)field(manager,"working"),"Save-only layout did not receive disk acknowledgement");
-            check(((Label)field(manager,"message")).getText().startsWith("Layout saved.")
-                    && f.store.load().savedLayouts().stream().anyMatch(s -> s.name().equals("Saved only after acknowledged write")),
-                    "Save layout only reports success after real persistence without creating a shortcut");
-            manager.dispose(); return null;
+            manager.closeSettings(); return null;
         });
         await(() -> !f.app.saving(),"Shortcut state settles");
     }
@@ -336,7 +304,7 @@ public final class UsabilityIterationSmoke {
         String path=System.getProperty("fish.test.evidence","");
         if (!path.isBlank()) { evidence=Path.of(path); Files.createDirectories(evidence); }
         Path root=Files.createTempDirectory(Path.of("build"),"usability-local-").toAbsolutePath();
-        try {
+        try (ShortcutFixture ignored=new ShortcutFixture(root)) {
             model(root);
             try (Fixture fixture=new Fixture(root.resolve("workspace")); DemoHost host=new DemoHost()) {
                 autosave(fixture); docking(fixture,host); shortcut(fixture,root);

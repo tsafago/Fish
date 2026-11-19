@@ -354,6 +354,9 @@ public final class StateStore implements AutoCloseable {
                     shortcuts.put(property.substring(exact ? 8 : 9),properties.getProperty(property));
             if (Integer.parseInt(version)>=13 && shortcuts.keySet().stream().anyMatch(Shortcuts.SETTINGS_ALIASES::contains))
                 throw new IllegalArgumentException("Use binding.Settings... in format 13 or later. Old settings actions belong in migration recovery, not live bindings.");
+            var retiredActions=List.of("Increase divider","Decrease divider","Configuration for external tools","Compatibility and connection safety");
+            for (String action:retiredActions) if (shortcuts.remove(action)!=null)
+                notice("Removed shortcut for retired action: "+action);
             Appearance appearance=Integer.parseInt(version)>=5 ? readAppearance(properties,version) : Appearance.defaults();
             if ("5".equals(version)) notice("Structural borders use the saved divider color; other appearance choices retained.");
             if (Set.of("5","6").contains(version))
@@ -444,6 +447,7 @@ public final class StateStore implements AutoCloseable {
                     || result.height()!=Integer.parseInt(required(properties,"height"))))
                 throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
             Properties known=properties(result);
+            for (String action:retiredActions) known.setProperty((exact ? "binding." : "shortcut.")+action,"");
             if (!exact) for (String key:properties.stringPropertyNames()) {
                 if (key.startsWith("shortcut.")) known.setProperty(key,"");
                 for (Profile profile:profiles) if (key.startsWith("profile."+profile.id()+".key.")) known.setProperty(key,"");

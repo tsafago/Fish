@@ -58,11 +58,10 @@ public final class BetaSettingsSmoke {
                 @SuppressWarnings("unchecked") ComboBox<Appearance.CursorStyle> cs=(ComboBox<Appearance.CursorStyle>)field(p,"cursorStyle");
                 cs.setValue(Appearance.CursorStyle.OUTLINE);
                 ProfilesEditor profiles=(ProfilesEditor)field(p,"profiles");
-                @SuppressWarnings("unchecked") ComboBox<String> cp=(ComboBox<String>)field(profiles,"codePage");
-                cp.setValue("1140");
+                profiles.deviceField().setText("DSP1140");
                 check(w.profileList().getFirst().theme().equals("Azure vivid") && peer.profileList().getFirst().theme().equals("Azure vivid")
                         && peer.connectOnStartup() && peer.appearanceSettings().cursorStyle()==Appearance.CursorStyle.OUTLINE
-                        && peer.profileList().getFirst().codePage().equals("1140"),
+                        && peer.profileList().getFirst().device().equals("DSP1140"),
                         "Rendering/shared state must advance while an older generation's disk write is blocked");
                 peer.highlightActive(false);
                 check(!((CheckBox)field(p,"tint")).isSelected(),"Clean open editor rebases external changes even during persistence");
@@ -74,7 +73,7 @@ public final class BetaSettingsSmoke {
             StateStore.State state=f.store.load();
             check(state.appearance().cursorStyle()==Appearance.CursorStyle.OUTLINE && state.connectOnStartup()
                     && !state.highlightActive() && state.profiles().getFirst().theme().equals("Azure vivid")
-                    && state.profiles().getFirst().codePage().equals("1140"),
+                    && state.profiles().getFirst().device().equals("DSP1140"),
                     "Older acknowledgement never loses newer edits/rebased shared changes");
             check(edt(() -> ((Label)field(p,"error")).getText().equals("Saved")),"Only latest durable generation reports Saved");
         } finally { release.countDown(); f.close(); }

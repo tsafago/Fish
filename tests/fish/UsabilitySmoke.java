@@ -220,19 +220,15 @@ public final class UsabilitySmoke {
         guide=(TutorialDialog)field(w,"tutorial"); guide.finish(false);
         check(w.tutorialStatus()==StateStore.Tutorial.SKIPPED,"First-run Skip persists its explicit state.");
 
-        ManualDialog manual=new ManualDialog(w,"/AI-CONFIG.md","Configuration for external tools");
+        ManualDialog manual=new ManualDialog(w);
         MarkdownView page=(MarkdownView)field(manual,"page");
         String html=page.htmlSnapshot();
         String rendered=page.plainText();
-        check(html.contains("<table") && html.contains("<pre") && html.contains("<code")
-                && html.contains("<strong") && html.contains("<ol"),
-                "Actual AI page renders tables, fenced commands, inline code, emphasis and numbered workflow.");
-        check(rendered.contains("Read CONFIG-SCHEMA.json for") && rendered.contains("machine-readable typed field catalog")
-                && !rendered.contains("```") && !rendered.contains("**") && !rendered.contains("|---|"),
-                "JavaFX MarkdownView preserves spaces and strips raw Markdown punctuation.");
-        ((TextField)field(manual,"find")).setText("baseRevision");
-        check(((List<?>)field(manual,"index")).size()>0,"Formatted document retains full-text index.");
-        ((TextField)field(manual,"find")).setText(""); image(manual.stage(),"ai-guide-100",1);
+        check(html.contains("<strong") && html.contains("<ol"),"Quick guide formats its numbered sign-in instructions.");
+        check(rendered.contains("host address") && !rendered.contains("**"),"Sign-in instructions have no raw markup.");
+        ((TextField)field(manual,"find")).setText("desktop shortcut");
+        check(((List<?>)field(manual,"index")).size()>0,"Quick guide finds desktop shortcut instructions.");
+        ((TextField)field(manual,"find")).setText(""); image(manual.stage(),"quick-guide-100",1);
         manual.themeChanged();
         manual.dispose();
         String safe=Markdown.render("**Bold** `*literal*`\n\n<script>x</script>\n\n![remote](https://example.invalid/a.png)\n\n[bad](file:///bad)\n\n| A | B |\n|---|---|\n| `a|b` | x |");
@@ -308,7 +304,7 @@ public final class UsabilitySmoke {
                         source.setValue(login);
                         check(((TextField)field(result,"username")).isDisabled() && ((TextField)field(result,"username")).getText().equals("FIXTURE"),
                                 "Real login source shows inherited username with no plaintext roundtrip.");
-                        button(result.stage(),"Apply").fire(); return result;
+                        return result;
                     });
                     await(() -> edt(() -> !((boolean)field(d,"saving"))),"Linked Apply completes without touching a missing credential helper.");
                     edt(() -> {
@@ -355,18 +351,18 @@ public final class UsabilitySmoke {
                         Profile fresh=Profile.create("Unfinished"); w.putProfile(fresh);
                         ProfilesDialog form=new ProfilesDialog(w,fresh);
                         ((TextField)field(form,"name")).setText("Unfinished saved");
-                        button(form.stage(),"Apply").fire(); return form;
+                        return form;
                     });
                     await(() -> edt(() -> !unfinished.editor.saving()),"Recommended blank-username Apply finishes without credentials.");
                     edt(() -> {
                         String status=((Label)field(unfinished,"error")).getText();
-                        check(button(unfinished.stage(),"Apply").isDisabled()
+                        check(!unfinished.editor.saveButton().isVisible()
                                 && (status.isBlank() || status.equals("Saved"))
                                 && ((Profile)field(unfinished,"selected")).automaticSignOn(),
-                                "Actual profile Apply saves an unfinished recommended login and updates its cancel baseline.");
-                        button(unfinished.stage(),"Save & connect").fire();
+                                "Autosave retains an unfinished recommended login without touching credentials.");
+                        button(unfinished.stage(),"Connect").fire();
                         check(((Label)field(unfinished,"error")).getText().contains("Enter a username")
-                                && !w.active().busy(),"Save & connect requires username before any credential/network attempt.");
+                                && !w.active().busy(),"Connect requires username before any credential/network attempt.");
                         unfinished.dispose(); return null;
                     });
                     check(errors.isEmpty(),"No asynchronous UI/configuration failures: "+errors);

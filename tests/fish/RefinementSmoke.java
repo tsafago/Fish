@@ -141,15 +141,15 @@ public final class RefinementSmoke {
         ProfilesDialog dialog=edt(() -> new ProfilesDialog(w,w.active().profile()));
         UUID id=edt(() -> w.active().profile().id());
         edt(() -> {
-            check(button(dialog.stage(),"Apply").isDisabled() && button(dialog.stage(),"Done")!=null && button(dialog.stage(),"Save & connect")!=null,
-                    "Profile editor retains explicit connection/save responsibility beside Apply and Done.");
-            ((TextField)field(dialog,"name")).setText("Applied workstation"); button(dialog.stage(),"Apply").fire(); return null;
+            check(!dialog.editor.saveButton().isVisible() && button(dialog.stage(),"Done")!=null && button(dialog.stage(),"Connect")!=null,
+                    "Safe profile edits need no Apply action; connecting remains explicit.");
+            ((TextField)field(dialog,"name")).setText("Applied workstation"); return null;
         });
         long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
-        while (edt(() -> dialog.editor.saving())) { if (System.nanoTime()>deadline) throw new AssertionError("Profile Apply timed out."); Thread.sleep(10); }
+        while (edt(() -> dialog.editor.saving())) { if (System.nanoTime()>deadline) throw new AssertionError("Profile autosave timed out."); Thread.sleep(10); }
         edt(() -> {
             check(w.profileList().stream().anyMatch(p -> p.id().equals(id) && p.name().equals("Applied workstation")),
-                    "Actual asynchronous profile Apply saves and stays open, with credentials untouched.");
+                    "Actual asynchronous profile autosave stays open, with credentials untouched.");
             ((TextField)field(dialog,"name")).setText("Done workstation"); button(dialog.stage(),"Done").fire(); return null;
         });
         deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);

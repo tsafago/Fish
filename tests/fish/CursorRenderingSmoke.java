@@ -295,20 +295,21 @@ public final class CursorRenderingSmoke {
         });
         UsabilityIterationSmoke.settle(() -> !preferences.saving(),"Default style did not persist");
         edt(() -> {
-            SavedLayoutsDialog dialog=new SavedLayoutsDialog(w);
-            TextField name=(TextField)field(dialog,"name");
+            w.preferences("General");
+            var dialog=w.tutorialPreferences().dialog();
+            TextField name=(TextField)w.tutorialPreferences().tutorialTarget("shortcut-name");
             for (String text:List.of("Office layout","Wide W / thin iii","Layout \u5317 \u0394","Office layout")) {
                 name.setText(text);
-                FxTestSupport.layout(dialog.stage());
+                FxTestSupport.layout(dialog);
                 check(name.getText().equals(text),"Actual name control supports Unicode");
             }
             for (AppTheme theme:new AppTheme[]{AppTheme.Charcoal,AppTheme.Paper}) {
-                w.applyTheme(theme); name.setText("Work layout \u5317"); FxTestSupport.layout(dialog.stage());
+                w.applyTheme(theme); name.setText("Work layout \u5317"); FxTestSupport.layout(dialog);
                 for (double scale:new double[]{1,1.5}) {
-                    evidence(FxTestSupport.snapshot(dialog.stage(),scale),"shortcut-name-"+theme+"-"+scale);
+                    evidence(FxTestSupport.snapshot(dialog,scale),"shortcut-name-"+theme+"-"+scale);
                 }
             }
-            w.applyTheme(AppTheme.Charcoal); dialog.dispose();
+            w.applyTheme(AppTheme.Charcoal); w.preferences("Appearance");
             Preferences current=w.tutorialPreferences();
             if (evidence!=null) {
                 evidence(FxTestSupport.snapshot(current.dialog(),1.0),"cursor-preference");

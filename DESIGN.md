@@ -49,7 +49,10 @@ On Windows, OpenJFX leaves a standalone window's initial native background
 unset even when its JavaFX scene has a fill. Dark Settings supplies its dialog
 color for that first native erase, then removes the brush so ordinary resizing
 is painted by JavaFX. Opening Settings does not change window opacity or delay focus.
-Each built-in theme can switch its subtle surface gradients off independently.
+Menus, chrome, dialog surfaces and the Settings rail transition from a light upper-left
+corner to a darker lower-right corner. Fields, buttons and lists use the same lighting
+on their own surface color; scrollable text and list rows let the underlying fill show
+through rather than tiling it. Each built-in theme can turn these gradients off independently.
 The 5250 grid always has a solid background. Scrollbars sit outside the form gutter.
 
 ## Colors
@@ -263,8 +266,9 @@ links and no automatic image/resource/code loading.
 
 The rightmost action group pairs one 160px profile selector with a single plus;
 narrow chrome shrinks the selector before sacrificing drag space/native controls.
-Both align to the menu rhythm and share transparent titlebar resting surfaces,
-menu hover colors and restrained focus underlines, not boxed form-field chrome.
+The selector and plus share one resting surface, lighter on dark chrome and darker on
+light chrome (at least 1.15:1 against the closest corner). Their focus outline shares
+the single-pixel join. Top-level application menus open at the chrome dividing line.
 The actual combo retains keyboard selection, an accessible name and its dropdown.
 Selection is harmless; plus adds and asynchronously connects that exact profile.
 Only a lone never-used offline tile is reused. Explicit New window and saved
@@ -272,11 +276,9 @@ recipes also connect once, independently of the ordinary-startup preference.
 Disconnect/failure never retries itself. Offline panes retain a small accessible
 Reconnect control, not a connection wizard.
 
-Panes > Saved layouts / shortcuts is modeless and operational, not another
-Settings hierarchy. This window's profile/layout context and a name lead directly
-to Create desktop shortcut; destination confirmation saves the recipe and link.
-Save layout only and an expandable Saved layouts library retain explicit
-Update from this window, Rename/Delete, Open new window and Create shortcut.
+Settings > General exports the current panes to a shortcut on the Windows
+Desktop. A name and an optional Windows sign-in checkbox replace the
+library and destination picker. An existing desktop file is never replaced.
 Recipes retain stable IDs, bounded geometry and fit/zoom; screen contents and
 secrets are excluded. Export uses native Windows Shell links and the real
 Fish.exe target. Each link launches a new independent ordinary window.
@@ -302,10 +304,14 @@ https://www.nngroup.com/articles/ten-usability-heuristics/ and
 https://learn.microsoft.com/en-us/windows/apps/design/app-settings/guidelines-for-app-settings .
 Shared native-font antialiasing applies to control labels, menus and buttons;
 mnemonic underlines appear on Alt/menu activation rather than persistently.
-The offline full manual uses a full-text topic index; Getting Started is first.
+The offline quick guide starts with connecting, then covers the terminal, panes,
+shortcuts and updates. Help's keyboard reference opens the searchable list of
+current key assignments instead of showing a second, static list.
 The compact terminal clipboard popup and Edit menu share those same guarded
 Copy/Paste actions, preserve the selection on right-click, report clipboard
 errors, and return focus to the terminal without taking host Ctrl+C/V or F-keys.
+A workspace has one active pane or chrome context menu. A new right-click replaces
+it; Escape, a click outside it, or a change of focus dismisses it.
 
 ## Painting and resize
 

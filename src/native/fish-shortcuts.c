@@ -195,6 +195,53 @@ typedef struct {
     int updated;
 } border_update_ctx;
 
+// Before show, Glass has created the owned stage, but has not set its title.
+// Only act on an unambiguous, hidden, owned stage on the calling FX thread.
+typedef struct { HWND match; BOOL owned; } stage_search;
+static BOOL CALLBACK find_new_stage(HWND hwnd,LPARAM data) {
+    stage_search *search=(stage_search *)data;
+    WCHAR name[96];
+    static const WCHAR prefix[]=L"GlassWndClass-GlassWindowClass-";
+    if (IsWindowVisible(hwnd) || (GetWindow(hwnd,GW_OWNER)!=NULL)!=search->owned
+            || (GetWindowLongPtrW(hwnd,GWL_EXSTYLE)&WS_EX_TOOLWINDOW)
+            || !GetClassNameW(hwnd,name,96) || wcsncmp(name,prefix,ARRAYSIZE(prefix)-1)!=0) return TRUE;
+    if (search->match) { search->match=NULL; return FALSE; }
+    search->match=hwnd; return TRUE;
+}
+
+JNIEXPORT jlong JNICALL Java_fish_ui_WindowBorder_installStartupBrush0(JNIEnv *env,jclass type,jint rgb,jboolean owned) {
+    (void)env; (void)type;
+    stage_search search={NULL,owned ? TRUE : FALSE};
+    EnumThreadWindows(GetCurrentThreadId(),find_new_stage,(LPARAM)&search);
+    HWND window=search.match;
+    // Glass registers a separate class per HWND. Never replace a toolkit brush.
+    if (!window || GetClassLongPtrW(window,GCLP_HBRBACKGROUND)) return 0;
+    HBRUSH brush=CreateSolidBrush(RGB((rgb>>16)&255,(rgb>>8)&255,rgb&255));
+    if (!brush || !SetPropW(window,L"Fish.Settings.FirstFrame",brush)) {
+        if (brush) DeleteObject(brush);
+        return 0;
+    }
+    SetLastError(0);
+    if (!SetClassLongPtrW(window,GCLP_HBRBACKGROUND,(LONG_PTR)brush) && GetLastError()) {
+        RemovePropW(window,L"Fish.Settings.FirstFrame");
+        DeleteObject(brush);
+        return 0;
+    }
+    return (jlong)(intptr_t)window;
+}
+
+JNIEXPORT void JNICALL Java_fish_ui_WindowBorder_removeStartupBrush0(JNIEnv *env,jclass type,jlong handle) {
+    (void)env; (void)type;
+    HWND window=(HWND)(intptr_t)handle;
+    if (GetWindowThreadProcessId(window,NULL)!=GetCurrentThreadId()) return;
+    HBRUSH brush=(HBRUSH)GetPropW(window,L"Fish.Settings.FirstFrame");
+    if (!brush) return;
+    if ((HBRUSH)GetClassLongPtrW(window,GCLP_HBRBACKGROUND)==brush
+            && !SetClassLongPtrW(window,GCLP_HBRBACKGROUND,0)) return;
+    RemovePropW(window,L"Fish.Settings.FirstFrame");
+    DeleteObject(brush);
+}
+
 #ifndef DWMWA_BORDER_COLOR
 #define DWMWA_BORDER_COLOR 34
 #endif

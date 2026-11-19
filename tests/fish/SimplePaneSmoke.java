@@ -175,7 +175,8 @@ public final class SimplePaneSmoke {
             w.undoArrangement(); layout(w); check(w.currentLayout().leaves().equals(initial.leaves()),"Undo restores half and pair");
             Region content=(Region)field(w,"content");
             Point bottom=new Point((int)Math.round(content.getWidth())/2,(int)Math.round(content.getHeight())-2);
-            Workspace.DockTarget edge=w.dropTarget(b,bottom);
+            var bottomScene=content.localToScene(bottom.x,bottom.y);
+            Workspace.DockTarget edge=w.dropTargetAtScene(bottomScene.getX(),bottomScene.getY());
             check(edge.scope()==Layout.Scope.WINDOW && edge.dock()==Layout.Dock.BOTTOM,"Outer band explicitly identifies whole-window bottom");
             Workspace.DropPlan thirds=w.planDock(a,b,edge.dock(),edge.scope());
             check(thirds!=null && thirds.layout().arrangement().equals("Three equal rows"),"Window bottom produces thirds, not a local nested split");
@@ -210,7 +211,28 @@ public final class SimplePaneSmoke {
             w.dock(a,b,Layout.Dock.TOP,Layout.Scope.WINDOW); layout(w); actual(w,balanced.bounds());
             int min=balanced.bounds().values().stream().mapToInt(r -> r.height).min().orElseThrow(),max=balanced.bounds().values().stream().mapToInt(r -> r.height).max().orElseThrow();
             check(max-min<=1,"A later structural move resets intentionally unequal thirds to equal default heights");
-            for (int n=3;n<8;n++) { w.split(true); layout(w); check(w.sessionPanes().size()==n+1,"Production add reaches "+(n+1)); }
+            w.split(true); layout(w);
+            Layout quarters=w.currentLayout();
+            SessionPane source=w.sessionPanes().getLast(),target=w.sessionPanes().getFirst();
+            double y=target.getHeight()/2;
+            var wideEdge=target.localToScene(36,y);
+            var localEdge=target.localToScene(target.getWidth()*.21,y);
+            var middle=target.localToScene(target.getWidth()/2,y);
+            check(w.dropTargetAtScene(localEdge.getX(),localEdge.getY()).equals(new Workspace.DockTarget(target.id(),Layout.Dock.LEFT,Layout.Scope.PANE))
+                    && w.dropTargetAtScene(middle.getX(),middle.getY()).dock()==Layout.Dock.CENTER,"Local edges and center remain available behind the outer band");
+            check(w.previewDockAtScene(source.id(),wideEdge.getX(),wideEdge.getY()),"Quarter-to-side target is reachable away from the border");
+            Workspace.DropPlan shown=(Workspace.DropPlan)field(w,"dropPlan");
+            Rectangle side=shown.bounds().get(source.id());
+            check(shown.scope()==Layout.Scope.WINDOW && side.x==0 && side.y==0 && side.height==Math.round(content.getHeight()),
+                    "Preview spans the full left edge");
+            check(w.commitDockAtScene(source.id(),wideEdge.getX(),wideEdge.getY()),"Release commits the projected side");
+            layout(w); actual(w,shown.bounds());
+            check(w.currentLayout().equals(shown.layout()) && Layout.normalize(shown.layout()).equals(shown.layout())
+                    && Layout.decode(shown.layout().encode()).equals(shown.layout()),"Side and stack retain exact geometry and IDs");
+            samePanes(shown.layout().move(source.id(),target.id(),Layout.Dock.LEFT),quarters,"Local split restores quadrant pairs");
+            w.undoArrangement(); layout(w); check(w.currentLayout().equals(quarters),"Undo restores the four quarters");
+            w.dock(source.id(),target.id(),Layout.Dock.LEFT,Layout.Scope.WINDOW);
+            for (int n=4;n<8;n++) { w.split(true); layout(w); check(w.sessionPanes().size()==n+1,"Production add reaches "+(n+1)); }
             return null;
         });
         await(() -> w.sessionPanes().size()==8 && w.sessionPanes().stream().allMatch(p -> p.connected() && p.screen().getScreenFields().getSize()>0),"Eight independent loopback sessions did not connect");
@@ -231,7 +253,7 @@ public final class SimplePaneSmoke {
             w.split(true); check(w.sessionPanes().size()==8 && host.activeConnections()==8,"Ninth add creates neither pane nor socket");
             check(w.planDock(live.get(0).id(),live.get(1).id(),Layout.Dock.TOP,Layout.Scope.WINDOW)==null,"Eight-pane whole-edge nesting is rejected honestly");
             Region content=(Region)field(w,"content");
-            check(w.dropTarget(w.sessionPanes().getFirst().id(),new Point(2,2)).scope()==Layout.Scope.PANE,"At four to eight panes outer edges operate on quadrant slots, not impossible whole-window bands");
+            check(w.dropTarget(w.sessionPanes().getFirst().id(),new Point(2,2)).scope()==Layout.Scope.PANE,"At eight panes outer edges remain local");
             snapshot(w,"eight-simple-panes");
             if (evidence!=null) { w.applyTheme(AppTheme.Paper); layout(w); snapshot(w,"eight-simple-panes-paper"); w.applyTheme(AppTheme.Charcoal); }
             SavedLayout saved=w.saveCurrentLayout(null,"Eight simple panes");

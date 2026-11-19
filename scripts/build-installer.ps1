@@ -1,8 +1,16 @@
-param([Parameter(Mandatory=$true)][string]$Jdk,[Parameter(Mandatory=$true)][string]$Image,[Parameter(Mandatory=$true)][string]$Version)
+# Full setup is written next to -Image unless -OutputDirectory is supplied.
+# -BootstrapperOnly builds/tests the UI in build\ without creating an MSI or touching dist\.
+param([string]$Jdk,[string]$Image,[Parameter(Mandatory=$true)][string]$Version,
+    [string]$OutputDirectory,[switch]$BootstrapperOnly)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Installer version must be numeric X.Y.Z.' }
-& "$PSScriptRoot\prepare-tools.ps1" -Kind Installer
+if (!$BootstrapperOnly) {
+    if (!$Jdk -or !$Image) { throw 'MSI packaging requires -Jdk and -Image.' }
+    $Image=(Resolve-Path -LiteralPath $Image).Path
+    if (!$OutputDirectory) { $OutputDirectory=Split-Path -Parent $Image }
+    & "$PSScriptRoot\prepare-tools.ps1" -Kind Installer
+}
 $tools=Import-PowerShellDataFile (Join-Path $root 'tools.psd1')
 $env:PATH=(Join-Path $root ('.tools\'+$tools.Installer.Directory))+';'+$env:PATH
 $env:ZIG_GLOBAL_CACHE_DIR=Join-Path $root '.tools\zig-cache'
@@ -10,6 +18,7 @@ $zig=Join-Path $root ('.tools\'+$tools.Native.Directory+'\zig.exe')
 if (-not (Test-Path -LiteralPath $zig)) { throw 'Build the application/native bridge before packaging setup.' }
 $output=Join-Path $root ('build\installer-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Path $output | Out-Null
+if (!$BootstrapperOnly) {
 $wixTemp=Join-Path $output 'wix-temp'
 & "$Jdk\bin\jpackage.exe" --type msi --name Fish --app-version $Version --app-image $Image `
     --dest $output --temp $wixTemp --vendor Fish --win-per-user-install --install-dir Fish `
@@ -69,11 +78,23 @@ if ((Test-Path -LiteralPath $bundleWxf) -and (Test-Path -LiteralPath $mainWxs)) 
     Remove-Item -LiteralPath $msi -Force -ErrorAction SilentlyContinue
     & "$wixDir\light.exe" -nologo -spdb -sval -ext WixUtilExtension -ext WixUIExtension -b $configDir -b $Image @locArgs -out $msi @objFiles
     if ($LASTEXITCODE -ne 0) { throw 'Dual-scope MSI linking failed.' }
+} else { throw 'Cannot produce a dual-scope installer: missing staged WiX sources.' }
 }
 $parts=$Version.Split('.')
 $header="#define FISH_VERSION L`"$Version`"`n#define FISH_VERSION_A `"$Version`"`n"
 [IO.File]::WriteAllText((Join-Path $output 'fish-setup-version.h'),$header,[Text.UTF8Encoding]::new($false))
-$icon=(Join-Path $root 'build\Fish.ico').Replace('\','\\')
+$icon=Join-Path $root 'build\Fish.ico'
+if ($BootstrapperOnly) {
+    # Sample the current compiled FishIcon, not a stale ICO left by an earlier release.
+    # This renders one asset into the private staging folder; it does not build or launch Fish.
+    if (!$Jdk) { $Jdk=Join-Path $root ('.tools\'+$tools.Jdk.Directory) }
+    $fx=Join-Path $root ('.tools\'+$tools.JavafxSdk.Directory+'\lib')
+    $icon=Join-Path $output 'Fish.ico'
+    & "$Jdk\bin\java.exe" '-Djava.awt.headless=true' --module-path $fx --add-modules 'javafx.controls,javafx.swing' `
+        --enable-native-access=javafx.graphics -cp (Join-Path $root 'build\classes') fish.ui.FishIcon $icon
+    if ($LASTEXITCODE -ne 0) { throw 'Preview icon requires the compiled FishIcon class and local JavaFX modules.' }
+}
+$icon=$icon.Replace('\','\\')
 $manifest=(Join-Path $PSScriptRoot 'fish-setup.manifest').Replace('\','\\')
 $resource=@"
 #include <windows.h>
@@ -90,7 +111,7 @@ BEGIN
   BLOCK "040904b0"
   BEGIN
    VALUE "CompanyName", "Fish"
-   VALUE "FileDescription", "Fish current-user setup"
+   VALUE "FileDescription", "Fish setup"
    VALUE "FileVersion", "$Version"
    VALUE "ProductName", "Fish"
    VALUE "ProductVersion", "$Version"
@@ -114,7 +135,9 @@ $check=Start-Process -FilePath $bootstrapper -ArgumentList '--self-test' -Wait -
 if ($check.ExitCode -ne 0) { throw 'Native setup contract checks failed.' }
 $check=Start-Process -FilePath $bootstrapper -ArgumentList '--test-controls' -Wait -PassThru
 if ($check.ExitCode -ne 0) { throw 'Never-shown native checkbox paint/state/contrast checks failed.' }
-$destination=Join-Path $root "dist\Fish-$Version-setup.exe"
+if ($BootstrapperOnly) { Write-Output $bootstrapper; return }
+New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+$destination=Join-Path $OutputDirectory "Fish-$Version-setup.exe"
 Copy-Item -LiteralPath $bootstrapper -Destination $destination -Force
 $stream=[IO.File]::Open($destination,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::None)
 try {

@@ -70,23 +70,22 @@ public final class CustomizationSmoke {
         String savedProfileTheme=pane.profile().theme();
         String savedProfileEffect=pane.profile().effect();
 
-        // 1. Verify all 21 curated primary color presets synthesize WCAG-legible, collision-free IBM palettes across dark & light themes
-        check(Profile.PRIMARY_COLORS.size()>=20,"At least 20 common primary color presets are available for standard users.");
         for (AppTheme appTheme:List.of(AppTheme.Charcoal,AppTheme.OLED,AppTheme.Paper,AppTheme.Light)) {
             int bgRgb=ColorTheme.builtin(appTheme).rgb(ColorRole.HOST_0);
             Color bg=new Color(bgRgb);
-            for (Profile.PrimaryColor preset:Profile.PRIMARY_COLORS) {
-                check(Profile.isCustomColor(preset.hex()) && Profile.normalizeTheme(preset.hex().toLowerCase(Locale.ROOT)).equals(preset.hex()),
-                        "Primary preset normalizes to canonical #RRGGBB: "+preset);
-                Color[] slots=HostPalette.fromPrimaryColor(preset.rgb(),appTheme.dark,bg);
+            for (int step=0;step<=24;step++) {
+                int rgb=step==24 ? 0xBBBBBB : Color.HSBtoRGB(step/24f,0.75f,0.9f);
+                String hex=Profile.formatCustomColor(rgb);
+                check(Profile.normalizeTheme(hex.toLowerCase(Locale.ROOT)).equals(hex),"RGB normalizes to canonical hex: "+hex);
+                Color[] slots=HostPalette.fromPrimaryColor(rgb,appTheme.dark,bg);
                 check(slots.length==16 && (slots[0].getRGB()&0xffffff)==bgRgb,"Synthesized IBM palette preserves 16 host slots and theme background.");
                 double normalContrast=HostPalette.contrastRatio(slots[2].getRGB()&0xffffff,bgRgb);
                 double brightContrast=HostPalette.contrastRatio(slots[10].getRGB()&0xffffff,bgRgb);
-                check(normalContrast>=(appTheme.dark ? 6.8 : 4.8),"Primary text slot 2 maintains crisp WCAG contrast on "+appTheme+": "+preset.name()+" -> "+normalContrast);
-                check(brightContrast>normalContrast,"Bright primary slot 10 has stronger contrast than normal slot 2 on "+appTheme+": "+preset.name());
+                check(normalContrast>=(appTheme.dark ? 6.8 : 4.8),"Primary text slot 2 maintains crisp WCAG contrast on "+appTheme+": "+hex+" -> "+normalContrast);
+                check(brightContrast>normalContrast,"Bright primary slot 10 has stronger contrast than normal slot 2 on "+appTheme+": "+hex);
                 for (int slot:new int[]{1,3,4,5,6,7,8,9,11,12,13,14,15}) {
                     double sc=HostPalette.contrastRatio(slots[slot].getRGB()&0xffffff,bgRgb);
-                    check(sc>=(slot==8 ? 2.5 : 4.2),"Synthesized IBM slot "+slot+" remains readable on "+appTheme+": "+preset.name()+" -> "+sc);
+                    check(sc>=(slot==8 ? 2.5 : 4.2),"Synthesized IBM slot "+slot+" remains readable on "+appTheme+": "+hex+" -> "+sc);
                 }
             }
         }
@@ -104,29 +103,32 @@ public final class CustomizationSmoke {
             }
         }
 
-        // 3. Verify Settings > Appearance Primary Color dropdown + 360-degree Hue selector + live terminal effects
+        // Confirm only a committed custom color changes the profile and terminal ink.
         w.preferences("Appearance");
         Preferences prefs=w.tutorialPreferences();
         FxTestSupport.layout(prefs.dialog());
         check(prefs.paletteCombo().getItems().contains(Preferences.CUSTOM_COLOR),
                 "Text palette dropdown includes Custom color alongside built-in palettes.");
-        check(prefs.primaryColorCombo().getItems().equals(Profile.PRIMARY_COLORS),
-                "Primary color dropdown sits beside Text palette with all curated presets.");
-
+        prefs.paletteCombo().setValue(Preferences.CUSTOM_COLOR);
         BufferedImage beforeColor=paint(pane.view());
-        Profile.PrimaryColor royalBlue=Profile.PRIMARY_COLORS.stream().filter(c -> c.name().equals("Royal Blue")).findFirst().orElseThrow();
-        prefs.primaryColorCombo().setValue(royalBlue);
-        check(Preferences.CUSTOM_COLOR.equals(prefs.paletteCombo().getValue())
-                && royalBlue.hex().equals(w.active().profile().theme()),
-                "Choosing a Primary Color preset switches Text palette to Custom color and updates the profile immediately.");
+        check(prefs.primaryHex().getText().equals(Profile.formatCustomColor(HostPalette.primaryPreviewRgb(savedProfileTheme))),
+                "The first custom selection starts from the profile's palette, not a hardcoded hue.");
+        prefs.primaryHex().setText("#596cd2");
+        check("#596CD2".equals(w.active().profile().theme()),"A selected arbitrary RGB color updates the profile immediately.");
+        prefs.primaryHex().setText("#34");
+        check("#596CD2".equals(w.active().profile().theme()),"Incomplete hex input never overwrites the saved color.");
         BufferedImage afterRoyal=paint(pane.view());
-        check(different(beforeColor,afterRoyal),"Choosing a Primary Color preset repaints terminal ink immediately.");
+        check(different(beforeColor,afterRoyal),"Choosing a primary color repaints terminal ink immediately.");
 
-        // Sweep the hue selector and verify custom shade synthesis + effects compatibility
-        prefs.hueSlider().setValue(18.0);
-        String coralShade=Profile.colorFromHue(18.0);
-        check(coralShade.equals(w.active().profile().theme()) && Preferences.CUSTOM_COLOR.equals(prefs.paletteCombo().getValue()),
-                "Adjusting the Hue selector synthesizes and applies the exact custom #RRGGBB shade: "+w.active().profile().theme());
+        prefs.paletteCombo().setValue("Amber");
+        check("Amber".equals(w.active().profile().theme()),"A built-in palette restores its original name.");
+        prefs.paletteCombo().setValue(Preferences.CUSTOM_COLOR);
+        check("#596CD2".equals(w.active().profile().theme()),"Returning to custom restores this profile's last picked color.");
+        Profile other=w.profileList().stream().filter(p -> !p.id().equals(pane.profile().id())).findFirst().orElseThrow();
+        prefs.scopeCombo().setValue(other);
+        check(other.theme().equals(prefs.paletteCombo().getValue()),"Switching profiles restores the other named palette.");
+        prefs.scopeCombo().setValue(pane.profile());
+        check("#596CD2".equals(prefs.primaryHex().getText()),"Switching back restores the exact color without altering either profile.");
         for (String fxName:Profile.EFFECTS) {
             prefs.effectCombo().setValue(fxName);
             BufferedImage fxImg=paint(pane.view());

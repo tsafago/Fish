@@ -141,14 +141,14 @@ public final class MarkdownView extends ScrollPane {
 
         Label h1=new Label(docTitle);
         h1.setWrapText(true);
-        h1.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: "+Ui.hex(ColorRole.TEXT)+";");
+        h1.setStyle("-fx-font-size: 20px; -fx-text-fill: "+Ui.hex(ColorRole.TEXT)+";");
         container.getChildren().add(h1);
 
         for (ManualDialog.Topic topic:topics) {
             Label h2=new Label(topic.title());
             h2.setWrapText(true);
             h2.setPadding(new Insets(12,0,2,0));
-            h2.setStyle("-fx-font-size: 15.5px; -fx-font-weight: bold; -fx-text-fill: "+Ui.hex(ColorRole.TEXT)+";");
+            h2.setStyle("-fx-font-size: 15.5px; -fx-text-fill: "+Ui.hex(ColorRole.TEXT)+";");
             container.getChildren().add(h2);
             anchors.put(topic.anchor(),h2);
             anchors.put(topic.title().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9 -]","").replace(' ','-'),h2);

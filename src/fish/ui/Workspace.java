@@ -273,6 +273,7 @@ public final class Workspace {
         savedLayouts=state.savedLayouts();
         selectedLayout=state.selectedLayout();
         if (initializeTheme) {
+            Ui.surfacePreferences(appearance.flatThemes());
             Ui.setReducedMotion(appearance.reducedMotion());
             Ui.applyTheme(state.appTheme(),appearance.custom().orElse(null));
         }
@@ -330,6 +331,11 @@ public final class Workspace {
         addPane.setOnAction(e -> addCmd.execute());
 
         Separator pillJoin=chromeSeparator(true);
+        var outlined=javafx.css.PseudoClass.getPseudoClass("outlined");
+        javafx.beans.InvalidationListener outline=obs -> pillJoin.pseudoClassStateChanged(outlined,
+                addProfileSelector.isFocused() || addProfileSelector.isShowing() || addPane.isFocused() || addPane.isArmed());
+        for (var property:List.of(addProfileSelector.focusedProperty(),addProfileSelector.showingProperty(),
+                addPane.focusedProperty(),addPane.armedProperty())) property.addListener(outline);
         HBox tools=new HBox(0,addProfileSelector,pillJoin,addPane) {
             @Override protected void layoutChildren() {
                 double s=Ui.scaleFor(this);
@@ -369,6 +375,7 @@ public final class Workspace {
         centerHost=new Pane() {
             @Override protected void layoutChildren() {
                 double w=getWidth(),h=getHeight();
+                if (lastPreviewKey!=null && (content.getWidth()!=w || content.getHeight()!=h)) clearPreviews();
                 content.resizeRelocate(0,0,w,h);
                 if (dropOverlay.isVisible()) {
                     dropOverlay.setWidth(w);
@@ -457,7 +464,6 @@ public final class Workspace {
         bar.setMouseTransparent(true);
         bar.setSnapToPixel(false);
         bar.getStyleClass().add("fish-chrome-separator-bar");
-        bar.setStyle("-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";");
         chromeSeparatorBars.add(bar);
         Separator sep=new Separator(Orientation.VERTICAL) {
             private boolean added;
@@ -687,9 +693,10 @@ public final class Workspace {
         Appearance previous=appearance;
         appearance=value;
         Ui.setReducedMotion(value.reducedMotion());
+        Ui.surfacePreferences(value.flatThemes());
         boolean font=!previous.font().equals(value.font());
         if (font) resolveFont();
-        if (!previous.custom().equals(value.custom())
+        if (!previous.flatThemes().equals(value.flatThemes()) || !previous.custom().equals(value.custom())
                 || !Objects.equals(Ui.customTheme() ? Ui.colorTheme() : null,value.custom().orElse(null)))
             Ui.applyTheme(Ui.theme(),appearance.custom().orElse(null));
         else updateWindowOutline();
@@ -865,8 +872,6 @@ public final class Workspace {
     public void themeChanged() {
         chrome.themeChanged();
         Ui.updateIcon(addPane.getGraphic(),"plus",ColorRole.CHROME_TEXT);
-        String sepStyle="-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";";
-        for (Region bar:chromeSeparatorBars) Ui.setStyleIfChanged(bar,sepStyle);
         updateWindowOutline();
         refreshSplitStyles(tree);
         panes.values().forEach(SessionPane::themeChanged);
@@ -1039,6 +1044,7 @@ public final class Workspace {
                 split.setUserRatio(previousRatio);
             }
             split.layout();
+            if (lastPreviewKey!=null && split.userRatio()!=previousRatio) clearPreviews();
         } finally {
             adjustingDividers=false;
         }
@@ -1127,16 +1133,19 @@ public final class Workspace {
     public void dock(UUID source,UUID target,Layout.Dock dock,Layout.Scope scope) {
         DropPlan plan=planDock(source,target,dock,scope);
         clearPreviews();
-        if (plan==null) return;
+        if (plan!=null) applyDock(plan);
+    }
+
+    private void applyDock(DropPlan plan) {
         arrangementHistory.push(currentLayout());
         while (arrangementHistory.size()>20) arrangementHistory.removeLast();
         layout=plan.layout();
         buildTree();
-        active=panes.get(source);
+        active=panes.get(plan.source());
         activate(active);
         Ui.runLater(active::focusTerminal);
         changed();
-        tutorialAction(dock==Layout.Dock.CENTER ? "panes-swapped" : "panes-arranged");
+        tutorialAction(plan.dock()==Layout.Dock.CENTER ? "panes-swapped" : "panes-arranged");
     }
 
     public static Map<UUID,Rectangle> project(Layout layout,Rectangle area) {
@@ -1202,13 +1211,12 @@ public final class Workspace {
     public DockTarget dropTargetAtScene(double sceneX,double sceneY) {
         Point2D cp=content.sceneToLocal(sceneX,sceneY);
         if (cp==null) return null;
-        int px=(int)Math.round(cp.getX()),py=(int)Math.round(cp.getY());
-        int cw=(int)Math.round(content.getWidth()),ch=(int)Math.round(content.getHeight());
-        if (px<0 || py<0 || px>=cw || py>=ch) return null;
+        double px=cp.getX(),py=cp.getY();
+        if (px<0 || py<0 || px>=content.getWidth() || py>=content.getHeight()) return null;
         for (SessionPane candidate:panes.values()) {
             Point2D lp=candidate.sceneToLocal(sceneX,sceneY);
-            if (lp!=null && lp.getX()>=0 && lp.getY()>=0 && lp.getX()<=candidate.getWidth() && lp.getY()<=candidate.getHeight()) {
-                return dropTarget(candidate.id(),px,py);
+            if (lp!=null && lp.getX()>=0 && lp.getY()>=0 && lp.getX()<candidate.getWidth() && lp.getY()<candidate.getHeight()) {
+                return classifyDrop(candidate,px,py,lp);
             }
         }
         return null;
@@ -1225,11 +1233,11 @@ public final class Workspace {
 
     public boolean commitDockAtScene(UUID source,double sceneX,double sceneY) {
         DockTarget placement=dropTargetAtScene(sceneX,sceneY);
-        if (placement!=null && planDock(source,placement.pane(),placement.dock(),placement.scope())!=null) {
-            dock(source,placement.pane(),placement.dock(),placement.scope());
-            return true;
-        }
-        return false;
+        DropPlan plan=placement==null ? null : planDock(source,placement.pane(),placement.dock(),placement.scope());
+        clearPreviews();
+        if (plan==null) return false;
+        applyDock(plan);
+        return true;
     }
 
     private void paintDropOverlay() {
@@ -1279,17 +1287,27 @@ public final class Workspace {
     public DockTarget dropTarget(UUID paneId,int px,int py) {
         int cw=(int)Math.round(content.getWidth()),ch=(int)Math.round(content.getHeight());
         if (px<0 || py<0 || px>=cw || py>=ch || !hasPane(paneId)) return null;
-        int left=px,right=cw-1-px,top=py,bottom=ch-1-py;
-        int nearest=Math.min(Math.min(left,right),Math.min(top,bottom));
-        int band=Math.min(28,Math.max(12,Math.min(cw,ch)/20));
-        if (panes.size()<=3 && nearest<band) {
-            return new DockTarget(paneId,nearest==top ? Layout.Dock.TOP : nearest==bottom ? Layout.Dock.BOTTOM
-                    : nearest==left ? Layout.Dock.LEFT : Layout.Dock.RIGHT,Layout.Scope.WINDOW);
-        }
         SessionPane targetPane=panes.get(paneId);
         Point2D paneLocal=targetPane.sceneToLocal(content.localToScene(px,py));
-        if (paneLocal==null) return null;
-        return new DockTarget(paneId,SessionPane.direction(paneLocal.getX(),paneLocal.getY(),targetPane.getWidth(),targetPane.getHeight()),Layout.Scope.PANE);
+        if (paneLocal==null || paneLocal.getX()<0 || paneLocal.getX()>=targetPane.getWidth()
+                || paneLocal.getY()<0 || paneLocal.getY()>=targetPane.getHeight()) return null;
+        return classifyDrop(targetPane,px,py,paneLocal);
+    }
+
+    private DockTarget classifyDrop(SessionPane target,double x,double y,Point2D local) {
+        double w=content.getWidth(),h=content.getHeight();
+        if (panes.size()>=2 && panes.size()<=4) {
+            // Reserve the inner part of each pane's 25% edge zone for local drops.
+            double bandX=Math.min(72,Math.min(w*.10,target.getWidth()*.16));
+            double bandY=Math.min(72,Math.min(h*.10,target.getHeight()*.16));
+            double dx=Math.min(x,w-x)/bandX,dy=Math.min(y,h-y)/bandY;
+            if (Math.min(dx,dy)<1) {
+                Layout.Dock edge=dx<dy ? (x<w/2 ? Layout.Dock.LEFT : Layout.Dock.RIGHT)
+                        : (y<h/2 ? Layout.Dock.TOP : Layout.Dock.BOTTOM);
+                return new DockTarget(target.id(),edge,Layout.Scope.WINDOW);
+            }
+        }
+        return new DockTarget(target.id(),SessionPane.direction(local.getX(),local.getY(),target.getWidth(),target.getHeight()),Layout.Scope.PANE);
     }
 
     public void undoArrangement() {
@@ -1419,7 +1437,8 @@ public final class Workspace {
         target.getSelectionModel().selectFirst();
         ComboBox<Layout.Dock> direction=new ComboBox<>(FXCollections.observableArrayList(Layout.Dock.values()));
         direction.setValue(Layout.Dock.RIGHT);
-        ComboBox<String> scope=new ComboBox<>(FXCollections.observableArrayList("Pane / quadrant","Whole window (2-3 panes)"));
+        ComboBox<String> scope=new ComboBox<>(FXCollections.observableArrayList("Pane / quadrant"));
+        if (panes.size()<=4) scope.getItems().add("Whole window");
         scope.getSelectionModel().selectFirst();
         for (ComboBox<?> cb:List.of(target,direction,scope)) cb.setMaxWidth(Double.MAX_VALUE);
 
@@ -1642,6 +1661,7 @@ public final class Workspace {
         if (closing) return;
         boolean kiosk=KioskMode.isEnabled();
         if (kiosk) {
+            clearPreviews();
             saveTimer.stop();
             if (tutorial!=null) tutorial.dispose();
             if (preferences!=null && !preferences.ended()) preferences.forceDispose();

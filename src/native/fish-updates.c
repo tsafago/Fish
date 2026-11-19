@@ -105,7 +105,6 @@ JNIEXPORT void JNICALL Java_fish_update_UpdateSupport_launchNative(JNIEnv *env,j
     if (!valid || !signature(file,path)) {
         CloseHandle(file); failure(env,"Installer changed or its signature is invalid. Nothing was run."); goto release;
     }
-    CloseHandle(file);
     WCHAR *command=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
     BOOL launched=FALSE;
     if (command) {
@@ -121,6 +120,8 @@ JNIEXPORT void JNICALL Java_fish_update_UpdateSupport_launchNative(JNIEnv *env,j
         }
         HeapFree(GetProcessHeap(),0,command);
     }
+    /* Hold the verified image read-only, without write/delete sharing, until mapped. */
+    CloseHandle(file);
     if (!launched) failure(env,"Windows did not start setup (cancelled, blocked by policy, or unavailable). Fish is still open; nothing was reported installed.");
 release:
     if (data) HeapFree(GetProcessHeap(),0,data);

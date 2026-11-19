@@ -107,6 +107,7 @@ public class TerminalView extends Region {
     private boolean sharedPhase;
     private double sharedFlux=Double.NaN;
     private double cellWidth=9,cellHeight=18,originX=12,originY=10;
+    double gridTop() { return originY; }
     private double geometryWidth=-1,geometryHeight=-1,geometryRefW=-1,geometryRefH=-1;
     private double geometryDpiX=1,geometryDpiY=1,geometryZoom;
     private boolean geometryFit,revealQueued;

@@ -126,6 +126,11 @@ public final class KeyRecorder extends BorderPane {
         recorder.cleared=() -> okBtn.setDisable(true);
 
         Ui.decorateDialog(stage,wrapper,stage::close,460,220);
+        // The caption's normal Escape action must not steal a chord being recorded.
+        stage.addEventFilter(KeyEvent.KEY_PRESSED,event -> {
+            if (event.getTarget()==recorder.capture && event.getCode()==KeyCode.ESCAPE && recorder.captureFxEvent(event))
+                event.consume();
+        });
         stage.setOnShown(e -> recorder.capture.requestFocus());
         stage.getProperties().put("fish.recorder",recorder);
         stage.getProperties().put("fish.accept",okBtn);

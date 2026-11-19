@@ -276,7 +276,7 @@ try {
     }
 
     $version = (Get-Item -LiteralPath $targetExe).VersionInfo.ProductVersion
-    if (-not $version) { $version = '0.10.1' }
+    if (-not $version) { $version = '0.10.2' }
     $sizeBytes = (Get-ChildItem -LiteralPath $targetDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
     $sizeKb = [int][Math]::Ceiling($sizeBytes / 1024.0)
     $uninstallScript = Join-Path $targetDir 'Uninstall-Fish.ps1'

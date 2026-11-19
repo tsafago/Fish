@@ -38,13 +38,27 @@ panes, thin dividers, compact headers and crisp monospace host text.
 The terminal presentation space owns the window. Application controls remain
 secondary; there are no promotional surfaces, dashboard cards or AI controls.
 
+The integrated caption controls occupy a full-width drag strip with no title,
+icon or bottom rule. Navigation and page content begin together below it: the
+first category aligns with the active page heading, and save status sits at the
+foot of the rail. The rail surface and its single divider extend through the
+caption strip. Regular-weight page and section headings use size and spacing
+rather than bold type to establish hierarchy.
+
+On Windows, OpenJFX leaves a standalone window's initial native background
+unset even when its JavaFX scene has a fill. Dark Settings supplies its dialog
+color for that first native erase, then removes the brush so ordinary resizing
+is painted by JavaFX. Opening Settings does not change window opacity or delay focus.
+Each built-in theme can switch its subtle surface gradients off independently.
+The 5250 grid always has a solid background. Scrollbars sit outside the form gutter.
+
 ## Colors
 
 `AppTheme` supplies complete Charcoal, Graphite, Midnight, Paper, OLED,
 OLED Amber, High Contrast, High Contrast Light, Lagoon, Afterglow and Eye Saver token sets;
 `ColorRole` inventories every semantic UI, host, effect and logo RGB role.
 `ColorTheme` supplies complete named maps; `Ui` applies them to every owned UI route.
-Per-profile primary color presets and the 360-degree hue selector in **Settings > Appearance** synthesize a WCAG-contrasted, hue-collision-free 16-slot IBM 5250 palette automatically for dark and light themes, replacing the former standalone 60-role theme designer.
+Text palette in **Settings > Appearance** offers built-in workstation palettes or a custom RGB color per profile. Only the custom option shows the inline hue slider, exact hex field and preview of generated terminal ink.
 `Ui` generates live JavaFX CSS stylesheets (`data:text/css;base64,...`) from semantic color tokens for all scenes, controls, popups, scrollbars and split dividers. `HostPalette` defines
 sixteen host colors independently, including darker foregrounds for Paper.
 Never collapse host color, reverse, underline, blink or non-display distinctions
@@ -79,7 +93,10 @@ Structural adds/moves rebalance; intentional reasonable divider resizing persist
 between structural changes. No recursive slivers, unequal strip defaults or deep
 nesting. With two/three panes an outer-window band selects whole placement:
 cross a full half intact with its opposite pair, or extend aligned panes into
-equal thirds. Inner edges place locally; with four/eight panes all edges operate
+equal thirds. With four panes the outer band promotes a quarter to a full side
+with three equal strips opposite; a local edge restores paired quadrants. The
+band occupies at most 16% of the hovered pane on each axis so its local edge
+and center remain available. With five to eight panes all edges operate
 on quadrant slots (fill half-slots or swap/reorient existing ones). Centers swap.
 Binary containers are implementation details, never unrestricted subdivisions.
 A shaded projected result precedes a valid drop; invalid/minimum-size/self/outside
@@ -94,13 +111,9 @@ vertical padding. Resizing does not resize the host's presentation space.
 The main window uses JavaFX 25 `StageStyle.EXTENDED`: one 34px dark title/menu row replaces the native
 titlebar and separate menu row. The draggable title area stays empty between
 menus, the unified `[Profile ▾ | +]` split-pill, and three 36px window controls.
-The leftmost mark is a true 45-degree square with its two left sides extended
-straight through the left corner to form one X and a triangular tail on the left.
-The tail tips end level with the square's top and bottom, without a line joining them.
-One open stroked path supplies the square and tail without overlapping strokes.
-The silhouette is 3:2 while the body retains equal side lengths and exactly 45-degree rotation.
-There is exactly one crossing, no eye, mouth or stretched rhombus.
-A 3.4/64 stroke, uniform scale and the same geometry supply titlebar,
+The left-facing mark is a low, angular lozenge with two open tail tips on the
+right. One rounded stroke crosses once; there is no eye or connecting tail edge.
+A 2.6/34 stroke, uniform scale and the same geometry supply titlebar,
 runtime/taskbar and multi-resolution Windows executable icons. The titlebar alone
 uses a 27x20 drawing viewport inside its unchanged 48x30 focus/click target.
 Its compact mode follows measured menu/action widths while reserving a drag area.

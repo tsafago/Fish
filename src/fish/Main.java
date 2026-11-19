@@ -8,7 +8,7 @@ import fish.security.KioskMode;
 import fish.ui.*;
 
 public final class Main {
-    public static final String VERSION = "0.10.1";
+    public static final String VERSION = "0.10.2";
     private Main() {}
     public static void main(String[] args) {
         System.setProperty("javafx.enablePreview", "true");

@@ -69,7 +69,7 @@ public final class TutorialDialog {
         highlightRect.setArcWidth(8);
         highlightRect.setArcHeight(8);
 
-        title.setStyle("-fx-font-weight: bold; -fx-font-size: 13px;");
+        title.getStyleClass().add("fish-section-title");
         Ui.role(progress,"muted");
         BorderPane heading=new BorderPane();
         heading.setLeft(title);
@@ -200,7 +200,7 @@ public final class TutorialDialog {
             case APPEARANCE -> List.of(
                     s("Open Appearance","Open Edit > Settings and select Appearance on the left.","Appearance","theme","settings-Appearance"),
                     s("Application theme","Pick an Application theme—dark and light themes apply immediately across every window.","Appearance","theme","appearance-theme"),
-                    s("Palette or primary color","Select a Terminal profile, then choose a Text palette—or pick any Primary color and fine-tune its hue.","Appearance","palette","appearance-palette"),
+                    s("Palette or primary color","Select a Terminal profile, then choose a Text palette. Choose Custom color to pick your own.","Appearance","palette","appearance-palette"),
                     s("Terminal font","Choose a monospaced font family or browse to a local .ttf/.otf file and click Check font.","Appearance","font","appearance-font"),
                     s("Pane header","Toggle Show header and choose which details appear above each pane.","Appearance","header","appearance-header"),
                     s("Pane footer","Toggle Show footer to choose status, screen size, cursor row:col, and insert indicators.","Appearance","footer","appearance-footer"),

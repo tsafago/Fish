@@ -236,24 +236,16 @@ public final class FishSmoke {
         }
         check(paths==1 && closed==0 && lines.size()==4 && crossings==1,
                 "Fish has one open path and one crossing, with no line joining the tail tips.");
-        check(shape.getBounds2D().equals(new Rectangle2D.Double(4,6,54,36))
-                && points.contains(new Point2D.Double(58,24)) && points.contains(new Point2D.Double(4,6))
-                && points.contains(new Point2D.Double(4,42)) && !points.contains(new Point2D.Double(40,24)),
-                "Horizontal fish tail tips end at the top and bottom of the square, with no center-tip seam.");
-        Path2D square=new Path2D.Double();
-        square.moveTo(22,24); square.lineTo(40,6); square.lineTo(58,24); square.lineTo(40,42); square.closePath();
-        Path2D triangle=new Path2D.Double();
-        triangle.moveTo(4,6); triangle.lineTo(22,24); triangle.lineTo(4,42); triangle.closePath();
-        Area expected=new Area(square); expected.add(new Area(triangle)); expected.exclusiveOr(new Area(shape));
-        check(expected.isEmpty(),"Crossed outline encloses a true 45-degree square and the triangle formed by extending its left sides.");
-        check(shape.getBounds2D().getWidth()/shape.getBounds2D().getHeight()==1.5,
-                "Longer silhouette has a measurable 3:2 exterior aspect ratio without stretching the square body.");
+        var bounds=shape.getBounds2D();
+        check(points.getFirst().getX()==bounds.getMaxX() && points.getLast().getX()==bounds.getMaxX()
+                && points.stream().anyMatch(p -> p.getX()==bounds.getMinX() && p.getY()==bounds.getCenterY())
+                && bounds.getWidth()>1.6*bounds.getHeight(),"Streamlined lozenge faces left with both open tail tips on the right.");
         ImageIO.write(FishIcon.image(256),"png",Path.of("build","fish-horizontal-icon.png").toFile());
         BufferedImage squareMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
         BufferedImage wideMark=new BufferedImage(60,30,BufferedImage.TYPE_INT_ARGB);
         Graphics2D squareGraphics=squareMark.createGraphics(),wideGraphics=wideMark.createGraphics();
         try {
-            new FishIcon(40,30).paint(squareGraphics,10,0);
+            new FishIcon(50,30).paint(squareGraphics,5,0);
             new FishIcon(60,30).paint(wideGraphics,0,0);
         } finally { squareGraphics.dispose(); wideGraphics.dispose(); }
         check(differences(squareMark,wideMark,0,30)==0,"Titlebar icon bounds center a uniform scale; the body remains an actual square.");

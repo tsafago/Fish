@@ -5,6 +5,25 @@ There was no IBM i endpoint, test account, ACS installation or real-session
 capture available during implementation. Synthetic tests are valuable protocol
 evidence but are not real-host acceptance.
 
+## Fish 0.10.2 dialogs, setup and display scale
+
+The [dialog verification inventory](tests/fish/dialog/VERIFICATION.md) separates
+shown windows from simulated host actions and OS-owned surfaces. Saved layouts
+was checked empty, populated, expanded, collapsed and at minimum width. The
+caption and its close button track the actual native client width. The shortcut
+recorder captures Escape; elsewhere Escape cancels. On a 3840×2160 display at
+144 DPI, both JavaFX output and render scales were 1.50 without a scale override.
+The native setup window measured 810×504 physical pixels there and 540×336
+at 96 DPI. No display settings were changed.
+
+The fresh-install, update-only and retry previews exercise setup's real window
+with simulated work. They do not install Fish, invoke UAC, or establish that a
+particular machine can replace and relaunch an existing installation. Live
+desktop tests target the fixture's JavaFX focus owner by default; use
+`.\build.ps1 Test -DedicatedTestDesktop` only on a desktop reserved for Robot.
+Close Fish and back up `workspace.xml` before upgrading: 0.10.1 cannot restore
+the four-pane side-and-three topology.
+
 ## Fish 0.10.1 beta responsiveness, primary-color palettes, spatial pane traversal, Kiosk/autostart controls, and recovery
 
 No protocol/ACS/SSO compatibility expansion is claimed. All accepted 0.7.9

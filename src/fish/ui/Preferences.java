@@ -25,7 +25,6 @@ import fish.security.KioskMode;
 public final class Preferences {
     public static final List<String> CATEGORIES=List.of("Appearance","Profiles","Keyboard Shortcuts","General","Updates");
     public static final String CUSTOM_COLOR="Custom color";
-    private static final String DEFAULT_CUSTOM_COLOR="#38BDF8";
     private final Workspace workspace;
     private final ListView<String> navigation=new ListView<>(FXCollections.observableArrayList(CATEGORIES));
     private final StackPane pages=new StackPane();
@@ -33,15 +32,12 @@ public final class Preferences {
     private final CheckBox startup,window,pane,tint,reducedMotion,checkUpdates;
     private final List<CheckBox> info=new ArrayList<>();
     private final ComboBox<Object> theme=new ComboBox<>();
+    private final CheckBox gradients=new CheckBox("Surface gradients");
+    private final Set<AppTheme> flatThemes=EnumSet.noneOf(AppTheme.class);
     private final ComboBox<Profile> scope=new ComboBox<>();
     private final ComboBox<String> palette=new ComboBox<>(paletteOptions());
-    private final ComboBox<Profile.PrimaryColor> primaryColor=new ComboBox<>(FXCollections.observableArrayList(Profile.PRIMARY_COLORS));
-    private final Slider hueSlider=new Slider(0.0,360.0,199.0);
-    private final StackPane hueBar=new StackPane();
-    private final Region hueThumb=new Region();
-    private final Label hueBadge=new Label(DEFAULT_CUSTOM_COLOR);
+    private final PrimaryColorBar primaryColor=new PrimaryColorBar(this::primaryChanged);
     private final HBox palettePreviewStrip=new HBox(10);
-    private final Label palettePreviewMode=new Label("Auto IBM palette");
     private final Label[] palettePreviewSamples={
             new Label("Primary"),new Label("Header"),new Label("Accent"),new Label("Warn"),new Label("Error")
     };
@@ -64,7 +60,7 @@ public final class Preferences {
     public final ProfilesEditor profiles;
     private final Label error=new Label(" ");
     private final Label fontStatus=note(""),paletteStatus=note("");
-    private final Button closeButton,retryButton,reloadButton;
+    private final Button retryButton,reloadButton;
     private final Stage dialog;
     private Draft saved;
     private Shared baseline;
@@ -75,9 +71,9 @@ public final class Preferences {
                 workspace.updateSettings(),workspace.shortcutOverrides());
     }
     private record Display(String palette,String effect) {}
-    private record Draft(boolean startup,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,boolean reducedMotion,
+    private record Draft(boolean startup,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,boolean reducedMotion,Set<AppTheme> flatThemes,
                          Appearance.PaneInfo info,Appearance.CursorStyle cursorStyle,UpdateSettings updates,Map<String,String> keys,Map<UUID,Display> displays) {
-        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,theme,font,window,pane,tint,reducedMotion,info,cursorStyle,updates,keys,Map.copyOf(value)); }
+        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,theme,font,window,pane,tint,reducedMotion,flatThemes,info,cursorStyle,updates,keys,Map.copyOf(value)); }
     }
 
     public Preferences(Workspace workspace,String category) {
@@ -90,7 +86,7 @@ public final class Preferences {
         pane=new CheckBox("Outline active pane"); pane.setSelected(a.outline());
         tint=new CheckBox("Tint active pane background"); tint.setSelected(workspace.highlightActive());
         reducedMotion=new CheckBox("Reduce motion"); reducedMotion.setSelected(a.reducedMotion());
-        reducedMotion.setTooltip(new Tooltip("Skips subtle popup/dialog animations and pauses animated terminal text effects."));
+        reducedMotion.setTooltip(new Tooltip("Skips in-window transitions and pauses animated terminal text effects."));
         checkUpdates=new CheckBox("Check for updates at startup"); checkUpdates.setSelected(workspace.updateSettings().startup());
         ignored=workspace.updateSettings().ignoredVersion();
         channel.setValue(workspace.updateSettings().channel());
@@ -98,6 +94,15 @@ public final class Preferences {
         keyboard=new KeyboardEditor(workspace);
         profiles=new ProfilesEditor(workspace,workspace.active()==null ? workspace.lastProfile() : workspace.active().profile(),true,this::closeSettings);
         loadThemes();
+        flatThemes.addAll(a.flatThemes());
+        syncGradientCheck();
+        gradients.setTooltip(new Tooltip("Use subtle surface gradients for this application theme. Terminal ink stays unchanged."));
+        gradients.setOnAction(e -> {
+            if (theme.getValue() instanceof AppTheme selected) {
+                if (gradients.isSelected()) flatThemes.remove(selected); else flatThemes.add(selected);
+                edited(false);
+            }
+        });
         configureColorControls();
 
         scope.setItems(FXCollections.observableArrayList(workspace.profileList()));
@@ -112,52 +117,24 @@ public final class Preferences {
         scope.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) { loadDisplay(); refresh(); } });
         palette.valueProperty().addListener((obs,oldV,newV) -> {
             if (!loading && newV!=null && displayProfile!=null) {
-                loading=true;
-                try {
-                    if (CUSTOM_COLOR.equals(newV)) {
-                        String hex=customColors.computeIfAbsent(displayProfile,id -> DEFAULT_CUSTOM_COLOR);
-                        primaryColor.setValue(Profile.matchingPrimaryColor(hex).orElse(null));
-                        hueSlider.setValue(HostPalette.hueOfRgb(Profile.parseCustomColor(hex)));
-                    } else {
-                        primaryColor.setValue(null);
-                    }
-                } finally { loading=false; }
+                if (CUSTOM_COLOR.equals(newV)) {
+                    String hex=activeCustomHex();
+                    customColors.put(displayProfile,hex);
+                    primaryColor.setColor(hex);
+                }
                 displayChanged("appearance-palette");
                 refreshColorControls();
                 edited(false);
             }
         });
-        primaryColor.valueProperty().addListener((obs,oldV,newV) -> {
-            if (!loading && newV!=null && displayProfile!=null) {
-                customColors.put(displayProfile,newV.hex());
-                loading=true;
-                try {
-                    palette.setValue(CUSTOM_COLOR);
-                    hueSlider.setValue(HostPalette.hueOfRgb(newV.rgb()));
-                } finally { loading=false; }
-                displayChanged("appearance-palette");
-                refreshColorControls();
-                edited(false);
-            }
-        });
-        hueSlider.valueProperty().addListener((obs,oldV,newV) -> {
-            if (!loading && newV!=null && displayProfile!=null) {
-                String hex=Profile.colorFromHue(newV.doubleValue());
-                customColors.put(displayProfile,hex);
-                loading=true;
-                try {
-                    palette.setValue(CUSTOM_COLOR);
-                    primaryColor.setValue(Profile.matchingPrimaryColor(hex).orElse(null));
-                } finally { loading=false; }
-                displayChanged("appearance-palette");
-                refreshColorControls();
-                edited(false);
-            }
+        primaryColor.hue.pressedProperty().addListener((o,was,pressed) -> {
+            if (!pressed && editPending && !loading) apply();
         });
         effect.valueProperty().addListener((obs,oldV,newV) -> { if (!loading && newV!=null) { displayChanged("appearance-effect"); edited(false); } });
         theme.valueProperty().addListener((obs,oldV,newV) -> {
             if (!loading && newV!=null) {
                 paletteEnabled();
+                syncGradientCheck();
                 edited(false);
                 refreshColorControls();
                 workspace.tutorialAction("appearance-theme");
@@ -194,10 +171,21 @@ public final class Preferences {
 
         navigation.getStyleClass().add("fish-sidebar");
         navigation.getSelectionModel().setSelectionMode(SelectionMode.SINGLE);
-        navigation.setFixedCellSize(34);
+        navigation.setFixedCellSize(40);
         navigation.setMinWidth(184);
         navigation.setPrefWidth(192);
         navigation.setAccessibleText("Settings categories");
+        navigation.setCellFactory(l -> new ListCell<>() {
+            @Override protected void updateItem(String item,boolean empty) {
+                super.updateItem(item,empty);
+                setText(empty ? null : item);
+                setGraphic(empty || item==null ? null : Ui.icon(switch(item) {
+                    case "Appearance" -> "display"; case "Profiles" -> "layers"; case "Keyboard Shortcuts" -> "keyboard";
+                    case "General" -> "gear"; default -> "refresh";
+                },ColorRole.TEXT));
+                setGraphicTextGap(12);
+            }
+        });
         navigation.getSelectionModel().selectedItemProperty().addListener((obs,oldV,newV) -> {
             if (newV==null) return;
             pageMap.forEach((k,node) -> { boolean match=k.equals(newV); node.setVisible(match); node.setManaged(match); });
@@ -208,28 +196,27 @@ public final class Preferences {
             if (newV.equals("Updates")) workspace.updateController().ensureCheck();
         });
 
-        closeButton=Ui.button("Close",this::closeSettings);
-        closeButton.setDefaultButton(true);
         retryButton=Ui.button("Retry save",() -> { saveFailure=""; apply(); });
         reloadButton=Ui.button("Reload saved values",this::reload);
 
-        HBox buttons=new HBox(8,reloadButton,retryButton,closeButton);
-        buttons.setAlignment(Pos.CENTER_RIGHT);
-
         Ui.role(error,"muted");
         error.setAccessibleText("Settings save status");
-        VBox footer=new VBox(8,error,buttons);
+        error.setWrapText(true);
+        error.setMaxWidth(Double.MAX_VALUE);
+        HBox status=new HBox(8,Ui.icon("check",ColorRole.MUTED),error);
+        status.setAlignment(Pos.CENTER_LEFT);
+        VBox footer=new VBox(6,status,reloadButton,retryButton);
         footer.getStyleClass().add("fish-settings-footer");
 
+        VBox rail=new VBox(navigation,footer);
+        rail.setMinWidth(192); rail.setPrefWidth(192); rail.setMaxWidth(192);
+        VBox.setVgrow(navigation,Priority.ALWAYS);
         BorderPane content=new BorderPane();
-        content.setPadding(new Insets(16));
-        content.setLeft(navigation);
-        BorderPane.setMargin(navigation,new Insets(0,18,0,0));
+        content.getStyleClass().add("fish-settings");
+        content.setLeft(rail);
         content.setCenter(pages);
-        content.setBottom(footer);
-        BorderPane.setMargin(footer,new Insets(10,0,0,0));
 
-        Ui.decorateDialog(dialog,content,this::closeSettings,980,690);
+        Ui.decorateSettings(dialog,content,rail,this::closeSettings,980,714);
         dialog.setMinWidth(760);
         dialog.setMinHeight(540);
         dialog.setOnShown(e -> { navigation.requestFocus(); workspace.tutorialChanged(); });
@@ -267,9 +254,8 @@ public final class Preferences {
     public ComboBox<Object> themeCombo() { return theme; }
     public ComboBox<Profile> scopeCombo() { return scope; }
     public ComboBox<String> paletteCombo() { return palette; }
-    public ComboBox<Profile.PrimaryColor> primaryColorCombo() { return primaryColor; }
-    public Slider hueSlider() { return hueSlider; }
-    public StackPane hueBar() { return hueBar; }
+    public Slider primaryHue() { return primaryColor.hue; }
+    public TextField primaryHex() { return primaryColor.hex; }
     public ComboBox<String> effectCombo() { return effect; }
     public ComboBox<Appearance.CursorStyle> cursorStyleCombo() { return cursorStyle; }
     public ComboBox<String> familyCombo() { return family; }
@@ -279,10 +265,10 @@ public final class Preferences {
     public CheckBox paneOutlineCheck() { return pane; }
     public CheckBox tintCheck() { return tint; }
     public CheckBox reducedMotionCheck() { return reducedMotion; }
+    public CheckBox gradientCheck() { return gradients; }
     public Label errorLabel() { return error; }
     public Button reloadButton() { return reloadButton; }
     public Button retryButton() { return retryButton; }
-    public Button closeButton() { return closeButton; }
     public boolean hasConflict() { return conflict; }
     public String validationError() { return validation; }
 
@@ -389,7 +375,8 @@ public final class Preferences {
 
     private String activeCustomHex() {
         if (displayProfile!=null && customColors.containsKey(displayProfile)) return customColors.get(displayProfile);
-        return DEFAULT_CUSTOM_COLOR;
+        Display display=displays.get(displayProfile);
+        return Profile.formatCustomColor(HostPalette.primaryPreviewRgb(display==null ? Profile.THEMES.getFirst() : display.palette()));
     }
 
     private String effectivePaletteValue() {
@@ -415,33 +402,9 @@ public final class Preferences {
             @Override protected void updateItem(String item,boolean empty) {
                 super.updateItem(item,empty);
                 if (empty || item==null) { setText(null); setGraphic(null); return; }
-                String sampleTheme=CUSTOM_COLOR.equals(item) ? activeCustomHex() : item;
                 setText(item);
-                setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(sampleTheme),11));
+                setGraphic(CUSTOM_COLOR.equals(item) ? null : colorSwatch(HostPalette.primaryPreviewRgb(item),11));
                 setGraphicTextGap(8);
-            }
-        };
-    }
-
-    private ListCell<Profile.PrimaryColor> newPrimaryColorButtonCell() {
-        return new ListCell<>() {
-            @Override protected void updateItem(Profile.PrimaryColor item,boolean empty) {
-                super.updateItem(item,empty);
-                boolean customActive=CUSTOM_COLOR.equals(palette.getValue());
-                if (!customActive) {
-                    setText("Choose color...");
-                    setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(activeCustomHex()),12));
-                    setGraphicTextGap(8);
-                } else if (item!=null && !empty) {
-                    setText(item.name());
-                    setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(item.hex()),12));
-                    setGraphicTextGap(8);
-                } else {
-                    String hex=activeCustomHex();
-                    setText("Custom ("+hex+")");
-                    setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(hex),12));
-                    setGraphicTextGap(8);
-                }
             }
         };
     }
@@ -450,116 +413,34 @@ public final class Preferences {
         palette.setCellFactory(lv -> newPaletteCell());
         palette.setButtonCell(newPaletteCell());
 
-        primaryColor.setCellFactory(lv -> new ListCell<>() {
-            @Override protected void updateItem(Profile.PrimaryColor item,boolean empty) {
-                super.updateItem(item,empty);
-                if (empty || item==null) { setText(null); setGraphic(null); return; }
-                setText(item.name());
-                setGraphic(colorSwatch(HostPalette.primaryPreviewRgb(item.hex()),12));
-                setGraphicTextGap(8);
-            }
-        });
-        primaryColor.setButtonCell(newPrimaryColorButtonCell());
-        primaryColor.setTooltip(new Tooltip("Pick a primary color to automatically generate a balanced IBM-style palette for this profile."));
-
-        Region spectrum=new Region();
-        spectrum.setMinHeight(12);
-        spectrum.setPrefHeight(12);
-        spectrum.setMaxHeight(12);
-        spectrum.setMaxWidth(Double.MAX_VALUE);
-        spectrum.setStyle("-fx-background-color: linear-gradient(to right,"
-                +" #F25555 0%, #F29D38 11%, #E6D63A 19%, #4CD964 34%, #2DD4BF 47%,"
-                +" #38BDF8 56%, #5B8DEF 65%, #8B5CF6 76%, #EC4899 88%, #F25555 100%);"
-                +" -fx-background-radius: 6px; -fx-border-color: rgba(128,128,128,0.35); -fx-border-radius: 6px; -fx-border-width: 1px;");
-
-        hueThumb.setMinSize(16,16);
-        hueThumb.setPrefSize(16,16);
-        hueThumb.setMaxSize(16,16);
-        hueThumb.setMouseTransparent(true);
-        hueThumb.setEffect(new javafx.scene.effect.DropShadow(javafx.scene.effect.BlurType.GAUSSIAN,javafx.scene.paint.Color.rgb(0,0,0,0.40),4.0,0.0,0.0,1.0));
-        StackPane.setAlignment(hueThumb,Pos.CENTER_LEFT);
-
-        hueBar.getChildren().setAll(spectrum,hueThumb);
-        hueBar.setMinHeight(24);
-        hueBar.setPrefHeight(24);
-        hueBar.setMaxWidth(Double.MAX_VALUE);
-        hueBar.setAlignment(Pos.CENTER_LEFT);
-        hueBar.setCursor(javafx.scene.Cursor.HAND);
-        hueBar.setFocusTraversable(true);
-        hueBar.setAccessibleText("Primary color hue selector (0 to 360 degrees)");
-        Tooltip.install(hueBar,new Tooltip("Click or drag across the hue spectrum (or press Left/Right) to fine-tune the profile's primary color."));
-
-        java.util.function.DoubleConsumer pickAtX=x -> {
-            if (hueBar.isDisabled()) return;
-            double usable=Math.max(1.0,hueBar.getWidth()-16.0);
-            double ratio=Math.clamp((x-8.0)/usable,0.0,1.0);
-            hueSlider.setValue(Math.round(ratio*360.0));
-        };
-        hueBar.setOnMousePressed(e -> { hueBar.requestFocus(); pickAtX.accept(e.getX()); e.consume(); });
-        hueBar.setOnMouseDragged(e -> { pickAtX.accept(e.getX()); e.consume(); });
-        hueBar.setOnKeyPressed(e -> {
-            if (hueBar.isDisabled()) return;
-            double step=e.isShiftDown() ? 15.0 : 3.0;
-            switch (e.getCode()) {
-                case LEFT -> { hueSlider.setValue(Math.max(0.0,hueSlider.getValue()-step)); e.consume(); }
-                case RIGHT -> { hueSlider.setValue(Math.min(360.0,hueSlider.getValue()+step)); e.consume(); }
-                case HOME -> { hueSlider.setValue(0.0); e.consume(); }
-                case END -> { hueSlider.setValue(360.0); e.consume(); }
-                default -> {}
-            }
-        });
-        hueBar.widthProperty().addListener((obs,oldW,newW) -> updateHueThumbPosition());
-        hueBar.focusedProperty().addListener((obs,oldF,newF) -> updateHueThumbStyle());
-
-        hueBadge.setMinWidth(68);
-        hueBadge.setPrefWidth(68);
-        hueBadge.setAlignment(Pos.CENTER_RIGHT);
-        hueBadge.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11.5px;");
-        Ui.role(hueBadge,"muted");
-
-        palettePreviewMode.setStyle("-fx-font-size: 11px;");
-        Region spacer=new Region();
-        HBox.setHgrow(spacer,Priority.ALWAYS);
-        HBox tokens=new HBox(9,palettePreviewSamples);
-        tokens.setAlignment(Pos.CENTER_RIGHT);
-        for (Label sample:palettePreviewSamples) {
-            sample.setStyle("-fx-font-family: 'Consolas'; -fx-font-size: 11.5px; -fx-font-weight: bold;");
-        }
         palettePreviewStrip.setAlignment(Pos.CENTER_LEFT);
         palettePreviewStrip.setPadding(new Insets(4,10,4,10));
-        palettePreviewStrip.getChildren().setAll(palettePreviewMode,spacer,tokens);
-    }
-
-    private void updateHueThumbPosition() {
-        double usable=Math.max(0.0,hueBar.getWidth()-16.0);
-        double ratio=Math.clamp(hueSlider.getValue()/360.0,0.0,1.0);
-        hueThumb.setTranslateX(Math.rint(ratio*usable));
-    }
-
-    private void updateHueThumbStyle() {
-        int rgb=HostPalette.primaryPreviewRgb(activeCustomHex());
-        String ring=hueBar.isFocused() ? Ui.hex(ColorRole.FOCUS) : "#FFFFFF";
-        hueThumb.setStyle(String.format(Locale.ROOT,
-                "-fx-background-color: #%06X; -fx-background-radius: 8px; -fx-border-color: %s; -fx-border-radius: 8px; -fx-border-width: 2px;",
-                rgb&0xffffff,ring));
+        palettePreviewStrip.getChildren().setAll(palettePreviewSamples);
     }
 
     private void refreshColorControls() {
+        palette.setButtonCell(newPaletteCell());
+        if (CUSTOM_COLOR.equals(palette.getValue())) refreshInkPreview();
+    }
+
+    private void primaryChanged(String hex) {
+        if (loading || displayProfile==null || !CUSTOM_COLOR.equals(palette.getValue())) return;
+        customColors.put(displayProfile,hex);
+        refreshInkPreview();
+        workspace.tutorialAction("appearance-palette");
+        // The samples follow the pointer; coalesce profile writes during continuous drags.
+        edited(primaryColor.hue.isPressed());
+    }
+
+    private void refreshInkPreview() {
         String effective=effectivePaletteValue();
-        boolean isCustom=CUSTOM_COLOR.equals(palette.getValue());
-        hueBadge.setText(isCustom ? activeCustomHex() : effective);
-        updateHueThumbStyle();
-        updateHueThumbPosition();
 
         java.awt.Color[] slots=HostPalette.colors(effective);
         int bgRgb=Ui.color(ColorRole.HOST_0).getRGB()&0xffffff;
         int borderRgb=Ui.color(ColorRole.DIVIDER).getRGB()&0xffffff;
-        int mutedRgb=slots[8].getRGB()&0xffffff;
         palettePreviewStrip.setStyle(String.format(Locale.ROOT,
                 "-fx-background-color: #%06X; -fx-background-radius: 5px; -fx-border-color: #%06X; -fx-border-radius: 5px; -fx-border-width: 1px;",
                 bgRgb,borderRgb));
-        palettePreviewMode.setText(isCustom ? "Auto IBM palette" : "Active palette");
-        palettePreviewMode.setStyle(String.format(Locale.ROOT,"-fx-font-size: 11px; -fx-text-fill: #%06X;",mutedRgb));
         int[] sampleSlots={2,1,3,6,4};
         for (int i=0;i<sampleSlots.length;i++) {
             int sampleRgb=slots[sampleSlots[i]].getRGB()&0xffffff;
@@ -567,11 +448,6 @@ public final class Preferences {
                     "-fx-font-family: 'Consolas'; -fx-font-size: 11.5px; -fx-font-weight: bold; -fx-text-fill: #%06X;",
                     sampleRgb));
         }
-
-        // Refresh ComboBox button cells and prompt text so swatch colors and custom shades always display clearly
-        primaryColor.setPromptText(isCustom ? "Custom shade ("+activeCustomHex()+")" : "Choose color...");
-        palette.setButtonCell(newPaletteCell());
-        primaryColor.setButtonCell(newPrimaryColorButtonCell());
     }
 
     private void loadDisplay() {
@@ -587,13 +463,9 @@ public final class Preferences {
                     String hex=Profile.normalizeTheme(pal);
                     customColors.put(profile.id(),hex);
                     palette.setValue(CUSTOM_COLOR);
-                    primaryColor.setValue(Profile.matchingPrimaryColor(hex).orElse(null));
-                    hueSlider.setValue(HostPalette.hueOfRgb(Profile.parseCustomColor(hex)));
+                    primaryColor.setColor(hex);
                 } else {
-                    String remembered=customColors.computeIfAbsent(profile.id(),id -> DEFAULT_CUSTOM_COLOR);
                     palette.setValue(pal);
-                    primaryColor.setValue(null);
-                    hueSlider.setValue(HostPalette.hueOfRgb(Profile.parseCustomColor(remembered)));
                 }
                 effect.setValue(value.effect());
             }
@@ -612,20 +484,24 @@ public final class Preferences {
         boolean isCustom=theme.getValue() instanceof ColorTheme;
         palette.setDisable(isCustom);
         primaryColor.setDisable(isCustom);
-        hueBar.setDisable(isCustom);
-        hueSlider.setDisable(isCustom);
         palettePreviewStrip.setOpacity(isCustom ? 0.55 : 1.0);
         paletteStatus.setText(isCustom ? "This legacy custom application theme supplies host colors. Choose a built-in theme to use profile palettes or custom colors." : "");
         paletteStatus.setVisible(isCustom);
         paletteStatus.setManaged(isCustom);
     }
 
+    private void syncGradientCheck() {
+        gradients.setDisable(!(theme.getValue() instanceof AppTheme));
+        gradients.setSelected(!flatThemes.contains(theme.getValue()));
+    }
+
     private void addPage(String name,Region body,boolean scroll) {
         BorderPane page=new BorderPane();
         Label heading=new Label(name);
         heading.getStyleClass().add("fish-page-heading");
+        heading.setMaxWidth(Double.MAX_VALUE);
         page.setTop(heading);
-        BorderPane.setMargin(heading,new Insets(0,0,12,0));
+        body.getStyleClass().add("fish-settings-body");
         if (scroll) {
             ScrollPane sp=new ScrollPane(body);
             sp.setFitToWidth(true);
@@ -639,36 +515,36 @@ public final class Preferences {
     }
 
     public VBox appearancePage() {
-        VBox body=new VBox(9);
-        for (ComboBox<?> cb:List.of(theme,scope,palette,primaryColor,effect,cursorStyle,family)) cb.setMaxWidth(Double.MAX_VALUE);
+        VBox body=new VBox(8);
+        for (ComboBox<?> cb:List.of(theme,scope,palette,effect,cursorStyle,family)) cb.setMaxWidth(Double.MAX_VALUE);
 
         body.getChildren().add(section("Colors"));
-        body.getChildren().add(row("Application theme",theme));
+        HBox.setHgrow(theme,Priority.ALWAYS);
+        theme.setMinWidth(0);
+        gradients.setMinWidth(Region.USE_PREF_SIZE);
+        HBox themeRow=new HBox(12,theme,gradients);
+        themeRow.setAlignment(Pos.CENTER_LEFT);
+        body.getChildren().add(rowNode("Application theme",themeRow,theme));
         body.getChildren().add(row("Terminal profile",scope));
-        body.getChildren().add(note("Palette, primary color, and effect apply to the selected profile across its panes without interrupting your session."));
+        scope.setTooltip(new Tooltip("Palette, primary color, and effect apply to all panes using this profile."));
 
-        HBox.setHgrow(palette,Priority.ALWAYS);
-        HBox.setHgrow(primaryColor,Priority.ALWAYS);
-        palette.setPrefWidth(170);
-        primaryColor.setPrefWidth(190);
-        primaryColor.setAccessibleText("Primary color preset");
-        HBox paletteRow=new HBox(8,palette,primaryColor);
-        paletteRow.setAlignment(Pos.CENTER_LEFT);
-        body.getChildren().add(rowNode("Text palette",paletteRow,palette));
-
-        HBox.setHgrow(hueBar,Priority.ALWAYS);
-        HBox hueSliderRow=new HBox(8,hueBar,hueBadge);
-        hueSliderRow.setAlignment(Pos.CENTER_LEFT);
-        VBox hueSection=new VBox(6,hueSliderRow,palettePreviewStrip);
-        body.getChildren().add(rowNode("Color hue",hueSection,hueSlider));
+        body.getChildren().add(row("Text palette",palette));
+        primaryColor.setMaxWidth(Double.MAX_VALUE);
+        HBox colorInput=rowNode("Primary color",primaryColor,primaryColor.hue);
+        HBox.setHgrow(palettePreviewStrip,Priority.ALWAYS);
+        HBox colorPreview=rowNode("Terminal preview",new HBox(8,palettePreviewStrip,primaryColor.hex),palettePreviewStrip);
+        VBox customRow=new VBox(4,colorInput,colorPreview);
+        customRow.visibleProperty().bind(palette.valueProperty().isEqualTo(CUSTOM_COLOR));
+        customRow.managedProperty().bind(customRow.visibleProperty());
+        body.getChildren().add(customRow);
 
         body.getChildren().add(paletteStatus);
         body.getChildren().add(row("Text effect (opt-in)",effect));
         cursorStyle.setTooltip(new Tooltip("Replace mode uses an underline or outline; Insert fills the cell. Filled uses a block in both modes."));
         body.getChildren().add(row("Cursor style",cursorStyle));
 
-        targets.put("theme",theme); targets.put("palette",palette); targets.put("primary-color",primaryColor);
-        targets.put("hue",hueBar); targets.put("effect",effect); targets.put("scope",scope);
+        targets.put("theme",theme); targets.put("palette",palette); targets.put("primary-color",primaryColor.hue);
+        targets.put("effect",effect); targets.put("scope",scope);
 
         body.getChildren().add(section("Terminal font"));
         body.getChildren().add(row("Monospaced family",family));
@@ -702,11 +578,13 @@ public final class Preferences {
                 Ui.markInvalid(fontPath,true);
             }
         });
-        BorderPane sample=new BorderPane();
-        sample.setLeft(preview);
-        BorderPane.setAlignment(preview,Pos.CENTER_LEFT);
-        sample.setRight(checkFont);
-        body.getChildren().add(sample);
+        HBox sample=new HBox(10,preview,checkFont);
+        sample.setAlignment(Pos.CENTER_LEFT);
+        preview.setMinWidth(0);
+        preview.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(preview,Priority.ALWAYS);
+        checkFont.setMinWidth(Region.USE_PREF_SIZE);
+        body.getChildren().add(rowNode("Preview",sample,checkFont));
         Ui.role(fontStatus,"error");
         fontStatus.setVisible(false); fontStatus.setManaged(false);
         body.getChildren().add(fontStatus);
@@ -719,8 +597,15 @@ public final class Preferences {
         for (int group=0;group<2;group++) {
             VBox part=new VBox(7);
             int start=group*5;
-            for (int n=start;n<start+5;n++) part.getChildren().add(info.get(n));
-            if (group==1) part.getChildren().add(info.get(10));
+            CheckBox visibility=info.get(start);
+            part.getChildren().add(visibility);
+            VBox fields=new VBox(7);
+            fields.getChildren().addAll(info.subList(start+1,group==1 ? 11 : 5));
+            TitledPane disclosure=new TitledPane("Configure fields",fields);
+            disclosure.setAccessibleText((group==0 ? "Header" : "Footer")+" fields");
+            disclosure.setExpanded(false); disclosure.setAnimated(false);
+            disclosure.getStyleClass().add("fish-fields-disclosure");
+            part.getChildren().add(disclosure);
             Runnable dependencies=() -> {
                 for (int n=start+1;n<start+5;n++) info.get(n).setDisable(!info.get(start).isSelected());
                 if (start==5) info.get(10).setDisable(!info.get(5).isSelected());
@@ -739,7 +624,7 @@ public final class Preferences {
     }
 
     private VBox general() {
-        VBox body=new VBox(9);
+        VBox body=new VBox(8);
         body.getChildren().add(section("Startup"));
         body.getChildren().add(startup);
         targets.put("startup",startup);
@@ -895,7 +780,7 @@ public final class Preferences {
         return rowNode(title,input,input);
     }
 
-    private static HBox rowNode(String title,Node container,Control target) {
+    private static HBox rowNode(String title,Node container,Node target) {
         Label label=new Label(title);
         label.setLabelFor(target);
         label.setMinWidth(166);
@@ -907,15 +792,10 @@ public final class Preferences {
         return box;
     }
 
-    private static HBox section(String name) {
+    private static Label section(String name) {
         Label label=new Label(name);
         label.getStyleClass().add("fish-section-title");
-        Separator sep=new Separator();
-        HBox.setHgrow(sep,Priority.ALWAYS);
-        HBox box=new HBox(10,label,sep);
-        box.setAlignment(Pos.CENTER_LEFT);
-        box.setPadding(new Insets(10,0,2,0));
-        return box;
+        return label;
     }
 
     private static Label note(String value) {
@@ -937,7 +817,7 @@ public final class Preferences {
     }
 
     private Draft draft() {
-        return new Draft(startup.isSelected(),theme.getValue(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),
+        return new Draft(startup.isSelected(),theme.getValue(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),Set.copyOf(flatThemes),
                 new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                         info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                 cursorStyle.getValue(),
@@ -957,7 +837,7 @@ public final class Preferences {
     }
 
     private void refresh() {
-        if (saved==null || closeButton==null) return;
+        if (saved==null) return;
         boolean showRetry=!saveFailure.isEmpty();
         retryButton.setVisible(showRetry); retryButton.setManaged(showRetry);
         boolean showReload=conflict || !validation.isEmpty();
@@ -1000,7 +880,7 @@ public final class Preferences {
             Map<String,String> keys=saved.keys();
             try { keys=keyboard.draft(); }
             catch (IllegalArgumentException e) { validation=e.getMessage(); }
-            Draft next=new Draft(startup.isSelected(),theme.getValue(),font,window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),
+            Draft next=new Draft(startup.isSelected(),theme.getValue(),font,window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),Set.copyOf(flatThemes),
                     new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                             info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                     cursorStyle.getValue(),
@@ -1038,7 +918,7 @@ public final class Preferences {
             if (!next.equals(saved)) {
                 Appearance previous=workspace.appearanceSettings();
                 Appearance value=new Appearance(next.pane(),next.window(),next.info(),next.font(),
-                        next.theme() instanceof ColorTheme custom ? custom.name() : "",previous.themes(),previous.retiredShortcuts(),next.cursorStyle(),next.reducedMotion());
+                        next.theme() instanceof ColorTheme custom ? custom.name() : "",previous.themes(),previous.retiredShortcuts(),next.cursorStyle(),next.reducedMotion(),next.flatThemes());
                 workspace.beginSettings();
                 try {
                     if (!next.keys().equals(saved.keys())) workspace.applyShortcuts(next.keys());
@@ -1104,7 +984,8 @@ public final class Preferences {
             startup.setSelected(workspace.connectOnStartup()); window.setSelected(a.windowOutline()); pane.setSelected(a.outline());
             tint.setSelected(workspace.highlightActive()); reducedMotion.setSelected(a.reducedMotion()); checkUpdates.setSelected(workspace.updateSettings().startup());
             channel.setValue(workspace.updateSettings().channel()); ignored=workspace.updateSettings().ignoredVersion();
-            loadThemes(); family.setValue(a.font().family()); fontPath.setText(a.font().file());
+            loadThemes(); flatThemes.clear(); flatThemes.addAll(a.flatThemes()); syncGradientCheck();
+            family.setValue(a.font().family()); fontPath.setText(a.font().file());
             Ui.markInvalid(fontPath,false);
             Appearance.PaneInfo i=a.info();
             boolean[] flags={i.header(),i.profile(),i.connection(),i.host(),i.device(),i.footer(),i.status(),i.dimensions(),i.cursor(),i.insert(),i.footerDevice()};

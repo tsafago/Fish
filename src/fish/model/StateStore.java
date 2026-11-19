@@ -363,7 +363,7 @@ public final class StateStore implements AutoCloseable {
                 String old=shortcuts.remove("Search commands...");
                 if (!old.isBlank()) retired.add(old);
                 appearance=new Appearance(appearance.outline(),appearance.windowOutline(),appearance.info(),appearance.font(),appearance.selectedTheme(),
-                        appearance.themes(),retired,appearance.cursorStyle(),appearance.reducedMotion());
+                        appearance.themes(),retired,appearance.cursorStyle(),appearance.reducedMotion(),appearance.flatThemes());
                 notice("Commands window removed; its former shortcut is reserved until explicitly reassigned. All actions remain in menus/shortcuts.");
             }
             if (!usability) {
@@ -503,11 +503,13 @@ public final class StateStore implements AutoCloseable {
             boolean reducedMotion=Integer.parseInt(version)>=20
                     ? bool(p,"appearance.reducedMotion")
                     : (p.containsKey("appearance.reducedMotion") && bool(p,"appearance.reducedMotion"));
+            Set<AppTheme> flatThemes=EnumSet.noneOf(AppTheme.class);
+            for (String name:p.getProperty("appearance.flatThemes","").split(",")) if (!name.isEmpty()) flatThemes.add(AppTheme.valueOf(name));
             return new Appearance(bool(p,"appearance.outline"),Integer.parseInt(version)<7 || windowOutline,info,
                     new Appearance.FontChoice(required(p,"font.family"),required(p,"font.file")),
                     required(p,"appearance.selected"),themes,retired,Integer.parseInt(version)>=18
                             ? Appearance.CursorStyle.valueOf(required(p,"appearance.cursorStyle")) : Appearance.CursorStyle.IBM,
-                    reducedMotion);
+                    reducedMotion,flatThemes);
     }
 
     private static String required(Properties properties, String key) {
@@ -570,6 +572,7 @@ public final class StateStore implements AutoCloseable {
         properties.setProperty("appearance.outline",Boolean.toString(a.outline()));
         properties.setProperty("appearance.windowOutline",Boolean.toString(a.windowOutline()));
         properties.setProperty("appearance.reducedMotion",Boolean.toString(a.reducedMotion()));
+        properties.setProperty("appearance.flatThemes",String.join(",",a.flatThemes().stream().sorted().map(Enum::name).toList()));
         properties.setProperty("appearance.cursorStyle",a.cursorStyle().name());
         properties.setProperty("font.family",a.font().family()); properties.setProperty("font.file",a.font().file());
         properties.setProperty("appearance.selected",a.selectedTheme());

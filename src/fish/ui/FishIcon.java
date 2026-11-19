@@ -27,22 +27,22 @@ public final class FishIcon {
     public void paint(Graphics graphics,int x,int y) {
         Graphics2D g=(Graphics2D)graphics.create();
         try {
-            double scale=Math.min(width/64.0,height/48.0);
-            g.translate(x+(width-64*scale)/2,y+(height-48*scale)/2); g.scale(scale,scale);
+            double scale=Math.min(width/34.0,height/24.0);
+            g.translate(x+(width-34*scale)/2,y+(height-24*scale)/2); g.scale(scale,scale);
             draw(g);
         } finally { g.dispose(); }
     }
     private static void draw(Graphics2D g) {
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,RenderingHints.VALUE_ANTIALIAS_ON);
         Color[] colors={Ui.color(ColorRole.LOGO_1),Ui.color(ColorRole.LOGO_2),Ui.color(ColorRole.LOGO_3)};
-        g.setPaint(new LinearGradientPaint(4,24,58,24,new float[]{0,.5f,1},colors));
-        g.setStroke(new BasicStroke(3.4f,BasicStroke.CAP_BUTT,BasicStroke.JOIN_ROUND));
+        g.setPaint(new LinearGradientPaint(2,3,32,21,new float[]{0,.5f,1},colors));
+        g.setStroke(new BasicStroke(2.6f,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
         g.draw(OUTLINE);
     }
     private static Shape outline() {
         Path2D fish=new Path2D.Double();
-        fish.moveTo(4,6); fish.lineTo(40,42); fish.lineTo(58,24);
-        fish.lineTo(40,6); fish.lineTo(4,42);
+        fish.moveTo(32,5.45); fish.lineTo(13,21); fish.lineTo(2,12);
+        fish.lineTo(13,3); fish.lineTo(32,18.55);
         return fish;
     }
     public static Canvas canvas(double width,double height) {
@@ -54,19 +54,23 @@ public final class FishIcon {
         double w=canvas.getWidth(),h=canvas.getHeight();
         GraphicsContext gc=canvas.getGraphicsContext2D();
         gc.clearRect(0,0,w,h);
-        double scale=Math.min(w/64.0,h/48.0);
+        double scale=Math.min(w/34.0,h/24.0);
         gc.save();
-        gc.translate((w-64*scale)/2.0,(h-48*scale)/2.0);
+        gc.translate((w-34*scale)/2.0,(h-24*scale)/2.0);
         gc.scale(scale,scale);
-        gc.setStroke(new javafx.scene.paint.LinearGradient(4,24,58,24,false,CycleMethod.NO_CYCLE,
+        gc.setStroke(new javafx.scene.paint.LinearGradient(2,3,32,21,false,CycleMethod.NO_CYCLE,
                 new Stop(0,Ui.fxColor(ColorRole.LOGO_1)),
                 new Stop(0.5,Ui.fxColor(ColorRole.LOGO_2)),
                 new Stop(1,Ui.fxColor(ColorRole.LOGO_3))));
-        gc.setLineWidth(3.4);
-        gc.setLineCap(StrokeLineCap.BUTT);
+        gc.setLineWidth(2.6);
+        gc.setLineCap(StrokeLineCap.ROUND);
         gc.setLineJoin(StrokeLineJoin.ROUND);
         gc.beginPath();
-        gc.moveTo(4,6); gc.lineTo(40,42); gc.lineTo(58,24); gc.lineTo(40,6); gc.lineTo(4,42);
+        double[] xy=new double[6];
+        for (PathIterator it=OUTLINE.getPathIterator(null);!it.isDone();it.next()) {
+            if (it.currentSegment(xy)==PathIterator.SEG_MOVETO) gc.moveTo(xy[0],xy[1]);
+            else gc.lineTo(xy[0],xy[1]);
+        }
         gc.stroke();
         gc.restore();
     }

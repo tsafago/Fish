@@ -738,7 +738,7 @@
   "layoutGrammar": {
     "leaf": "L|{pane-uuid}|{profile-uuid}",
     "ratio": "Finite 0.05..0.95 at parse time; current layouts also require each pane's normalized width and height at least 60% of its balanced share. Structural changes reset balanced ratios. Three-strip root ratio measures its first share after both divider widths are excluded.",
-    "shape": "1 full; 2 equal-default halves, H or V; 3 equal-default rows/columns (first leaf then same-axis pair), or a half beside an opposite-axis pair, mirrored/rotated; 4 quadrants; 5-8 quadrants each splitting at most once into two. A quadrant grid has opposite-axis pairs under its root; each of four quadrant children is a leaf or one leaf pair. No deeper nesting. Centers swap. Whole-window edges arrange 2-3 panes; matching strip direction yields equal thirds, otherwise a half and pair. Quadrant edges fill available half-slots or swap/reorient existing slots without subdivision. UI drops require at least 70x70 logical pixels per pane.",
+    "shape": "1 full; 2 equal-default halves, H or V; 3 equal-default rows/columns (first leaf then same-axis pair), or a half beside an opposite-axis pair, mirrored/rotated; 4 quadrants or a side beside three perpendicular strips; 5-8 quadrants each splitting at most once into two. A quadrant grid has opposite-axis pairs under its root; each of four quadrant children is a leaf or one leaf pair. No deeper nesting. Centers swap. Whole-window edges arrange 2-4 panes. Quadrant edges fill available half-slots or swap/reorient existing slots without subdivision. UI drops require at least 70x70 logical pixels per pane.",
     "split": "H|{ratio}|{first}|{second} or V|{ratio}|{first}|{second}"
   },
   "maxBytes": 2000000,
@@ -902,6 +902,11 @@
         "OUTLINE",
         "FILLED"
       ]
+    },
+    "appearance.flatThemes": {
+      "constraints": "Optional comma-separated application theme names with surface gradients turned off. Empty enables gradients for all themes.",
+      "default": "",
+      "type": "string"
     },
     "appearance.outline": {
       "constraints": "Active-pane outline; shared internal edges have one owner.",
@@ -1677,7 +1682,7 @@
       "type": "integer"
     }
   },
-  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.10.1 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart), pane-size-relative per-pane zoom (100% auto fit), and per-profile #RRGGBB custom primary colors with automatic IBM 5250 palette synthesis, retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.",
+  "windowMigration": "Back up workspace.xml with ALL Fish windows closed before Fish 0.10.2 beta. Format 21 / recipe 3 adds per-layout autostart (savedLayout.{uuid}.autostart), pane-size-relative per-pane zoom (100% auto fit), and per-profile #RRGGBB custom primary colors with automatic IBM 5250 palette synthesis, retaining simple pane families, cursor preferences, and appearance.reducedMotion. Formats through 20 import without resetting preferences; through 17 gain IBM cursor. Unsupported format 1-16 geometry or extreme ratios normalize with a notice, retaining every pane/profile ID, saved-layout ID and display setting. Already supported shapes with reasonable intentional ratios remain; format-17/current invalid geometry is rejected. Do not relabel. Downgrade to Fish 0.8.0 or earlier requires the matching backup.",
   "windowPrefix": "window.{zero-based-index}.",
   "workspaceVersion": "21"
 }

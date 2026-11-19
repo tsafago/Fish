@@ -54,14 +54,21 @@ public final class RefinementSmoke {
 
         w.preferences("Appearance");
         Preferences colorPrefs=w.tutorialPreferences();
+        javafx.scene.Node colorRow=colorPrefs.primaryHue().getParent().getParent().getParent();
+        colorPrefs.paletteCombo().setValue(Profile.THEMES.getFirst());
+        check(!colorRow.isVisible() && !colorRow.isManaged(),"Named palettes do not show or reserve space for color editing.");
+        colorPrefs.paletteCombo().setValue(Preferences.CUSTOM_COLOR);
         FxTestSupport.layout(colorPrefs.dialog());
-        javafx.scene.layout.StackPane hueBar=colorPrefs.hueBar();
-        double barW=Math.max(120.0,hueBar.getWidth());
-        double clickX=8.0+0.60*Math.max(1.0,barW-16.0);
-        hueBar.fireEvent(new MouseEvent(MouseEvent.MOUSE_PRESSED,clickX,12,clickX,12,MouseButton.PRIMARY,1,false,false,false,false,true,false,false,true,false,false,null));
-        hueBar.fireEvent(new MouseEvent(MouseEvent.MOUSE_RELEASED,clickX,12,clickX,12,MouseButton.PRIMARY,1,false,false,false,false,false,false,false,true,false,false,null));
-        check(Profile.isCustomColor(w.active().profile().theme()) && Preferences.CUSTOM_COLOR.equals(colorPrefs.paletteCombo().getValue()),
-                "Clicking the rainbow hue bar selects a custom #RRGGBB primary color immediately: "+w.active().profile().theme());
+        Slider hue=colorPrefs.primaryHue();
+        check(colorRow.isVisible() && colorRow.isManaged() && hue.isFocusTraversable(),
+                "Custom color reveals a keyboard-accessible inline spectrum.");
+        hue.setValue(198);
+        String oldHex=colorPrefs.primaryHex().getText();
+        hue.fireEvent(new javafx.scene.input.KeyEvent(javafx.scene.input.KeyEvent.KEY_PRESSED,"","",
+                javafx.scene.input.KeyCode.RIGHT,false,false,false,false));
+        check(hue.getValue()>198 && !oldHex.equals(colorPrefs.primaryHex().getText())
+                && colorPrefs.primaryHex().getText().equals(w.active().profile().theme()),
+                "Right arrow fine-tunes the selected hue and updates profile ink.");
         UsabilityIterationSmoke.settle(() -> !colorPrefs.saving(),"Custom primary color autosave did not settle");
         colorPrefs.forceDispose();
     }

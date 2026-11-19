@@ -163,7 +163,7 @@ public final class KeyboardPreferencesSmoke {
         UsabilityIterationSmoke.settle(() -> !preferences.saving(),"Autosave did not settle");
         check(workspace.appearanceSettings().windowOutline()!=before && workspace.shortcutOverrides().get("Host F13").contains("ctrl F4"),
                 "Actual valid panes and keyboard controls apply without a button");
-        window.setSelected(before); button(dialog,"Close").fire();
+        window.setSelected(before); ((Button)dialog.getScene().lookup(".fish-window-close")).fire();
         UsabilityIterationSmoke.settle(preferences::ended,"Close did not flush valid changes");
         check(workspace.appearanceSettings().windowOutline()==before,"Close keeps automatically persisted edits");
 

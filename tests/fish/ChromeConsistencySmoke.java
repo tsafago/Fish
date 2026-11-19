@@ -127,10 +127,58 @@ public final class ChromeConsistencySmoke {
         w.appearanceSettings(saved.withTheme(synthetic.name(),List.of(synthetic)));
         w.preferences("Appearance");
         Preferences prefs=w.tutorialPreferences();
+        Stage settings=prefs.dialog();
+        FxTestSupport.layout(settings);
+        Region shellBody=(Region)settings.getScene().lookup(".fish-settings");
+        Region rail=(Region)shellBody.lookup(".fish-sidebar");
+        Region footer=(Region)shellBody.lookup(".fish-settings-footer");
+        double initialWidth=settings.getWidth();
+        for (double width:new double[]{settings.getMinWidth(),840,980,1280}) {
+            settings.setWidth(width);
+            FxTestSupport.layout(settings);
+            var first=rail.lookupAll(".list-cell").stream().filter(n -> n instanceof ListCell<?> cell
+                    && "Appearance".equals(cell.getItem())).findFirst().orElseThrow();
+            var category=FxTestSupport.boundsIn(first,shellBody);
+            var caption=FxTestSupport.boundsIn(settings.getScene().lookup(".fish-settings-header"),shellBody);
+            var surface=FxTestSupport.boundsIn(settings.getScene().lookup(".fish-settings-rail"),shellBody);
+            check(surface.y==caption.y && surface.getMaxX()==rail.getWidth()
+                    && surface.getMaxY()==shellBody.getHeight(),"Rail divider extends through the caption to the window top.");
+            var heading=FxTestSupport.boundsIn(shellBody.lookupAll(".fish-page-heading").stream()
+                    .filter(n -> n.getParent().isVisible()).findFirst().orElseThrow(),shellBody);
+            check(caption.getMaxY()<=heading.y && caption.getMaxY()<=category.y
+                    && Math.abs(heading.getCenterY()-category.getCenterY())<=2,
+                    "Rail and page start together below the caption: "+width+" "+category+" "+heading+" "+caption);
+            CheckBox gradients=prefs.gradientCheck();
+            var ink=(javafx.scene.text.Text)gradients.lookup(".text");
+            var button=FxTestSupport.boundsIn(gradients,shellBody);
+            var port=FxTestSupport.boundsIn(shellBody.lookup(".fish-settings-body").getParent(),shellBody);
+            check(gradients.getText().equals(ink.getText()) && button.getMaxX()<=port.getMaxX(),
+                    "Full gradient label fits on screen at "+width+": "+ink.getText());
+        }
+        settings.setWidth(initialWidth);
+        FxTestSupport.layout(settings);
+        var railBounds=FxTestSupport.boundsIn(rail,shellBody);
+        var footerBounds=FxTestSupport.boundsIn(footer,shellBody);
+        check(railBounds.x==0 && railBounds.y==0 && railBounds.y+railBounds.height==footerBounds.y
+                && footerBounds.x==0 && footerBounds.width==railBounds.width,
+                "The save status stays at the foot of the navigation rail.");
+        var fieldBounds=FxTestSupport.boundsIn(prefs.paletteCombo(),shellBody);
+        javafx.scene.Node ancestor=prefs.paletteCombo();
+        while (!(ancestor instanceof ScrollPane)) ancestor=ancestor.getParent();
+        var viewport=FxTestSupport.boundsIn(ancestor.lookup(".viewport"),shellBody);
+        check(viewport.getMaxX()-fieldBounds.getMaxX()>=12,
+                "Text palette ends inside the scrollbar gutter: viewport="+viewport+", field="+fieldBounds);
         @SuppressWarnings("unchecked") ComboBox<Object> themeCombo=(ComboBox<Object>)field(prefs,"theme");
         ComboBox<?> paletteCombo=(ComboBox<?>)field(prefs,"palette");
         themeCombo.setValue(AppTheme.Charcoal);
         check(!paletteCombo.isDisabled(),"Switching to a built-in theme immediately enables its dependent host-palette choice.");
+        prefs.gradientCheck().fire();
+        check(w.appearanceSettings().flatThemes().contains(AppTheme.Charcoal),"Gradient choice applies to this theme.");
+        themeCombo.setValue(AppTheme.Paper);
+        check(prefs.gradientCheck().isSelected(),"Another theme still uses gradients.");
+        themeCombo.setValue(AppTheme.Charcoal);
+        check(!prefs.gradientCheck().isSelected(),"Switching back restores the flat preference.");
+        prefs.gradientCheck().fire();
         themeCombo.setValue(synthetic);
         check(paletteCombo.isDisabled(),"Switching to a custom theme immediately disables the superseded profile palette.");
         themeCombo.setValue(AppTheme.Charcoal);

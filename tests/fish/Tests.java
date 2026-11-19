@@ -55,7 +55,7 @@ public final class Tests {
             themesAndCommands();
             core();
             effectRendering();
-            if (!Arrays.asList(args).contains("--core-only")) { credentials(); desktop(); }
+            if (!Arrays.asList(args).contains("--core-only")) { credentials(); desktop(Arrays.asList(args).contains("--desktop-robot")); }
             check(asynchronousFailure == null,"No uncaught FX or background-thread errors.");
             System.out.println("PASS - " + checks + " checks"+(args.length>0 ? " (non-interactive fixtures)." : ", including credentials and live desktop."));
             Ui.finishTestRun();
@@ -549,7 +549,7 @@ public final class Tests {
         check(credentials.read(profile).isEmpty(),"Forgetting a password removes the OS credential.");
         System.out.println("PASS real Windows Credential Manager round trip");
     }
-    private static void desktop() throws Exception {
+    private static void desktop(boolean exclusiveDesktop) throws Exception {
         Path directory = Files.createTempDirectory(Path.of("build"),"desktop-test-");
         DemoHost host = new DemoHost();
         StateStore store = new StateStore(directory);
@@ -557,7 +557,7 @@ public final class Tests {
         Workspace workspace = edt(() -> {
             Workspace window = new Workspace(store,Main.demoState(host.port()),Path.of("scripts").resolve("credential-store.ps1"),true);
             window.onClosed(closed::countDown);
-            window.stage().setAlwaysOnTop(true);
+            if (exclusiveDesktop) window.stage().setAlwaysOnTop(true);
             window.setVisible(true); window.connectAll();
             return window;
         });
@@ -572,29 +572,31 @@ public final class Tests {
                 workspace.activate(workspace.sessionPanes().get(0)); workspace.active().focusTerminal();
                 return null;
             });
-            Robot robot = new Robot();
-            robot.setAutoDelay(25);
-            Point header = edt(() -> {
-                Bounds b = workspace.active().localToScreen(workspace.active().getBoundsInLocal());
-                return new Point((int)Math.round(b.getMinX()),(int)Math.round(b.getMinY()));
-            });
-            robot.mouseMove(header.x + 20,header.y + 12);
-            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK); robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            Robot robot=exclusiveDesktop ? new Robot() : null;
+            if (robot!=null) {
+                robot.setAutoDelay(25);
+                Point header=edt(() -> {
+                    Bounds b=workspace.active().localToScreen(workspace.active().getBoundsInLocal());
+                    return new Point((int)Math.round(b.getMinX())+20,(int)Math.round(b.getMinY())+12);
+                });
+                robot.mouseMove(header.x,header.y);
+                robot.mousePress(InputEvent.BUTTON1_DOWN_MASK); robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+                robot.waitForIdle();
+            }
             edt(() -> { workspace.active().focusTerminal(); return null; });
-            robot.waitForIdle();
             await(() -> edtBool(() -> workspace.scene().getFocusOwner() == workspace.active().view()),
                     3000,"JavaFX scene gives the target terminal actual keyboard focus.");
             int inputPosition = edt(() -> workspace.active().screen().getCurrentPos() - 1);
-            robot.keyPress(KeyEvent.VK_7); robot.keyRelease(KeyEvent.VK_7);
-            robot.waitForIdle();
-            Thread.sleep(60);
+            if (robot!=null) { robot.keyPress(KeyEvent.VK_7); robot.keyRelease(KeyEvent.VK_7); robot.waitForIdle(); }
+            else edt(() -> {
+                workspace.scene().getFocusOwner().fireEvent(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_TYPED,"7","7",KeyCode.UNDEFINED,false,false,false,false));
+                return null;
+            });
+            await(() -> edtBool(() -> workspace.active().screen().getScreenAsChars()[inputPosition]=='7'),3000,
+                    "Typing at the focused control reaches the host field.");
             edt(() -> {
                 Screen5250 screen = workspace.active().screen();
-                if (screen.getScreenAsChars()[inputPosition] != '7') {
-                    // If OS foreground policy blocked synthetic Robot focus in CI/background, dispatch through JavaFX scene directly:
-                    workspace.active().view().fireEvent(new javafx.scene.input.KeyEvent(
-                            javafx.scene.input.KeyEvent.KEY_TYPED,"7","7",KeyCode.UNDEFINED,false,false,false,false));
-                }
                 check(screen.getScreenAsChars()[inputPosition] == '7' && screen.getCurrentPos() - 1 == inputPosition + 1,
                         "Keyboard input reaches cell " + inputPosition + " and advances the cursor (actual character "
                                 + (int)screen.getScreenAsChars()[inputPosition] + ", cursor " + screen.getCurrentPos() + ").");

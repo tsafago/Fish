@@ -173,6 +173,17 @@ public final class DpiAndLatencySmoke {
                     int sepY = (int) Math.round(bs.getCenterY() * scale);
                     assertSinglePixelVerticalTransition(snap, sepX, sepY,
                             "WindowChrome separator #" + i + " (" + label + "@" + scale + "x)");
+                    Button add=(Button)w.chrome().lookup(".fish-chrome-pill-add");
+                    add.arm();
+                    try {
+                        BufferedImage armed=FxTestSupport.snapshot(w,scale);
+                        int focus=Ui.color(ColorRole.FOCUS).getRGB();
+                        check(closeRgb(armed.getRGB(sepX,sepY),focus,4)
+                                        && !closeRgb(armed.getRGB(sepX-1,sepY),focus,4)
+                                        && !closeRgb(armed.getRGB(sepX+1,sepY),focus,4)
+                                        && bs.equals(bar.localToScene(bar.getBoundsInLocal())),
+                                "Split pill highlights exactly its existing join pixel without moving controls: "+label+"@"+scale);
+                    } finally { add.disarm(); }
                 }
 
                 // 3. WorkspaceSplit horizontal and vertical dividers: strictly 1 physical pixel, zero 6px trench, zero parallel double lines.
@@ -205,20 +216,18 @@ public final class DpiAndLatencySmoke {
                     }
                 }
 
-                // 4. Every SessionPane header bottom line and footer top line: strictly 1 physical pixel.
+                // Pane information flows into the terminal without a divider stripe.
                 for (int idx = 0; idx < w.sessionPanes().size(); idx++) {
                     SessionPane pane = w.sessionPanes().get(idx);
-                    Region hLine = (Region) FxTestSupport.field(pane, "headerLine");
-                    Region fLine = (Region) FxTestSupport.field(pane, "footerLine");
+                    Region hLine = (Region) FxTestSupport.field(pane, "header");
+                    Region fLine = (Region) FxTestSupport.field(pane, "footer");
                     Bounds hb = hLine.localToScene(hLine.getBoundsInLocal());
                     Bounds fb = fLine.localToScene(fLine.getBoundsInLocal());
                     int clearX = (int) Math.round((hb.getMinX() + hb.getWidth() * 0.62) * scale);
-                    int hy = (int) Math.round(hb.getMinY() * scale);
+                    int hy = (int) Math.round(hb.getMaxY() * scale);
                     int fy = (int) Math.round(fb.getMinY() * scale);
-                    assertSinglePixelHorizontalTransition(snap, clearX, hy,
-                            "Pane #" + idx + " header bottom hairline (" + label + "@" + scale + "x)");
-                    assertSinglePixelHorizontalTransition(snap, clearX, fy,
-                            "Pane #" + idx + " footer top hairline (" + label + "@" + scale + "x)");
+                    for (int y:new int[]{hy-1,fy}) check((snap.getRGB(clearX,y)&0xffffff)!=(Ui.LINE.getRGB()&0xffffff),
+                            "No header/footer divider on pane "+idx+" at "+scale);
                 }
 
                 // 5. Outer window outline when enabled vs disabled with active pane outline: max 1 physical pixel, never doubled.
@@ -942,6 +951,9 @@ public final class DpiAndLatencySmoke {
             popup.show(w.stage(), w.stage().getX() + 80, w.stage().getY() + 80);
             try {
                 Scene popScene = popup.getScene();
+                check(popScene.getRoot().getOpacity()==1 && popScene.getRoot().getTranslateY()==0
+                        && popScene.getStylesheets().contains(Ui.stylesheetForScale(Ui.scaleFor(popScene))),
+                        "The first menu frame is themed and fully visible, without a post-show fade.");
                 popScene.getRoot().applyCss();
                 popScene.getRoot().layout();
                 List<Node> accelNodes = new ArrayList<>(popScene.getRoot().lookupAll(".accelerator-text"));

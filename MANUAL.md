@@ -1,8 +1,10 @@
 # Fish manual
 
-Fish 0.10.1 BETA - unsigned experimental prerelease, including spatial left-to-right/top-to-bottom pane traversal, per-profile primary color & hue IBM palette synthesis, viewport-clipped per-pane `100% (auto)` zoom, wheel bindings, per-layout autostart, Kiosk mode, Reset callout, startup factory reset, clean uninstall, and system-wide installation.
+Fish 0.10.2 BETA is an unsigned experimental prerelease. It updates Settings,
+dialogs and setup, and lets a quarter pane take a whole side of the window.
 Earlier images/releases remain unchanged. This build writes a format-21 workspace;
-close all Fish windows and back up workspace.xml before first launch.
+close all Fish windows and back up workspace.xml before first launch. Use the
+backup to return to 0.10.1 if you saved the new four-pane arrangement.
 
 Open the single settings dialog through **Edit > Settings...** or **Ctrl+,**.
 “Settings” paths below refer to that same flat indexed dialog. The **profile / +**
@@ -46,9 +48,9 @@ does not nag on the next launch; replay remains available.
 
 Fish targets Windows 10/11 x64. No separate Java installation is required.
 
-The public [v0.10.1 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.1) includes Fish-0.10.1-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user by default (no administrator rights needed), or system-wide into C:\Program Files\Fish when **Install for all users (requires Administrator)** is checked, creating Start menu/desktop shortcuts and bundling the runtime.
+The public [v0.10.2 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.2) includes Fish-0.10.2-setup.exe, the portable ZIP, complete matching source/licenses and SHA256SUMS.txt. No GitHub account is needed. Keep one release's assets/checksums together. The compact dark native setup installs for the current Windows user by default (no administrator rights needed), or system-wide into C:\Program Files\Fish when **Install for all users (requires Administrator)** is checked, creating Start menu/desktop shortcuts and bundling the runtime.
 
-Alternatively, extract the matching Fish-0.10.1-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
+Alternatively, extract the matching Fish-0.10.2-windows-x64.zip to a writable folder and run Fish\Fish.exe. Do not move Fish.exe out of that folder: its app and runtime directories are required.
 
 For SmartScreen-free per-user installation without administrator privileges, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\Install-Fish.ps1` from a portable folder or release directory (or choose **Edit > Settings > General > Install for current user...** directly inside a portable Fish launch). For system-wide installation into `%ProgramFiles%\Fish`, pass `-AllUsers` (or choose **Install system-wide (Administrator)...** in Settings > General). Uninstallation (`Uninstall-Fish.ps1` or Windows Settings > Apps) removes the installation and deletes Fish configuration (`%APPDATA%\Fish`), Startup layout shortcuts, and stored `Fish/*` Windows Credential Manager entries.
 
@@ -64,15 +66,15 @@ The script obtains checksum-pinned portable JDK 25, OpenJFX 25, Zig and WiX tool
 
 The first build needs internet access and approximately 2 GB of free space for tools, caches, intermediate files and packages. Windows PowerShell 5.1 and Windows' curl are used. The pinned source/build tools are listed in tools.psd1.
 
-Default build outputs use 0.10.1 names. The final side-by-side image is at dist\Fish-0.10.1\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
+Default build outputs use 0.10.2 names. The final side-by-side image is at dist\Fish-0.10.2\Fish\Fish.exe, with installer, portable ZIP, source and checksums. The new version prevents a launch from silently forwarding to older local code. Close all older windows before using the same workspace; earlier review images remain intact.
 
 To build and open the installer in one step, run Setup-Fish.cmd -Install. For advanced use, build.ps1 accepts Build, Maintenance, Smoke, Check, Test, Package, Installer, Run and Demo. Maintenance uses isolated data and never-shown windows for profile/update/reset checks; it does not install, authenticate or use the shared clipboard. The Test task uses the physical desktop; do not run it while someone is working.
 
 Downloaded build tools are not application runtime dependencies. Once packaged, Fish runs with its included Java runtime and native Windows frame bridge.
 
 For a side-by-side build while an older image is running, use
-`.\build.ps1 Package -ImageDirectory dist\Fish-0.10.1\Fish`, then
-`.\build.ps1 Installer -ImageDirectory dist\Fish-0.10.1\Fish`. The final directory
+`.\build.ps1 Package -ImageDirectory dist\Fish-0.10.2\Fish`, then
+`.\build.ps1 Installer -ImageDirectory dist\Fish-0.10.2\Fish`. The final directory
 must be named Fish. Do not move or replace a running app's files.
 
 ## Upgrading, uninstalling and backups
@@ -117,7 +119,13 @@ Only the exact release's Windows x64 installer and SHA256SUMS are downloaded. Fi
 
 Installed mode updates the existing registered per-user installation. Portable mode deliberately does not replace portable files: setup installs/updates a per-user copy and opens that installed copy using the same workspace directory. The old portable directory remains unchanged. Source/java launches cannot use the packaged self-update launcher; use the downloaded installer manually. Fish 0.7.0 and earlier require a manual first upgrade.
 
-After a successful app-triggered update, native setup verifies the installed executable/version, reopens Fish once with the same workspace directory, then closes itself. Standalone installs retain the Open Fish option. Cancellation, install failure, required reboot and reopen failure keep honest status/recovery instead of auto-closing or pretending success. Launch uses only the verified installation's fixed Fish.exe, never a configurable executable. The verified downloaded setup may remain in the OS temporary directory for recovery; it contains no user state. Live installed upgrade/relaunch acceptance is not established by injected-result/native diagnostics.
+An app-triggered update shows a progress window, not the installer options. In both windows the large fish shows progress and the status text names the current step. After a successful update, setup verifies the installed executable/version, opens Fish once as a standard user with the same workspace directory, and closes. Fresh installs close on success and honor **Open Fish when finished**. **Installation options** contains the folder and all-users setting. Cancellation of UAC, install failure, a required reboot or a failure to reopen leaves the window available with recovery information. Launch uses only the installation's fixed `Fish.exe`. The verified downloaded setup may remain in the OS temporary directory for recovery; it contains no user state.
+
+The fish fills as setup reaches each step. It holds steady while Windows Installer is working rather than guessing a completion percentage. With Windows animation effects turned off, it changes directly to each step.
+
+The live setup window uses the launch monitor's Windows display scale and rescales its text and controls when moved between monitors. Offscreen `--render-preview` images use a fixed 96 DPI for comparison; they do not show the window's physical pixel size on a 4K monitor.
+
+To try the native windows without installing, run setup with `--preview-installer`, `--preview-update` or `--preview-update-error`; optionally add `light` or `dark`. These interactive modes simulate the work, including Retry, without changing files or the registry, requesting elevation or opening Fish. For an offscreen snapshot, `--render-preview "new.bmp" update light` writes only that new image; available views are `installer`, `options`, `update-start` and `update`. Preview tests do not exercise a live MSI upgrade or UAC relaunch.
 
 ## Factory defaults
 
@@ -145,11 +153,11 @@ Fish supports one to eight independent sessions per window. Each connected pane 
 
 Choose a profile in the titlebar, then press + (Ctrl+N) to add and immediately connect it. Changing that selection alone does not affect a session. The choice is saved per window and follows shared profile renames/order changes. A lone never-used offline tile is reused; a failed, used or explicitly disconnected tile is not replaced by a later add. Adds use simple balanced shapes: one full pane; two halves; three as a half and pair; four quadrants; then split the active or next unsplit quadrant once, never more deeply. A fourth pane after three strips reflows into quadrants. Adding is disabled at eight with no ninth socket.
 
-With two/three panes, drag a header to the window's outer edge for whole-window placement. A full-height left pane dragged to the right moves intact, keeping the opposite stacked pair together on the left; top/bottom forms work the same way. Extending two aligned rows/columns at the whole-window bottom/right makes three equal full-width/full-height strips, not a local nested split. Inner pane edges make a half and pair or rebalance thirds. At four to eight panes, edges operate on quadrant slots: fill an available half-slot or swap/reorient existing slots; no extra subdivision. Centers swap panes without changing divider sizes.
+With two to four panes, drag a header into the window's outer band for whole-window placement. With three, a full-height pane can trade sides with a stacked pair, or extend two aligned panes into three equal rows or columns. With four, a quarter can take the entire left, right, top or bottom side, with the other three stacked opposite it. Move inward until the preview changes from Window to Pane for a local placement. With five to eight panes, edges operate on quadrant slots: fill an available half-slot or swap/reorient existing slots. Centers always swap panes without changing divider sizes.
 
 A shaded region and outlines show the actual resulting geometry before release, labeled Window or Pane. Invalid/too-small/outside/self placements have no accepted preview; Escape cancels. Panes > Arrange pane exposes the same target-area and direction choices from the keyboard. Swap panes retains direct swaps; Undo pane arrangement restores up to 20 moves without reconnecting. Add/remove clears incompatible undo history.
 
-The only families are one full, two halves, three equal strips or a half and pair (all rotations/mirrors), four quadrants, and five to eight with each quadrant split once into two. Structural changes rebalance sizes. Removing a pane may fill its empty quadrant from the nearest split quadrant, retaining all other live sessions. Reasonable intentional divider resizing persists between structural moves; extreme slivers are refused. Drag a divider or use Decrease / Increase divider. Drop candidates require 70x70 logical pixels per pane; enlarge the window if there is not enough room. Width/height rounding for equal thirds differs by at most one logical pixel.
+The families are one full pane, two halves, three equal strips or a half and pair, four quadrants or a side and three, and five to eight with each quadrant split at most once into two. Adding a fifth pane returns to the quadrant grid. Structural changes rebalance sizes. Removing a pane may fill its empty quadrant from the nearest split quadrant, retaining all other live sessions. Reasonable intentional divider resizing persists between structural moves; extreme slivers are refused. Drag a divider or use Decrease / Increase divider. Drop candidates require 70x70 logical pixels per pane; enlarge the window if there is not enough room. Width/height rounding for equal thirds differs by at most one logical pixel.
 
 If headers are hidden, drag near the pane's top at the X overlay's height to arrange or swap. This invisible strip takes no layout space and excludes close, Reset and other controls. Selection and field input below it remain normal; Alt+drag there is an alternative gesture. The terminal context menu and Panes menu retain pane actions.
 
@@ -489,19 +497,19 @@ Settings > Appearance changes the complete application theme: Charcoal, Graphite
 
 Application themes are independent of host palettes. OLED themes use true-black terminal and chrome surfaces. High-contrast choices favor explicit boundaries and strong foreground contrast; Windows' own accessibility settings may also affect system-owned menus and installers.
 
-Settings > Appearance controls whole-pane tint, active-pane outline, the separate default-on whole-window outline, and Reduce motion. When Reduce motion is off (default), menus, popups, dialogs and transient notices use subtle sub-90 ms transitions while panes and dividers remain instantaneous; enabling Reduce motion disables UI transitions and pauses Flux animation. Valid changes apply/save automatically; Close keeps them. All enabled outlines use the shared one-physical-pixel Divider color; shared dividers/titlebar edges are never duplicated by a pane outline. Focusing a pane never changes its layout insets. Pane close is independent of every header information choice: with no header content it becomes an upper-right overlay, without reserving space or overlapping Reset.
+Settings > Appearance controls whole-pane tint, active-pane outline, the separate default-on whole-window outline, and Reduce motion. Fish menus and dialogs open already themed, without a fade. Reduce motion also disables in-window transitions and pauses Flux animation. Valid changes apply/save automatically; Close keeps them. All enabled outlines use the shared one-physical-pixel Divider color; shared dividers/titlebar edges are never duplicated by a pane outline. Focusing a pane never changes its layout insets. Pane close is independent of every header information choice: with no header content it becomes an upper-right overlay, without reserving space or overlapping Reset.
 
 Settings theme choices apply/save automatically. Configured direct preset shortcuts and the logo's Flux action remain immediate. Neither reconnects sessions or alters host dimensions.
 
 ## Per-profile primary color and automatic IBM palettes
 
-Beside **Text palette** in **Settings > Appearance**, choose any preset from the primary-color dropdown (such as Classic Green, Emerald, Mint, Teal, Cyan, Sky Blue, Ocean Blue, Royal Blue, Indigo, Violet, Purple, Magenta, Pink, Rose, Crimson, Coral, Orange, Amber, Gold, Lime, or Ice Silver) or click/drag across the 360-degree **Color hue** spectrum bar beneath it.
+In **Settings > Appearance**, choose a **Terminal profile**. Under **Text palette**, pick a built-in palette or choose **Custom color**. Click or drag along the full-width **Primary color** spectrum; the arrow keys fine-tune the hue. For an exact shade, enter six hex digits beside **Terminal preview**. **Surface gradients** applies only to the selected application theme and never changes terminal ink. Expand **Configure fields** to choose individual header or footer items.
 
-Choosing a preset or hue switches that profile's **Text palette** to **Custom color**, stores its canonical `#RRGGBB` primary color on the profile (`profile.<uuid>.theme`), and automatically synthesizes a balanced 16-slot IBM-style 5250 palette:
+Choosing a custom color stores its canonical `#RRGGBB` value on the profile (`profile.<uuid>.theme`) and automatically generates a balanced 16-slot IBM-style 5250 palette:
 
 - **Automatic dark/light contrast**: Primary text (`slot 2`) and bright/intense primary text (`slot 10`) are perceptually tuned for crisp WCAG readability on both dark (`Charcoal`, `OLED`, `Midnight`) and light (`Light`, `Paper`, `Eye Saver`) application themes, lifting deep blues/indigos on dark surfaces and darkening bright hues on light surfaces.
 - **Automatic collision-free IBM accents**: Standard IBM secondary colors (Blue headers/F-keys, Cyan subfile accents, Yellow warnings, Magenta indicators, and Red errors) remain familiar—and whenever your chosen primary hue comes close to one of those secondary hues (for example, choosing a Crimson, Royal Blue, Cyan, or Amber primary), Fish automatically shifts the colliding secondary slot to a clean, distinct hue so headers, warnings, and especially Red error messages never blend into regular text.
-- **Live preview & built-in palettes**: The compact **Auto IBM palette** strip previews `Primary`, `Header`, `Accent`, `Warn`, and `Error` live on the current terminal background. Switching **Text palette** back to any built-in preset (`Phosphor`, `IBM vivid`, `Amber`, etc.) restores that preset immediately while remembering your last custom shade for the session. Legacy workspaces containing saved custom `ColorTheme` entries remain readable; selecting any built-in **Application theme** re-enables profile palettes and custom primary colors.
+- **Terminal preview** shows `Primary`, `Header`, `Accent`, `Warn`, and `Error` as they will appear on the terminal background. Switching **Text palette** back to a built-in palette restores it immediately. While Settings remains open, returning to **Custom color** restores that profile's last custom shade. For legacy workspaces with a custom application theme, choose a built-in **Application theme** to enable per-profile palettes.
 
 ## Terminal fonts and local custom fonts
 

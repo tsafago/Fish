@@ -2,7 +2,7 @@
 
 ## Start here
 
-Fish 0.10.1 beta exposes its complete local configuration without an AI service, network
+Fish 0.10.2 beta exposes its complete local configuration without an AI service, network
 API, special agent or MCP server. An ordinary local tool can export an XML snapshot,
 edit entries, validate it and apply it while Fish is closed. **Never generate a
 partial workspace or replace settings with defaults to fix a parse error.**
@@ -180,7 +180,9 @@ by default. The strip root's ratio excludes both physical divider widths.
 Structural adds/moves equalize affected arrangements. Reasonable intentional
 ratios persist between moves; every pane's normalized width/height must remain
 at least 60% of its balanced share. UI placements also require 70x70 logical
-pixels. Whole-window edges arrange two/three panes; quadrant edges at four/eight
+pixels. Whole-window edges arrange two/three panes; in this preview a four-pane
+root may also pair a single side with three perpendicular strips. Older Fish
+builds do not recognize that shape. At five to eight panes quadrant edges
 fill half-slots or swap/reorient existing slots, never nest further. Centers swap.
 Unsupported format-1..16 geometry/extreme ratios normalize with a notice while
 retaining every pane/profile ID, saved-layout UUID and fit/zoom state. Supported

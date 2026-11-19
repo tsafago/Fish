@@ -57,7 +57,13 @@ public final class SessionPane extends BorderPane {
             body.resizeRelocate(0,0,w,h);
             double closeH=Math.max(24,close.prefHeight(-1));
             double closeW=Math.max(25,close.prefWidth(-1));
-            dragZone.resizeRelocate(0,0,Math.max(0,w-(close.getParent()==this && close.isVisible() ? closeW : 0)),Math.min(h,closeH));
+            // Only grow into unused terminal margin, never further over host input.
+            double dragH=closeH+4;
+            if (connected()) {
+                Point2D first=view.localToScene(0,view.gridTop());
+                if (first!=null) dragH=Math.clamp(sceneToLocal(first).getY(),closeH,dragH);
+            }
+            dragZone.resizeRelocate(0,0,Math.max(0,w-(close.getParent()==this && close.isVisible() ? closeW : 0)),Math.min(h,dragH));
             if (close.getParent()==this && close.isVisible()) {
                 close.resizeRelocate(Math.max(0,w-closeW),0,Math.min(closeW,w),closeH);
             }
@@ -101,7 +107,6 @@ public final class SessionPane extends BorderPane {
             }
         }
     };
-    private final Region headerLine=new Region(),footerLine=new Region();
     private final Region outlineLeft=new Region(),outlineRight=new Region(),outlineBottom=new Region();
     private final Tooltip closeTooltip=new Tooltip("Close and disconnect; keep the last pane");
     private final Tooltip resetTooltip=new Tooltip("Recover this input error without sending Enter (default key: Ctrl+R)");
@@ -149,7 +154,7 @@ public final class SessionPane extends BorderPane {
         setSnapToPixel(true);
         setAccessibleText(profile.name());
 
-        for (Region edge:List.of(headerLine,footerLine,outlineLeft,outlineRight,outlineBottom)) {
+        for (Region edge:List.of(outlineLeft,outlineRight,outlineBottom)) {
             edge.setManaged(false);
             edge.setMouseTransparent(true);
             edge.setSnapToPixel(false);
@@ -276,7 +281,7 @@ public final class SessionPane extends BorderPane {
         stage.widthProperty().addListener((o,a,b) -> onStageGeometryChanged());
         stage.heightProperty().addListener((o,a,b) -> onStageGeometryChanged());
         setCenter(stage);
-        getChildren().addAll(headerLine,footerLine,outlineLeft,outlineRight,outlineBottom);
+        getChildren().addAll(outlineLeft,outlineRight,outlineBottom);
 
         view.setFit(profile.zoom()==1);
         installDrag();
@@ -318,7 +323,6 @@ public final class SessionPane extends BorderPane {
         stage.resizeRelocate(0,topH,w,Math.max(0,botY-topH));
         disableScrollBitmapCache(scroll);
         view.snapToDeviceGridNow();
-        layoutBarLines(s);
         layoutActiveOutline(s);
     }
 
@@ -327,40 +331,6 @@ public final class SessionPane extends BorderPane {
         if (node.isCache()) node.setCache(false);
         if (node instanceof Parent p) {
             for (Node child:p.getChildrenUnmodifiable()) disableScrollBitmapCache(child);
-        }
-    }
-
-    private void layoutBarLines(double s) {
-        double w=getWidth(),h=getHeight();
-        double px=Ui.hairline(s);
-        String lineStyle="-fx-background-color: "+Ui.hex(ColorRole.DIVIDER)+";";
-        boolean showH=header.isVisible() && header.getHeight()>0 && w>0;
-        headerLine.setVisible(showH);
-        if (showH) {
-            Ui.setStyleIfChanged(headerLine,lineStyle);
-            double hy=header.getLayoutY()+header.getHeight();
-            Point2D sp=localToScene(0,hy);
-            double ly=hy-px;
-            if (sp!=null) {
-                double dev=Math.max(0,Math.round(sp.getY()*s)-1);
-                ly=hy+(dev/s-sp.getY());
-            }
-            headerLine.resizeRelocate(0,ly,w,px);
-            headerLine.toFront();
-        }
-        boolean showF=footer.isVisible() && footer.getHeight()>0 && w>0 && h>0;
-        footerLine.setVisible(showF);
-        if (showF) {
-            Ui.setStyleIfChanged(footerLine,lineStyle);
-            double fy=footer.getLayoutY();
-            Point2D sp=localToScene(0,fy);
-            double ly=fy;
-            if (sp!=null) {
-                double dev=Math.round(sp.getY()*s);
-                ly=fy+(dev/s-sp.getY());
-            }
-            footerLine.resizeRelocate(0,ly,w,px);
-            footerLine.toFront();
         }
     }
 

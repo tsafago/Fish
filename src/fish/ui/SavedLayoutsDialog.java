@@ -64,25 +64,21 @@ public final class SavedLayoutsDialog {
         this.stage=Ui.dialogStage(workspace.stage(),"Saved layouts / shortcuts",false);
 
         Label heading=new Label("Shortcut for this window");
-        heading.setStyle("-fx-font-size: 18px; -fx-font-weight: bold;");
-        context.setStyle("-fx-font-size: 13px;");
+        heading.getStyleClass().add("fish-section-title");
         Ui.role(context,"muted");
 
         name.setText(workspace.sessionPanes().size()==1 ? workspace.active().profile().name() : "Work layout");
         name.setAccessibleText("New shortcut layout name");
-        name.setStyle("-fx-font-size: 13.5px;");
         name.textProperty().addListener((o,a,val) -> {
             if (!refreshing && val!=null && !val.isBlank()) workspace.tutorialAction("layout-named");
         });
         Label nameLabel=new Label("Name");
         nameLabel.setLabelFor(name);
-        nameLabel.setStyle("-fx-font-size: 13px;");
         currentAutostart.setTooltip(new Tooltip("Launch this saved layout automatically when you sign in to Windows."));
         VBox naming=new VBox(6,nameLabel,name,currentAutostart);
 
         create=Ui.button("Create desktop shortcut...",() -> chooseShortcut(true));
         create.setDefaultButton(true);
-        create.setStyle("-fx-font-size: 13px; -fx-padding: 6 14 6 14;");
 
         save=Ui.button("Save layout only",() -> act(() -> {
             workspace.saveCurrentLayout(null,name.getText(),currentAutostart.isSelected());
@@ -95,7 +91,6 @@ public final class SavedLayoutsDialog {
                 working=false; refresh(); showMessage("Not saved: "+error+" Layout kept here for retry.",true);
             });
         }));
-        save.setStyle("-fx-font-size: 13px; -fx-padding: 6 14 6 14;");
 
         HBox primary=new HBox(8,create,save);
         primary.setAlignment(Pos.CENTER_LEFT);
@@ -111,7 +106,7 @@ public final class SavedLayoutsDialog {
             library.setVisible(show);
             library.setManaged(show);
             manage.setGraphic(Ui.icon(show ? "down" : "right"));
-            stage.sizeToScene();
+            fitHeight();
         });
 
         layouts.setMaxWidth(Double.MAX_VALUE);
@@ -185,13 +180,20 @@ public final class SavedLayoutsDialog {
             }
         });
 
-        VBox body=new VBox(18,current,existing,footer);
-        body.setPadding(new Insets(20));
-
-        Ui.decorateDialog(stage,body,this::dispose,760,-1);
-        stage.setMinWidth(680);
+        form.getChildren().setAll(current,existing);
+        form.setPadding(new Insets(12,16,4,16));
+        scroll.setContent(form);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setPrefViewportWidth(460);
+        BorderPane body=new BorderPane(scroll);
+        footer.setPadding(new Insets(10,16,12,16));
+        body.setBottom(footer);
+        Ui.decorateDialog(stage,body,this::dispose,500,-1);
+        stage.setMinWidth(420);
+        stage.setMinHeight(300);
         refresh();
-        stage.sizeToScene();
+        fitHeight();
     }
 
     public Stage stage() { return stage; }
@@ -228,7 +230,27 @@ public final class SavedLayoutsDialog {
         library.setVisible(true);
         library.setManaged(true);
         manage.setGraphic(Ui.icon("down"));
-        stage.sizeToScene();
+        fitHeight();
+    }
+
+    private final VBox form=new VBox(16);
+    private final ScrollPane scroll=new ScrollPane();
+
+    private void fitHeight() {
+        if (stage.isMaximized()) return;
+        Region root=(Region)stage.getScene().getRoot();
+        root.applyCss();
+        double width=stage.getWidth()>0 ? stage.getWidth() : 500;
+        // Measure the form *after* the disclosure changed its managed children.
+        // Listening to selectedProperty instead reads the previous geometry.
+        double clientWidth=stage.isShowing() ? stage.getScene().getWidth() : width;
+        scroll.setPrefViewportHeight(Math.ceil(form.prefHeight(Math.max(320,clientWidth-18))));
+        var owner=stage.isShowing() ? stage : workspace.stage();
+        var screens=javafx.stage.Screen.getScreensForRectangle(owner.getX(),owner.getY(),owner.getWidth(),owner.getHeight());
+        var bounds=(screens.isEmpty() ? javafx.stage.Screen.getPrimary() : screens.getFirst()).getVisualBounds();
+        stage.setWidth(width);
+        double frame=stage.isShowing() ? Math.max(0,stage.getHeight()-stage.getScene().getHeight()) : 10;
+        stage.setHeight(Math.min(bounds.getHeight()-12,Math.max(stage.getMinHeight(),Math.ceil(root.prefHeight(clientWidth)+frame))));
     }
 
     private SavedLayout selected() {

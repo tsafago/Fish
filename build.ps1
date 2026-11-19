@@ -2,12 +2,14 @@ param(
     [ValidateSet('Build', 'Maintenance', 'Smoke', 'Check', 'Test', 'Package', 'Installer', 'Run', 'Demo')]
     [string]$Task = 'Build',
     [string]$Jdk = $env:JAVA_HOME,
-    [string]$ImageDirectory = 'dist\Fish'
+    [string]$ImageDirectory = 'dist\Fish',
+    [switch]$DedicatedTestDesktop
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.10.1'
+$version = '0.10.2'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
+$distribution = Split-Path -Parent $image
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
 $manifest = Import-PowerShellDataFile .\tools.psd1
 if (-not $Jdk) {
@@ -40,12 +42,12 @@ if ($Task -eq 'Installer') {
         throw "Application image is not Fish $version. Package first, or select its matching -ImageDirectory."
     }
     & "$PSScriptRoot\scripts\build-installer.ps1" -Jdk $Jdk -Image $image -Version $version
-    Copy-Item Install-Fish.ps1,Uninstall-Fish.ps1 dist -Force
-    Compress-Archive -Path $image -DestinationPath "dist\Fish-$version-windows-x64.zip" -Force
-    $checksums = foreach ($file in @("dist\Fish-$version-setup.exe","dist\Fish-$version-windows-x64.zip",'dist\Fish-source.zip','dist\Install-Fish.ps1','dist\Uninstall-Fish.ps1')) {
-        (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($file)
+    Copy-Item Install-Fish.ps1,Uninstall-Fish.ps1 $distribution -Force
+    Compress-Archive -Path $image -DestinationPath (Join-Path $distribution "Fish-$version-windows-x64.zip") -Force
+    $checksums = foreach ($file in @("Fish-$version-setup.exe","Fish-$version-windows-x64.zip",'Fish-source.zip','Install-Fish.ps1','Uninstall-Fish.ps1')) {
+        (Get-FileHash (Join-Path $distribution $file) -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $file
     }
-    [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'dist\SHA256SUMS.txt'),$checksums,[Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllLines((Join-Path $distribution 'SHA256SUMS.txt'),$checksums,[Text.UTF8Encoding]::new($false))
     Write-Host "Fish $version user-wide installer, SmartScreen-free Install-Fish.ps1, and portable ZIP ready."
     return
 }
@@ -101,6 +103,7 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     if ($Task -ne 'Smoke') {
         $testArgs=@()
         if ($Task -eq 'Check') { $testArgs+='--core-only' }
+        if ($Task -eq 'Test' -and $DedicatedTestDesktop) { $testArgs+='--desktop-robot' }
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.Tests @testArgs
         if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
     } else {
@@ -124,7 +127,7 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.DpiAndLatencySmoke
     if ($LASTEXITCODE -ne 0) { throw 'DPI 1px border and latency smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.ZeroTenFeaturesSmoke
-    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.1 feature and stress checks failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.2 feature and stress checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
@@ -220,7 +223,7 @@ if ($Task -eq 'Package') {
     Copy-Item vendor\tn5250j\src $coreSource -Recurse
     Copy-Item vendor\tn5250j\LICENSE $coreSource
     [IO.File]::WriteAllText((Join-Path $coreSource 'REVISION'), $pin + "`n", [Text.UTF8Encoding]::new($false))
-    Compress-Archive -Path "$source\*" -DestinationPath dist\Fish-source.zip -Force
+    Compress-Archive -Path "$source\*" -DestinationPath (Join-Path $distribution 'Fish-source.zip') -Force
 }
 if ($Task -eq 'Run' -or $Task -eq 'Demo') {
     $appArgs = @()

@@ -149,7 +149,7 @@ public final class ProfilesEditor extends BorderPane {
         connectionScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
 
         BorderPane body=new BorderPane();
-        body.setPadding(new Insets(8));
+        if (!embedded) body.setPadding(new Insets(8));
         body.setLeft(sidebar);
         BorderPane.setMargin(sidebar,new Insets(0,12,0,0));
         body.setCenter(connectionScroll);
@@ -162,7 +162,7 @@ public final class ProfilesEditor extends BorderPane {
         use=Ui.button("Save & connect",() -> save(true,true));
 
         BorderPane bottom=new BorderPane();
-        bottom.setPadding(new Insets(4,8,8,8));
+        bottom.setPadding(embedded ? new Insets(8,0,0,0) : new Insets(4,8,8,8));
         bottom.setCenter(error);
         BorderPane.setAlignment(error,Pos.CENTER_LEFT);
         if (!embedded) {

@@ -10,16 +10,22 @@ structured fields and WEA are explicit compatibility gaps, not silently
 accepted features. Read [COMPATIBILITY.md](COMPATIBILITY.md) before connecting
 to a production system.
 
-## Fish 0.10.1 beta
+## Fish 0.10.2 beta
 
-[Download v0.10.1 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.1):
+[Download v0.10.2 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.2):
 current-user or system-wide setup, portable image, complete corresponding source/licenses and checksums.
 This is an unsigned prerelease, not a stable or ACS-compatible release.
 
-### New in 0.10.1 beta
+### New in 0.10.2 beta
+
+- **Consistent dialogs**: Saved layouts, manuals, keyboard tools, tutorials, confirmations and recovery share a full-width caption strip with their content below it. Saved layouts opens compactly, grows for its library and keeps the close control at the window edge.
+- **Workspace and Settings**: The profile selector and `+` share one physical-pixel focus edge. Wider docking targets support moving a quarter pane to a full side. Subtle surface gradients can be disabled per theme; terminal colors and rendering remain independent.
+- **Install and update**: The new fish mark fills smoothly as setup progresses. Updates show progress rather than installation options. The preview modes described below let you inspect both without changing your installation.
+
+### Included from 0.10.1
 
 - **Left-to-right, top-to-bottom spatial pane traversal**: `Tab`, `Shift+Tab`, `Ctrl+Tab`, `Ctrl+Shift+Tab`, `Focus pane 1..8`, and pane numbering follow visual reading order across rows and columns instead of jumping by 2x quadrants on 4–8 pane layouts, while keeping connected 5250 `Tab` / `Shift+Tab` field navigation intact.
-- **Per-profile Primary Color & Hue selector**: Right beside **Text palette** in **Edit > Settings > Appearance**, pick from 21 curated primary color presets or drag the 360° **Color hue** spectrum bar to synthesize an IBM-style 5250 palette automatically—adapting perceptual contrast for dark and light themes and shifting colliding header, accent, warning, or error hues automatically so alerts stay unmistakable. Replaces the complex 60-role theme designer.
+- **Per-profile text palette**: In **Edit > Settings > Appearance**, select a built-in palette or choose **Custom color** to use the inline spectrum bar or enter an exact RGB hex value. Fish derives the other IBM 5250 colors for contrast and distinct headers, warnings, and errors.
 - **AOT-safe code-location resolution & cross-version install cleanup**: Eliminates the JDK 25 AOT `CodeSource.getLocation() is null` startup crash on target PCs across per-user, system-wide, and custom-path installs, builds `Fish.aot` from an unlinked staging directory so packaged tests exercise the exact target-PC path, and automatically cleans superseded installs, read-only stale runtime/AOT files, and duplicate Start Menu/Desktop shortcuts when switching scopes or installers.
 - **Live Windows Desktop shortcut rendering**: Writes `.lnk` shortcuts directly via `IPersistFile::Save` + `SaveCompleted` with normal `Archive` attributes and `SHChangeNotify` (no transient 0-byte `.lnk` files), automatically remaps inactive `%USERPROFILE%\Desktop` folders onto the active Windows Shell Desktop (`FOLDERID_Desktop`, e.g. OneDrive Known Folder Move), and warns when Windows **Show desktop icons** is turned off.
 - **Viewport-clipped multi-pane zoom & relative per-pane `100% (auto)` scale**: Terminal pixel buffers are strictly sized to each pane's visible viewport (`-Xmx512m`), eliminating multi-pane zoom slowdowns and `OutOfMemoryError` crashes even with 8 panes zoomed to `300%`. Zooming is per-pane (independent across shared or distinct profiles), relative to each pane's dimensions (`100% (auto)` fits the pane automatically), saved with workspace windows and desktop layout shortcuts, and displays a brief zoom percentage HUD pill.
@@ -28,7 +34,7 @@ This is an unsigned prerelease, not a stable or ACS-compatible release.
 - **Admin-controlled Kiosk mode**: Administrators can enable or disable machine-wide Kiosk mode (`HKLM\SOFTWARE\Fish\KioskMode`) from **Edit > Settings > General** or `Fish.exe --admin-kiosk enable|disable`. When enabled, Fish starts only from saved layout shortcuts, locks pane/splitter/zoom/layout/settings controls, turns the Fish mark into a static icon, suppresses lasting workspace modifications on disk while still allowing window move/maximize/close, and reduces menus to **Edit** (`Copy`, `Paste`, `Disable Kiosk Mode...`) and **Inserts**.
 - **Helpful Reset callout**: Whenever host input is recoverable (`Reset` shown), Fish pops up `"Are you stuck? Press Enter or press this button!"` with an inline `[Reset]` button that disappears immediately (`0 ms`) upon pressing `Enter` or clicking `Reset`.
 - **Startup error factory reset & clean uninstallation**: Any startup failure offers **Factory reset (delete config)...** (requiring Administrator approval when Kiosk mode is enabled), and uninstallation deletes Fish configuration (`%APPDATA%\Fish`), Startup layout shortcuts, and stored `Fish/*` credentials.
-- **System-wide installation (`-AllUsers`)**: `Fish-0.10.1-setup.exe`, `Install-Fish.ps1 -AllUsers`, `Uninstall-Fish.ps1 -AllUsers`, and **Settings > General > Install system-wide (Administrator)...** support machine-wide installation under `%ProgramFiles%\Fish`.
+- **System-wide installation (`-AllUsers`)**: `Fish-0.10.2-setup.exe`, `Install-Fish.ps1 -AllUsers`, `Uninstall-Fish.ps1 -AllUsers`, and **Settings > General > Install system-wide (Administrator)...** support machine-wide installation under `%ProgramFiles%\Fish`.
 
 Valid discrete Settings choices take effect in their interaction, independently
 of coalesced asynchronous disk writes. Typed fonts/keys/profile fields retain
@@ -39,7 +45,7 @@ existing controls instead of rebuilding their UI, fonts or terminal glyph grid.
 The unified `[Profile | +]` split-pill sits cleanly beside the menu bar with right-aligned
 secondary shortcut hints on menus, unclipped Settings sidebar navigation, live-themed
 Markdown release notes and external-tool tables, **Outline / filled Insert** as the default cursor style,
-and an optional **Reduce motion** preference controlling subtle `<90 ms` popup/dialog transitions.
+and an optional **Reduce motion** preference for in-window transitions and animated terminal ink. Menus and dialogs open without fading.
 
 An app-triggered successful installed update reopens verified Fish once and
 closes setup; failure, cancellation, reboot-required and launch errors remain
@@ -48,7 +54,9 @@ portable folder. **All releases (including betas)** and **Stable releases** allo
 to the latest release across patch, minor and major versions.
 
 Unreadable/future workspace startup offers Exit, one Retry, Restore factory settings (preserving a `workspace-recovery-UUID.xml` backup), and full **Factory reset (delete config)...** on any startup error.
-Format **21** requires a pre-upgrade workspace backup to downgrade to 0.9.0 or earlier.
+Close Fish and back up `workspace.xml` before upgrading. Keep that copy if you
+might return to 0.10.1: that version cannot restore the new four-pane
+side-and-three arrangement even though both versions use workspace format 21.
 Synthetic fractional-grid checks are not proof that the physical 4K jump is gone;
 physical monitor/native upgrade/IBM i/ACS/SSO acceptance remains unverified.
 
@@ -84,14 +92,16 @@ delete/open/export operations.
 
 Panes now use only simple arrangements: one full window; two halves; three equal
 rows/columns or a half beside two stacked panes (including rotated/mirrored forms);
-four quadrants; then each quadrant can split **once**, up to eight panes.
+four quadrants or a side pane beside three equal strips; then each quadrant can split **once**, up to eight panes.
 Structural adds/moves rebalance sizes instead of accumulating uneven bands.
 Reasonable intentional divider resizing remains available between structural moves.
 
 With two or three panes, drag to the **window's outer edge** for whole-window
 placement: a large half crosses intact with its opposite pair, or a third pane
 beyond two aligned rows/columns makes **three equal strips**. Inner pane edges
-arrange a half and pair. At four to eight panes, edges operate on quadrant slots:
+arrange a half and pair. With four panes, drag a quarter into the outer band to
+give it an entire side and stack the other three opposite. Drop beside a pane
+inside that band's inner boundary to return to quadrants. At five to eight panes, edges operate on quadrant slots:
 fill an available half-slot or swap/reorient existing slots, never nest further.
 Centers always swap. The shaded preview labels **Window** or **Pane** and shows
 the actual resulting geometry. Too-small/invalid/outside drops do not move panes.
@@ -311,7 +321,7 @@ That 0.5.3 preview used
 Apply (save and stay) and Done (save and close). Cancel/Escape/close discard
 only drafts since the last Apply. Theme Designer retains Preview and Save for
 temporary previews and reusable themes, with Apply/Done for activation.
-In this 0.10.1 beta, valid discrete Settings choices apply immediately and autosave separately; pane scale/layout
+In this 0.10.2 beta, valid discrete Settings choices apply immediately and autosave separately; pane scale/layout
 actions remain immediate. The configurable Flux action remains.
 
 The logo no longer waits for the double-click timer. Normal and Flux share
@@ -369,14 +379,14 @@ searchable full-text topic index.
 
 ## Install: no developer tools needed
 
-Download `Fish-0.10.1-setup.exe` and its matching `SHA256SUMS.txt` from
-[v0.10.1 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.1), then run the
+Download `Fish-0.10.2-setup.exe` and its matching `SHA256SUMS.txt` from
+[v0.10.2 BETA](https://github.com/tsafago/Fish/releases/tag/v0.10.2), then run the
 installer for your Windows user (default, no administrator rights) or check **Install for all users (requires Administrator)** to install system-wide under `C:\Program Files\Fish`. It creates
 Start menu/desktop shortcuts without a separate Java installation. Keep one release's installer, portable ZIP, complete
 source and checksums together; earlier previews remain available. Downloads
 are public and require no GitHub account.
 
-For a portable copy, extract the matching `Fish-0.10.1-windows-x64.zip` and open
+For a portable copy, extract the matching `Fish-0.10.2-windows-x64.zip` and open
 `Fish\Fish.exe`. Keep the whole folder together. Windows 10/11 **x64** is
 required; ARM64 and non-Windows systems are not supported by this package.
 
@@ -393,7 +403,7 @@ Any unsigned `.exe` or `.msi` downloaded directly by a web browser receives Wind
 3. **SmartScreen-Free In-App Self-Update**: SHA-256-verified updates strip `Zone.Identifier` ADS and launch via `CreateProcessW` rather than `ShellExecuteExW`. Checksums accompany every package; do not bypass organizational IT policy.
 
 **Back up before upgrading:** close ALL Fish windows normally and copy `workspace.xml`
-outside the application folder before first launching 0.10.1 beta. The default location
+outside the application folder before first launching 0.10.2 beta. The default location
 is `%APPDATA%\Fish`, and custom `--data-dir` locations still apply. The next save upgrades configuration
 to **version 21** if needed. Fish 0.9.0 and earlier cannot read
 it. Keep a pre-upgrade backup for downgrade. XML/config exports contain no passwords or Kerberos tickets;
@@ -410,8 +420,8 @@ The script downloads SHA-256-pinned portable tools into `.tools`, then produces:
 | Output | Use |
 |---|---|
 | `dist\Fish\Fish.exe` | Run immediately with its adjacent app/runtime folders |
-| `dist\Fish-0.10.1-setup.exe` | Per-user or system-wide native installer with bundled runtime |
-| `dist\Fish-0.10.1-windows-x64.zip` | Portable image, alongside matching source and checksums |
+| `dist\Fish-0.10.2-setup.exe` | Per-user or system-wide native installer with bundled runtime |
+| `dist\Fish-0.10.2-windows-x64.zip` | Portable image, alongside matching source and checksums |
 | `dist\Fish-source.zip` | Matching complete application/core sources |
 | `dist\SHA256SUMS.txt` | Verify distributed downloads |
 
@@ -422,16 +432,16 @@ silently replace failed downloads or bypass checksum mismatches.
 
 ## Run the local package
 
-The matching package is **Fish 0.10.1 BETA**, an unsigned experimental prerelease.
+The matching package is **Fish 0.10.2 BETA**, an unsigned experimental prerelease.
 To package without replacing an open image, pass
-`-ImageDirectory dist\Fish-0.10.1\Fish` to Package.
-This delivery is at `dist\Fish-0.10.1\Fish\Fish.exe`; `dist\Fish`
+`-ImageDirectory dist\Fish-0.10.2\Fish` to Package.
+This delivery is at `dist\Fish-0.10.2\Fish\Fish.exe`; `dist\Fish`
 may still be an older running version.
 Keep the entire application-image directory together:
 
 ```powershell
-.\dist\Fish-0.10.1\Fish\Fish.exe
-.\dist\Fish-0.10.1\Fish\Fish.exe --demo
+.\dist\Fish-0.10.2\Fish\Fish.exe
+.\dist\Fish-0.10.2\Fish\Fish.exe --demo
 ```
 
 The packaged application includes a private Java runtime; no installed Java,
@@ -563,9 +573,8 @@ and host dimensions, with effects off and Soft glow enabled.
 ## Sessions and profiles
 
 The main workspace has one compact, dark 31px title/menu row, not a second
-native titlebar. The gradient fish has a true square body rotated 45 degrees,
-with its left sides extended to cross once and form a tail ending level with its top
-and bottom, with no line joining the tail tips. It has no eye or mouth and replaces application-name
+native titlebar. The gradient fish faces left, with a lozenge body and two open
+tail tips on the right. It replaces application-name
 text and supplies the Windows executable/taskbar icon. Drag it or the blank title area to move;
 double-click to maximize/restore. The three upper-right controls minimize,
 maximize/restore and close. Drag any window edge/corner to resize.

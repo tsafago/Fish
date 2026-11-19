@@ -1051,7 +1051,7 @@ public final class ZeroTenFeaturesSmoke {
 
     public static void main(String[] args) throws Exception {
         Ui.install();
-        check("0.10.1".equals(Main.VERSION), "Main.VERSION is 0.10.1: " + Main.VERSION);
+        check("0.10.2".equals(Main.VERSION), "Main.VERSION is 0.10.2: " + Main.VERSION);
         Path root = Files.createTempDirectory(Path.of("build"), "zero-ten-smoke-");
         try (DemoHost host = new DemoHost()) {
             verifyScrollBindingsAndRecorder(root);
@@ -1069,7 +1069,7 @@ public final class ZeroTenFeaturesSmoke {
             FxTestSupport.closeAllWindows();
             FxTestSupport.deleteTree(root);
         }
-        System.out.println("PASS Fish 0.10.1 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
+        System.out.println("PASS Fish 0.10.2 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
         Ui.finishTestRun();
     }
 }

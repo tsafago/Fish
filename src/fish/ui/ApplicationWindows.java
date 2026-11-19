@@ -51,6 +51,7 @@ public final class ApplicationWindows {
 
     public void restore(StateStore.State state,UUID launchLayout) {
         shared=state.withWindows(List.of());
+        Ui.surfacePreferences(state.appearance().flatThemes());
         Ui.applyTheme(state.appTheme(),state.appearance().custom().orElse(null));
         if (!demonstration && !KioskMode.isEnabled()) {
             try { LayoutShortcuts.syncAutostart(store.directory(),LayoutShortcuts.executable(),state.savedLayouts()); }

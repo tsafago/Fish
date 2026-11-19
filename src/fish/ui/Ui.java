@@ -23,11 +23,14 @@ import fish.model.*;
 @SuppressWarnings({"deprecation", "removal"})
 public final class Ui {
     public static java.awt.Color BACKGROUND, PANEL, FIELD, HOVER, LINE, TEXT, MUTED, FOCUS, ERROR, SELECTION;
-    private record StylesheetKey(AppTheme theme, ColorTheme colors, int scaleMillis) {}
+    private record StylesheetKey(AppTheme theme, ColorTheme colors, int scaleMillis, boolean gradients) {}
 
     private static AppTheme theme = AppTheme.Charcoal;
     private static ColorTheme colors = ColorTheme.builtin(theme);
     private static boolean custom;
+    private static Set<AppTheme> flatThemes=Set.of();
+    public static void surfacePreferences(Set<AppTheme> flat) { flatThemes=Set.copyOf(flat); }
+    private static boolean gradients() { return !custom && !flatThemes.contains(theme); }
     private static double scaleOverride;
     private static String currentStylesheet = "";
     private static final Map<StylesheetKey, String> STYLESHEET_CACHE = new ConcurrentHashMap<>();
@@ -38,7 +41,7 @@ public final class Ui {
     private static final List<Runnable> THEME_LISTENERS = new CopyOnWriteArrayList<>();
     private static final List<Runnable> MOTION_LISTENERS = new CopyOnWriteArrayList<>();
     private static volatile boolean reducedMotion;
-    private static boolean popupAnimationsInstalled;
+    private static boolean popupStylesInstalled;
 
     private Ui() {}
 
@@ -307,39 +310,33 @@ public final class Ui {
         timeline.play();
     }
 
-    private static void installPopupAnimations() {
-        if (popupAnimationsInstalled || !Platform.isFxApplicationThread()) return;
-        popupAnimationsInstalled = true;
-        java.util.function.Consumer<Window> attach = w -> {
-            if (w instanceof PopupControl popup && !(popup instanceof Tooltip)
-                    && popup.getProperties().putIfAbsent("fish.popupMotion", Boolean.TRUE) == null) {
-                popup.addEventHandler(WindowEvent.WINDOW_SHOWN, e -> {
-                    if (popup.getScene() != null) {
-                        syncSceneStylesheet(popup.getScene());
-                        animateSubtle(popup.getScene().getRoot(), 0.0, -2.5, 80);
-                    }
-                });
-                popup.addEventHandler(WindowEvent.WINDOW_HIDDEN, e -> {
-                    if (popup.getScene() != null) resetMotion(popup.getScene().getRoot());
-                });
-                if (popup.isShowing() && popup.getScene() != null) {
-                    syncSceneStylesheet(popup.getScene());
-                    animateSubtle(popup.getScene().getRoot(), 0.0, -2.5, 80);
-                }
-            }
-        };
-        for (Window w : Window.getWindows()) attach.accept(w);
+    private static void preparePopup(Window w) {
+        if (!(w instanceof PopupWindow popup)) return;
+        Scene scene=popup.getScene();
+        syncSceneStylesheet(scene);
+        scene.getRoot().applyCss();
+    }
+
+    private static void installPopupStyles() {
+        if (popupStylesInstalled || !Platform.isFxApplicationThread()) return;
+        popupStylesInstalled=true;
+        // JavaFX adds the window before it makes the native peer visible.
+        for (Window w:Window.getWindows()) preparePopup(w);
         Window.getWindows().addListener((javafx.collections.ListChangeListener<Window>) change -> {
             while (change.next()) {
-                if (change.wasAdded()) {
-                    for (Window w : change.getAddedSubList()) attach.accept(w);
+                for (Window w:change.getAddedSubList()) {
+                    preparePopup(w);
+                    if (dark() && w instanceof Stage s && s.getScene()!=null
+                            && s.getScene().getRoot().getStyleClass().contains("fish-dialog-shell")) {
+                        WindowBorder.prepareDialogFrame(s);
+                    }
                 }
             }
         });
     }
 
     public static void registerStage(Stage stage) {
-        installPopupAnimations();
+        installPopupStyles();
         STAGES.add(stage);
         stage.getIcons().setAll(FishIcon.fxImages());
     }
@@ -385,7 +382,7 @@ public final class Ui {
     public static String stylesheetForScale(double scale) {
         int scaleMillis = Math.max(1000, (int) Math.round(scale * 1000.0));
         return STYLESHEET_CACHE.computeIfAbsent(
-                new StylesheetKey(theme, colors, scaleMillis),
+                new StylesheetKey(theme, colors, scaleMillis,gradients()),
                 k -> buildStylesheetUri(k.scaleMillis() / 1000.0));
     }
 
@@ -428,13 +425,17 @@ public final class Ui {
     }
 
     public static Scene styleScene(Scene scene) {
-        installPopupAnimations();
+        installPopupStyles();
         SCENES.add(scene);
-        scene.setFill(fxColor(ColorRole.BACKGROUND));
+        scene.setFill(sceneFill(scene));
         syncSceneStylesheet(scene);
         scene.windowProperty().addListener((obs, oldW, newW) -> attachWindowScale(scene, newW));
         if (scene.getWindow() != null) attachWindowScale(scene, scene.getWindow());
         return scene;
+    }
+
+    private static javafx.scene.paint.Color sceneFill(Scene scene) {
+        return fxColor(scene.getRoot().getStyleClass().contains("fish-dialog-shell") ? ColorRole.DIALOG : ColorRole.BACKGROUND);
     }
 
     public static void setStyleIfChanged(Node node, String style) {
@@ -469,11 +470,10 @@ public final class Ui {
         HostPalette.clear();
         currentStylesheet = stylesheetForScale(scaleFor((Scene) null));
         Runnable apply = () -> {
-            javafx.scene.paint.Color fill = fxColor(ColorRole.BACKGROUND);
             List<javafx.scene.image.Image> icons = FishIcon.fxImages();
             for (Scene scene : new ArrayList<>(SCENES)) {
                 if (scene != null) {
-                    scene.setFill(fill);
+                    scene.setFill(sceneFill(scene));
                     syncSceneStylesheet(scene);
                 }
             }
@@ -583,12 +583,12 @@ public final class Ui {
                 -fx-text-fill: -fish-error !important;
             }
             .fish-section-title {
-                -fx-font-weight: bold;
-                -fx-font-size: 12.5px;
+                -fx-font-weight: normal;
+                -fx-font-size: 14px;
                 -fx-text-fill: -fish-text;
             }
             .fish-page-heading {
-                -fx-font-weight: bold;
+                -fx-font-weight: normal;
                 -fx-font-size: 16px;
                 -fx-text-fill: -fish-text;
             }
@@ -746,7 +746,7 @@ public final class Ui {
                 -fx-padding: 2 6 2 8;
             }
             .fish-chrome-pill-combo {
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-field, -fish-field;
                 -fx-background-insets: 0, __PX__ 0 __PX__ __PX__;
                 -fx-background-radius: 4 0 0 4, 3 0 0 3;
                 -fx-border-width: 0;
@@ -770,13 +770,18 @@ public final class Ui {
                 -fx-padding: 0 7 0 4;
             }
             .fish-chrome-pill-join {
-                -fx-background-color: -fish-divider, -fish-field;
-                -fx-background-insets: 0, __PX__ 0 __PX__ 0;
+                -fx-background-color: -fish-field;
                 -fx-background-radius: 0;
                 -fx-padding: 0;
             }
+            .fish-chrome-separator-bar {
+                -fx-background-color: __PILL_JOIN__;
+            }
+            .fish-chrome-pill-join:outlined .fish-chrome-separator-bar {
+                -fx-background-color: -fish-focus;
+            }
             .fish-chrome-pill-add {
-                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-color: -fish-field, -fish-field;
                 -fx-background-insets: 0, __PX__ __PX__ __PX__ 0;
                 -fx-background-radius: 0 4 4 0, 0 3 3 0;
                 -fx-padding: 0 8 0 8;
@@ -840,7 +845,7 @@ public final class Ui {
                 -fx-background-color: -fish-divider, -fish-menu;
                 -fx-background-insets: 0, __PX__;
                 -fx-background-radius: 5, 4;
-                -fx-padding: 4 3 4 3;
+                -fx-padding: 5 4 5 4;
                 -fx-effect: null;
             }
             .menu-item {
@@ -883,6 +888,9 @@ public final class Ui {
             .separator:vertical > .line {
                 -fx-border-color: transparent transparent transparent -fish-divider;
                 -fx-border-width: 0 0 0 __PX__;
+            }
+            .context-menu .separator:horizontal {
+                -fx-padding: 5 10 5 10;
             }
             .list-view, .table-view {
                 -fx-background-color: -fish-divider, -fish-field;
@@ -932,10 +940,108 @@ public final class Ui {
                 -fx-background-radius: 5;
                 -fx-text-fill: -fish-selection-text;
             }
+            .fish-settings-rail {
+                -fx-background-color: __RAIL__;
+                -fx-border-color: transparent -fish-divider transparent transparent;
+                -fx-border-width: 0 __PX__ 0 0;
+            }
+            .fish-dialog-shell, .fish-workspace-header {
+                -fx-background-color: __SURFACE__;
+            }
+            .fish-dialog-caption, .fish-dialog-shell .scroll-pane, .fish-dialog-shell .scroll-pane > .viewport,
+            .fish-workspace-header .menu-bar {
+                -fx-background-color: transparent;
+                -fx-border-width: 0;
+            }
+            .fish-settings .fish-sidebar.list-view, .fish-settings .fish-sidebar.list-view:focused {
+                -fx-background-color: transparent;
+                -fx-border-width: 0;
+                -fx-padding: 6 8 8 8;
+            }
+            .fish-settings .fish-sidebar .list-cell {
+                -fx-background-insets: 2 0;
+                -fx-padding: 0 12;
+            }
+            .fish-settings .fish-sidebar:focused .list-cell:filled:selected {
+                -fx-border-color: -fish-focus;
+                -fx-border-width: __PX__;
+                -fx-border-insets: 2 0;
+                -fx-border-radius: 5;
+            }
+            .fish-settings .fish-page-heading {
+                -fx-font-size: 22px;
+                -fx-font-weight: normal;
+                -fx-min-height: 52;
+                -fx-pref-height: 52;
+                -fx-alignment: center-left;
+                -fx-padding: 0 24;
+                -fx-border-width: 0;
+            }
+            .fish-settings-body {
+                -fx-padding: 8 24 20 24;
+            }
+            .fish-settings .combo-box-base, .fish-spectrum-field {
+                -fx-min-height: 28;
+                -fx-background-radius: 6, 5;
+            }
+            .fish-spectrum-field {
+                -fx-padding: 0 7;
+                -fx-background-color: -fish-divider, -fish-field;
+                -fx-background-insets: 0, __PX__;
+            }
+            .fish-fields-disclosure > .title, .fish-fields-disclosure > .content {
+                -fx-background-color: transparent;
+                -fx-border-width: 0;
+                -fx-padding: 4 0;
+            }
+            .fish-fields-disclosure:focused > .title {
+                -fx-background-color: -fish-selection;
+            }
+            .fish-spectrum {
+                -fish-primary-ink: -fish-focus;
+                -fx-padding: 4 0;
+                -fx-cursor: hand;
+            }
+            .fish-spectrum .track {
+                -fx-padding: 7 0;
+                /* SliderSkin extends its hit track by the first fill's radius. Keep the rounded ink within the actual 0-360 range. */
+                -fx-background-color: transparent, linear-gradient(to right, #ed4242, #eded42, #42ed42, #42eded, #4242ed, #ed42ed, #ed4242);
+                -fx-background-insets: 0, 0;
+                -fx-background-radius: 0, 7;
+            }
+            .fish-spectrum .thumb {
+                -fx-padding: 10;
+                -fx-background-radius: 12;
+                -fx-background-color: #29343a, white, -fish-primary-ink;
+                -fx-background-insets: 0, 1, 3;
+                -fx-effect: null;
+            }
+            .fish-spectrum:focused .thumb {
+                -fx-background-color: -fish-focus, -fish-dialog, #29343a, white, -fish-primary-ink;
+                -fx-background-insets: -3, -1, 0, 1, 3;
+            }
+            .fish-color-hex {
+                -fx-font-family: Consolas;
+                -fx-alignment: center;
+                -fx-min-width: 82;
+                -fx-pref-width: 82;
+                -fx-max-width: 82;
+            }
+            .fish-settings-body > .fish-section-title {
+                -fx-font-size: 14px;
+                -fx-padding: 12 0 0 0;
+            }
+            .fish-settings .fish-section-title {
+                -fx-font-weight: normal;
+            }
             .fish-settings-footer {
-                -fx-border-color: -fish-divider transparent transparent transparent;
-                -fx-border-width: __PX__ 0 0 0;
-                -fx-padding: 10 0 0 0;
+                -fx-padding: 14 16;
+            }
+            .fish-settings .scroll-pane > .scroll-bar:vertical {
+                -fx-pref-width: 14;
+            }
+            .fish-settings .scroll-pane > .scroll-bar:vertical > .thumb {
+                -fx-background-insets: 2 4;
             }
             .table-view .column-header-background,
             .table-view .column-header,
@@ -1084,6 +1190,10 @@ public final class Ui {
             }
             """;
         String css = cssTemplate
+                .replace("__SURFACE__",surfacePaint(ColorRole.DIALOG))
+                .replace("__PILL_JOIN__",colorTheme().rgb(ColorRole.FIELD)==0 ? hex(ColorRole.DIVIDER)
+                        : String.format(Locale.ROOT,"#%06x",ColorTheme.mix(colorTheme().rgb(ColorRole.FIELD),0,.55)))
+                .replace("__RAIL__",surfacePaint(ColorRole.PANEL))
                 .replace("__PX__", px)
                 .replace("__SPLIT_INSET__", splitInset)
                 .formatted(
@@ -1098,6 +1208,13 @@ public final class Ui {
                     hex(ColorRole.FOOTER), hex(ColorRole.FOOTER_TEXT), hex(ColorRole.STATUS_ERROR), hex(ColorRole.STATUS_WAIT),
                     hex(ColorRole.ACTIVE_TINT), hex(ColorRole.DIVIDER), hex(ColorRole.DIVIDER_BACKGROUND));
         return "data:text/css;base64," + Base64.getEncoder().encodeToString(css.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String surfacePaint(ColorRole base) {
+        if (!gradients()) return hex(base);
+        var start=fxColor(base).interpolate(fxColor(ColorRole.FOCUS),.075);
+        String tint=String.format(Locale.ROOT,"#%02x%02x%02x",Math.round(start.getRed()*255),Math.round(start.getGreen()*255),Math.round(start.getBlue()*255));
+        return "linear-gradient(to bottom right,"+tint+", "+hex(base)+", "+hex(ColorRole.CHROME)+")";
     }
 
     public static Node icon(String kind) {
@@ -1119,6 +1236,12 @@ public final class Ui {
             case "eye" -> "M 1 6 C 2.8 2.8 9.2 2.8 11 6 C 9.2 9.2 2.8 9.2 1 6 Z M 7.5 6 A 1.5 1.5 0 1 1 4.5 6 A 1.5 1.5 0 1 1 7.5 6";
             case "eye-off" -> "M 1.5 1.5 L 10.5 10.5 M 1 6 C 2.8 2.8 9.2 2.8 11 6 C 9.8 8.1 7.8 9 6 9";
             case "install" -> "M 6 1 V 8 M 3 5.5 L 6 8.5 L 9 5.5 M 1.5 10.5 H 10.5";
+            case "display" -> "M 1 1.5 H 13 V 9 H 1 Z M 7 9 V 12 M 4 12 H 10";
+            case "layers" -> "M 1 4 L 7 1 L 13 4 L 7 7 Z M 1 7 L 7 10 L 13 7 M 1 10 L 7 13 L 13 10";
+            case "keyboard" -> "M 0 2 H 14 V 11 H 0 Z M 3 5 H 4 M 6 5 H 7 M 9 5 H 10 M 4 8 H 10";
+            case "gear" -> "M 5 1 H 9 L 9.5 3 L 12 3.5 L 13 6 L 11.5 7.5 L 12 10 L 10 12 L 8 11.5 L 6.5 13 L 4 12 L 3.5 10 L 1.5 9 L 1 6 L 3 5 L 3 3 L 5 3 Z M 9.2 7 A 2.2 2.2 0 1 1 4.8 7 A 2.2 2.2 0 1 1 9.2 7";
+            case "refresh" -> "M 12 2 V 6 H 8 M 2 11 V 7 H 6 M 2 5 A 5 5 0 0 1 11.5 5 M 12 8 A 5 5 0 0 1 2.5 8";
+            case "check" -> "M 1 6 L 4.5 9.5 L 12 2";
             default -> "M 2 4 L 6 8 L 10 4";
         });
         svg.setFill(javafx.scene.paint.Color.TRANSPARENT);
@@ -1281,15 +1404,20 @@ public final class Ui {
     }
 
     public static Scene decorateDialog(Stage dialog, Region content, Runnable dismiss, double prefW, double prefH) {
+        return decorateDialog(dialog,content,dismiss,prefW,prefH,null);
+    }
+    static Scene decorateSettings(Stage dialog,BorderPane content,Region rail,Runnable dismiss,double prefW,double prefH) {
+        return decorateDialog(dialog,content,dismiss,prefW,prefH,rail);
+    }
+    private static Scene decorateDialog(Stage dialog,Region content,Runnable dismiss,double prefW,double prefH,Region rail) {
+        boolean settings=rail!=null;
         HeaderBar.setPrefButtonHeight(dialog, 0);
         Label titleLabel = new Label(dialog.getTitle());
-        dialog.titleProperty().addListener((o, a, b) -> titleLabel.setText(b));
-        titleLabel.setPadding(new Insets(0, 8, 0, 12));
+        titleLabel.textProperty().bind(dialog.titleProperty());
+        titleLabel.getStyleClass().add("fish-page-heading");
+        titleLabel.setPadding(new Insets(0,16,0,16));
         BorderPane dragArea = new BorderPane();
-        dragArea.setLeft(titleLabel);
-        BorderPane.setAlignment(titleLabel, Pos.CENTER_LEFT);
         HeaderBar.setDragType(dragArea, HeaderDragType.DRAGGABLE);
-        HeaderBar.setDragType(titleLabel, HeaderDragType.DRAGGABLE);
 
         Button close = iconButton("Close dialog", "close", ColorRole.CHROME_TEXT, dismiss);
         close.getStyleClass().remove("fish-icon-button");
@@ -1298,16 +1426,51 @@ public final class Ui {
         bindHeaderButton(close, HeaderButtonType.CLOSE);
 
         HeaderBar header = new HeaderBar(null, dragArea, close);
-        header.getStyleClass().add("fish-header-bar");
+        header.getStyleClass().addAll("fish-header-bar","fish-dialog-caption");
         header.setMinHeight(32);
         header.setPrefHeight(32);
+        header.setMaxSize(Double.MAX_VALUE,32);
 
         BorderPane shell = new BorderPane();
         shell.getStyleClass().add("fish-dialog-shell");
-        shell.setTop(header);
-        shell.setCenter(content);
+        BorderPane controls=settings ? new BorderPane() : shell;
+        controls.setTop(header);
+        if (settings) controls.setCenter(content);
+        else {
+            BorderPane page=new BorderPane(content);
+            page.setTop(titleLabel);
+            controls.setCenter(page);
+        }
+        if (dialog.getModality()==Modality.NONE) {
+            Button minimize=iconButton("Minimize "+dialog.getTitle(),"minimize",ColorRole.CHROME_TEXT,() -> dialog.setIconified(true));
+            Button maximize=iconButton("Maximize "+dialog.getTitle(),"maximize",ColorRole.CHROME_TEXT,() -> dialog.setMaximized(!dialog.isMaximized()));
+            bindHeaderButton(minimize,HeaderButtonType.ICONIFY);
+            bindHeaderButton(maximize,HeaderButtonType.MAXIMIZE);
+            dialog.maximizedProperty().addListener((o,old,max) -> {
+                updateIcon(maximize,max ? "restore" : "maximize",ColorRole.CHROME_TEXT);
+                String name=(max ? "Restore " : "Maximize ")+dialog.getTitle();
+                maximize.setAccessibleText(name); maximize.getTooltip().setText(name);
+            });
+            for (Button b:List.of(minimize,maximize)) {
+                b.getStyleClass().add("fish-chrome-button"); b.setPrefSize(38,31);
+            }
+            header.setTrailing(new HBox(minimize,maximize,close));
+        }
+        if (settings) {
+            header.getStyleClass().add("fish-settings-header"); header.setMaxHeight(32);
+            Region railSurface=new Region();
+            railSurface.getStyleClass().add("fish-settings-rail");
+            railSurface.setMouseTransparent(true);
+            railSurface.prefWidthProperty().bind(rail.prefWidthProperty());
+            railSurface.setMaxWidth(Region.USE_PREF_SIZE);
+            StackPane.setAlignment(railSurface,Pos.CENTER_LEFT);
+            shell.setCenter(new StackPane(railSurface,controls));
+            shell.getStyleClass().add("fish-settings-shell");
+        }
 
-        Scene scene = prefW > 0 && prefH > 0 ? new Scene(shell, prefW, prefH) : new Scene(shell);
+        // A missing height must not discard an explicit width. With EXTENDED
+        // stages a native minimum alone can otherwise outgrow the first scene.
+        Scene scene = new Scene(shell,prefW,prefH>0 && !settings ? prefH+24 : prefH);
         styleScene(scene);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ESCAPE) {
@@ -1327,8 +1490,13 @@ public final class Ui {
                 shell.getStyleClass().remove("fish-dwm-border");
             }
         });
-        dialog.addEventHandler(WindowEvent.WINDOW_SHOWN, e -> animateSubtle(shell, 0.0, 3.0, 90));
-        dialog.addEventHandler(WindowEvent.WINDOW_HIDDEN, e -> resetMotion(shell));
+        dialog.addEventHandler(WindowEvent.WINDOW_SHOWING,e -> {
+            syncSceneStylesheet(scene);
+            shell.applyCss();
+            if (dialog.getMinWidth()>0 && !(dialog.getWidth()>=dialog.getMinWidth()))
+                dialog.setWidth(Math.max(dialog.getMinWidth(),prefW>0 ? prefW : shell.prefWidth(-1)));
+            shell.layout();
+        });
         shell.applyCss();
         return scene;
     }

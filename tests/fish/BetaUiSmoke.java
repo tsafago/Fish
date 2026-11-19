@@ -98,14 +98,14 @@ public final class BetaUiSmoke {
     private static void forms(Workspace w) throws Exception {
         for (AppTheme theme:List.of(AppTheme.Charcoal,AppTheme.Light,AppTheme.Slate)) {
             w.applyTheme(theme);
-            Preferences dialog=new Preferences(w,"General"); layout(dialog.dialog());
+            Preferences dialog=new Preferences(w,"Shortcuts"); layout(dialog.dialog());
             TextField name=(TextField)dialog.tutorialTarget("shortcut-name");
             Button create=(Button)dialog.tutorialTarget("shortcut-create");
             Node root=dialog.dialog().getScene().getRoot();
             Rectangle box=FxTestSupport.boundsIn(name,root);
             Rectangle primary=FxTestSupport.boundsIn(create,root);
             check(Math.abs(primary.x-box.x)<=2 && primary.y>box.y && primary.width<=box.width,
-                    "Shortcut action and name field align in General");
+                    "Shortcut action and name field align in Shortcuts");
             name.setText("Synthetic shortcut \u5317");
             snapshot(root,"shortcuts-"+theme);
             check(w.savedLayouts().isEmpty(),"Editing the name does not save anything");
@@ -115,17 +115,16 @@ public final class BetaUiSmoke {
             snapshot(preferences.dialog().getScene().getRoot(),"settings-"+theme); preferences.forceDispose();
 
             TutorialDialog tutorial=new TutorialDialog(w,TutorialDialog.Guide.APPEARANCE,false);
-            w.preferences("Appearance"); tutorial.go(2); layout(tutorial.stage());
-            check(tutorial.stage().getOwner()==w.stage() && !tutorial.stage().isAlwaysOnTop()
-                    && tutorial.stage().getModality()==Modality.NONE,
-                    "Guide remains application-owned, modeless and non-always-on-top");
+            w.preferences("Appearance"); tutorial.go(2); layout(tutorial.hostStage());
+            check(tutorial.card().getScene()==w.tutorialPreferences().dialog().getScene(),
+                    "Guide lives above the target in its actual Settings scene");
             Method related=TutorialDialog.class.getDeclaredMethod("related",Window.class); related.setAccessible(true);
             check((boolean)related.invoke(tutorial,w.tutorialPreferences().dialog()),"Settings sibling belongs to tutorial's owned hierarchy");
             Stage chooser=new Stage(); chooser.initOwner(w.tutorialPreferences().dialog());
             Stage other=new Stage();
             check((boolean)related.invoke(tutorial,chooser) && !(boolean)related.invoke(tutorial,other),"Nested chooser raises the guide; unrelated windows never do");
             check(field(tutorial,"targetWindow")==w.tutorialPreferences().dialog(),"Real control target and highlight ownership follow Settings");
-            snapshot(tutorial.stage().getScene().getRoot(),"tutorial-"+theme);
+            snapshot(tutorial.card(),"tutorial-"+theme);
             tutorial.dispose(); chooser.close(); other.close(); w.tutorialPreferences().forceDispose();
 
             Stage recovery=WorkspaceRecovery.dialog("Synthetic future workspace version; matching backup required.",true,value -> {});

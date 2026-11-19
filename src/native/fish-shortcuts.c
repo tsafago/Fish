@@ -199,6 +199,67 @@ typedef struct {
 // one hidden stage with the requested ownership on this FX thread.
 typedef struct { HWND match; BOOL owned; } stage_search;
 static const WCHAR first_frame_property[]=L"Fish.FirstFrame";
+
+// Confine the pinned OpenJFX 25 peer lookup to the Windows bridge. Never
+// identify a workspace by its title, position, or whichever HWND has focus.
+JNIEXPORT jlong JNICALL Java_fish_ui_PaneWindowHit_handle0(JNIEnv *env,jclass type,jobject stage) {
+    (void)type;
+    jclass window=(*env)->GetObjectClass(env,stage);
+    jmethodID getter=(*env)->GetMethodID(env,window,"getPeer","()Lcom/sun/javafx/tk/TKStage;");
+    if (!getter) return 0;
+    jobject peer=(*env)->CallObjectMethod(env,stage,getter);
+    if (!peer || (*env)->ExceptionCheck(env)) return 0;
+    jclass peer_class=(*env)->GetObjectClass(env,peer);
+    getter=(*env)->GetMethodID(env,peer_class,"getRawHandle","()J");
+    if (!getter) return 0;
+    jlong id=(*env)->CallLongMethod(env,peer,getter);
+    return GetWindowThreadProcessId((HWND)(intptr_t)id,NULL)==GetCurrentThreadId() ? id : 0;
+}
+
+JNIEXPORT jlong JNICALL Java_fish_ui_PaneWindowHit_at0(JNIEnv *env,jclass type,jlong source,jintArray point) {
+    (void)type;
+    HWND from=(HWND)(intptr_t)source;
+    if (GetWindowThreadProcessId(from,NULL)!=GetCurrentThreadId() || (*env)->GetArrayLength(env,point)!=2) return 0;
+    jint xy[2]; (*env)->GetIntArrayRegion(env,point,0,2,xy);
+    POINT p={xy[0],xy[1]};
+    if (!ClientToScreen(from,&p) || !MonitorFromPoint(p,MONITOR_DEFAULTTONULL)) return 0;
+    HWND under=WindowFromPoint(p),hit=under ? GetAncestor(under,GA_ROOT) : NULL;
+    /* A monitor-backed point may have no window at all on an empty desktop. */
+    if (!under || under==GetDesktopWindow()) hit=(HWND)(intptr_t)-1;
+    else if (!hit) return 0;
+    DWORD pid=0;
+    if (hit!=(HWND)(intptr_t)-1) GetWindowThreadProcessId(hit,&pid);
+    if (hit!=(HWND)(intptr_t)-1 && pid==GetCurrentProcessId()) {
+        if (!IsWindowEnabled(hit) || !ScreenToClient(hit,&p)) return 0;
+    } else if (hit!=(HWND)(intptr_t)-1) {
+        WCHAR cls[128];
+        if (!GetClassNameW(hit,cls,128) || wcsncmp(cls,L"GlassWndClass",13)==0) return 0;
+        hit=(HWND)(intptr_t)-1;
+    }
+    xy[0]=p.x; xy[1]=p.y; (*env)->SetIntArrayRegion(env,point,0,2,xy);
+    return (jlong)(intptr_t)hit;
+}
+
+JNIEXPORT void JNICALL Java_fish_ui_PaneWindowHit_place0(JNIEnv *env,jclass type,jlong id,jint x,jint y) {
+    (void)env; (void)type;
+    HWND window=(HWND)(intptr_t)id;
+    if (GetWindowThreadProcessId(window,NULL)!=GetCurrentThreadId()) return;
+    POINT p={x,y};
+    MONITORINFO m={.cbSize=sizeof(m)};
+    if (!GetMonitorInfoW(MonitorFromPoint(p,MONITOR_DEFAULTTONEAREST),&m)) return;
+    // Moving between monitors can synchronously change the HWND's DPI and size.
+    for (int i=0;i<2;i++) {
+        RECT r;
+        if (!GetWindowRect(window,&r)) return;
+        int width=min(r.right-r.left,m.rcWork.right-m.rcWork.left);
+        int height=min(r.bottom-r.top,m.rcWork.bottom-m.rcWork.top);
+        int left=max(m.rcWork.left,min(x-24,m.rcWork.right-width));
+        int top=max(m.rcWork.top,min(y-12,m.rcWork.bottom-height));
+        if (r.left==left && r.top==top && r.right==left+width && r.bottom==top+height) break;
+        SetWindowPos(window,NULL,left,top,width,height,SWP_NOZORDER|SWP_NOACTIVATE);
+    }
+}
+
 static BOOL CALLBACK find_new_stage(HWND hwnd,LPARAM data) {
     stage_search *search=(stage_search *)data;
     WCHAR name[96];

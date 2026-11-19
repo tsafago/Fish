@@ -294,7 +294,7 @@ public final class LayoutFeatureSmoke {
         if (destination.isBlank()) return;
         Path output=Path.of(destination); Files.createDirectories(output);
         w.setSize(1120,760); FxTestSupport.layout(w);
-        w.preferences("General");
+        w.preferences("Shortcuts");
         var dialog=w.tutorialPreferences(); FxTestSupport.layout(dialog.dialog());
         for (double scale:new double[]{1,1.5}) {
             FxTestSupport.writeSnapshot(w.scene().getRoot(),scale,output.resolve("window-"+scale+".png"));

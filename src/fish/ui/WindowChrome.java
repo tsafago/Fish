@@ -206,6 +206,7 @@ public final class WindowChrome extends HeaderBar {
                 menus.setManaged(!narrow);
                 menuButton.setVisible(narrow);
                 menuButton.setManaged(narrow);
+                if (workspace.activeTutorial()!=null) javafx.application.Platform.runLater(workspace::tutorialChanged);
             }
             if (selector!=null) {
                 double fixed=48+(narrow ? 32 : menusW)+toolsBase+controls.prefWidth(-1)+36;
@@ -279,12 +280,41 @@ public final class WindowChrome extends HeaderBar {
     }
 
     public Node tutorialMenuTarget(String title,String action) {
+        Node section=openTutorialMenuRow(title,null);
+        Node live=openTutorialMenuRow(action,section);
+        if (live!=null) return live;
         if (!menus.isVisible()) return menuButton;
         if (title!=null && !title.isEmpty()) {
             Node found=findMenuButton(menus,title);
             if (found!=null) return found;
         }
         return menus;
+    }
+
+    Node openTutorialMenuRow(String action,Node fallback) {
+        // MenuItem is not a Node. Its public styleable node is the live row,
+        // including the *copy* displayed by the compact menu.
+        for (Window w:Window.getWindows()) {
+            if (!(w instanceof ContextMenu popup) || !ownsMenu(popup)) continue;
+            for (MenuItem item:popup.getItems()) {
+                Node row=item.getStyleableNode();
+                if (row==null || row.getScene()!=popup.getScene()) continue;
+                if (action.equals(item.getProperties().get("fish.title")) || action.equals(item.getText())) {
+                    if ("Tutorials".equals(action) && item instanceof Menu m && m.isShowing() && !m.getItems().isEmpty()) {
+                        Node choice=m.getItems().getFirst().getStyleableNode();
+                        if (choice!=null && choice.getScene()!=row.getScene()) return choice.getParent();
+                    }
+                    return row;
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private boolean ownsMenu(ContextMenu menu) {
+        Window owner=menu.getOwnerWindow();
+        while (owner instanceof PopupWindow popup) owner=popup.getOwnerWindow();
+        return owner==stage;
     }
 
     private static Node findMenuButton(Parent root,String title) {

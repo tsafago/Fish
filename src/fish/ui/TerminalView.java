@@ -23,6 +23,8 @@ import java.util.function.Supplier;
 import javafx.animation.AnimationTimer;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
+import javafx.beans.InvalidationListener;
+import javafx.beans.value.ChangeListener;
 import javafx.geometry.Point2D;
 import javafx.scene.AccessibleRole;
 import javafx.scene.image.*;
@@ -43,6 +45,10 @@ import static org.tn5250j.TN5250jConstants.*;
  */
 public class TerminalView extends Region {
     private final SessionPane pane;
+    private Window observedWindow;
+    private final ChangeListener<Window> windowChanged=(o,old,w) -> attachWindow(w);
+    private final InvalidationListener windowVisibility=o -> { updateAnimation(); requestRender(); };
+    private final InvalidationListener windowScale=o -> requestRender();
     private final ImageView surface=new ImageView();
     private PixelBuffer<IntBuffer> pixelBuffer;
     private WritableImage fxImage;
@@ -180,10 +186,10 @@ public class TerminalView extends Region {
         visibleProperty().addListener((o,a,b) -> updateAnimation());
         disabledProperty().addListener((o,a,b) -> updateAnimation());
         sceneProperty().addListener((obs,oldScene,newScene) -> {
-            if (newScene!=null) {
-                newScene.windowProperty().addListener((wo,oldW,newW) -> attachWindow(newW));
-                if (newScene.getWindow()!=null) attachWindow(newScene.getWindow());
-            }
+            if (oldScene!=null) oldScene.windowProperty().removeListener(windowChanged);
+            if (disposed) return;
+            if (newScene!=null) newScene.windowProperty().addListener(windowChanged);
+            attachWindow(newScene==null ? null : newScene.getWindow());
             updateAnimation();
         });
         widthProperty().addListener((o,a,b) -> { requestRender(); revealCursor(); });
@@ -344,13 +350,20 @@ public class TerminalView extends Region {
     }
 
     private void attachWindow(Window window) {
-        if (window==null) return;
-        window.showingProperty().addListener((o,a,showing) -> { updateAnimation(); if (showing) requestRender(); });
-        window.outputScaleXProperty().addListener((o,a,b) -> requestRender());
-        window.outputScaleYProperty().addListener((o,a,b) -> requestRender());
-        if (window instanceof Stage st) {
-            st.iconifiedProperty().addListener((o,a,b) -> updateAnimation());
+        if (window==observedWindow) return;
+        if (observedWindow!=null) {
+            observedWindow.showingProperty().removeListener(windowVisibility);
+            observedWindow.outputScaleXProperty().removeListener(windowScale);
+            observedWindow.outputScaleYProperty().removeListener(windowScale);
+            if (observedWindow instanceof Stage s) s.iconifiedProperty().removeListener(windowVisibility);
         }
+        observedWindow=window;
+        if (window==null) return;
+        window.showingProperty().addListener(windowVisibility);
+        window.outputScaleXProperty().addListener(windowScale);
+        window.outputScaleYProperty().addListener(windowScale);
+        if (window instanceof Stage s) s.iconifiedProperty().addListener(windowVisibility);
+        requestRender();
     }
 
     public void setScrollRevealCallback(Runnable callback) { this.scrollRevealCallback=callback; }
@@ -379,6 +392,8 @@ public class TerminalView extends Region {
 
     public void dispose() {
         disposed=true;
+        if (getScene()!=null) getScene().windowProperty().removeListener(windowChanged);
+        attachWindow(null);
         renderPulse.stop();
         renderScheduled=false;
         blink.stop();

@@ -20,11 +20,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "fish-setup-common.h"
+#include "fish-user-launch.h"
 #include "fish-setup-version.h"
 
 /* Restrained Fish chrome; supports per-user (no admin) by default and optional all-users (UAC) install. */
-#define WIDTH 540
-#define HEIGHT 336
+#define WIDTH 680
+#define HEIGHT 216
 #define RESULT (WM_APP+1)
 #define PHASE (WM_APP+2)
 #define PREPARING (WM_APP+3)
@@ -53,7 +54,7 @@ static WCHAR status[512]=L"Ready to install for your Windows account.";
 static DWORD parent_pid=0;
 static HANDLE parent_process=NULL;
 static HANDLE elevated_process=NULL;
-static BOOL demo=FALSE,demo_error=FALSE,expanded=FALSE,issue=FALSE,fatal=FALSE,light=FALSE,contrast=FALSE;
+static BOOL demo=FALSE,demo_error=FALSE,demo_launch_error=FALSE,expanded=FALSE,issue=FALSE,fatal=FALSE,light=FALSE,contrast=FALSE;
 static int theme_override=0,progress_value=-1;
 static HDC paint_dc=NULL;
 static HBITMAP paint_image=NULL;
@@ -82,6 +83,14 @@ static void colors(BOOL force_system) {
     reset_art();
 }
 static void control_ground(HWND,HDC);
+static void coast_text(HDC dc,const WCHAR *s,RECT r,UINT flags,COLORREF ink) {
+    SetBkMode(dc,TRANSPARENT);
+    if (!contrast) {
+        RECT shadow=r; OffsetRect(&shadow,0,max(1,px(1)));
+        SetTextColor(dc,light ? RGB(236,245,241) : RGB(28,42,48)); DrawTextW(dc,s,-1,&shadow,flags);
+    }
+    SetTextColor(dc,ink); DrawTextW(dc,s,-1,&r,flags);
+}
 static void paint_option(HWND control,HDC dc) {
     RECT rect; GetClientRect(control,&rect);
     BOOL enabled=IsWindowEnabled(control),checked=SendMessageW(control,BM_GETCHECK,0,0)==BST_CHECKED;
@@ -98,9 +107,8 @@ static void paint_option(HWND control,HDC dc) {
         SelectObject(dc,old); DeleteObject(pen);
     }
     WCHAR value[160]; GetWindowTextW(control,value,160);
-    RECT label=rect; label.left=px(25); label.right-=px(2);
-    SelectObject(dc,body_font); SetBkMode(dc,TRANSPARENT); SetTextColor(dc,enabled ? text : muted);
-    DrawTextW(dc,value,-1,&label,DT_LEFT|DT_VCENTER|DT_SINGLELINE);
+    RECT label=rect; label.left=px(22); label.right-=px(2);
+    SelectObject(dc,body_font); coast_text(dc,value,label,DT_LEFT|DT_VCENTER|DT_SINGLELINE,enabled ? text : muted);
     if ((state&BST_FOCUS) && !(SendMessageW(control,WM_QUERYUISTATE,0,0)&UISF_HIDEFOCUS)) DrawFocusRect(dc,&label);
     option_paints++;
 }
@@ -117,8 +125,7 @@ static LRESULT CALLBACK option_procedure(HWND control,UINT message,WPARAM wp,LPA
 }
 static void label(HDC dc,const WCHAR *value,int x,int y,int width,int height,COLORREF color,HFONT font,UINT flags) {
     RECT rect={px(x),px(y),px(x+width),px(y+height)};
-    SetTextColor(dc,color); SetBkMode(dc,TRANSPARENT); SelectObject(dc,font);
-    DrawTextW(dc,value,-1,&rect,flags);
+    SelectObject(dc,font); coast_text(dc,value,rect,flags,color);
 }
 #include "fish-setup-ui.h"
 static BOOL payload(HANDLE input,Footer *footer,ULONGLONG *offset) {
@@ -379,7 +386,7 @@ static void reconcile_shortcuts_in_known_folder(const GUID *folder_id,BOOL is_pr
     }
     CoTaskMemFree(base);
 }
-static void reconcile_post_install(const WCHAR *installed_exe,const WCHAR *dest_dir) {
+static void reconcile_user_install(const WCHAR *installed_exe,const WCHAR *dest_dir) {
     PWSTR local=NULL;
     if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData,0,NULL,&local)) && local) {
         WCHAR alt[MAX_PATH];
@@ -404,10 +411,6 @@ static void reconcile_post_install(const WCHAR *installed_exe,const WCHAR *dest_
     HRESULT hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
     reconcile_shortcuts_in_known_folder(&FOLDERID_Programs,TRUE,installed_exe);
     reconcile_shortcuts_in_known_folder(&FOLDERID_Desktop,FALSE,installed_exe);
-    if (system_wide_mode) {
-        reconcile_shortcuts_in_known_folder(&FOLDERID_CommonPrograms,TRUE,installed_exe);
-        reconcile_shortcuts_in_known_folder(&FOLDERID_PublicDesktop,FALSE,installed_exe);
-    }
     if (SUCCEEDED(hr)) CoUninitialize();
 }
 static BOOL cleanup_test(void) {
@@ -478,7 +481,16 @@ static DWORD run_msi(void) {
                     if (window) PostMessageW(window,PHASE,2,0);
                     if (!version_ok(target)) result=ERROR_PRODUCT_VERSION;
                 }
-                if (result==ERROR_SUCCESS) reconcile_post_install(target,destination);
+                if (result==ERROR_SUCCESS) {
+                    if (system_wide_mode) {
+                        // A UAC credential prompt can select a different account. The
+                        // worker owns only the machine installation, never that account's profile.
+                        HRESULT hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
+                        reconcile_shortcuts_in_known_folder(&FOLDERID_CommonPrograms,TRUE,target);
+                        reconcile_shortcuts_in_known_folder(&FOLDERID_PublicDesktop,FALSE,target);
+                        if (SUCCEEDED(hr)) CoUninitialize();
+                    } else reconcile_user_install(target,destination);
+                }
             } else result=valid ? GetLastError() : ERROR_INVALID_PARAMETER;
         }
     }
@@ -537,62 +549,64 @@ static void start_install(void) {
     stop_frames(); motion=(FillMotion){0}; reset_art(); set_progress(-1);
     wcscpy(status,L"Verifying the installer\u2026");
     layout();
-    fill_toward(.08);
     if (demo) return;
     if (system_wide_mode && !IsUserAnAdmin()) {
         DWORD error=elevate_for_all_users();
         if (error) PostMessageW(window,RESULT,error,0);
-        else { wcscpy(status,L"Installing for everyone on this PC\u2026"); SetWindowTextW(description,status); fill_toward(.62); }
+        else { wcscpy(status,L"Installing for everyone on this PC\u2026"); SetWindowTextW(description,status); }
         return;
     }
     HANDLE worker=CreateThread(NULL,0,install_worker,NULL,0,NULL);
     if (worker) CloseHandle(worker);
     else PostMessageW(window,RESULT,GetLastError(),0);
 }
-/* The window that requested UAC owns completion; the elevated MSI worker never opens Fish.
-   If setup itself was started elevated, require a checked, limited token for the same user. */
-static BOOL start_as_user(const WCHAR *path,WCHAR *command,STARTUPINFOW *startup,PROCESS_INFORMATION *process) {
-    HANDLE token=NULL; TOKEN_ELEVATION elevation; DWORD bytes=0;
-    if (!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token)) return FALSE;
-    BOOL ok=GetTokenInformation(token,TokenElevation,&elevation,sizeof(elevation),&bytes);
-    if (ok && !elevation.TokenIsElevated)
-        ok=CreateProcessW(path,command,NULL,NULL,FALSE,0,NULL,destination,startup,process);
-    else if (ok) {
-        TOKEN_LINKED_TOKEN limited;
-        ok=GetTokenInformation(token,TokenLinkedToken,&limited,sizeof(limited),&bytes);
-        if (ok) {
-            ok=GetTokenInformation(limited.LinkedToken,TokenElevation,&elevation,sizeof(elevation),&bytes)
-                && !elevation.TokenIsElevated
-                && CreateProcessWithTokenW(limited.LinkedToken,0,path,command,0,NULL,destination,startup,process);
-            CloseHandle(limited.LinkedToken);
-        }
-    }
-    CloseHandle(token); return ok;
-}
 static BOOL launch_app(void) {
+    if (demo_launch_error) {
+        demo_launch_error=FALSE;
+        wcscpy(status,L"Installed. Open Fish from the Start menu or retry here (preview).");
+        return FALSE;
+    }
     if (demo) return TRUE;
-    WCHAR *command=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
-    WCHAR *path=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,32768*sizeof(WCHAR));
-    if (!command || !path) goto failed;
+    HRESULT result=E_OUTOFMEMORY;
+    WCHAR *memory=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,2*32768*sizeof(WCHAR));
+    if (!memory) goto failed;
+    WCHAR *path=memory,*command=memory+32768;
     swprintf(path,32768,L"%ls\\Fish.exe",destination);
-    BOOL valid=version_ok(path) && fish_quote(command,32768,path);
-    if (*data_directory && valid) {
-        valid=wcslen(command)+13<32768;
-        if (valid) { wcscat(command,L" --data-dir "); valid=fish_quote(command,32768,data_directory); }
+    if (!version_ok(path)) {result=HRESULT_FROM_WIN32(ERROR_PRODUCT_VERSION); goto failed;}
+    if (!fish_quote(command,32768,path)) {result=E_INVALIDARG; goto failed;}
+    WCHAR *arguments=command+wcslen(command);
+    if (*data_directory) {
+        if (wcslen(command)+13>=32768) {result=E_INVALIDARG; goto failed;}
+        wcscat(command,L" --data-dir "); arguments++;
+        if (!fish_quote(command,32768,data_directory)) {result=E_INVALIDARG; goto failed;}
     }
-    STARTUPINFOW startup={0}; startup.cb=sizeof(startup); PROCESS_INFORMATION process={0};
-    if (valid && start_as_user(path,command,&startup,&process)) {
-        CloseHandle(process.hThread); CloseHandle(process.hProcess);
-        HeapFree(GetProcessHeap(),0,command); HeapFree(GetProcessHeap(),0,path); return TRUE;
+    BOOL elevated;
+    if (!fish_elevation(GetCurrentProcess(),&elevated)) {result=E_ACCESSDENIED; goto failed;}
+    if (elevated) result=fish_open_from_desktop(path,arguments,destination);
+    else {
+        STARTUPINFOW startup={.cb=sizeof(startup)}; PROCESS_INFORMATION process={0};
+        if (!CreateProcessW(path,command,NULL,NULL,FALSE,0,NULL,destination,&startup,&process)) result=HRESULT_FROM_WIN32(GetLastError());
+        else {CloseHandle(process.hThread); CloseHandle(process.hProcess); result=S_OK;}
     }
+    if (result==S_OK) {HeapFree(GetProcessHeap(),0,memory); return TRUE;}
 failed:
-    if (command) HeapFree(GetProcessHeap(),0,command);
-    if (path) HeapFree(GetProcessHeap(),0,path);
-    wcscpy(status,L"Fish is installed, but could not open as a standard user. Try again or use the Start menu.");
+    if (memory) HeapFree(GetProcessHeap(),0,memory);
+    swprintf(status,512,L"Installed. Open Fish from the Start menu or retry here (0x%08lX).",(unsigned long)result);
     return FALSE;
 }
 static BOOL finish_launch(DWORD result,BOOL update,BOOL requested,BOOL (*launch)(void)) {
     return result==ERROR_SUCCESS && ((!update && !requested) || launch());
+}
+static BOOL launch_after_wash;
+static void end_wash(HWND hwnd) {
+    finishing=FALSE; stop_frames();
+    if (finish_launch(ERROR_SUCCESS,updating,launch_after_wash,launch_app)) { DestroyWindow(hwnd); return; }
+    issue=TRUE; SetWindowTextW(install,L"Open Fish"); layout(); SetFocus(install);
+}
+static void begin_wash(BOOL requested) {
+    launch_after_wash=requested; finishing=TRUE; submerged_at=0;
+    finish_start=GetTickCount64(); finish_from=motion.shown; motion.goal=1;
+    set_progress(100); layout(); advance_frame(frame_timer);
 }
 static int completion_attempts;
 static BOOL completion_success;
@@ -674,7 +688,7 @@ static void installed_location(void) {
 static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
     switch (message) {
         case WM_CREATE: {
-            #define BUTTON(id,name,kind) CreateWindowW(L"BUTTON",name,WS_CHILD|WS_TABSTOP|kind,0,0,0,0,hwnd,(HMENU)id,NULL,NULL)
+            #define BUTTON(id,name,kind) CreateWindowW(L"BUTTON",name,WS_CHILD|WS_CLIPSIBLINGS|WS_TABSTOP|kind,0,0,0,0,hwnd,(HMENU)id,NULL,NULL)
             minimize=BUTTON(MINIMIZE,L"Minimize",BS_PUSHBUTTON);
             cancel=BUTTON(CANCEL,L"Close",BS_PUSHBUTTON);
             options=BUTTON(OPTIONS,L"Installation options",BS_PUSHBUTTON);
@@ -685,7 +699,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             install=BUTTON(INSTALL,L"Install",BS_PUSHBUTTON);
             #undef BUTTON
             description=CreateWindowW(L"STATIC",L"",WS_CHILD|SS_OWNERDRAW,0,0,0,0,hwnd,NULL,NULL,NULL);
-            progress_bar=CreateWindowW(PROGRESS_CLASSW,L"Installation progress",WS_CHILD|PBS_MARQUEE,0,0,0,0,hwnd,NULL,NULL,NULL);
+            progress_bar=CreateWindowW(PROGRESS_CLASSW,L"Installation progress",WS_CHILD|WS_CLIPSIBLINGS|PBS_MARQUEE,0,0,0,0,hwnd,NULL,NULL,NULL);
             HWND buttons[]={change,options,install,cancel,minimize};
             for (unsigned i=0;i<sizeof(buttons)/sizeof(buttons[0]);i++)
                 if (!buttons[i] || !SetWindowSubclass(buttons[i],skin_proc,2,0)) return -1;
@@ -709,13 +723,23 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
         }
         case WM_SETTINGCHANGE:
         case WM_THEMECHANGED:
-            motion_preference(); colors(FALSE); RedrawWindow(hwnd,NULL,NULL,RDW_INVALIDATE|RDW_ALLCHILDREN); return 0;
+            colors(FALSE); motion_preference(); RedrawWindow(hwnd,NULL,NULL,RDW_INVALIDATE|RDW_ALLCHILDREN); return 0;
+        case WM_WINDOWPOSCHANGED: {
+            LRESULT res=DefWindowProcW(hwnd,message,wp,lp);
+            sync_frames(); return res;
+        }
         case WM_NCHITTEST: {
             POINT p={(short)LOWORD(lp),(short)HIWORD(lp)}; ScreenToClient(hwnd,&p);
-            if (p.y>=0 && p.y<px(40) && p.x>=0 && p.x<px(WIDTH-76)) return HTCAPTION;
+            if (p.y>=0 && p.y<px(33) && p.x>=0 && p.x<px(WIDTH-68)) return HTCAPTION;
             break;
         }
         case WM_ERASEBKGND: return 1;
+        case WM_PRINT:
+        case WM_PRINTCLIENT: {
+            RECT r; GetClientRect(hwnd,&r);
+            if (window && wp) surface((HDC)wp,r.right,r.bottom,TRUE);
+            return 0;
+        }
         case WM_PAINT: {
             PAINTSTRUCT paint; HDC dc=BeginPaint(hwnd,&paint); RECT rect; GetClientRect(hwnd,&rect);
             if (!paint_dc) paint_dc=CreateCompatibleDC(dc);
@@ -726,7 +750,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
                     paint_original=SelectObject(paint_dc,paint_image); paint_width=rect.right; paint_height=rect.bottom;
                 }
             }
-            surface(paint_image ? paint_dc : dc,rect.right,rect.bottom,FALSE);
+            surface(paint_image ? paint_dc : dc,rect.right,rect.bottom,TRUE);
             if (paint_image) BitBlt(dc,0,0,rect.right,rect.bottom,paint_dc,0,0,SRCCOPY);
             EndPaint(hwnd,&paint); return 0;
         }
@@ -743,7 +767,12 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
         }
         case WM_TIMER:
             if (wp==FRAME_TIMER) {
-                if (frame_timer) advance_frame(motion_enabled && !IsIconic(hwnd));
+                if (frame_timer) advance_frame(TRUE);
+                return 0;
+            }
+            if (finishing) {
+                if (!frame_timer && !submerged_at) advance_frame(FALSE);
+                if (submerged_at && GetTickCount64()-submerged_at>=1400) end_wash(hwnd);
                 return 0;
             }
             if (parent_process && !issue) {
@@ -758,7 +787,12 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             if (elevated_process && WaitForSingleObject(elevated_process,0)!=WAIT_TIMEOUT) {
                 DWORD result;
                 if (!GetExitCodeProcess(elevated_process,&result)) result=GetLastError();
-                CloseHandle(elevated_process); elevated_process=NULL; PostMessageW(hwnd,RESULT,result,0);
+                CloseHandle(elevated_process); elevated_process=NULL;
+                if (result==ERROR_SUCCESS) {
+                    WCHAR target[32768]; swprintf(target,32768,L"%ls\\Fish.exe",destination);
+                    reconcile_user_install(target,destination);
+                }
+                PostMessageW(hwnd,RESULT,result,0);
             }
             if (busy && demo) {
                 pulse++;
@@ -774,12 +808,12 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
         case PHASE:
             set_progress(-1);
             wcscpy(status,wp==2 ? L"Checking the installed version\u2026" : updating ? L"Applying the update\u2026" : L"Installing Fish\u2026");
-            SetWindowTextW(description,status); fill_toward(wp==2 ? .92 : .72); return 0;
+            SetWindowTextW(updating ? description : progress_bar,status); fill_toward(wp==2 ? .92 : .72); return 0;
         case PREPARING:
-            if (progress_value<0) SetWindowTextW(description,L"Preparing files\u2026");
-            if (wp>=100) SetWindowTextW(description,L"Verifying files\u2026");
+            if (progress_value<0) SetWindowTextW(updating ? description : progress_bar,L"Preparing files\u2026");
+            if (wp>=100) SetWindowTextW(updating ? description : progress_bar,L"Verifying files\u2026");
             set_progress(wp>=100 ? -1 : (int)wp);
-            fill_toward(.10+.38*unit(wp/100.)); return 0;
+            fill_toward(.48*unit(wp/100.)); return 0;
         case RESULT:
             if (!busy || completed) return 0;
             busy=FALSE; stop_frames();
@@ -787,9 +821,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
                 completed=TRUE; reboot=wp==ERROR_SUCCESS_REBOOT_REQUIRED;
                 wcscpy(status,reboot ? L"Installed. Restart Windows before opening Fish." : L"Fish " FISH_VERSION L" is installed.");
                 SetWindowTextW(install,L"Open Fish");
-                if (finish_launch((DWORD)wp,updating,SendMessageW(open_app,BM_GETCHECK,0,0)==BST_CHECKED,launch_app)) {
-                    DestroyWindow(hwnd); return 0;
-                }
+                if (!reboot) { begin_wash(SendMessageW(open_app,BM_GETCHECK,0,0)==BST_CHECKED); return 0; }
             } else {
                 if (wp==ERROR_CANCELLED || wp==ERROR_ACCESS_DENIED) wcscpy(status,L"Administrator access was not granted. Retry with permission to install for everyone.");
                 else if (wp==ERROR_INSTALL_ALREADY_RUNNING) wcscpy(status,L"Fish may still be running. Close it, then retry.");
@@ -803,10 +835,11 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             if (HIWORD(wp)!=BN_CLICKED) return 0;
             switch (LOWORD(wp)) {
                 case INSTALL:
-                    if (busy || !IsWindowVisible(install)) break;
+                    if (busy || finishing || !IsWindowVisible(install)) break;
                     if (completed) {
                         if (finish_launch(reboot ? ERROR_SUCCESS_REBOOT_REQUIRED : ERROR_SUCCESS,updating,TRUE,launch_app))
                             DestroyWindow(hwnd);
+                        else SetWindowTextW(description,status);
                     } else if (parent_process) {
                         waiting_since=GetTickCount64(); issue=FALSE;
                         wcscpy(status,L"Waiting for Fish to close\u2026"); layout();
@@ -821,7 +854,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
                 case ALL_USERS: if (!compact_view() && expanded) toggle_all_users(); break;
             }
             return 0;
-        case WM_CLOSE: if (!busy) DestroyWindow(hwnd); return 0;
+        case WM_CLOSE: if (finishing) end_wash(hwnd); else if (!busy) DestroyWindow(hwnd); return 0;
         case WM_DESTROY:
             stop_frames(); KillTimer(hwnd,1);
             if (accessible_properties) {
@@ -906,38 +939,77 @@ static BOOL option_test(void) {
     SendMessageW(all_users,BM_CLICK,0,0);
     GetWindowTextW(folder,actual,32768);
     valid=valid && SendMessageW(all_users,BM_GETCHECK,0,0)==BST_UNCHECKED && !wcscmp(actual,L"C:\\Users\\Test\\AppData\\Local\\Fish");
+    /* A fresh install keeps its buttons in place; only progress-only updates
+       remove them. Starting with options open must hide the editable details. */
+    busy=TRUE; position();
+    WCHAR name[32]; GetWindowTextW(install,name,32);
+    valid=valid && logical_height()==HEIGHT && !wcscmp(name,L"Installing\u2026")
+        && (GetWindowLongPtrW(options,GWL_STYLE)&WS_VISIBLE) && !IsWindowEnabled(options)
+        && (GetWindowLongPtrW(open_app,GWL_STYLE)&WS_VISIBLE) && !IsWindowEnabled(open_app)
+        && (GetWindowLongPtrW(install,GWL_STYLE)&WS_VISIBLE) && !IsWindowEnabled(install)
+        && !(GetWindowLongPtrW(folder,GWL_STYLE)&WS_VISIBLE) && (GetWindowLongPtrW(progress_bar,GWL_STYLE)&WS_VISIBLE);
+    SendMessageW(window,WM_COMMAND,MAKEWPARAM(OPTIONS,BN_CLICKED),(LPARAM)options);
+    valid=valid && expanded;
+    updating=TRUE; position();
+    valid=valid && !(GetWindowLongPtrW(install,GWL_STYLE)&WS_VISIBLE) && !(GetWindowLongPtrW(options,GWL_STYLE)&WS_VISIBLE);
+    busy=updating=expanded=FALSE;
     dpi=saved; fonts(); position(); return valid;
 }
 /* Drive the same UI-thread transition as the timer, without changing system settings. */
+static DWORD surf_sample(void) {
+    DWORD hash=2166136261U;
+    for (int j=px(35);j<px(162);j+=2) for (int i=px(185);i<px(669);i+=2)
+        hash=(hash^art_bits[(size_t)j*art_w+i])*16777619U;
+    return hash;
+}
 static BOOL motion_test(void) {
+    motion=(FillMotion){0}; shore_phase=0;
     updating=busy=TRUE; issue=FALSE; reset_art(); position();
-    BOOL valid=ensure_art(px(WIDTH),px(logical_height())) && fish_pixels;
-    /* Sample a real point on the nose as the soft edge passes. It must move
-       through intermediate colors without ever flashing back to the base. */
-    int sx=px(10),sy=px(88);
-    FishPixel sample=valid ? fish_pixels[sy*fish_w+sx] : (FishPixel){0,0};
-    int last_ink=0; BOOL blended=FALSE;
-    valid=valid && sample.base!=sample.filled;
+    if (!ensure_art(px(WIDTH),px(logical_height())) || !coast) return FALSE;
+    DWORD *nose=art_bits+(size_t)px(104)*art_w+px(379),*tail=art_bits+(size_t)px(62)*art_w+px(658);
+    compose_shore(1,0); DWORD filled=*nose;
+    compose_shore(0,0); DWORD base=*nose,thin_tail=*tail;
+    compose_shore(.33,0); BOOL swells=*tail==thin_tail && *nose!=base;
+    BOOL blended=FALSE;
+    BOOL valid=contrast || (base!=filled && swells);
+    compose_shore(.92,0);
+    valid=valid && shore_edges[px(64)]<WIDTH;
+    compose_shore(1,0);
+    for (int y=0;y<art_h;y++) valid=valid && shore_edges[y]>WIDTH+12;
     FillMotion m={.goal=.48,.last=1000};
-    for (unsigned tick=1;valid && tick<=125;tick++) {
+    for (unsigned tick=1;valid && tick<=250;tick++) {
         double before=m.shown;
         if (tick==20) m.goal=.72;
         motion_step(&m,1000+tick*16,TRUE);
         valid=m.shown>=before && m.shown<=m.goal && m.shown<1 && (tick!=1 || (m.shown>0 && m.shown<m.goal));
-        compose_fill(m.shown);
-        DWORD pixel=art_bits[(size_t)(px(FISH_Y)+sy)*art_w+px(FISH_X)+sx];
-        int ink=abs((int)GetRValue(pixel)-GetRValue(sample.base))+abs((int)GetGValue(pixel)-GetGValue(sample.base))
-            +abs((int)GetBValue(pixel)-GetBValue(sample.base));
-        if (pixel!=sample.base && pixel!=sample.filled) blended=TRUE;
-        valid=valid && ink>=last_ink; last_ink=ink;
+        if (tick<=20) {
+            compose_shore(m.shown,0);
+            if (*nose!=base && *nose!=filled) blended=TRUE;
+        }
     }
-    valid=valid && m.shown==m.goal && blended && last_ink>0;
-    motion=m; motion_enabled=FALSE;
-    set_progress(47); fill_toward(.92);
-    valid=valid && !frame_timer && motion.shown==.92 && SendMessageW(progress_bar,PBM_GETPOS,0,0)==47;
+    if (!valid || (!contrast && !blended)) fprintf(stderr,"Tide sweep failed: dpi=%u light=%d tip=%06lx/%06lx tail=%06lx/%06lx blended=%d swells=%d\n",
+        dpi,light,base,filled,thin_tail,*tail,blended,swells);
+    valid=valid && m.shown==m.goal && (contrast || blended);
+    /* With identical progress, only the water moves. Returning to the same phase
+       must produce the exact same picture, including the shell and text ground. */
+    DWORD *shell=art_bits+(size_t)px(61)*art_w+px(627),*paper=art_bits+(size_t)px(70)*art_w+px(40);
+    compose_shore(m.shown,0);
+    DWORD foam=surf_sample(),still_shell=*shell,still_paper=*paper;
+    shore_phase=1.56; compose_shore(m.shown,shore_phase);
+    if (!contrast && surf_sample()==foam) fputs("Tide did not move between phases.\n",stderr);
+    if (*shell!=still_shell || *paper!=still_paper) fputs("Stationary sand/paper sample crossed the surf.\n",stderr);
+    valid=valid && (contrast || surf_sample()!=foam) && *shell==still_shell && *paper==still_paper;
+    motion=m; apply_motion_preference(FALSE);
+    /* A reduced-motion ribbon also drops its travelling ripple. Compare two
+       fully static frames rather than a static frame against animated ink. */
+    DWORD reduced=surf_sample();
+    advance_frame(FALSE);
+    valid=valid && surf_sample()==reduced && !frame_timer && shore_phase==0;
+    motion=(FillMotion){0}; SendMessageW(window,PREPARING,47,0);
+    valid=valid && !frame_timer && motion.shown==motion.goal && motion.shown<=.47 && SendMessageW(progress_bar,PBM_GETPOS,0,0)==47;
+    SendMessageW(window,PHASE,2,0);
     fill_toward(.48); /* A late/duplicate report must never pull the fill backwards. */
-    valid=valid && motion.shown==.92 && frame_fill==motion.shown;
-    set_progress(-1); valid=valid && (GetWindowLongPtrW(progress_bar,GWL_STYLE)&PBS_MARQUEE);
+    valid=valid && motion.shown==.92 && frame_fill==motion.shown && (GetWindowLongPtrW(progress_bar,GWL_STYLE)&PBS_MARQUEE);
     return valid;
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show) {
@@ -958,7 +1030,11 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     BOOL preview=count>=3 && count<=5 && !wcscmp(args[1],L"--render-preview");
     BOOL controls=count==2 && !wcscmp(args[1],L"--test-controls");
     BOOL interactive=count>=2 && count<=3 && (!wcscmp(args[1],L"--preview-installer") ||
-        !wcscmp(args[1],L"--preview-update") || !wcscmp(args[1],L"--preview-update-error"));
+        !wcscmp(args[1],L"--preview-update") || !wcscmp(args[1],L"--preview-update-error") || !wcscmp(args[1],L"--preview-launch-error"));
+#ifdef FISH_PREVIEW_ONLY
+    if (count==1) interactive=TRUE;
+    if (!interactive && !preview && !controls) { LocalFree(args); return 2; }
+#endif
     WCHAR preview_path[32768]=L"";
     if (preview || interactive || controls) {
         demo=TRUE;
@@ -977,8 +1053,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
                 else if (wcscmp(args[3],L"installer")) { LocalFree(args); return 2; }
             }
         } else if (interactive) {
-            updating=wcscmp(args[1],L"--preview-installer")!=0;
-            demo_error=!wcscmp(args[1],L"--preview-update-error");
+            updating=count>1 && wcscmp(args[1],L"--preview-installer")!=0;
+            demo_error=count>1 && !wcscmp(args[1],L"--preview-update-error");
+            demo_launch_error=count>1 && !wcscmp(args[1],L"--preview-launch-error");
         }
     }
     if (count==5 && !wcscmp(args[1],L"--update-pid") && !wcscmp(args[3],L"--data-dir")) {
@@ -1013,7 +1090,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     klass.hIcon=LoadImageW(instance,MAKEINTRESOURCEW(1),IMAGE_ICON,32,32,LR_SHARED);
     klass.hIconSm=LoadImageW(instance,MAKEINTRESOURCEW(1),IMAGE_ICON,16,16,LR_SHARED);
     RegisterClassExW(&klass); colors(FALSE);
-    DWORD style=WS_POPUP|WS_SYSMENU|WS_MINIMIZEBOX|WS_CLIPCHILDREN;
+    DWORD style=WS_POPUP|WS_SYSMENU|WS_MINIMIZEBOX;
     POINT launch_point={0,0}; GetCursorPos(&launch_point);
     HMONITOR monitor=MonitorFromPoint(launch_point,MONITOR_DEFAULTTONEAREST);
     HWND foreground=GetForegroundWindow(); DWORD owner_pid=0;
@@ -1024,7 +1101,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     RECT work=launch.rcWork;
     /* A hidden HWND on the launch display gives us its effective DPI before we
        center or show anything. No 96-DPI primary-screen rectangle to correct. */
-    window=CreateWindowExW(WS_EX_APPWINDOW,klass.lpszClassName,updating ? L"Updating Fish" : L"Install Fish",
+    /* Present the animation and native child controls together, not a cleared
+       child background followed by text/checkmarks in a second visible paint. */
+    window=CreateWindowExW(WS_EX_APPWINDOW|WS_EX_COMPOSITED,klass.lpszClassName,updating ? L"Updating Fish" : L"Install Fish",
         style,work.left+(work.right-work.left)/2,work.top+(work.bottom-work.top)/2,1,1,NULL,NULL,instance,NULL);
     if (!window) { DeleteObject(field_brush); CoUninitialize(); return 4; }
     dpi=layout_dpi(&work,GetDpiForWindow(window)); fonts();
@@ -1036,7 +1115,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     CoCreateInstance(&CLSID_AccPropServices,NULL,CLSCTX_INPROC_SERVER,&IID_IAccPropServices,(void **)&accessible_properties);
     motion_preference(); set_progress(progress_value); layout();
     if (preview || controls) {
-        BOOL valid=controls ? option_test() && motion_test() : render(preview_path);
+        BOOL valid=controls ? option_test() : render(preview_path);
+        if (controls && !valid) fputs("Setup option geometry or state failed.\n",stderr);
+        if (controls) for (int theme=-1;theme<=1;theme+=2) for (UINT scale=96;scale<=144;scale+=48) {
+            theme_override=theme; dpi=scale; colors(FALSE); fonts();
+            BOOL pass=motion_test();
+            if (!pass) fprintf(stderr,"Setup motion check failed: theme %d at %u DPI.\n",theme,scale);
+            valid=pass && valid;
+        }
         DestroyWindow(window);
         if (field_brush) DeleteObject(field_brush);
         reset_art(); DeleteObject(body_font); DeleteObject(title_font); DeleteObject(medium_font);

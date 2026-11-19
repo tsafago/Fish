@@ -258,7 +258,10 @@ inline editor shows all bindings, exact-location recording and recoverable confl
 Edit contains clipboard operations; Inserts groups sign-on helpers, field/screen
 host inserts and the complete chooser. Pane actions have no one-child cascades.
 Help > Tutorials contains six event-driven, modeless real-control guides.
-Highlights follow their production controls/windows without intercepting input.
+A guide card sits beside the highlighted production control, in the Fish window
+where the user is working. It follows open menu rows, compact submenus, list
+popups and Settings categories without moving focus. On a cramped window the
+card can sit beside its owner; it never uses global always-on-top.
 Next, Back and both skip controls remain available; opening/replaying a guide
 never connects, creates a profile or saves credentials.
 Updates embeds the shared safe offline Markdown renderer, with explicit safe
@@ -276,13 +279,13 @@ recipes also connect once, independently of the ordinary-startup preference.
 Disconnect/failure never retries itself. Offline panes retain a small accessible
 Reconnect control, not a connection wizard.
 
-Settings > General exports the current panes to a shortcut on the Windows
-Desktop. A name and an optional Windows sign-in checkbox replace the
-library and destination picker. An existing desktop file is never replaced.
+Settings > Shortcuts exports the current window to the Windows Desktop and
+manages its named shortcuts. Rename, replace, delete and Windows sign-in
+operate on the selected Fish shortcut; unrelated links must not be changed.
 Recipes retain stable IDs, bounded geometry and fit/zoom; screen contents and
 secrets are excluded. Export uses native Windows Shell links and the real
 Fish.exe target. Each link launches a new independent ordinary window.
-The desktop-shortcut guide follows actual name/save/export/destination controls;
+The desktop-shortcut guide follows the Settings navigation and export controls;
 showing, replaying or skipping it never writes a file or launches a window.
 Keyboard Shortcuts pairs concise valid single/modifier examples with a searchable
 Allowed keys and actions reference derived from KeyChord and the action catalog.
@@ -323,6 +326,14 @@ text. Idle cursor blinking repaints its
 small region unless host blinking text requires a full terminal redraw.
 
 ## Do's and Don'ts
+
+Windows setup uses one coastline behind its native controls. Water starts beneath
+the copy; the large Fish mark is cut into sand on the right. As work advances,
+the mark thickens from nose to tail, remaining visible beneath the moving tide.
+Text has a one-pixel contrasting shadow; high contrast uses system ink alone.
+Only verified success submerges the whole window. The final frame holds briefly
+before setup closes or opens Fish. Reduced motion keeps the same states without
+the moving waves; errors and restart notices stay open.
 
 - Keep host function keys distinct from Ctrl+Alt application shortcuts.
 - Show focused terminals and docking targets without obscuring host text.

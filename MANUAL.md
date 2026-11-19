@@ -25,9 +25,11 @@ Click **+** to add a pane. Drag its header to the middle of another pane to swap
 
 Use **Ctrl+Tab** to move to the next pane. Closing a pane disconnects its session.
 
+To keep a session running in its own window, right-click the pane and choose **Detach pane** (also under **Panes**), or drag its header out of the window. Drag it onto a pane in another Fish window to dock it. **Escape** cancels a drag. Moving the last pane into another window closes the empty window. Windows opened with a separate data directory cannot exchange sessions.
+
 ## Desktop shortcuts
 
-Arrange the panes you want, then open **Settings > General** and create a desktop shortcut. Double-click it to open that arrangement in a new window. Choose the sign-in option if you want it to open when Windows starts.
+Arrange the panes you want, then open **Settings > Shortcuts** to export this window. Double-click its desktop shortcut to open that arrangement. Return to this tab to rename, replace or delete a shortcut, or choose whether it opens when you sign in to Windows. Keyboard bindings are under **Keyboard Shortcuts**.
 
 ## Appearance and updates
 

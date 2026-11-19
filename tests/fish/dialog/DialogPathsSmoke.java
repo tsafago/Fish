@@ -114,8 +114,7 @@ public final class DialogPathsSmoke {
                         heading instanceof Label l && stage.getTitle().equals(l.getText())
                         && bounds(heading).getMinY()>=bounds(header).getMaxY()-1,state+": page heading must sit below caption (none for Settings)");
                 var buttons=((Parent)header).lookupAll(".fish-chrome-button");
-                expect(buttons.contains(close) && buttons.size()==(stage.getModality()==Modality.NONE ? 2 : 1),
-                        state+": incorrect modal/modeless caption controls");
+                expect(buttons.equals(Set.of(close)),state+": dialog caption must offer only Close");
             }
             return new Frame(scene.getWidth(),scene.getHeight(),bounds(close).getMaxX(),bounds(close).getMinY(),
                     bounds(header).getWidth(),stage.getWidth(),stage.getHeight(),stage.getOutputScaleX(),stage.getOutputScaleY(),
@@ -177,12 +176,12 @@ public final class DialogPathsSmoke {
         expect(fx(() -> !p.isShowing()),label+": popup did not hide");
     }
     void saved() throws Exception {
-        var s=fx(() -> w.preferencesDialog("General")); painted(s,() -> w.preferences("General"));
+        var s=fx(() -> w.preferencesDialog("Shortcuts")); painted(s,() -> w.preferences("Shortcuts"));
         var p=fx(w::tutorialPreferences);
         frame(s,"Desktop shortcuts");
         TextField name=fx(() -> (TextField)p.tutorialTarget("shortcut-name"));
         Button create=fx(() -> (Button)p.tutorialTarget("shortcut-create"));
-        inside(s,name,"Shortcut name"); inside(s,create,"Create desktop shortcut");
+        inside(s,name,"Shortcut name"); inside(s,create,"Export current window");
         run(() -> { name.setText("Fixture two panes"); create.fire(); });
         expect(fx(() -> ((Label)p.tutorialTarget("shortcut-status")).getText().contains("Demo")
                 && w.savedLayouts().isEmpty()),"demo export must fail inline without creating a shortcut");
@@ -205,7 +204,7 @@ public final class DialogPathsSmoke {
         expect(fx(() -> p.primaryHex().getPseudoClassStates().stream().anyMatch(c -> c.getPseudoClassName().contains("invalid"))
                 || p.primaryHex().getStyleClass().stream().anyMatch(c -> c.contains("invalid"))),"incomplete hex must be marked invalid");
         run(() -> { p.primaryHex().setText("#224466"); p.primaryHex().fireEvent(new ActionEvent()); });
-        for (String page:List.of("Profiles","Keyboard Shortcuts","General","Updates")) {
+        for (String page:List.of("Profiles","Shortcuts","Keyboard Shortcuts","General","Updates")) {
             run(() -> p.navigationList().getSelectionModel().select(page));
             expect(fx(() -> page.equals(p.category())),page+" rail navigation");
             if (page.equals("Keyboard Shortcuts")) {
@@ -225,8 +224,6 @@ public final class DialogPathsSmoke {
         expect(fx(() -> button(s,"Update...").isDisabled()),"Update available after refused check");
         run(() -> p.select("Appearance"));
         minimum(s,"Settings"); inside(s,p.navigationList(),"Settings rail");
-        run(() -> button(s,"Maximize Settings").fire()); waitFor(s::isMaximized,"maximize failed");
-        run(() -> button(s,"Restore Settings").fire()); waitFor(() -> !s.isMaximized(),"restore failed");
         waitFor(() -> !p.saving(),"synthetic preference writes pending");
         dismiss(s,() -> key(s,KeyCode.ESCAPE),"Escape");
         expect(fx(() -> w.tutorialPreferences()==null),"Settings did not clear closed instance");
@@ -311,13 +308,109 @@ public final class DialogPathsSmoke {
         expect(fx(() -> w.scene().getFocusOwner()==w.active().presetsCombo()),title+" did not return focus to disconnected pane selector");
     }
     void guide(TutorialDialog.Guide g) throws Exception {
+        run(() -> { w.stage().setWidth(w.stage().getMinWidth()); w.stage().setHeight(w.stage().getMinHeight()); });
+        waitFor(() -> w.scene().getWidth()<=w.stage().getMinWidth() && w.scene().getHeight()<=w.stage().getMinHeight(),
+                g.title+": workspace did not reach minimum");
         run(() -> w.openTutorial(g,g==TutorialDialog.Guide.GETTING_STARTED));
-        var d=fx(w::activeTutorial); var s=d.stage(); frame(s,g.title); minimum(s,g.title);
+        var d=fx(w::activeTutorial); var s=d.hostStage();
         int pos=fx(d::currentStep);
         run(d.skipStepButton()::fire); expect(fx(() -> d.currentStep()>pos),g.title+": skip step");
         run(d.backButton()::fire); expect(fx(() -> d.currentStep()==pos),g.title+": back");
         inside(s,d.skipTutorialButton(),g.title+": Skip tutorial at minimum");
-        dismiss(s,() -> key(s,KeyCode.ESCAPE),"Escape"); expect(fx(d::ended),g.title+": guide not detached");
+        expect(fx(() -> d.card().isVisible() && d.card().getScene()==s.getScene()
+                && d.card().localToScene(d.card().getLayoutBounds()).contains(bounds(d.skipTutorialButton()))),
+                g.title+": Skip must be inside the visible card at minimum");
+        run(() -> key(d.skipTutorialButton(),KeyCode.ESCAPE,false,false));
+        expect(fx(() -> d.ended() && d.card().getScene()==null),g.title+": Escape did not detach guide");
+    }
+
+    void tutorialFollowing() throws Exception {
+        run(() -> {
+            w.stage().setWidth(1080);
+            w.addProfileCombo().requestFocus();
+            w.openTutorial(TutorialDialog.Guide.KEYBOARD,false);
+        });
+        var d=fx(w::activeTutorial);
+        expect(fx(() -> w.scene().getFocusOwner()==w.addProfileCombo()),"opening guide stole the existing focus");
+        Menu edit=fx(() -> w.menuBar().getMenus().stream().filter(m -> "Edit".equals(m.getText())).findFirst().orElseThrow());
+        MenuItem settings=fx(() -> edit.getItems().stream().filter(m -> "Settings...".equals(m.getText())).findFirst().orElseThrow());
+        run(edit::show);
+        waitFor(() -> settings.getStyleableNode()!=null && d.currentAnchor()==settings.getStyleableNode(),
+                "expected the visible Edit > Settings row, not the top-bar button");
+        expect(fx(() -> {
+            var popup=d.targetWindow();
+            var card=d.card().localToScreen(d.card().getLayoutBounds());
+            return popup instanceof PopupWindow && !card.intersects(popup.getX(),popup.getY(),popup.getWidth(),popup.getHeight())
+                    && d.highlightLayer().isMouseTransparent() && edit.isShowing() && d.currentStep()==0;
+        }),"guide obscures the open menu or advances on opening rather than selection");
+        run(() -> d.currentAnchor().executeAccessibleAction(AccessibleAction.FIRE));
+        waitFor(() -> d.currentAnchor() instanceof ListCell<?> c && "Keyboard Shortcuts".equals(c.getItem()),
+                "Settings should guide the user to the required category");
+        var p=fx(w::tutorialPreferences);
+        expect(fx(() -> d.card().getScene()==p.dialog().getScene() && !edit.isShowing()),"guide didn't follow the open Settings window");
+        run(() -> p.navigationList().getSelectionModel().select("Keyboard Shortcuts"));
+        waitFor(() -> d.currentStep()==1 && d.currentAnchor()==p.tutorialTarget("keyboard-search"),
+                "expected real search input after category selection");
+        run(() -> { ((TextField)d.currentAnchor()).requestFocus(); ((TextField)d.currentAnchor()).setText("Zoom"); });
+        expect(fx(() -> d.currentStep()==2 && p.dialog().getScene().getFocusOwner()==p.tutorialTarget("keyboard-search")),
+                "step advancement stole focus from the live input");
+        run(p::closeSettings);
+        waitFor(() -> d.targetWindow()==w.stage(),"closed Settings left stale guide ownership");
+        run(() -> { w.stage().setWidth(400); });
+        waitFor(() -> !w.chrome().menuBar().isVisible(),"compact fixture did not collapse menu bar");
+        var compact=fx(w.chrome()::openCompactMenu);
+        Menu group=fx(() -> (Menu)compact.getItems().stream().filter(i -> "Edit".equals(i.getText())).findFirst().orElseThrow());
+        waitFor(() -> d.currentAnchor()==group.getStyleableNode(),"compact root should point at Edit");
+        run(() -> {
+            var row=group.getStyleableNode();
+            // Same local hover the submenu skin uses; never move the desktop pointer.
+            Event.fireEvent(row,new MouseEvent(MouseEvent.MOUSE_ENTERED,1,1,1,1,MouseButton.NONE,0,
+                    false,false,false,false,false,false,false,false,false,false,null));
+            group.show();
+        });
+        var item=fx(() -> group.getItems().stream().filter(i -> "Settings...".equals(i.getText())).findFirst().orElseThrow());
+        waitFor(() -> d.currentAnchor()==item.getStyleableNode() && d.targetWindow()!=compact,"compact submenu row did not become the target");
+        run(() -> d.currentAnchor().executeAccessibleAction(AccessibleAction.FIRE));
+        waitFor(() -> w.tutorialPreferences()!=null && d.hostStage()==w.tutorialPreferences().dialog(),
+                "selecting compact Settings did not transfer guide");
+        var other=fx(() -> { Stage stage=new Stage(); stage.setScene(new Scene(new javafx.scene.control.TextField(),220,50)); stage.show(); return stage; });
+        try {
+            expect(fx(() -> !d.related(other) && d.card().getScene()!=other.getScene()
+                    && d.targetWindow()!=other),"unrelated fixture intercepted by guide");
+            run(() -> {
+                d.backButton().fire();
+                d.skipStepButton().fire();
+                key(d.skipTutorialButton(),KeyCode.ESCAPE,false,false);
+            });
+            expect(fx(() -> d.ended() && d.highlightLayer().getParent()==null && d.card().getParent()==null
+                    && w.tutorialPreferences().dialog().isShowing()),"Escape on guide closed Settings or left a stale overlay");
+        } finally { run(other::close); }
+        run(() -> { w.tutorialPreferences().forceDispose(); w.openTutorial(TutorialDialog.Guide.GETTING_STARTED,true);
+                    w.addProfileCombo().show(); });
+        var intro=fx(w::activeTutorial);
+        waitFor(() -> intro.currentAnchor() instanceof ListView<?> && intro.targetWindow() instanceof PopupWindow,
+                "guide didn't follow the profile chooser list");
+        run(() -> w.addProfileCombo().hide());
+        waitFor(() -> intro.currentAnchor()==w.addProfileCombo(),"profile list dismissal left a stale target");
+        run(intro.skipTutorialButton()::fire);
+        expect(fx(() -> intro.ended() && w.tutorialStatus()==StateStore.Tutorial.SKIPPED),"first-run skip was not persisted");
+        run(() -> {
+            w.openTutorial(TutorialDialog.Guide.PANES,false);
+            w.activeTutorial().go(4);
+            Platform.runLater(() -> w.executeCommand("Swap panes..."));
+        });
+        var panes=fx(w::activeTutorial);
+        waitFor(() -> panes.currentAnchor() instanceof ComboBox<?> && "Swap panes".equals(panes.hostStage().getTitle()),
+                "pane guide did not follow its owned swap form");
+        expect(fx(() -> {
+            var n=panes.currentAnchor();
+            return panes.card().isVisible() && !panes.card().localToScreen(panes.card().getLayoutBounds())
+                    .intersects(n.localToScreen(n.getLayoutBounds()));
+        }),"guide obscures the target pane selector on a small modal form");
+        run(() -> key(panes.currentAnchor(),KeyCode.ESCAPE,false,false));
+        waitFor(() -> panes.targetWindow()==w.stage(),"Escape in the form didn't dismiss the form and return the guide");
+        run(() -> FxTestSupport.button(panes.card(),"Close tutorial").fire());
+        expect(fx(() -> panes.ended() && panes.card().getScene()==null),"close did not remove the guide");
     }
     void keys() throws Exception {
         AtomicReference<String> action=new AtomicReference<>();
@@ -404,6 +497,7 @@ public final class DialogPathsSmoke {
             group("Workspace forms",this::forms); group("Prompts and notices",this::prompts); group("Profile editor",this::profiles);
             group("Manual",() -> docs("/MANUAL.md","Fish manual"));
             for (var g:TutorialDialog.Guide.values()) group("Tutorial "+g.title,() -> guide(g));
+            group("Live tutorial targets",this::tutorialFollowing);
             group("Key reference and recorder",this::keys); group("Recovery warnings",this::warnings);
         }
         group("Workspace menus and popups",this::menus);
@@ -418,7 +512,10 @@ public final class DialogPathsSmoke {
             Ui.startToolkitAsync().get(10,TimeUnit.SECONDS);
             var t=new DialogPathsSmoke(Files.createDirectory(Path.of("workspace")),AppTheme.valueOf(args[0]),
                     args[1].equals("native") ? 0 : Double.parseDouble(args[1]));
-            t.suite(Boolean.parseBoolean(args[2]));
+            if ("tutorials".equals(args[2])) {
+                for (var g:TutorialDialog.Guide.values()) t.group("Tutorial "+g.title,() -> t.guide(g));
+                t.group("Live tutorial targets",t::tutorialFollowing);
+            } else t.suite(Boolean.parseBoolean(args[2]));
             run(t.w::finishWindow);
             System.out.printf("RESULT theme=%s scale=%s checks=%d failures=%d%n",t.theme,args[1],t.checks,t.failures);
             t.problems.forEach(p -> System.out.println(" - "+p));

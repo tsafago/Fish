@@ -112,11 +112,11 @@ public final class ShortcutRefinementSmoke {
         Workspace w=f.workspace; int profiles=w.profileList().size();
         w.executeCommand("Tutorial: Desktop shortcuts");
         check(step(w)==0 && w.savedLayouts().isEmpty() && !w.active().busy(),"Opening guide has no session, profile or recipe side effects");
-        button(guide(w).stage(),"Skip step").fire(); button(guide(w).stage(),"Skip step").fire();
+        guide(w).skipStepButton().fire(); guide(w).skipStepButton().fire();
         check(step(w)==2,"Shortcut guide can skip profile/add without connecting");
         w.executeCommand("Saved layouts / shortcuts...");
         Preferences p=w.tutorialPreferences();
-        check(step(w)==3 && p.category().equals("General"),"Legacy action routes to General and advances");
+        check(step(w)==3 && p.category().equals("Shortcuts"),"Legacy action routes to Shortcuts and advances");
         TextField name=(TextField)p.tutorialTarget("shortcut-name"); name.setText("Synthetic tutorial shortcut");
         check(step(w)==4 && w.savedLayouts().isEmpty(),"Real name entry advances without saving");
         Button create=(Button)p.tutorialTarget("shortcut-create");
@@ -138,16 +138,16 @@ public final class ShortcutRefinementSmoke {
         String[] link=LayoutShortcuts.inspect(desktop.resolve("Fish - Synthetic tutorial shortcut (2).lnk"));
         check(link[0].equals(target.toString()) && link[1].equals(LayoutShortcuts.arguments(f.store.load().savedLayouts().getFirst().id(),w.dataDirectory())),
                 "Guided export produces a native link to the persisted UUID");
-        layout(p.dialog()); layout(guide(w).stage());
+        layout(p.dialog());
         image(p.dialog().getScene().getRoot(),"shortcut-settings");
-        image(guide(w).stage().getScene().getRoot(),"desktop-guide");
-        button(guide(w).stage(),"Back").fire(); check(step(w)==4,"Back remains available after actual export");
-        button(guide(w).stage(),"Skip tutorial").fire(); check(guide(w).ended(),"Guide is skippable at export stage");
+        image(guide(w).card(),"desktop-guide");
+        guide(w).backButton().fire(); check(step(w)==4,"Back remains available after actual export");
+        guide(w).skipTutorialButton().fire(); check(guide(w).ended(),"Guide is skippable at export stage");
         int saved=w.savedLayouts().size();
         w.executeCommand("Tutorial: Desktop shortcuts");
         check(step(w)==0 && w.profileList().size()==profiles && w.savedLayouts().size()==saved && !w.active().busy(),
                 "Replay resets progress without new sessions, recipes or profile changes");
-        button(guide(w).stage(),"Skip tutorial").fire(); p.closeSettings();
+        guide(w).skipTutorialButton().fire(); p.closeSettings();
     }
 
     private static void transactions(Path root,ShortcutFixture shell) throws Exception {
@@ -186,6 +186,123 @@ public final class ShortcutRefinementSmoke {
         }
     }
 
+    private static String edit(Workspace w,SavedLayout before,java.util.function.UnaryOperator<SavedLayout> mutation) throws Exception {
+        AtomicReference<String> result=new AtomicReference<>();
+        edt(() -> { w.editShortcut(before,mutation,change -> result.set(change.warning()),result::set); return null; });
+        FxTestSupport.await(() -> result.get()!=null,"Shortcut edit did not finish");
+        return result.get();
+    }
+
+    // Generate historically deployed arguments (and lookalikes) without ever resolving a real shell folder.
+    private static void rawLink(ShortcutFixture shell,Path link,String args) throws Exception {
+        if (!Set.of(shell.desktop,shell.startup).contains(link.getParent())) throw new AssertionError("Not a fixture shell folder");
+        var method=LayoutShortcuts.class.getDeclaredMethod("create0",String.class,String.class,String.class,String.class);
+        method.setAccessible(true);
+        method.invoke(null,link.toString(),shell.exe.toString(),args,shell.exe.getParent().toString());
+    }
+
+    private static void management(Path root,ShortcutFixture shell) throws Exception {
+        var reject=new java.util.concurrent.atomic.AtomicBoolean();
+        try (var f=new UsabilityIterationSmoke.Fixture(root.resolve("managed workspace"),s -> state -> {
+            if (reject.get()) throw new java.io.IOException("recipe write refused"); s.save(state);
+        })) {
+            Workspace first=f.first();
+            Preferences p=edt(() -> { first.preferences("General"); return first.tutorialPreferences(); });
+            Workspace second=edt(() -> {
+                check(f.app.newWindow(first),"Second broker window opened");
+                Workspace w=f.app.windows().getLast();
+                w.preferences("Shortcuts");
+                check(first.tutorialPreferences()==p && p.category().equals("Shortcuts"),"Existing Settings routes to Shortcuts");
+                ((TextField)p.tutorialTarget("shortcut-name")).setText("Work shift");
+                ((Button)p.tutorialTarget("shortcut-create")).fire(); return w;
+            });
+            FxTestSupport.await(() -> !f.app.saving(),"Export did not finish");
+            SavedLayout original=f.store.load().savedLayouts().getFirst();
+            check(edt(() -> original.window().layout().equals(second.currentLayout()) && !second.currentLayout().equals(first.currentLayout())),
+                    "Shared Settings exports the requesting window, not the Settings owner");
+            Path desk=shell.desktop.resolve(SavedLayout.shortcutFileName(original.name()));
+            Path customDesk=Files.move(desk,shell.desktop.resolve("Arbitrary local name.LNK"));
+            edt(() -> { ((CheckBox)p.tutorialTarget("shortcut-sign-in")).fire(); return null; });
+            FxTestSupport.await(() -> !f.app.saving(),"Sign-in change did not finish");
+            SavedLayout enabled=original.withAutostart(true);
+            Path customStart=Files.move(shell.startup.resolve(SavedLayout.shortcutFileName(original.name())),shell.startup.resolve("Custom startup.lnk"));
+            check(f.store.load().savedLayouts().equals(List.of(enabled)) && Files.exists(customDesk),"Sign-in adds a real link without renaming Desktop");
+            byte[] deskBytes=Files.readAllBytes(customDesk),startBytes=Files.readAllBytes(customStart);
+
+            Path collision=shell.desktop.resolve("Fish - New shift.lnk");
+            LayoutShortcuts.create(collision,shell.exe,root.resolve("other data"),original.id());
+            byte[] foreign=Files.readAllBytes(collision);
+            Path appLink=shell.startup.resolve(collision.getFileName());
+            LayoutShortcuts.createApplicationLink(appLink,shell.exe); byte[] appBytes=Files.readAllBytes(appLink);
+            Path lookalike=shell.desktop.resolve("Almost.lnk");
+            rawLink(shell,lookalike,LayoutShortcuts.arguments(original.id(),first.dataDirectory())+" --demo");
+            Path unknown=shell.startup.resolve("Unlisted.lnk");
+            LayoutShortcuts.create(unknown,shell.exe,first.dataDirectory(),UUID.randomUUID());
+            LayoutShortcuts.syncAutostart(first.dataDirectory(),shell.exe,List.of(enabled));
+            check(Files.exists(unknown) && Files.exists(customStart),"Startup reconciliation touches only listed UUIDs; keeps a manually renamed matching link");
+            Path outside=root.resolve("Outside Desktop.lnk"); Files.copy(customDesk,outside);
+            Path renamedDesk=shell.desktop.resolve("Fish - New shift (2).lnk"),renamedStart=shell.startup.resolve(renamedDesk.getFileName());
+            reject.set(true);
+            String error=edit(second,enabled,s -> s.renamed("New shift"));
+            reject.set(false);
+            check(error.contains("recipe write refused") && Arrays.equals(deskBytes,Files.readAllBytes(customDesk))
+                    && Arrays.equals(startBytes,Files.readAllBytes(customStart)) && !Files.exists(renamedDesk) && !Files.exists(renamedStart)
+                    && f.store.load().savedLayouts().equals(List.of(enabled)),"Failed rename restores both old Shell files byte-for-byte, neither new name nor recipe published");
+            check(edit(second,enabled,s -> s.renamed("New shift")).isEmpty(),"Rename commits");
+            SavedLayout renamed=enabled.renamed("New shift");
+            for (Path link:List.of(renamedDesk,renamedStart))
+                check(LayoutShortcuts.inspect(link)[1].equals(LayoutShortcuts.arguments(original.id(),first.dataDirectory())),"Renamed link uses original UUID and data directory");
+            check(!Files.exists(customDesk) && !Files.exists(customStart) && edt(() -> first.savedLayouts().equals(second.savedLayouts())
+                    && p.tutorialTarget("shortcut-list") instanceof ListView<?> list && list.getSelectionModel().getSelectedItem().equals(renamed)),
+                    "Arbitrarily named old links gone; shared Settings selection refreshed by UUID");
+            check(edit(first,renamed,s -> first.captureShortcut(s.id(),s.name(),s.autostart())).isEmpty(),"Save over commits");
+            SavedLayout replaced=f.store.load().savedLayouts().getFirst();
+            check(edt(() -> replaced.id().equals(original.id()) && replaced.window().layout().equals(first.currentLayout())
+                    && replaced.autostart() && second.savedLayouts().equals(List.of(replaced))),"Save over replaces recipe for all windows, preserving UUID and sign-in");
+            check(edit(second,renamed,s -> null).contains("changed"),"Stale recipe cannot delete a newer edit");
+            Files.copy(renamedStart,customStart);
+            check(edit(second,replaced,s -> s.withAutostart(false)).isEmpty() && !Files.exists(renamedStart) && !Files.exists(customStart)
+                    && Files.exists(renamedDesk),"Disabling sign-in removes every matching Startup link but not Desktop");
+            SavedLayout disabled=replaced.withAutostart(false);
+            String previous=System.getProperty("fish.test.kiosk"); System.setProperty("fish.test.kiosk","true");
+            try { check(edit(first,disabled,s -> null).contains("Kiosk") && Files.exists(renamedDesk),"Kiosk blocks management before link changes"); }
+            finally { if (previous==null) System.clearProperty("fish.test.kiosk"); else System.setProperty("fish.test.kiosk",previous); }
+            reject.set(true); byte[] renamedBytes=Files.readAllBytes(renamedDesk);
+            error=edit(first,disabled,s -> null); reject.set(false);
+            check(error.contains("refused") && Arrays.equals(renamedBytes,Files.readAllBytes(renamedDesk)) && f.store.load().savedLayouts().equals(List.of(disabled)),
+                    "Refused delete restores exact Desktop link and backing recipe");
+            check(edit(first,disabled,s -> null).isEmpty() && !Files.exists(renamedDesk) && f.store.load().savedLayouts().isEmpty()
+                    && edt(() -> second.savedLayouts().isEmpty() && f.app.openRequest(disabled.id())==2),"Committed delete removes Desktop, broker entry and persistent recipe");
+            check(Arrays.equals(foreign,Files.readAllBytes(collision)) && Arrays.equals(appBytes,Files.readAllBytes(appLink))
+                    && Files.exists(lookalike) && Arrays.equals(deskBytes,Files.readAllBytes(outside)),"Unrelated workspace, application, extra-argument and out-of-scope links survive");
+
+            // UUID-only links denote the default data directory. Pass that path for identity comparison only;
+            // there is no real StateStore here and the commit does no I/O.
+            rawLink(shell,customDesk,"--layout "+original.id()); rawLink(shell,customStart,"--layout "+original.id());
+            LayoutShortcuts.change(first.dataDirectory(),original,null,() -> {});
+            check(Files.exists(customDesk) && Files.exists(customStart),"A custom data directory cannot claim legacy default-workspace links");
+            Path defaultData=fish.Main.defaultDirectory(Path.of(Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home"))));
+            LayoutShortcuts.change(defaultData,original,null,() -> {});
+            check(!Files.exists(customDesk) && !Files.exists(customStart),"Legacy UUID-only Desktop and Startup links managed by the default workspace");
+
+            LayoutShortcuts.create(customDesk,shell.exe,first.dataDirectory(),original.id());
+            byte[] originalBytes=Files.readAllBytes(customDesk);
+            try {
+                LayoutShortcuts.change(first.dataDirectory(),original,null,() -> {
+                    Files.writeString(customDesk,"occupied during save",StandardOpenOption.CREATE_NEW);
+                    throw new java.io.IOException("injected partial failure");
+                });
+                throw new AssertionError("Expected rollback conflict");
+            } catch (java.io.IOException partial) {
+                try (var backups=Files.newDirectoryStream(shell.desktop,".fish-*.bak")) {
+                    Path backup=backups.iterator().next();
+                    check(partial.getMessage().contains(backup.toString()) && Files.readString(customDesk).equals("occupied during save")
+                            && Arrays.equals(Files.readAllBytes(backup),originalBytes),"Rollback conflict preserves the new occupant and reports the recoverable original");
+                }
+            }
+        }
+    }
+
     private static void chrome(Workspace w) throws Exception {
         WindowChrome chrome=(WindowChrome)field(w,"chrome");
         ComboBox<?> combo=(ComboBox<?>)field(w,"addProfileSelector"); Button add=(Button)field(w,"addPane");
@@ -214,14 +331,16 @@ public final class ShortcutRefinementSmoke {
         if (!path.isBlank()) { evidence=Path.of(path); Files.createDirectories(evidence); }
         Path root=Files.createTempDirectory(Path.of("build"),"shortcut-refinement-").toAbsolutePath();
         try (ShortcutFixture shell=new ShortcutFixture(root); Fixture fixture=new Fixture(root.resolve("workspace"))) {
-            edt(() -> { chrome(fixture.workspace); keyboard(fixture.workspace); tutorial(fixture); return null; });
+            if (!Arrays.asList(args).contains("--manager-only"))
+                edt(() -> { chrome(fixture.workspace); keyboard(fixture.workspace); tutorial(fixture); return null; });
             transactions(root,shell);
+            management(root,shell);
             check(Window.getWindows().stream().noneMatch(Window::isShowing),"No test window was ever shown");
         } finally {
             FxTestSupport.closeAllWindows();
             FxTestSupport.deleteTree(root);
         }
-        System.out.println("PASS unified chrome / parser-derived reference / real shortcut tutorial: "+checks);
+        System.out.println("PASS shortcut management, broker, native Shell links and rollback: "+checks+" total checks");
         Ui.finishTestRun();
     }
 }

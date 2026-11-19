@@ -22,9 +22,12 @@ if ($AllUsers -and -not $isAdmin -and $env:FISH_TEST_NO_ELEVATE -ne '1') {
     if ($DesktopShortcut) { $argList += '-DesktopShortcut' }
     if ($NoStartMenuShortcut) { $argList += '-NoStartMenuShortcut' }
     if ($NoRegistry) { $argList += '-NoRegistry' }
-    if ($Launch) { $argList += '-Launch' }
     if ($Quiet) { $argList += '-Quiet' }
     $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList ($argList -join ' ') -Verb RunAs -Wait -PassThru
+    if ($proc.ExitCode -eq 0 -and $Launch) {
+        try { Start-Process -FilePath (Join-Path $Destination 'Fish.exe') -WorkingDirectory $Destination }
+        catch { Write-Warning "Fish is installed. Open it from the Start menu. Windows could not open it automatically: $($_.Exception.Message)" }
+    }
     exit $proc.ExitCode
 }
 
@@ -276,7 +279,7 @@ try {
     }
 
     $version = (Get-Item -LiteralPath $targetExe).VersionInfo.ProductVersion
-    if (-not $version) { $version = '0.10.3' }
+    if (-not $version) { $version = '0.10.4' }
     $sizeBytes = (Get-ChildItem -LiteralPath $targetDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
     $sizeKb = [int][Math]::Ceiling($sizeBytes / 1024.0)
     $uninstallScript = Join-Path $targetDir 'Uninstall-Fish.ps1'
@@ -343,7 +346,11 @@ try {
         }
     }
     if ($Launch) {
-        Start-Process -FilePath $targetExe -WorkingDirectory $targetDir
+        if ($isAdmin) { Write-Warning 'Fish is installed. Open Fish from your normal Windows session.' }
+        else {
+            try { Start-Process -FilePath $targetExe -WorkingDirectory $targetDir }
+            catch { Write-Warning "Fish is installed. Open it from the Start menu. Windows could not open it automatically: $($_.Exception.Message)" }
+        }
     }
 } finally {
     if ($tempExtract -and (Test-Path -LiteralPath $tempExtract)) {

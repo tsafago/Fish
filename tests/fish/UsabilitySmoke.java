@@ -209,7 +209,7 @@ public final class UsabilitySmoke {
         w.tutorialStatus(StateStore.Tutorial.NEW); w.startTutorialIfNeeded();
         TutorialDialog guide=(TutorialDialog)field(w,"tutorial");
         List<Profile> original=w.profileList(); int panes=w.sessionPanes().size();
-        check(w.tutorialStatus()==StateStore.Tutorial.IN_PROGRESS && guide.stage().getModality()==javafx.stage.Modality.NONE,
+        check(w.tutorialStatus()==StateStore.Tutorial.IN_PROGRESS && guide.card().getScene()==w.scene(),
                 "First-run production guide is user-paced and modeless.");
         guide.finish(true);
         check(w.tutorialStatus()==StateStore.Tutorial.COMPLETED && w.profileList().equals(original) && w.sessionPanes().size()==panes,

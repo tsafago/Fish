@@ -60,11 +60,13 @@ public final class AppShortcuts {
     }
 
     private void filterSceneEvent(KeyEvent event) {
+        if (TutorialDialog.insideCard(event.getTarget())) return;
         Node target=event.getTarget() instanceof Node n ? n : workspace.scene().getFocusOwner();
         if (dispatchKey(target,event)) event.consume();
     }
 
     private void filterScrollEvent(ScrollEvent event) {
+        if (TutorialDialog.insideCard(event.getTarget())) return;
         Node target=event.getTarget() instanceof Node n ? n : workspace.scene().getFocusOwner();
         if (dispatchScroll(target,event)) event.consume();
     }

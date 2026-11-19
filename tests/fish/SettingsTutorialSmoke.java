@@ -176,7 +176,7 @@ public final class SettingsTutorialSmoke {
         check(fixture.http.checks.get()==0,"Constructing Appearance sends no metadata request");
         check(w.preferencesDialog("Appearance")==p.dialog(),"Same Settings dialog reused");
         @SuppressWarnings("unchecked") ListView<String> nav=(ListView<String>)field(p,"navigation");
-        check(List.copyOf(nav.getItems()).equals(List.of("Appearance","Profiles","Keyboard Shortcuts","General","Updates")),
+        check(List.copyOf(nav.getItems()).equals(List.of("Appearance","Profiles","Shortcuts","Keyboard Shortcuts","General","Updates")),
                 "Direct understandable category index");
         for (String control:List.of("theme","palette","effect","font","header","footer","outline"))
             check(p.tutorialTarget(control)!=null,"Real inline Appearance control: "+control);
@@ -199,16 +199,16 @@ public final class SettingsTutorialSmoke {
     private static void tutorials(Fixture fixture) throws Exception {
         Workspace w=fixture.workspace; int profilesBefore=w.profileList().size();
         w.openTutorial(TutorialDialog.Guide.GETTING_STARTED,true);
-        check(guide(w).stage().getModality()==Modality.NONE,"Tutorial is actionable/modeless");
-        button(guide(w).stage(),"Skip step").fire(); check(step(w)==1,"Skip profile selection without host/auth activity");
+        check(guide(w).card().getScene()==w.scene(),"Tutorial shares the interactive workspace");
+        guide(w).skipStepButton().fire(); check(step(w)==1,"Skip profile selection without host/auth activity");
         w.executeCommand("Add pane"); check(step(w)==2 && w.sessionPanes().size()==1,"Actual Add action progresses intro and reuses a pristine tile");
         w.executeCommand("Add pane");
         ((Button)w.active().tutorialCloseTarget()).fire(); check(step(w)==3 && w.sessionPanes().size()==1,"Actual X progresses intro");
         w.executeCommand(Shortcuts.SETTINGS); check(step(w)==4,"Actual Settings route progresses intro");
         check(w.profileList().size()==profilesBefore && !w.active().busy(),"Intro never creates a profile or connects secretly");
-        button(guide(w).stage(),"Skip tutorial").fire(); check(w.tutorialStatus()==StateStore.Tutorial.SKIPPED && guide(w).ended(),"Skip whole guide at any step");
+        guide(w).skipTutorialButton().fire(); check(w.tutorialStatus()==StateStore.Tutorial.SKIPPED && guide(w).ended(),"Skip whole guide at any step");
 
-        w.openTutorial(TutorialDialog.Guide.APPEARANCE,false); button(guide(w).stage(),"Show control").fire();
+        w.openTutorial(TutorialDialog.Guide.APPEARANCE,false); guide(w).tryItButton().fire();
         Preferences p=w.tutorialPreferences(); check(step(w)==1 && p.category().equals("Appearance"),"Guide opens actual Appearance category");
         ComboBox<?> app=(ComboBox<?>)field(p,"theme"); app.getSelectionModel().select((app.getSelectionModel().getSelectedIndex()+1)%AppTheme.values().length);
         check(step(w)==2,"Actual theme selection progresses");
@@ -223,7 +223,7 @@ public final class SettingsTutorialSmoke {
         check(guide(w).ended() && !p.ended(),"Acknowledged autosave finishes guide and retains Settings");
         check(w.profileList().get(1).theme().equals("Phosphor"),"Appearance does not silently recolor every profile");
 
-        w.openTutorial(TutorialDialog.Guide.PASSWORD_PROFILE,false); button(guide(w).stage(),"Show control").fire();
+        w.openTutorial(TutorialDialog.Guide.PASSWORD_PROFILE,false); guide(w).tryItButton().fire();
         check(step(w)==1,"Profile guide selects actual inline editor");
         button(p.dialog(),"New").fire(); check(step(w)==2 && w.profileList().size()==profilesBefore+1,"New creates one profile");
         @SuppressWarnings("unchecked") ComboBox<Profile.Authentication> auth=(ComboBox<Profile.Authentication>)field(p.profiles,"authentication");
@@ -233,7 +233,7 @@ public final class SettingsTutorialSmoke {
         ((CheckBox)field(p.profiles,"remember")).fire(); check(step(w)==6,"Actual login preference progresses");
         p.profiles.deviceField().setText("DSP1"); check(step(w)==7,"Editing optional device progresses");
         snapshot(p.dialog(),"profiles-inline");
-        button(guide(w).stage(),"Done").fire();
+        guide(w).nextButton().fire();
     }
 
     private static void keyboardAndPanes(Fixture fixture) throws Exception {
@@ -241,7 +241,7 @@ public final class SettingsTutorialSmoke {
         check(guide(w).ended() && w.profileList().size()==3,"Autosave keeps one new profile, with no password/ticket operation");
         check(((ComboBox<?>)field(p,"scope")).getItems().size()==3,"New profile immediately available for appearance in same Settings");
 
-        w.openTutorial(TutorialDialog.Guide.KEYBOARD,false); button(guide(w).stage(),"Show control").fire();
+        w.openTutorial(TutorialDialog.Guide.KEYBOARD,false); guide(w).tryItButton().fire();
         check(step(w)==1,"Guide opens actual Keyboard Shortcuts");
         KeyboardEditor keyboard=(KeyboardEditor)field(p,"keyboard");
         ((TextField)field(keyboard,"search")).setText("Zoom in"); check(step(w)==2,"Actual search progresses");
@@ -265,11 +265,12 @@ public final class SettingsTutorialSmoke {
         dragDivider(w,false); check(step(w)==4,"Resizing rows progresses");
         List<SessionPane> order=w.sessionPanes(); w.dock(order.get(0).id(),order.get(1).id(),Layout.Dock.CENTER);
         check(step(w)==5,"Only an actual swap progresses");
-        button(guide(w).stage(),"Show control").fire(); p=w.tutorialPreferences();
+        guide(w).tryItButton().fire(); p=w.tutorialPreferences();
         ((CheckBox)p.tutorialTarget("startup")).fire(); check(step(w)==6,"Actual startup control progresses");
         Preferences startupEditor=p; UsabilityIterationSmoke.settle(() -> !startupEditor.saving(),"Startup setting did not autosave");
-        snapshot(guide(w).stage(),"tutorial");
+        snapshot(guide(w).hostStage(),"tutorial");
         w.executeCommand("Fit host screen"); check(step(w)==7,"Actual Fit advances to reusable shortcuts");
+        w.preferences("Shortcuts");
         ((TextField)p.tutorialTarget("shortcut-name")).setText("Tutorial synthetic shortcut");
         ((Button)p.tutorialTarget("shortcut-create")).fire();
         UsabilityIterationSmoke.settle(() -> !w.exportingShortcut(),"Shortcut export did not finish");
@@ -277,9 +278,9 @@ public final class SettingsTutorialSmoke {
 
         for (TutorialDialog.Guide type:TutorialDialog.Guide.values()) {
             int count=w.profileList().size(); w.openTutorial(type,false); check(step(w)==0,"Replay restarts "+type);
-            button(guide(w).stage(),"Skip step").fire(); button(guide(w).stage(),"Back").fire();
-            check(step(w)==0 && !button(guide(w).stage(),"Skip tutorial").isDisabled(),"Back and both skips available in "+type);
-            button(guide(w).stage(),"Skip tutorial").fire(); check(w.profileList().size()==count,"Replay/skip causes no profile changes");
+            guide(w).skipStepButton().fire(); guide(w).backButton().fire();
+            check(step(w)==0 && !guide(w).skipTutorialButton().isDisabled(),"Back and both skips available in "+type);
+            guide(w).skipTutorialButton().fire(); check(w.profileList().size()==count,"Replay/skip causes no profile changes");
         }
         p.closeSettings();
         Preferences last=p; UsabilityIterationSmoke.settle(last::ended,"Startup option did not finish saving");

@@ -15,6 +15,7 @@ import javafx.geometry.Point2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextArea;
 import javafx.scene.image.ImageView;
@@ -732,7 +733,7 @@ public final class DpiAndLatencySmoke {
                 TutorialDialog td = new TutorialDialog(w, guide, false);
                 try {
                     List<?> steps = (List<?>) FxTestSupport.field(td, "steps");
-                    TextArea copy = (TextArea) FxTestSupport.field(td, "text");
+                    Label copy = (Label) FxTestSupport.field(td, "text");
                     for (int i = 0; i < steps.size(); i++) {
                         td.go(i);
                         String body = copy.getText();
@@ -751,10 +752,8 @@ public final class DpiAndLatencySmoke {
                         check(highlightRect.isVisible() && highlightRect.getWidth() >= 60 && highlightRect.getHeight() >= 20,
                                 "Starter tutorial step 0 visibly highlights top-bar profile selector.");
                         double initialHighlightX = highlightRect.getX();
-                        javafx.geometry.Rectangle2D mon = new javafx.geometry.Rectangle2D(0, 0, 1920, 1040);
-                        Point2D pos0 = td.computeDialogPosition(mon, 100, 80, 380, 232);
                         Bounds anchorScene = td.currentAnchor().localToScene(td.currentAnchor().getBoundsInLocal());
-                        check(pos0 != null && pos0.getY() >= 80 + anchorScene.getMaxY() + 6,
+                        check(td.card().getLayoutY() >= anchorScene.getMaxY() + 6,
                                 "Starter tutorial step 0 positions cleanly below the top-bar profile selector without covering it.");
                         w.setSize(520, 720);
                         FxTestSupport.layout(w);
@@ -764,7 +763,7 @@ public final class DpiAndLatencySmoke {
                         FxTestSupport.layout(w);
                     }
                 } finally {
-                    td.setVisible(false);
+                    td.dispose();
                 }
             }
 

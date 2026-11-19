@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.10.3'
+$version = '0.10.4'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 $distribution = Split-Path -Parent $image
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
@@ -126,7 +126,7 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.DpiAndLatencySmoke
     if ($LASTEXITCODE -ne 0) { throw 'DPI 1px border and latency smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.ZeroTenFeaturesSmoke
-    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.3 feature and stress checks failed.' }
+    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.4 feature and stress checks failed.' }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }

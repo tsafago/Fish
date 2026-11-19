@@ -36,7 +36,7 @@ import fish.security.KioskMode;
 import static org.tn5250j.TN5250jConstants.*;
 
 public final class SessionPane extends BorderPane {
-    private final Workspace workspace;
+    private Workspace workspace;
     private final UUID id;
     private Profile profile;
     private Keymap keys;
@@ -111,7 +111,7 @@ public final class SessionPane extends BorderPane {
     private final Tooltip closeTooltip=new Tooltip("Close and disconnect; keep the last pane");
     private final Tooltip resetTooltip=new Tooltip("Recover this input error without sending Enter (default key: Ctrl+R)");
     private final Tooltip oiaTooltip=new Tooltip("Disconnected");
-    private final Tooltip headerTooltip=new Tooltip("Drag onto another pane to swap or split. Ctrl+Alt+D swaps with the keyboard.");
+    private final Tooltip headerTooltip=new Tooltip("Drag to arrange panes, out to detach, or into another Fish window.");
     private final TransientNotice noticeOverlay;
     private final Label zoomHud=new Label();
     private final Timeline zoomHudHide=new Timeline();
@@ -140,12 +140,10 @@ public final class SessionPane extends BorderPane {
     private java.awt.Color surfaceColor=Ui.BACKGROUND;
     private Charset cachedCharset;
     private CharsetEncoder cachedEncoder;
-    private double altDragStartX,altDragStartY;
-    private boolean altDragActive;
     private int lastCommandState=-1;
 
-    public SessionPane(Workspace workspace,UUID id,Profile profile) {
-        this.workspace=workspace;
+    public SessionPane(Workspace owner,UUID id,Profile profile) {
+        this.workspace=owner;
         this.id=id;
         this.profile=profile;
         this.noticeOverlay=new TransientNotice(this::focusTerminal);
@@ -275,7 +273,7 @@ public final class SessionPane extends BorderPane {
 
         dragZone.setId("pane-top-drag-zone");
         dragZone.setCursor(Cursor.MOVE);
-        Tooltip.install(dragZone,new Tooltip("Drag to an edge to split, or the center to swap"));
+        Tooltip.install(dragZone,headerTooltip);
 
         stage.getChildren().addAll(body,dragZone,noticeOverlay,resetCallout,zoomHud);
         stage.widthProperty().addListener((o,a,b) -> onStageGeometryChanged());
@@ -481,6 +479,8 @@ public final class SessionPane extends BorderPane {
     }
 
     public UUID id() { return id; }
+    Workspace workspace() { return workspace; }
+    void moveTo(Workspace owner) { workspace=owner; refreshKeys(); }
     public Profile profile() { return profile; }
     public Screen5250 screen() { return core==null ? null : core.getScreen(); }
     public Keymap keys() { return keys; }
@@ -659,7 +659,7 @@ public final class SessionPane extends BorderPane {
         if (header.isVisible()!=showHeader) header.setVisible(showHeader);
         if (header.isManaged()!=showHeader) header.setManaged(showHeader);
         boolean kiosk=KioskMode.isEnabled();
-        boolean showDragZone=!kiosk && !showHeader && workspace.hasMultiplePanes();
+        boolean showDragZone=!kiosk && !showHeader && workspace.canDragPane();
         if (dragZone.isVisible()!=showDragZone) dragZone.setVisible(showDragZone);
 
         Pane desiredCloseParent=showHeader ? headerControls : stage;
@@ -684,7 +684,7 @@ public final class SessionPane extends BorderPane {
         Ui.setTooltipText(close,closeTooltip,"Close and disconnect; keep the last pane"+(closeKey.isEmpty() ? "" : " ("+closeKey+")"));
         String resetKey=workspace.shortcutLabel("RESET");
         Ui.setTooltipText(reset,resetTooltip,"Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
-        header.setCursor(!kiosk && workspace.hasMultiplePanes() ? Cursor.MOVE : Cursor.DEFAULT);
+        header.setCursor(!kiosk && workspace.canDragPane() ? Cursor.MOVE : Cursor.DEFAULT);
         if (kiosk) Tooltip.uninstall(header,headerTooltip);
         else Tooltip.install(header,headerTooltip);
 
@@ -1244,39 +1244,20 @@ public final class SessionPane extends BorderPane {
 
     void beginAltDrag(MouseEvent event) {
         activate();
-        if (KioskMode.isEnabled()) { altDragActive=false; return; }
-        altDragStartX=event.getSceneX();
-        altDragStartY=event.getSceneY();
-        altDragActive=false;
+        workspace.beginPaneDrag(this,event);
     }
 
     void updateAltDrag(MouseEvent event) {
-        if (KioskMode.isEnabled() || !workspace.hasMultiplePanes()) return;
-        if (!altDragActive) {
-            if (Math.hypot(event.getSceneX()-altDragStartX,event.getSceneY()-altDragStartY)<4.0) return;
-            altDragActive=true;
-            view.setCursor(Cursor.MOVE);
-        }
-        workspace.previewDockAtScene(id,event.getSceneX(),event.getSceneY());
+        if (workspace.dragPane(this,event,false)) view.setCursor(Cursor.MOVE);
     }
 
     void finishAltDrag(MouseEvent event) {
         view.setCursor(Cursor.DEFAULT);
-        if (!altDragActive) return;
-        altDragActive=false;
-        try {
-            workspace.commitDockAtScene(id,event.getSceneX(),event.getSceneY());
-        } catch (IllegalArgumentException error) {
-            problem("Panes not moved: "+error.getMessage());
-        } finally {
-            workspace.clearPreviews();
-        }
+        workspace.dragPane(this,event,true);
     }
 
     private void installDrag() {
         for (Node source:List.of(header,dragZone)) {
-            double[] pressScene={0,0};
-            boolean[] activeDrag={false};
             source.setOnContextMenuRequested(e -> {
                 if (!KioskMode.isEnabled()) {
                     showHeaderMenu(source,e.getScreenX(),e.getScreenY());
@@ -1285,24 +1266,10 @@ public final class SessionPane extends BorderPane {
             });
             source.setOnMousePressed(e -> {
                 activate();
-                if (KioskMode.isEnabled()) {
-                    activeDrag[0]=false;
-                    return;
-                }
-                if (e.getButton()==MouseButton.PRIMARY) {
-                    pressScene[0]=e.getSceneX();
-                    pressScene[1]=e.getSceneY();
-                    activeDrag[0]=false;
-                }
+                if (e.getButton()==MouseButton.PRIMARY) workspace.beginPaneDrag(this,e);
             });
             source.setOnMouseDragged(e -> {
-                if (KioskMode.isEnabled() || !e.isPrimaryButtonDown() || !workspace.hasMultiplePanes()) return;
-                if (!activeDrag[0]) {
-                    if (Math.hypot(e.getSceneX()-pressScene[0],e.getSceneY()-pressScene[1])<4.0) return;
-                    activeDrag[0]=true;
-                }
-                workspace.previewDockAtScene(id,e.getSceneX(),e.getSceneY());
-                e.consume();
+                if (e.isPrimaryButtonDown() && workspace.dragPane(this,e,false)) e.consume();
             });
             source.setOnMouseReleased(e -> {
                 if (e.getButton()==MouseButton.SECONDARY && !KioskMode.isEnabled()) {
@@ -1310,16 +1277,7 @@ public final class SessionPane extends BorderPane {
                     e.consume();
                     return;
                 }
-                if (e.getButton()!=MouseButton.PRIMARY || !activeDrag[0]) return;
-                activeDrag[0]=false;
-                try {
-                    workspace.commitDockAtScene(id,e.getSceneX(),e.getSceneY());
-                } catch (IllegalArgumentException error) {
-                    problem("Panes not moved: "+error.getMessage());
-                } finally {
-                    workspace.clearPreviews();
-                    e.consume();
-                }
+                if (e.getButton()==MouseButton.PRIMARY && workspace.dragPane(this,e,true)) e.consume();
             });
         }
     }

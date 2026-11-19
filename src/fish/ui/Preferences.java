@@ -23,7 +23,7 @@ import fish.security.KioskMode;
 
 /** One indexed settings surface, with shared profile and keyboard editors and current-user portable install. */
 public final class Preferences {
-    public static final List<String> CATEGORIES=List.of("Appearance","Profiles","Keyboard Shortcuts","General","Updates");
+    public static final List<String> CATEGORIES=List.of("Appearance","Profiles","Shortcuts","Keyboard Shortcuts","General","Updates");
     public static final String CUSTOM_COLOR="Custom color";
     private final Workspace workspace;
     private final ListView<String> navigation=new ListView<>(FXCollections.observableArrayList(CATEGORIES));
@@ -56,6 +56,7 @@ public final class Preferences {
     private String validation="",saveFailure="";
     public final KeyboardEditor keyboard;
     public final ProfilesEditor profiles;
+    private final DesktopShortcutForm shortcuts;
     private final Label error=new Label(" ");
     private final Label fontStatus=note(""),paletteStatus=note("");
     private final Button retryButton,reloadButton;
@@ -160,6 +161,14 @@ public final class Preferences {
 
         addPage("Appearance",appearancePage(),true);
         addPage("Profiles",profiles,false);
+        shortcuts=new DesktopShortcutForm(workspace);
+        addPage("Shortcuts",shortcuts,true);
+        targets.put("shortcut-name",shortcuts.name);
+        targets.put("shortcut-create",shortcuts.create);
+        targets.put("shortcut-status",shortcuts.status);
+        targets.put("shortcut-autostart",shortcuts.autostart);
+        targets.put("shortcut-list",shortcuts.list);
+        targets.put("shortcut-sign-in",shortcuts.signIn);
         addPage("Keyboard Shortcuts",keyboard,false);
         addPage("General",general(),true);
         addPage("Updates",updates(),false);
@@ -176,7 +185,7 @@ public final class Preferences {
                 setText(empty ? null : item);
                 setGraphic(empty || item==null ? null : Ui.icon(switch(item) {
                     case "Appearance" -> "display"; case "Profiles" -> "layers"; case "Keyboard Shortcuts" -> "keyboard";
-                    case "General" -> "gear"; default -> "refresh";
+                    case "Shortcuts" -> "connect"; case "General" -> "gear"; default -> "refresh";
                 },ColorRole.TEXT));
                 setGraphicTextGap(12);
             }
@@ -245,6 +254,7 @@ public final class Preferences {
     }
 
     public Stage dialog() { return dialog; }
+    void shortcutWindow(Workspace source) { shortcuts.window(source); }
     public boolean ended() { return ended; }
     public void focus() { navigation.requestFocus(); }
     public ListView<String> navigationList() { return navigation; }
@@ -333,6 +343,13 @@ public final class Preferences {
         Node resolved=control.equals("apply") ? error : targets.getOrDefault(control,navigation);
         scrollIntoView(resolved);
         return resolved;
+    }
+
+    Node tutorialCategory(String category) {
+        for (Node node:navigation.lookupAll(".list-cell"))
+            if (node instanceof ListCell<?> cell && !cell.isEmpty() && category.equals(cell.getItem()))
+                return cell;
+        return navigation;
     }
 
     private static void scrollIntoView(Node target) {
@@ -626,13 +643,6 @@ public final class Preferences {
         body.getChildren().add(startup);
         targets.put("startup",startup);
 
-        DesktopShortcutForm shortcut=new DesktopShortcutForm(workspace);
-        body.getChildren().addAll(section("Desktop shortcuts"),note("Open this window’s pane arrangement from your Desktop."),shortcut);
-        targets.put("shortcut-name",shortcut.name);
-        targets.put("shortcut-create",shortcut.create);
-        targets.put("shortcut-status",shortcut.status);
-        targets.put("shortcut-autostart",shortcut.autostart);
-
         body.getChildren().add(section("Installation"));
         Optional<Path> appImage=UserInstaller.currentAppImage();
         Path targetInstallDir=UserInstaller.defaultInstallDirectory();
@@ -777,7 +787,7 @@ public final class Preferences {
         return box;
     }
 
-    private static Label section(String name) {
+    static Label section(String name) {
         Label label=new Label(name);
         label.getStyleClass().add("fish-section-title");
         return label;
@@ -987,6 +997,7 @@ public final class Preferences {
     }
 
     public void sharedChanged() {
+        shortcuts.refresh();
         if (saved==null || applying || syncing || ended) return;
         if (!Objects.equals(baseline,currentShared())) {
             boolean pending;

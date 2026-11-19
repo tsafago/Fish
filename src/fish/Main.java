@@ -8,7 +8,7 @@ import fish.security.KioskMode;
 import fish.ui.*;
 
 public final class Main {
-    public static final String VERSION = "0.10.3";
+    public static final String VERSION = "0.10.4";
     private Main() {}
     public static void main(String[] args) {
         System.setProperty("javafx.enablePreview", "true");
@@ -247,8 +247,8 @@ public final class Main {
                             pane.view().paintToImage(1.5);
                         }
                         TutorialDialog tut=new TutorialDialog(ws,TutorialDialog.Guide.GETTING_STARTED,false);
-                        tut.stage().getScene().getRoot().applyCss();
-                        tut.stage().getScene().getRoot().layout();
+                        tut.card().applyCss();
+                        tut.card().layout();
                         tut.dispose();
                     } finally {
                         ws.close(true);

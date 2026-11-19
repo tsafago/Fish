@@ -295,7 +295,7 @@ public final class CursorRenderingSmoke {
         });
         UsabilityIterationSmoke.settle(() -> !preferences.saving(),"Default style did not persist");
         edt(() -> {
-            w.preferences("General");
+            w.preferences("Shortcuts");
             var dialog=w.tutorialPreferences().dialog();
             TextField name=(TextField)w.tutorialPreferences().tutorialTarget("shortcut-name");
             for (String text:List.of("Office layout","Wide W / thin iii","Layout \u5317 \u0394","Office layout")) {

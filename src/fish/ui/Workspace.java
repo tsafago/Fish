@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.function.BiPredicate;
+import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.collections.FXCollections;
@@ -30,6 +32,7 @@ import javafx.stage.Window;
 import javafx.util.Duration;
 import org.tn5250j.keyboard.KeyMnemonic;
 import fish.model.*;
+import fish.LayoutShortcuts;
 import fish.security.CredentialStore;
 import fish.security.KioskMode;
 import fish.update.Updates;
@@ -206,6 +209,11 @@ public final class Workspace {
     private boolean adjustingDividers,rebuildingLayout;
     private final Deque<Layout> arrangementHistory=new ArrayDeque<>();
     private DropPlan dropPlan;
+    private SessionPane dragPane;
+    private double pressX,pressY;
+    private boolean draggingPane;
+    private Workspace dragTarget;
+    private long paneWindowHandle;
     private final boolean demonstration;
     private boolean closing;
     private boolean highlightActive;
@@ -398,7 +406,13 @@ public final class Workspace {
         scene=new Scene(shell,logicalWidth,logicalHeight);
         Ui.styleScene(scene);
         // JavaFX auto-hide exempts presses on the anchor (which can be an entire terminal).
-        scene.addEventFilter(MouseEvent.MOUSE_PRESSED,e -> hidePopup());
+        scene.addEventFilter(MouseEvent.MOUSE_PRESSED,e -> { cancelPaneDrag(); hidePopup(); });
+        // Intercept before the scene's host-key filter: Escape normally sends ATTN.
+        stage.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED,e -> {
+            if (dragPane!=null && e.getCode()==javafx.scene.input.KeyCode.ESCAPE) {
+                cancelPaneDrag(); e.consume();
+            }
+        });
         scene.focusOwnerProperty().addListener((o,old,node) -> hidePopup());
 
         shortcuts=new AppShortcuts(this,commands,state.shortcuts());
@@ -430,10 +444,11 @@ public final class Workspace {
             close(false);
         });
         stage.focusedProperty().addListener((o,a,focused) -> {
-            if (!focused) hidePopup();
+            if (!focused) { cancelPaneDrag(); hidePopup(); }
             else if (active!=null) active.view().restartCursor();
         });
         stage.showingProperty().addListener((o,a,showing) -> {
+            if (!showing) { paneWindowHandle=0; cancelPaneDrag(); }
             Ui.syncSceneStylesheet(scene);
             updateWindowOutline();
             if (showing) {
@@ -592,7 +607,9 @@ public final class Workspace {
     }
 
     public SessionPane active() { return active; }
-    void application(ApplicationWindows value) { application=value; saveTimer.stop(); }
+    void application(ApplicationWindows value) {
+        application=value; saveTimer.stop(); panes.values().forEach(SessionPane::updateHeader); refreshCommands();
+    }
     public CredentialStore credentials() { return credentials; }
     public List<Profile> profileList() { return List.copyOf(profiles.values()); }
     public Profile lastProfile() { return profiles.get(lastProfile); }
@@ -625,7 +642,6 @@ public final class Workspace {
         if (KioskMode.isEnabled()) return;
         if (tutorial!=null && !tutorial.ended()) tutorial.finish(false);
         tutorial=new TutorialDialog(this,guide,firstRun);
-        if (isShowing()) { tutorial.setVisible(true); tutorial.focusGuide(); }
     }
     public TutorialDialog activeTutorial() { return tutorial; }
     void tutorialChanged() { if (tutorial!=null) tutorial.refreshTarget(); }
@@ -660,6 +676,12 @@ public final class Workspace {
     public void rememberProfile(Profile profile) { lastProfile=profile.id(); changed(); }
     public boolean hasPane(UUID id) { return panes.containsKey(id); }
     public boolean hasMultiplePanes() { return layout instanceof Layout.Split; }
+    boolean hasOpenEditor() { return tutorialPreferences()!=null || profileEditor!=null; }
+    boolean canDragPane() { return hasMultiplePanes() || application!=null; }
+    long paneWindowHandle() {
+        if (paneWindowHandle==0) paneWindowHandle=PaneWindowHit.handle(stage);
+        return paneWindowHandle;
+    }
     public boolean highlightActive() { return highlightActive; }
     public Appearance appearanceSettings() { return appearance; }
     public static void withDeferredFontWarmup(java.util.concurrent.CompletableFuture<Void> warmup,Runnable action) {
@@ -717,7 +739,7 @@ public final class Workspace {
         if (KioskMode.isEnabled()) return;
         if (application!=null) {
             Workspace owner=application.settingsOwner(this);
-            if (owner!=this) { owner.preferences(category); return; }
+            if (owner!=this) { owner.preferences(category); owner.preferences.shortcutWindow(this); return; }
         }
         Stage dialog=preferencesDialog(category);
         if (isShowing()) { dialog.show(); dialog.toFront(); preferences.focus(); }
@@ -728,10 +750,13 @@ public final class Workspace {
     public Stage preferencesDialog(String category) {
         if (application!=null) {
             Workspace owner=application.settingsOwner(this);
-            if (owner!=this) return owner.preferencesDialog(category);
+            if (owner!=this) {
+                Stage dialog=owner.preferencesDialog(category); owner.preferences.shortcutWindow(this); return dialog;
+            }
         }
         if (preferences==null || preferences.ended()) preferences=new Preferences(this,category);
         else preferences.select(category);
+        preferences.shortcutWindow(this);
         return preferences.dialog();
     }
 
@@ -941,6 +966,7 @@ public final class Workspace {
     }
 
     public void activate(SessionPane pane) {
+        if (pane.workspace()!=this || closing) return;
         pane.view().restartCursor();
         if (active==pane) { refreshCommands(); return; }
         active=pane;
@@ -1252,7 +1278,7 @@ public final class Workspace {
                 gc.setStroke(focusColor);
                 gc.setLineWidth(1.5);
                 gc.strokeRect(r.x+1,r.y+1,Math.max(1,r.width-2),Math.max(1,r.height-2));
-                String label=dropPlan.dock()==Layout.Dock.CENTER ? "Swap panes" : (dropPlan.scope()==Layout.Scope.WINDOW ? "Window " : "Pane ")
+                String label=!hasPane(dropPlan.source()) ? "Move pane here" : dropPlan.dock()==Layout.Dock.CENTER ? "Swap panes" : (dropPlan.scope()==Layout.Scope.WINDOW ? "Window " : "Pane ")
                         +dropPlan.dock().name().toLowerCase(Locale.ROOT)+" - "+dropPlan.layout().arrangement();
                 double badgeW=Math.min(r.width-12,Math.max(70,label.length()*7.0+18)),badgeH=26;
                 double bx=r.x+(r.width-badgeW)/2.0,by=r.y+(r.height-badgeH)/2.0;
@@ -1323,6 +1349,98 @@ public final class Workspace {
         lastPreviewKey=null;
         lastPreviewValid=false;
         dropOverlay.setVisible(false);
+    }
+
+    void beginPaneDrag(SessionPane pane,MouseEvent e) {
+        cancelPaneDrag();
+        if (!canDragPane() || KioskMode.isEnabled() || closing() || settingsSaving()) return;
+        dragPane=pane; pressX=e.getSceneX(); pressY=e.getSceneY();
+    }
+
+    private void cancelPaneDrag() {
+        if (dragTarget!=null) dragTarget.clearPreviews();
+        if (dragPane!=null) dragPane.view().setCursor(Cursor.DEFAULT);
+        dragTarget=null; dragPane=null; draggingPane=false;
+    }
+
+    boolean dragPane(SessionPane pane,MouseEvent e,boolean release) {
+        if (dragPane!=pane) return false;
+        try {
+            if (KioskMode.isEnabled() || closing() || settingsSaving()) { cancelPaneDrag(); return false; }
+            if (!draggingPane) {
+                if (release || Math.hypot(e.getSceneX()-pressX,e.getSceneY()-pressY)<4) return false;
+                draggingPane=true;
+            }
+            Workspace target=this;
+            double x=e.getSceneX(),y=e.getSceneY();
+            if (application!=null && stage.isShowing()) {
+                long from=paneWindowHandle();
+                if (from!=0) {
+                    int[] xy={(int)Math.round(x*stage.getOutputScaleX()),(int)Math.round(y*stage.getOutputScaleY())};
+                    long hit=PaneWindowHit.at0(from,xy);
+                    target=hit==from ? this : application.windowAt(hit);
+                    if (target!=null) {
+                        x=xy[0]/target.stage.getOutputScaleX();
+                        y=xy[1]/target.stage.getOutputScaleY();
+                    } else if (release && hit==PaneWindowHit.OUTSIDE && !scene.getRoot().getLayoutBounds().contains(x,y))
+                        application.detach(pane,xy);
+                }
+            }
+            if (dragTarget!=null && dragTarget!=target) dragTarget.clearPreviews();
+            dragTarget=target;
+            if (target==this) {
+                if (release) commitDockAtScene(pane.id(),x,y); else previewDockAtScene(pane.id(),x,y);
+            } else if (target!=null) {
+                DropPlan plan=target.incomingPlan(pane,x,y);
+                if (!release) target.showIncoming(plan);
+                else if (plan!=null) application.transfer(pane,target,plan.layout());
+                else if (target.paneCount()>=Layout.MAX_PANES) pane.problem("That window already has eight panes.");
+            }
+            return true;
+        } finally { if (release) cancelPaneDrag(); }
+    }
+
+    private DropPlan incomingPlan(SessionPane pane,double x,double y) {
+        DockTarget hover=dropTargetAtScene(x,y);
+        if (hover==null || !application.canTransfer(pane,this)) return null;
+        try {
+            Layout.Leaf incoming=new Layout.Leaf(pane.id(),pane.profile().id());
+            Layout current=currentLayout();
+            Rectangle area=new Rectangle(0,0,(int)content.getWidth(),(int)content.getHeight());
+            Layout.Scope scope=paneCount()>=4 ? Layout.Scope.PANE : hover.scope();
+            Layout next=current.add(incoming,hover.pane(),candidate -> project(candidate,area).values().stream()
+                    .allMatch(r -> r.width>=70 && r.height>=70));
+            if (hover.dock()!=Layout.Dock.CENTER) {
+                Layout local=current.insert(hover.pane(),incoming,hover.dock());
+                if (scope==Layout.Scope.PANE && Layout.constrained(local)) next=local;
+                else next=next.move(pane.id(),hover.pane(),hover.dock(),scope);
+            }
+            var bounds=project(next,area);
+            if (bounds.values().stream().anyMatch(r -> r.width<70 || r.height<70)) return null;
+            return new DropPlan(pane.id(),hover.pane(),hover.dock(),scope,next,bounds);
+        } catch (IllegalArgumentException refused) { return null; }
+    }
+
+    private void showIncoming(DropPlan plan) {
+        if (plan==null) { clearPreviews(); return; }
+        dropPlan=plan; dropOverlay.setVisible(true); centerHost.requestLayout(); paintDropOverlay();
+    }
+
+    void releasePane(SessionPane pane,Layout remaining) {
+        cancelPaneDrag(); hidePopup(); arrangementHistory.clear(); clearPreviews();
+        panes.remove(pane.id()); // buildTree normally disposes removed panes; this one is still live.
+        if (remaining!=null) { layout=remaining; buildTree(); }
+        else {
+            active=null; tree=null; cachedSessionPanes=List.of(); content.getChildren().clear();
+        }
+    }
+
+    void receivePane(SessionPane pane,Layout next) {
+        pane.moveTo(this);
+        panes.put(pane.id(),pane); active=pane; layout=next;
+        arrangementHistory.clear(); buildTree(); layoutNow();
+        if (isShowing()) { stage.toFront(); stage.requestFocus(); }
+        pane.focusTerminal();
     }
 
     public void closePane() {
@@ -1643,6 +1761,7 @@ public final class Workspace {
         if (closing) return;
         boolean kiosk=KioskMode.isEnabled();
         if (kiosk) {
+            cancelPaneDrag();
             clearPreviews();
             saveTimer.stop();
             if (tutorial!=null) tutorial.dispose();
@@ -1746,6 +1865,7 @@ public final class Workspace {
         action(layoutMenu,"Swap panes...",this::dockingDialog);
         action(layoutMenu,"Arrange pane...",this::arrangementDialog);
         action(layoutMenu,"Undo pane arrangement",this::undoArrangement);
+        action(layoutMenu,"Detach pane",() -> application.detach(active,null));
         action(layoutMenu,"Close pane",this::closePane);
         layoutMenu.getItems().add(new SeparatorMenuItem());
         action(layoutMenu,"Next pane",() -> cycle(1));
@@ -1753,7 +1873,7 @@ public final class Workspace {
         // Keep persisted command IDs and custom chords without exposing a layout library.
         action(null,"Save layout to profile",() -> preferences("General"));
         action(null,"Restore profile layout",this::restoreProfileLayout);
-        action(null,"Saved layouts / shortcuts...",() -> preferences("General"));
+        action(null,"Saved layouts / shortcuts...",() -> preferences("Shortcuts"));
 
         Menu view=menu(bar,"View");
         this.viewMenu=view;
@@ -1852,6 +1972,7 @@ public final class Workspace {
                     && !(menu!=null && (menu.getText().equals("Host") || menu.getText().equals("Inserts")) && !text.equals("Last pane notice...")))
                 return false;
             if (text.equals("Add pane")) return panes.size()<Layout.MAX_PANES;
+            if (text.equals("Detach pane")) return application!=null && hasMultiplePanes() && active!=null && !active.connecting();
             if (List.of("Profiles...","New window","Saved layouts / shortcuts...","Quit","Appearance...","Theme designer...","Fonts...","Pane information...","Window and focus...","Keyboard reference",
                     "Shortcuts...","Full manual / Getting Started",
                     "Getting started tutorial","Application settings...","Check for updates...","Last pane notice...",Shortcuts.SETTINGS).contains(text)
@@ -1923,7 +2044,7 @@ public final class Workspace {
         activate(pane);
         ContextMenu menu=new ContextMenu();
         for (String name:List.of("Connect / disconnect","Reconnect","Add pane",
-                "Arrange pane...","Swap panes...","Undo pane arrangement","Close pane","Profiles...")) {
+                "Arrange pane...","Swap panes...","Undo pane arrangement","Detach pane","Close pane","Profiles...")) {
             menu.getItems().add(command(name).createMenuItem(name));
         }
         return menu;
@@ -1939,7 +2060,7 @@ public final class Workspace {
                 new SeparatorMenuItem(),
                 command("RESET").createMenuItem("Reset"));
         if (!KioskMode.isEnabled()) {
-            for (String act:List.of("Connect / disconnect","Add pane","Arrange pane...","Swap panes...","Close pane"))
+            for (String act:List.of("Connect / disconnect","Add pane","Arrange pane...","Swap panes...","Detach pane","Close pane"))
                 menu.getItems().add(command(act).createMenuItem(act));
         }
         return menu;
@@ -1970,6 +2091,7 @@ public final class Workspace {
     }
 
     private void disposeWorkspace() {
+        cancelPaneDrag();
         hidePopup();
         Ui.removeThemeListener(themeListener);
         KioskMode.removeListener(kioskListener);
@@ -2022,8 +2144,12 @@ public final class Workspace {
 
     public List<SavedLayout> savedLayouts() { return savedLayouts; }
     SavedLayout captureShortcut(String name,boolean autostart) {
+        return captureShortcut(UUID.randomUUID(),name,autostart);
+    }
+
+    SavedLayout captureShortcut(UUID id,String name,boolean autostart) {
         StateStore.State current=state();
-        return new SavedLayout(UUID.randomUUID(),name,
+        return new SavedLayout(id,name,
                 new StateStore.WindowState(current.layout(),current.width(),current.height(),current.lastProfile(),current.addProfile()),
                 current.displays(),autostart);
     }
@@ -2035,29 +2161,39 @@ public final class Workspace {
         shortcutWrite=null; refreshActions(); finished.complete(null);
     }
 
-    void exportDesktopShortcut(String name,boolean autostart,java.util.function.Consumer<Path> done,java.util.function.Consumer<String> failed) {
+    void exportDesktopShortcut(String name,boolean autostart,Consumer<Path> done,Consumer<String> failed) {
+        editShortcut(null,unused -> captureShortcut(name,autostart),result -> done.accept(result.desktopLink()),failed);
+    }
+
+    void editShortcut(SavedLayout before,UnaryOperator<SavedLayout> edit,Consumer<LayoutShortcuts.Change> done,Consumer<String> failed) {
         if (KioskMode.isEnabled()) { failed.accept("Shortcuts cannot be changed in Kiosk mode."); return; }
         if (demonstration) { failed.accept("Shortcuts require a normal saved workspace, not a temporary Demo host."); return; }
         if (closing() || settingsSaving()) { failed.accept("Wait for the pending save to finish."); return; }
-        final SavedLayout value;
+        final SavedLayout after;
         final StateStore.State snapshot;
         try {
-            value=captureShortcut(name,autostart);
-            if (savedLayouts.stream().anyMatch(s -> s.name().equalsIgnoreCase(value.name())))
+            List<SavedLayout> next=new ArrayList<>(savedLayouts);
+            int index=before==null ? -1 : next.indexOf(before);
+            if (before!=null && index<0) throw new IllegalArgumentException("This shortcut changed. Select it again.");
+            after=edit.apply(before);
+            if (after!=null && next.stream().anyMatch(s -> !s.id().equals(after.id()) && s.name().equalsIgnoreCase(after.name())))
                 throw new IllegalArgumentException("A shortcut already uses that name. Enter another name.");
-            List<SavedLayout> next=new ArrayList<>(savedLayouts); next.add(value);
-            snapshot=(application==null ? state() : application.snapshot()).withSavedLayouts(next,value.id());
+            if (before==null) next.add(Objects.requireNonNull(after));
+            else if (after==null) next.remove(index);
+            else next.set(index,after);
+            UUID selected=after!=null ? after.id() : Objects.equals(selectedLayout,before.id()) ? null : selectedLayout;
+            snapshot=(application==null ? state() : application.snapshot()).withSavedLayouts(next,selected);
         } catch (IllegalArgumentException e) { failed.accept(e.getMessage()); return; }
         shortcutWrite=new CompletableFuture<>(); refreshActions();
-        java.util.function.Consumer<ApplicationWindows.Writer> export=writer -> {
+        Consumer<ApplicationWindows.Writer> export=writer -> {
             try {
-                Path file=fish.LayoutShortcuts.export(dataDirectory(),value,() -> {
+                LayoutShortcuts.Change result=LayoutShortcuts.change(dataDirectory(),before,after,() -> {
                     if (KioskMode.isEnabled()) throw new java.io.IOException("Shortcuts cannot be changed in Kiosk mode.");
                     writer.save(snapshot);
                 });
                 Ui.runLater(() -> {
-                    savedLayouts=snapshot.savedLayouts(); selectedLayout=value.id();
-                    changed(); finishShortcutWrite(); done.accept(file);
+                    savedLayouts=snapshot.savedLayouts(); selectedLayout=snapshot.selectedLayout();
+                    changed(); finishShortcutWrite(); done.accept(result);
                 });
             } catch (java.io.IOException | RuntimeException e) {
                 Ui.runLater(() -> { finishShortcutWrite(); failed.accept(e.getMessage()); });

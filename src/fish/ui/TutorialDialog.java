@@ -1,8 +1,10 @@
 package fish.ui;
 
+import java.util.ArrayList;
 import java.util.List;
 import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
+import javafx.collections.ListChangeListener;
 import javafx.geometry.Bounds;
 import javafx.geometry.Insets;
 import javafx.geometry.Point2D;
@@ -11,9 +13,15 @@ import javafx.geometry.Rectangle2D;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.control.skin.ComboBoxListViewSkin;
+import javafx.scene.input.InputMethodEvent;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.*;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Rectangle;
+import javafx.stage.Popup;
+import javafx.stage.PopupWindow;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.Window;
@@ -33,12 +41,14 @@ public final class TutorialDialog {
     private record Step(String title,String text,String surface,String control,String event) {}
 
     private final Workspace workspace;
-    private final Stage stage;
     private final boolean firstRun;
     private final Guide guide;
     private final List<Step> steps;
     private final Label title=new Label(),progress=new Label();
-    private final TextArea text=new TextArea();
+    private final Label text=new Label();
+    private final VBox card=new VBox(8);
+    // Used only when a small host cannot fit the card beside the target.
+    private final Popup overflow=new Popup();
     private final Button back,next,tryIt,skipTutorial,skipStep;
     private final Rectangle highlightRect=new Rectangle();
     private final Pane highlightLayer=new Pane(highlightRect);
@@ -50,6 +60,21 @@ public final class TutorialDialog {
     private Node anchor,observedAnchor;
     private Pane observedRoot;
     private Window targetWindow;
+    private Pane cardRoot;
+    private boolean queued;
+    private final ChangeListener<Boolean> focusChanged=(o,old,focused) -> queueRefresh();
+    private final ListChangeListener<Window> windowsChanged=change -> {
+        while (change.next()) {
+            for (Window w:change.getAddedSubList()) if (w!=overflow && related(w)) {
+                if (w instanceof Stage) w.focusedProperty().addListener(focusChanged);
+                queueRefresh();
+            }
+            for (Window w:change.getRemoved()) if (w!=overflow && (w==targetWindow || related(w))) {
+                if (w instanceof Stage) w.focusedProperty().removeListener(focusChanged);
+                queueRefresh();
+            }
+        }
+    };
 
     public TutorialDialog(Workspace workspace,boolean firstRun) { this(workspace,Guide.GETTING_STARTED,firstRun); }
 
@@ -58,7 +83,6 @@ public final class TutorialDialog {
         this.firstRun=firstRun;
         this.guide=guide;
         this.steps=steps(guide);
-        this.stage=Ui.dialogStage(workspace.stage(),guide.title,false);
         if (firstRun) workspace.tutorialStatus(StateStore.Tutorial.IN_PROGRESS);
 
         highlightLayer.setMouseTransparent(true);
@@ -73,14 +97,9 @@ public final class TutorialDialog {
         Ui.role(progress,"muted");
         BorderPane heading=new BorderPane();
         heading.setLeft(title);
-        heading.setRight(progress);
 
-        text.getStyleClass().add("fish-tutorial-card");
-        text.setEditable(false);
         text.setWrapText(true);
-        text.setFocusTraversable(false);
-        text.setAccessibleText("Tutorial step instructions");
-        text.setPrefRowCount(3);
+        text.setMaxWidth(Double.MAX_VALUE);
 
         tryIt=Ui.button("Show control",this::showControl);
         skipTutorial=Ui.button("Skip tutorial",() -> finish(false));
@@ -91,32 +110,43 @@ public final class TutorialDialog {
         back=Ui.button("Back",() -> go(step-1));
         skipStep=Ui.button("Skip step",this::advance);
         next=Ui.button("Next",this::advance);
-        next.setDefaultButton(true);
         HBox navigation=new HBox(6,back,skipStep,next);
         navigation.setAlignment(Pos.CENTER_RIGHT);
 
-        VBox actions=new VBox(8,contextual,navigation);
-        BorderPane body=new BorderPane();
-        body.setPadding(new Insets(12,14,12,14));
-        body.setTop(heading);
-        BorderPane.setMargin(heading,new Insets(0,0,6,0));
-        body.setCenter(text);
-        body.setBottom(actions);
-        BorderPane.setMargin(actions,new Insets(8,0,0,0));
-
-        Ui.decorateDialog(stage,body,() -> finish(false),380,232);
-        stage.setMinWidth(332);
-        stage.setMinHeight(208);
-        stage.setOnShown(e -> {
-            refreshTarget();
-            Platform.runLater(() -> {
-                if (!ended) refreshTarget();
-            });
+        Button close=Ui.iconButton("Close tutorial","close",ColorRole.TEXT,() -> finish(false));
+        HBox meta=new HBox(8,progress,close);
+        meta.setAlignment(Pos.CENTER_RIGHT);
+        heading.setRight(meta);
+        card.setAccessibleText(guide.title+" tutorial");
+        card.setPadding(new Insets(10,12,12,12));
+        card.getStyleClass().add("fish-tutorial-guide");
+        card.getChildren().setAll(heading,text,contextual,navigation);
+        card.setManaged(false);
+        card.setViewOrder(-101);
+        card.addEventFilter(KeyEvent.KEY_PRESSED,e -> {
+            if (e.getCode()==KeyCode.ESCAPE) { e.consume(); finish(false); }
         });
+        overflow.setAutoHide(false);
+        overflow.setHideOnEscape(false);
+        overflow.setAutoFix(false);
+        // PopupWindow normally forwards its owner's keystrokes to the popup
+        // first. The overflow view is mouse-operated; keys still belong to
+        // the open menu, combo or form, including Escape and IME composition.
+        var dispatch=overflow.getScene().getEventDispatcher();
+        overflow.getScene().setEventDispatcher((e,tail) -> e instanceof KeyEvent || e instanceof InputMethodEvent
+                ? e : dispatch.dispatchEvent(e,tail));
+        Window.getWindows().addListener(windowsChanged);
+        for (Window w:Window.getWindows()) if (w instanceof Stage && related(w)) w.focusedProperty().addListener(focusChanged);
         go(0);
     }
 
-    public Stage stage() { return stage; }
+    public Stage hostStage() { return cardRoot!=null && cardRoot.getScene().getWindow() instanceof Stage s ? s : workspace.stage(); }
+    public Pane card() { return card; }
+    static boolean insideCard(Object target) {
+        for (Node n=target instanceof Node node ? node : null;n!=null;n=n.getParent())
+            if (n.getStyleClass().contains("fish-tutorial-guide")) return true;
+        return false;
+    }
     public int currentStep() { return step; }
     public Guide guide() { return guide; }
     public Button tryItButton() { return tryIt; }
@@ -129,28 +159,16 @@ public final class TutorialDialog {
     public Pane highlightLayer() { return highlightLayer; }
     public Rectangle highlightRect() { return highlightRect; }
 
-    public void setVisible(boolean visible) {
-        if (visible) {
-            stage.show();
-            refreshTarget();
-            Platform.runLater(() -> {
-                if (!ended) refreshTarget();
-            });
-        } else {
-            dispose();
-        }
-    }
-
-    public void focusGuide() {
-        if (stage.isShowing()) {
-            stage.requestFocus();
-            next.requestFocus();
+    private void queueRefresh() {
+        if (!queued && !ended) {
+            queued=true;
+            Platform.runLater(() -> { queued=false; refreshTarget(); });
         }
     }
 
     public boolean related(Window window) {
-        if (window==null || window==stage) return false;
-        for (Window cur=window;cur!=null;cur=(cur instanceof Stage s ? s.getOwner() : null)) {
+        for (Window cur=window;cur!=null;cur=cur instanceof Stage s ? s.getOwner() :
+                cur instanceof PopupWindow p ? p.getOwnerWindow() : null) {
             if (cur==workspace.stage()) return true;
         }
         return false;
@@ -176,10 +194,10 @@ public final class TutorialDialog {
     private void showControl() {
         Step current=steps.get(step);
         switch (current.surface()) {
-            case "Appearance","Profiles","Keyboard Shortcuts","General" -> workspace.preferences(current.surface());
+            case "Appearance","Profiles","Keyboard Shortcuts","General","Shortcuts" -> workspace.preferences(current.surface());
             case "settings" -> workspace.showTutorialSettings();
             case "Help","Panes","View","Session" -> workspace.showTutorialMenu(current.surface());
-            default -> { if (workspace.isShowing()) workspace.toFront(); }
+            default -> { if (anchor!=null) anchor.requestFocus(); }
         }
         refreshTarget();
     }
@@ -227,14 +245,14 @@ public final class TutorialDialog {
                     s("Swap or undo","Drop onto another pane's center (or use Panes > Swap panes) to swap; Undo restores the prior layout.","Panes","Swap panes...","panes-swapped"),
                     s("Startup behavior","In Edit > Settings > General, choose whether restored panes reconnect automatically on launch.","General","startup","startup-changed"),
                     s("Fit & navigate","Use View > Fit host screen to scale text to the pane, and Ctrl+Tab to cycle panes.","View","Fit host screen","Fit host screen"),
-                    s("Create a desktop shortcut","In Settings > General, name your shortcut and click Create desktop shortcut to reopen these panes.","General","shortcut-create","shortcut-created"));
+                    s("Create a desktop shortcut","In Settings > Shortcuts, name your shortcut and choose Export current window to reopen these panes.","Shortcuts","shortcut-create","shortcut-created"));
             case DESKTOP_SHORTCUTS -> List.of(
                     s("Pick a profile (optional)","For a single-profile launcher, select that profile beside +; for your current layout, click Skip step.","add-profile","","add-profile-selected"),
                     s("Set up panes","Click + to open a pane, or skip this step if your panes are ready.","add","","Add pane"),
-                    s("Open Settings","Open Edit > Settings > General and find Desktop shortcuts.","General","shortcut-name","settings-General"),
-                    s("Name your shortcut","Enter a name you will recognize on your Desktop, such as Morning work.","General","shortcut-name","shortcut-named"),
-                    s("Create your shortcut","To open these panes at Windows sign-in, select the checkbox. Then click Create desktop shortcut.","General","shortcut-create","shortcut-created"),
-                    s("Open from your Desktop","Double-click the shortcut on your Desktop to open these panes in a new Fish window.","General","shortcut-status",""));
+                    s("Open Settings","Open Edit > Settings, then select Shortcuts.","Shortcuts","shortcut-name","settings-Shortcuts"),
+                    s("Name your shortcut","Enter a name you will recognize on your Desktop, such as Morning work.","Shortcuts","shortcut-name","shortcut-named"),
+                    s("Create your shortcut","To open these panes at Windows sign-in, select the checkbox. Then choose Export current window.","Shortcuts","shortcut-create","shortcut-created"),
+                    s("Open from your Desktop","Double-click the shortcut on your Desktop to open these panes in a new Fish window.","Shortcuts","shortcut-status",""));
         };
     }
 
@@ -242,17 +260,20 @@ public final class TutorialDialog {
         Preferences settings=workspace.tutorialPreferences();
         return switch (current.surface()) {
             case "connect" -> workspace.active().tutorialConnectionTarget();
-            case "add" -> workspace.tutorialAddTarget();
+            case "add" -> workspace.chrome().openTutorialMenuRow("Add pane",workspace.tutorialAddTarget());
             case "add-profile" -> workspace.tutorialProfileTarget();
-            case "close" -> workspace.active().tutorialCloseTarget();
+            case "close" -> workspace.chrome().openTutorialMenuRow("Close pane",workspace.active().tutorialCloseTarget());
             case "settings" -> workspace.tutorialSettingsTarget();
             case "divider-horizontal","divider-vertical" -> {
                 Node divider=workspace.tutorialDivider(current.surface().equals("divider-horizontal"));
                 yield divider==null ? workspace.tutorialAddTarget() : divider;
             }
-            case "Appearance","Keyboard Shortcuts","General" -> settings!=null && settings.category().equals(current.surface())
-                    ? settings.tutorialTarget(current.control()) : workspace.tutorialSettingsTarget();
-            case "Profiles" -> editor!=null ? editor.tutorialTarget(current.control()) : workspace.tutorialSettingsTarget();
+            case "Profiles","Appearance","Keyboard Shortcuts","General","Shortcuts" -> {
+                if (current.surface().equals("Profiles") && editor!=null) yield editor.tutorialTarget(current.control());
+                if (settings==null) yield workspace.tutorialSettingsTarget();
+                yield current.surface().equals(settings.category()) ? settings.tutorialTarget(current.control())
+                        : settings.tutorialCategory(current.surface());
+            }
             default -> workspace.tutorialMenuTarget(current.surface(),current.control());
         };
     }
@@ -265,6 +286,8 @@ public final class TutorialDialog {
             Step current=steps.get(step);
             Node target=target(current);
             String message=current.text();
+            if (target instanceof ListCell<?> cell && current.surface().equals(cell.getItem()))
+                message="Select "+current.surface()+" in the Settings sidebar.";
             if (guide==Guide.APPEARANCE && current.control().equals("palette") && workspace.tutorialPreferences()!=null
                     && workspace.tutorialPreferences().category().equals("Appearance") && workspace.tutorialPreferences().customPalette()) {
                 message+=" Custom theme owns terminal colors—pick a built-in theme to change profile palettes, or skip.";
@@ -277,6 +300,30 @@ public final class TutorialDialog {
             if (current.surface().equals("close") && workspace.sessionPanes().size()==1 && !workspace.active().busy())
                 message="Only one offline pane is open, so X is hidden until another pane or connection is active. Click Next or Skip step.";
 
+            // If this step leads back to the workspace, don't strand the
+            // instructions behind Settings or the pane-placement form.
+            for (Window w:Window.getWindows()) {
+                if (!(w instanceof Stage s) || !s.isFocused() || !related(s)
+                        || target!=null && target.getScene()==s.getScene()) continue;
+                if (s==workspace.stage()) {
+                    if (target!=null && target.getScene()!=null && target.getScene().getWindow() instanceof Stage) {
+                        target=workspace.tutorialSettingsTarget();
+                        message="Open Edit > Settings, then select "+current.surface()+".";
+                    }
+                } else if (current.surface().equals("Panes") && current.control().equals(s.getTitle()+"...")) {
+                    target=s.getScene().lookup(".combo-box");
+                    message=s.getTitle().equals("Swap panes") ? "Choose the other pane, then select Swap."
+                            : "Choose the target area, pane and placement, then select Arrange.";
+                } else {
+                    target=s.getScene().lookup(".fish-window-close");
+                    message="Return to the workspace to continue. "+current.text();
+                }
+                break;
+            }
+            if (target instanceof ComboBox<?> combo && combo.isShowing() && combo.getSkin() instanceof ComboBoxListViewSkin<?> skin) {
+                Node list=skin.getPopupContent();
+                if (list.getScene()!=null && list.getScene().getWindow().isShowing()) target=list;
+            }
             title.setText(current.title());
             progress.setText((step+1)+" of "+steps.size());
             if (!text.getText().equals(message)) text.setText(message);
@@ -298,10 +345,32 @@ public final class TutorialDialog {
             if (targetScene!=null && targetScene.getRoot() instanceof Pane rootPane) {
                 attachHighlightRoot(rootPane);
             }
+            Window host=targetWindow;
+            while (host instanceof PopupWindow popup) host=popup.getOwnerWindow();
+            Pane root=host!=null && host.getScene()!=null && host.getScene().getRoot() instanceof Pane p ? p : null;
+            if (root!=cardRoot) {
+                detachCard();
+                cardRoot=root;
+                if (root!=null) {
+                    root.widthProperty().addListener(geometryListener);
+                    root.heightProperty().addListener(geometryListener);
+                    root.getChildren().add(card);
+                }
+            }
             syncHighlightAndPosition();
         } finally {
             refreshing=false;
         }
+    }
+
+    private void detachCard() {
+        overflow.hide();
+        overflow.getContent().clear();
+        if (cardRoot==null) return;
+        cardRoot.widthProperty().removeListener(geometryListener);
+        cardRoot.heightProperty().removeListener(geometryListener);
+        cardRoot.getChildren().remove(card);
+        cardRoot=null;
     }
 
     private void bindAnchorObserver(Node nextAnchor) {
@@ -367,8 +436,8 @@ public final class TutorialDialog {
         if (anchor!=null && targetScene!=null && highlightLayer.getParent() instanceof Pane rootPane) {
             double rw=Math.max(1.0,rootPane.getWidth()),rh=Math.max(1.0,rootPane.getHeight());
             highlightLayer.resizeRelocate(0,0,rw,rh);
-            Bounds sceneBounds=anchor.localToScene(anchor.getBoundsInLocal());
-            if (sceneBounds!=null && sceneBounds.getWidth()>0 && sceneBounds.getHeight()>0) {
+            Bounds sceneBounds=anchor.localToScene(anchor.getLayoutBounds());
+            if (anchor.isVisible() && sceneBounds!=null && sceneBounds.getWidth()>0 && sceneBounds.getHeight()>0) {
                 Color focus=Ui.fxColor(ColorRole.FOCUS);
                 highlightRect.setStroke(focus);
                 highlightRect.setFill(focus.deriveColor(0,1.0,1.0,0.09));
@@ -391,57 +460,82 @@ public final class TutorialDialog {
         position();
     }
 
-    Point2D computeDialogPosition(Rectangle2D screen,double winSceneX,double winSceneY,double sw,double sh) {
-        if (anchor==null) return null;
-        Bounds b=anchor.localToScene(anchor.getBoundsInLocal());
-        if (b==null || b.getWidth()<=0 || b.getHeight()<=0) return null;
-        double bx=winSceneX+b.getMinX(),by=winSceneY+b.getMinY();
-        double bw=b.getWidth(),bh=b.getHeight();
-        boolean topBar=b.getMinY()<64;
-        double[][] candidates=topBar
-                ? new double[][]{
-                        {bx,by+bh+10},
-                        {bx+bw-sw,by+bh+10},
-                        {bx-sw-12,by+bh+6},
-                        {bx+bw+12,by}}
-                : new double[][]{
-                        {bx+bw+12,by},
-                        {bx-sw-12,by},
-                        {bx,by+bh+12},
-                        {bx,by-sh-12}};
-        double bestX=candidates[0][0],bestY=candidates[0][1];
-        double bestScore=Double.MAX_VALUE;
-        for (int i=0;i<candidates.length;i++) {
-            double[] c=candidates[i];
-            double x=Math.max(screen.getMinX()+8,Math.min(c[0],screen.getMaxX()-sw-8));
-            double y=Math.max(screen.getMinY()+8,Math.min(c[1],screen.getMaxY()-sh-8));
-            double ox=Math.max(0,Math.min(bx+bw+6,x+sw)-Math.max(bx-6,x));
-            double oy=Math.max(0,Math.min(by+bh+6,y+sh)-Math.max(by-6,y));
-            double cost=ox*oy*2000+Math.abs(x-c[0])+Math.abs(y-c[1])+i*18.0;
-            if (cost<bestScore) { bestScore=cost; bestX=x; bestY=y; }
+    // Work in one coordinate system (screen logical pixels for shown windows).
+    // Consider both sides of *every* obstruction, not only the active menu row:
+    // a compact menu and its submenu can occupy different sides on a small monitor.
+    private static Point2D place(Rectangle2D area,List<Rectangle2D> avoid,double w,double h) {
+        if (area.getWidth()<w+8 || area.getHeight()<h+8) return null;
+        Rectangle2D a=avoid.getFirst();
+        List<Double> xs=new ArrayList<>(List.of(a.getMinX(),a.getMaxX()-w));
+        List<Double> ys=new ArrayList<>(List.of(a.getMaxY()+9,a.getMinY()));
+        for (Rectangle2D b:avoid) {
+            xs.add(b.getMaxX()+9); xs.add(b.getMinX()-w-9);
+            ys.add(b.getMaxY()+9); ys.add(b.getMinY()-h-9);
         }
-        return new Point2D(Math.round(bestX),Math.round(bestY));
+        double best=Double.POSITIVE_INFINITY;
+        Point2D pos=null;
+        for (double cy:ys) for (double cx:xs) {
+            double x=Math.clamp(cx,area.getMinX()+4,area.getMaxX()-w-4);
+            double y=Math.clamp(cy,area.getMinY()+4,area.getMaxY()-h-4);
+            if (avoid.stream().anyMatch(b -> b.intersects(x-3,y-3,w+6,h+6))) continue;
+            double score=Math.hypot(x-a.getMinX(),y-a.getMaxY()-9);
+            if (score<best) { best=score; pos=new Point2D(x,y); }
+        }
+        return pos;
     }
 
+    private boolean positioning;
     private void position() {
-        if (anchor==null || anchor.getScene()==null || targetWindow==null || !stage.isShowing()) return;
-        Bounds b=anchor.localToScene(anchor.getBoundsInLocal());
-        if (b==null || b.getWidth()<=0 || b.getHeight()<=0) return;
-        Scene scene=anchor.getScene();
-        double sx=targetWindow.getX()+scene.getX(),sy=targetWindow.getY()+scene.getY();
-        double bx=sx+b.getMinX(),by=sy+b.getMinY();
-        List<Screen> screens=Screen.getScreensForRectangle(bx,by,Math.max(1.0,b.getWidth()),Math.max(1.0,b.getHeight()));
-        if (screens.isEmpty() && targetWindow.getWidth()>0) {
-            screens=Screen.getScreensForRectangle(targetWindow.getX(),targetWindow.getY(),
-                    Math.max(1.0,targetWindow.getWidth()),Math.max(1.0,targetWindow.getHeight()));
-        }
-        Rectangle2D screen=(screens.isEmpty() ? Screen.getPrimary() : screens.getFirst()).getVisualBounds();
-        double sw=stage.getWidth()>40 ? stage.getWidth() : 380;
-        double sh=stage.getHeight()>40 ? stage.getHeight() : 232;
-        Point2D pt=computeDialogPosition(screen,sx,sy,sw,sh);
-        if (pt==null) return;
-        if (Math.abs(stage.getX()-pt.getX())>0.5) stage.setX(pt.getX());
-        if (Math.abs(stage.getY()-pt.getY())>0.5) stage.setY(pt.getY());
+        if (positioning || cardRoot==null || targetWindow==null) return;
+        positioning=true;
+        try {
+            Stage host=hostStage();
+            Point2D origin=cardRoot.localToScreen(0,0);
+            boolean live=origin!=null && host.isShowing();
+            if (!live) origin=Point2D.ZERO;
+            Bounds b=anchor==null ? null : live ? anchor.localToScreen(anchor.getLayoutBounds())
+                    : anchor.localToScene(anchor.getLayoutBounds());
+            List<Rectangle2D> avoid=new ArrayList<>();
+            avoid.add(b==null ? new Rectangle2D(origin.getX(),origin.getY(),1,1)
+                    : new Rectangle2D(b.getMinX(),b.getMinY(),b.getWidth(),b.getHeight()));
+            if (live) for (Window w:Window.getWindows()) {
+                if (w!=overflow && w instanceof PopupWindow && related(w) && w.getWidth()>0 && w.getHeight()>0)
+                    avoid.add(new Rectangle2D(w.getX(),w.getY(),w.getWidth(),w.getHeight()));
+            }
+            double width=Math.clamp(cardRoot.getWidth()-8,280,368);
+            card.applyCss();
+            double height=Math.ceil(card.prefHeight(width));
+            Rectangle2D area=new Rectangle2D(origin.getX(),origin.getY(),cardRoot.getWidth(),cardRoot.getHeight());
+            Point2D pt=place(area,avoid,width,height);
+            if (pt==null && live && host.isFocused()) {
+                List<Screen> screens=Screen.getScreensForRectangle(avoid.getFirst());
+                if (!screens.isEmpty()) pt=place(screens.getFirst().getVisualBounds(),avoid,width,height);
+                if (pt!=null) {
+                    card.setVisible(true);
+                    if (!overflow.isShowing()) {
+                        cardRoot.getChildren().remove(card);
+                        overflow.getContent().setAll(card);
+                        card.resizeRelocate(0,0,width,height);
+                        overflow.show(host,pt.getX(),pt.getY());
+                    } else {
+                        card.resizeRelocate(0,0,width,height);
+                        overflow.setX(pt.getX()); overflow.setY(pt.getY());
+                    }
+                    card.layout();
+                    return;
+                }
+            }
+            if (overflow.getContent().contains(card)) {
+                overflow.hide(); overflow.getContent().clear();
+                cardRoot.getChildren().add(card);
+            }
+            card.setVisible(pt!=null || !live);
+            card.resizeRelocate(pt==null ? 4 : pt.getX()-origin.getX(),
+                    pt==null ? 4 : pt.getY()-origin.getY(),width,height);
+            // This unmanaged overlay is its own layout root. Lay out its
+            // buttons now, including immediately after Back changes the copy.
+            card.layout();
+        } finally { positioning=false; }
     }
 
     public void finish(boolean completed) {
@@ -455,12 +549,14 @@ public final class TutorialDialog {
     public void dispose() {
         if (!ended) {
             ended=true;
+            Window.getWindows().removeListener(windowsChanged);
+            for (Window w:Window.getWindows()) if (w instanceof Stage && related(w)) w.focusedProperty().removeListener(focusChanged);
             bindAnchorObserver(null);
             detachWindowListeners(targetWindow);
             detachHighlight();
+            detachCard();
             targetWindow=null;
             anchor=null;
         }
-        stage.close();
     }
 }

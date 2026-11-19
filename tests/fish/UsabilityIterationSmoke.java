@@ -274,8 +274,8 @@ public final class UsabilityIterationSmoke {
         edt(() -> {
             w.executeCommand("Tutorial: Desktop shortcuts");
             TutorialDialog guide=(TutorialDialog)field(w,"tutorial");
-            button(guide.stage(),"Skip step").fire(); button(guide.stage(),"Skip step").fire();
-            w.preferences("General");
+            guide.skipStepButton().fire(); guide.skipStepButton().fire();
+            w.preferences("Shortcuts");
             var manager=w.tutorialPreferences();
             ((TextField)manager.tutorialTarget("shortcut-name")).setText("Direct synthetic shortcut");
             int before=w.savedLayouts().size();
@@ -287,13 +287,13 @@ public final class UsabilityIterationSmoke {
             SavedLayout last=w.savedLayouts().getLast();
             check(properties[1].equals(LayoutShortcuts.arguments(last.id(),w.dataDirectory())),"Direct flow exports exact stable reference without hosts/secrets");
             layout(manager.dialog()); snapshot(manager.dialog(),"shortcut-current");
-            layout(guide.stage()); snapshot(guide.stage(),"shortcut-guide");
+            layout(guide.hostStage()); snapshot(guide.hostStage(),"shortcut-guide");
             if (evidence!=null) {
                 w.applyTheme(AppTheme.Paper); layout(manager.dialog()); snapshot(manager.dialog(),"shortcut-settings-paper");
                 w.setSize(520,360); layout(w); snapshot(w.stage(),"window-minimum-paper");
                 w.applyTheme(AppTheme.Charcoal); layout(w);
             }
-            button(guide.stage(),"Back").fire(); button(guide.stage(),"Skip tutorial").fire();
+            guide.backButton().fire(); guide.skipTutorialButton().fire();
             manager.closeSettings(); return null;
         });
         await(() -> !f.app.saving(),"Shortcut state settles");

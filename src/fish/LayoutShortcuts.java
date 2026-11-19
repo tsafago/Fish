@@ -99,24 +99,119 @@ public final class LayoutShortcuts {
 
     @FunctionalInterface public interface Save { void run() throws IOException; }
 
-    /** Publish the link(s) before committing their backing recipe; undo this export if the commit fails. */
-    public static Path export(Path data,SavedLayout shortcut,Save commit) throws IOException {
-        Path exe=executable(),desk=createAvailable(desktop(),exe,data,shortcut),signIn=null;
+    public record Change(Path desktopLink,String warning) {}
+
+    /** A null before means create, a null after means delete. The caller serializes the workspace commit. */
+    public static Change change(Path data,SavedLayout before,SavedLayout after,Save commit) throws IOException {
+        UUID id=(before==null ? Objects.requireNonNull(after) : before).id();
+        if (after!=null && !after.id().equals(id)) throw new IllegalArgumentException("Shortcut ID changed.");
+        Path desk=desktop(),exe=executable();
+        LinkEdit edit=new LinkEdit(data,id);
+        Path published;
         try {
-            if (shortcut.autostart()) {
-                Path folder=Files.createDirectories(startup());
-                signIn=createAvailable(folder,exe,data,shortcut);
+            boolean rename=before!=null && after!=null && !before.name().equals(after.name());
+            List<Path> desktopLinks=before==null ? List.of() : ownedLinks(desk,data,id);
+            if (rename || after==null) for (Path link:desktopLinks) edit.retire(link);
+            published=after==null ? null : rename || desktopLinks.isEmpty()
+                    ? edit.publish(desk,exe,after) : desktopLinks.getFirst();
+
+            if (before!=null || after.autostart()) {
+                Path folder=startup();
+                if (Files.isSameFile(desk,Files.createDirectories(folder)))
+                    throw new IOException("Desktop and Startup must be separate folders.");
+                List<Path> startupLinks=before==null ? List.of() : ownedLinks(folder,data,id);
+                boolean keep=after!=null && after.autostart();
+                for (int i=0;i<startupLinks.size();i++)
+                    if (!keep || rename || i>0) edit.retire(startupLinks.get(i));
+                if (keep && (rename || startupLinks.isEmpty())) edit.publish(folder,exe,after);
             }
             commit.run();
-            return desk;
         } catch (IOException | RuntimeException failure) {
-            for (Path link:new Path[]{signIn,desk}) {
-                if (link==null || !matchesOwnedLink(link,data,shortcut.id())) continue;
-                try { deleteShortcut(link); } catch (IOException cleanup) { failure.addSuppressed(cleanup); }
-            }
+            edit.rollbackOrThrow(failure);
             throw failure;
         }
+        return new Change(published,edit.clean());
     }
+
+    // Keep originals (including custom Shell properties) until the recipe is durable. No move replaces a path.
+    private static final class LinkEdit {
+        final Path data;
+        final UUID id;
+        final List<Path> created=new ArrayList<>();
+        record Backup(Path original,Path file) {}
+        final List<Backup> backups=new ArrayList<>();
+        LinkEdit(Path data,UUID id) { this.data=data; this.id=id; }
+        Path publish(Path folder,Path exe,SavedLayout after) throws IOException {
+            Path file=createAvailable(folder,exe,data,after);
+            created.add(file);
+            return file;
+        }
+        void retire(Path original) throws IOException {
+            Path backup=original.resolveSibling(".fish-"+UUID.randomUUID()+".bak");
+            Files.move(original,backup);
+            backups.add(new Backup(original,backup));
+            // Verify *after* taking the file out of circulation, in case Explorer replaced it during the scan.
+            if (!matchesOwnedLink(backup,data,id)) throw new IOException("Shortcut changed during the operation: "+original);
+        }
+        void rollbackOrThrow(Exception failure) throws IOException {
+            List<String> problems=new ArrayList<>();
+            for (Path file:created.reversed()) {
+                try {
+                    if (Files.notExists(file,LinkOption.NOFOLLOW_LINKS)) continue;
+                    if (!matchesOwnedLink(file,data,id)) throw new IOException("file was replaced");
+                    // Recheck identity after the move; never unlink an unrelated replacement.
+                    retire(file);
+                    deleteShortcut(backups.getLast().file());
+                    backups.removeLast();
+                } catch (IOException | RuntimeException e) { problems.add(file+" ("+e.getMessage()+")"); }
+            }
+            for (Backup entry:backups.reversed()) {
+                try { Files.move(entry.file(),entry.original()); }
+                catch (IOException | RuntimeException e) { problems.add(entry.file()+" → "+entry.original()+" ("+e.getMessage()+")"); }
+            }
+            if (!problems.isEmpty()) throw new IOException(failure.getMessage()+". Could not restore every link: "+String.join("; ",problems),failure);
+        }
+        String clean() {
+            List<String> left=new ArrayList<>();
+            for (Backup entry:backups) {
+                Path backup=entry.file();
+                try {
+                    if (!matchesOwnedLink(backup,data,id)) throw new IOException("Backup changed");
+                    deleteShortcut(backup);
+                } catch (IOException | RuntimeException e) { left.add(backup.toString()); }
+            }
+            return left.isEmpty() ? "" : "Saved, but these backup files could not be removed: "+String.join(", ",left);
+        }
+    }
+
+    private static List<Path> ownedLinks(Path folder,Path data,UUID id) throws IOException {
+        return workspaceLinks(folder,data).stream().filter(link -> id.equals(link.id())).map(OwnedLink::file).toList();
+    }
+
+    private record OwnedLink(Path file,Path target,UUID id) {}
+    private static List<OwnedLink> workspaceLinks(Path folder,Path data) throws IOException {
+        List<OwnedLink> result=new ArrayList<>();
+        try (var entries=Files.newDirectoryStream(folder,"*.lnk")) {
+            for (Path entry:entries) {
+                if (!Files.readAttributes(entry,java.nio.file.attribute.BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS).isRegularFile()) continue;
+                String[] info;
+                try { info=inspect(entry); }
+                catch (IOException e) {
+                    // Non-links can have a .lnk extension. An unreadable real link, however, may be ours.
+                    try (var in=Files.newInputStream(entry)) {
+                        if (Arrays.equals(in.readNBytes(20),SHELL_LINK_HEADER))
+                            throw new IOException("Close the program using "+entry+" and retry.",e);
+                    }
+                    continue;
+                }
+                UUID actual=ownedId(info,data);
+                if (actual!=null) result.add(new OwnedLink(entry,Path.of(info[0]),actual));
+            }
+        } catch (DirectoryIteratorException e) { throw e.getCause(); }
+        result.sort(Comparator.comparing(OwnedLink::file));
+        return result;
+    }
+    private static final byte[] SHELL_LINK_HEADER=HexFormat.of().parseHex("4c0000000114020000000000c000000000000046");
     public static void createApplicationLink(Path destination,Path executable) throws IOException {
         for (Path part:destination) if (part.toString().equals("..")) throw new IOException("Choose a shortcut destination without parent traversal.");
         Path target=executable.toAbsolutePath().normalize(),output=destination.toAbsolutePath().normalize();
@@ -230,35 +325,30 @@ public final class LayoutShortcuts {
 
     public static void syncAutostart(Path directory,Path executable,List<SavedLayout> layouts) throws IOException {
         Objects.requireNonNull(directory,"Workspace directory is required.");
+        if (layouts==null || layouts.isEmpty()) return;
         Path target=executable.toAbsolutePath().normalize();
         if (!target.getFileName().toString().equalsIgnoreCase("Fish.exe") || !Files.isRegularFile(target,LinkOption.NOFOLLOW_LINKS))
             return;
         Path startupDir=startup().toAbsolutePath().normalize();
         Files.createDirectories(startupDir);
         Path normalizedData=directory.toAbsolutePath().normalize();
-        Set<Path> desired=new HashSet<>();
-        if (layouts!=null) {
-            for (SavedLayout layout:layouts) {
-                if (!layout.autostart()) continue;
-                for (int n=1;;n++) {
-                    Path destination=numberedLink(startupDir,layout.name(),n);
-                    if (matchesOwnedLink(destination,normalizedData,layout.id())) {
-                        if (Path.of(inspect(destination)[0]).equals(target)) { desired.add(destination); break; }
-                        // Fish moved. Replace only this workspace's verified Startup link.
-                        deleteShortcut(destination);
-                    }
-                    try { create(destination,target,normalizedData,layout.id()); desired.add(destination); break; }
-                    catch (FileAlreadyExistsException collision) { /* Skip unrelated links, including other workspaces. */ }
+        var existing=workspaceLinks(startupDir,normalizedData);
+        for (SavedLayout layout:layouts) {
+            LinkEdit edit=new LinkEdit(normalizedData,layout.id());
+            try {
+                boolean found=false;
+                for (OwnedLink link:existing) {
+                    if (!link.id().equals(layout.id())) continue;
+                    if (layout.autostart() && !found && link.target().equals(target)) found=true;
+                    else edit.retire(link.file());
                 }
+                if (layout.autostart() && !found) edit.publish(startupDir,target,layout);
+            } catch (IOException | RuntimeException failure) {
+                edit.rollbackOrThrow(failure);
+                throw failure;
             }
-        }
-        try (var entries=Files.list(startupDir)) {
-            for (Path entry:entries.toList()) {
-                if (!entry.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".lnk")) continue;
-                Path normalizedEntry=entry.toAbsolutePath().normalize();
-                if (!desired.contains(normalizedEntry) && matchesWorkspaceLayoutLink(normalizedEntry,normalizedData))
-                    deleteShortcut(normalizedEntry);
-            }
+            String warning=edit.clean();
+            if (!warning.isEmpty()) throw new IOException(warning);
         }
     }
 
@@ -288,17 +378,23 @@ public final class LayoutShortcuts {
     private static boolean matchesOwnedLink(Path shortcut,Path data,UUID id) {
         if (!Files.isRegularFile(shortcut,LinkOption.NOFOLLOW_LINKS)) return false;
         try {
-            String[] info=inspect(shortcut);
+            UUID actual=ownedId(inspect(shortcut),data);
+            return actual!=null && (id==null || actual.equals(id));
+        }
+        catch (IOException e) { return false; }
+    }
+    private static UUID ownedId(String[] info,Path data) {
+        try {
             if (info==null || info.length<2 || !Path.of(info[0]).getFileName().toString().equalsIgnoreCase("Fish.exe")
-                    || !info[1].startsWith("--layout ")) return false;
+                    || !info[1].startsWith("--layout ")) return null;
             String[] parts=info[1].split(" ",3);
             UUID actual=SavedLayout.reference(parts[1]);
-            if (id!=null && !actual.equals(id)) return false;
-            if (parts.length==3) return info[1].equalsIgnoreCase(arguments(actual,data));
+            if (parts.length==3)
+                return parts[2].startsWith("--data-dir \"") && info[1].equalsIgnoreCase(arguments(actual,data)) ? actual : null;
             Path defaultBase=Path.of(java.util.Optional.ofNullable(System.getenv("APPDATA")).orElse(System.getProperty("user.home")));
-            return Main.defaultDirectory(defaultBase).toAbsolutePath().normalize().equals(data.toAbsolutePath().normalize());
-        } catch (IOException | RuntimeException e) {
-            return false;
+            return Main.defaultDirectory(defaultBase).toAbsolutePath().normalize().equals(data.toAbsolutePath().normalize()) ? actual : null;
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 

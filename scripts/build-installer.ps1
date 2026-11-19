@@ -129,7 +129,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Setup resource compilation failed.' }
 $bootstrapper=Join-Path $output 'Fish-setup.exe'
 & $zig cc -O2 -Wall -Wextra -Werror -municode '-Wl,--subsystem,windows' -target x86_64-windows-gnu `
     ("-I"+$output) (Join-Path $root 'src\native\fish-setup.c') (Join-Path $output 'setup.res') `
-    -luser32 -lgdi32 -lshell32 -lole32 -luuid -lmsi -lversion -lbcrypt -ldwmapi -lcomctl32 -ladvapi32 -o $bootstrapper
+    -luser32 -lgdi32 -lshell32 -lole32 -loleaut32 -luuid -lmsi -lversion -lbcrypt -ldwmapi -lcomctl32 -ladvapi32 -o $bootstrapper
 if ($LASTEXITCODE -ne 0) { throw 'Native setup compilation failed.' }
 $check=Start-Process -FilePath $bootstrapper -ArgumentList '--self-test' -Wait -PassThru
 if ($check.ExitCode -ne 0) { throw 'Native setup contract checks failed.' }

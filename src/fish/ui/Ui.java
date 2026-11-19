@@ -677,19 +677,10 @@ public final class Ui {
                 -fx-background-color: transparent;
                 -fx-background-radius: 3;
             }
-            .fish-tutorial-card.text-area {
-                -fx-background-color: transparent;
-                -fx-background-insets: 0;
-                -fx-background-radius: 0;
-                -fx-padding: 0;
-            }
-            .fish-tutorial-card.text-area .content {
-                -fx-background-color: transparent;
-                -fx-background-radius: 0;
-                -fx-padding: 2 0 2 0;
-            }
-            .fish-tutorial-card.text-area:focused {
-                -fx-background-color: transparent;
+            .fish-tutorial-guide {
+                -fx-background-color: -fish-focus, -fish-dialog;
+                -fx-background-insets: 0, 1;
+                -fx-background-radius: 5, 4;
             }
             .invalid-field {
                 -fx-background-color: -fish-error, -fish-field-face !important;
@@ -1477,20 +1468,6 @@ public final class Ui {
             page.setTop(titleLabel);
             controls.setCenter(page);
         }
-        if (dialog.getModality()==Modality.NONE) {
-            Button maximize=iconButton("Maximize "+dialog.getTitle(),"maximize",ColorRole.CHROME_TEXT,() -> dialog.setMaximized(!dialog.isMaximized()));
-            bindHeaderButton(maximize,HeaderButtonType.MAXIMIZE);
-            dialog.maximizedProperty().addListener((o,old,max) -> {
-                updateIcon(maximize,max ? "restore" : "maximize",ColorRole.CHROME_TEXT);
-                String name=(max ? "Restore " : "Maximize ")+dialog.getTitle();
-                maximize.setAccessibleText(name); maximize.getTooltip().setText(name);
-            });
-            maximize.getStyleClass().add("fish-chrome-button"); maximize.setPrefSize(38,31);
-            maximize.visibleProperty().bind(dialog.resizableProperty());
-            maximize.managedProperty().bind(maximize.visibleProperty());
-            // An owned tool window has no independent taskbar entry to restore it.
-            header.setTrailing(new HBox(maximize,close));
-        }
         if (settings) {
             header.getStyleClass().add("fish-settings-header"); header.setMaxHeight(32);
             Region railSurface=new Region();
@@ -1508,7 +1485,7 @@ public final class Ui {
         Scene scene = new Scene(shell,prefW,prefH>0 && !settings ? prefH+24 : prefH);
         styleScene(scene);
         scene.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
-            if (e.getCode() == KeyCode.ESCAPE) {
+            if (e.getCode() == KeyCode.ESCAPE && !TutorialDialog.insideCard(e.getTarget())) {
                 e.consume();
                 dismiss.run();
             }

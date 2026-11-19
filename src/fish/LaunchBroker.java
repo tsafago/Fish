@@ -54,7 +54,7 @@ public final class LaunchBroker implements AutoCloseable {
                         int result=new DataInputStream(socket.getInputStream()).readInt();
                         if (result==MAGIC) return new Claim(null,null);
                         if (result==3) throw new IOException("Another Fish version or launch mode is running. Close its windows before opening this version.");
-                        if (result==2) throw new IOException("Shortcut is unavailable. Open Fish normally and create a new shortcut in Settings > General.");
+                        if (result==2) throw new IOException("Shortcut is unavailable. Open Fish normally and create a new shortcut in Settings > Shortcuts.");
                         if (result!=0) throw new IOException("The running Fish instance rejected the new-window request.");
                     } catch (SocketException | SocketTimeoutException | EOFException stale) {
                         // The file can outlive a crash, but only the OS file lock elects a new owner.

@@ -115,7 +115,7 @@ public final class ApplicationWindows {
 
     private SavedLayout recipe(UUID id) {
         return shared.savedLayouts().stream().filter(s -> s.id().equals(id)).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("Shortcut is unavailable. Open Fish normally and create a new shortcut in Settings > General."));
+                .orElseThrow(() -> new IllegalArgumentException("Shortcut is unavailable. Open Fish normally and create a new shortcut in Settings > Shortcuts."));
     }
 
     public boolean openLayout(UUID id) {
@@ -156,6 +156,67 @@ public final class ApplicationWindows {
         start(window,true);
         saveTimer.playFromStart();
         return true;
+    }
+
+    Workspace windowAt(long handle) {
+        if (handle<=0) return null;
+        return windows.stream().filter(w -> w.paneWindowHandle()==handle).findFirst().orElse(null);
+    }
+
+    private boolean movable(SessionPane pane) {
+        return pane!=null && !closing && !saving() && !KioskMode.isEnabled() && !pane.connecting()
+                && windows.contains(pane.workspace()) && !pane.workspace().closing() && pane.workspace().hasPane(pane.id());
+    }
+
+    boolean canTransfer(SessionPane pane,Workspace target) {
+        return movable(pane) && windows.contains(target) && target!=pane.workspace() && !target.closing()
+                && !target.hasPane(pane.id()) && target.paneCount()<Layout.MAX_PANES;
+    }
+
+    boolean transfer(SessionPane pane,Workspace target,Layout next) {
+        if (!canTransfer(pane,target)) return false;
+        Workspace source=pane.workspace();
+        Layout remaining=source.currentLayout().remove(pane.id());
+        // A modeless editor belongs to its stage. Don't close it or discard an edit as a side effect of a drag.
+        if (remaining==null && source.hasOpenEditor()) {
+            pane.problem("Close Settings before moving the last pane."); return false;
+        }
+        source.releasePane(pane,remaining);
+        target.receivePane(pane,next);
+        if (remaining==null) {
+            windows.remove(source);
+            source.finishWindow(); // the pane is no longer in its disposal set
+        }
+        scheduleSave();
+        return true;
+    }
+
+    boolean detach(SessionPane pane,int[] desktopPoint) {
+        if (!movable(pane) || !pane.workspace().hasMultiplePanes()) return false;
+        Workspace source=pane.workspace();
+        Layout.Leaf leaf=new Layout.Leaf(pane.id(),pane.profile().id());
+        // Stage construction/show must succeed before removing anything from the live tree.
+        var blank=new Layout.Leaf(UUID.randomUUID(),leaf.profile());
+        Workspace target=factory.create(store,shared.forWindow(new StateStore.WindowState(blank,
+                source.getWidth(),source.getHeight(),leaf.profile(),leaf.profile())),helper,demonstration);
+        target.application(this); windows.add(target);
+        boolean moved=false;
+        try {
+            if (visible) {
+                var s=source.stage(); var t=target.stage();
+                var screen=javafx.stage.Screen.getScreensForRectangle(s.getX(),s.getY(),s.getWidth(),s.getHeight())
+                        .stream().findFirst().orElse(javafx.stage.Screen.getPrimary()).getVisualBounds();
+                t.setX(Math.max(screen.getMinX(),Math.min(s.getX()+24,screen.getMaxX()-t.getWidth())));
+                t.setY(Math.max(screen.getMinY(),Math.min(s.getY()+24,screen.getMaxY()-t.getHeight())));
+                target.setVisible(true);
+                if (desktopPoint!=null && target.paneWindowHandle()!=0)
+                    PaneWindowHit.place0(target.paneWindowHandle(),desktopPoint[0],desktopPoint[1]);
+            }
+            moved=transfer(pane,target,leaf);
+            return moved;
+        } finally {
+            if (!moved && pane.workspace()!=target) { windows.remove(target); target.finishWindow(); }
+        }
     }
 
     public boolean closing() { return closing; }

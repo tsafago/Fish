@@ -368,7 +368,7 @@ public final class ZeroTenFeaturesSmoke {
 
                 // Autostart is a choice for the new shortcut, not a global preference.
                 fx(() -> {
-                    w.preferences("General");
+                    w.preferences("Shortcuts");
                     CheckBox createCb=(CheckBox)w.tutorialPreferences().tutorialTarget("shortcut-autostart");
                     check(!createCb.isSelected(),"Existing autostarts do not enable autostart for new shortcuts");
                     w.tutorialPreferences().forceDispose();
@@ -961,7 +961,7 @@ public final class ZeroTenFeaturesSmoke {
                 });
                 try {
                     fx(() -> {
-                        w.preferences("General");
+                        w.preferences("Shortcuts");
                         ((Button)w.tutorialPreferences().tutorialTarget("shortcut-create")).fire();
                         return null;
                     });
@@ -988,7 +988,7 @@ public final class ZeroTenFeaturesSmoke {
 
     public static void main(String[] args) throws Exception {
         Ui.install();
-        check("0.10.3".equals(Main.VERSION), "Main.VERSION is 0.10.3: " + Main.VERSION);
+        check("0.10.4".equals(Main.VERSION), "Main.VERSION is 0.10.4: " + Main.VERSION);
         Path root = Files.createTempDirectory(Path.of("build"), "zero-ten-smoke-");
         try (ShortcutFixture ignored=new ShortcutFixture(root.resolve("shell-folders")); DemoHost host = new DemoHost()) {
             verifyScrollBindingsAndRecorder(root);
@@ -1006,7 +1006,7 @@ public final class ZeroTenFeaturesSmoke {
             FxTestSupport.closeAllWindows();
             FxTestSupport.deleteTree(root);
         }
-        System.out.println("PASS Fish 0.10.3 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
+        System.out.println("PASS Fish 0.10.4 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
         Ui.finishTestRun();
     }
 }

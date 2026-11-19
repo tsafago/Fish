@@ -150,8 +150,8 @@ public final class KeyboardPreferencesSmoke {
         Stage dialog=preferences.dialog();
         check(!dialog.isShowing(),"Preferences production window never shown");
         @SuppressWarnings("unchecked") ListView<String> navigation=(ListView<String>)field(preferences,"navigation");
-        check(navigation.getItems().size()==5 && "Keyboard Shortcuts".equals(navigation.getSelectionModel().getSelectedItem()),
-                "Flat indexed categories and inline keyboard editor");
+        check(navigation.getItems().contains("Shortcuts") && "Keyboard Shortcuts".equals(navigation.getSelectionModel().getSelectedItem()),
+                "Keyboard bindings open separately from desktop shortcuts");
         KeyboardEditor editor=(KeyboardEditor)field(preferences,"keyboard");
         @SuppressWarnings("unchecked") TableView<KeyboardEditor.ActionBindingRow> actions=(TableView<KeyboardEditor.ActionBindingRow>)field(editor,"table");
         TextArea keys=(TextArea)field(editor,"keys");

@@ -327,10 +327,11 @@ small region unless host blinking text requires a full terminal redraw.
 
 ## Do's and Don'ts
 
-Windows setup uses one coastline behind its native controls. Water starts beneath
+Windows setup and updates always use the light coastline, independent of the
+Windows or Fish theme. Water starts beneath
 the copy; the large Fish mark is cut into sand on the right. As work advances,
 the mark thickens from nose to tail, remaining visible beneath the moving tide.
-Text has a one-pixel contrasting shadow; high contrast uses system ink alone.
+Text has a one-pixel contrasting shadow; high contrast uses black on white without decoration.
 Only verified success submerges the whole window. The final frame holds briefly
 before setup closes or opens Fish. Reduced motion keeps the same states without
 the moving waves; errors and restart notices stay open.

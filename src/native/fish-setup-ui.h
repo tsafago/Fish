@@ -71,8 +71,8 @@ static COLORREF cockle(COLORREF c,double x,double y,double size,double lean,doub
     if (fabs(x)>size*1.3 || fabs(y)>size*1.3) return c;
     double u=(x+lean*y)/size,v=(y-lean*x)/size,r=hypot(u,v),angle=atan2(u,-v);
     double lip=.92+.05*cos(angle*15),edge=fmin(lip-r,(1.12-fabs(angle))*r)*size;
-    COLORREF line=light ? RGB(107,116,174) : RGB(182,185,222);
-    COLORREF nacre=light ? RGB(230,226,240) : RGB(83,76,102);
+    COLORREF line=RGB(107,116,174);
+    COLORREF nacre=RGB(230,226,240);
     double ribs=unit(.5+ds*(.42-fabs(sin(angle*7.5))*r*size/7.5))*unit((r-.16)*6);
     COLORREF fill=mix(nacre,line,fmax(unit(1-edge*ds),ribs*.80));
     return mix(c,fill,unit(.5+edge*ds));
@@ -81,9 +81,9 @@ static COLORREF sea_star(COLORREF c,double x,double y,double ds) {
     if (fabs(x)>13 || fabs(y)>13) return c;
     double a=atan2(y,x)+.24,r=hypot(x,y);
     double arm=.5+.5*cos(5*a),edge=4.2+7.7*arm*arm*arm-r;
-    COLORREF line=light ? RGB(185,112,106) : RGB(209,152,146);
+    COLORREF line=RGB(185,112,106);
     double freckles=unit((cos(8*r)*cos(a*5)-.55)*3)*unit(1-r/9);
-    COLORREF ink=mix(light ? RGB(239,197,186) : RGB(124,82,87),line,fmax(unit(1.3-edge*ds),freckles));
+    COLORREF ink=mix(RGB(239,197,186),line,fmax(unit(1.3-edge*ds),freckles));
     return mix(c,ink,unit(.5+ds*edge));
 }
 /* The tide enters from the copy side and travels across the sand. */
@@ -98,7 +98,7 @@ static void shore_sprite(DWORD *top,double cx,double cy,double size,BOOL bubble,
     double ds=dpi/96.,span=size*2+2;
     int l=max(0,(int)floor((cx-span)*ds)),r=min(art_w,(int)ceil((cx+span)*ds));
     int t=max(0,(int)floor((cy-size-2)*ds)),b=min(art_h,(int)ceil((cy+size+2)*ds));
-    DWORD ink=bubble ? (light ? 0x87bdbd : issue ? 0x729497 : 0xa2c8c8) : (light ? 0x6a9099 : 0x90a7af);
+    DWORD ink=bubble ? 0x87bdbd : 0x6a9099;
     for (int j=t;j<b;j++) for (int i=l;i<r;i++) {
         if ((i+.5)/ds>shore_edges[j]) continue;
         double x=((i+.5)/ds-cx)*facing,y=(j+.5)/ds-cy;
@@ -112,7 +112,7 @@ static void shore_sprite(DWORD *top,double cx,double cy,double size,BOOL bubble,
         DWORD *p=top+(size_t)j*art_w+i;
         *p=over(*p,ink,coverage(unit(.5+ds*edge)*(bubble ? .89 : .82)));
         if (!bubble)
-            *p=over(*p,light ? 0xe7f4ed : 0xd2dddb,coverage(.5+ds*(.58-hypot(x-size*.52,y+.30))));
+            *p=over(*p,0xe7f4ed,coverage(.5+ds*(.58-hypot(x-size*.52,y+.30))));
     }
 }
 /* Tapered currents, each with a little of its own slack. */
@@ -190,7 +190,7 @@ static void compose_shore(double fill,double phase) {
                 double lip=unit(.5+(1.15-fabs(sd-radius-.75))*ds);
                 unsigned inside=coverage(.5+edge*ds);
                 DWORD groove=over(p->ink,p->charged,coverage(.74*u));
-                DWORD bevel=contrast ? p->ink : light ? 0xfff9ec : 0xa39ba6;
+                DWORD bevel=contrast ? p->ink : 0xfff9ec;
                 sand=over(over(sand,bevel,coverage(.68*lip)),groove,inside);
                 sea=over(sea,over(groove,sea,contrast ? 0 : 55),inside);
                 shoal=over(shoal,groove,inside);
@@ -208,13 +208,13 @@ static void compose_shore(double fill,double phase) {
         static const double streams[][5]={{217,.11,53,8,.95},{285,.18,58,14,1.35},{449,.18,64,10,1.1},
             {229,.44,59,12,1.5},{431,.52,105,14,1.3},{279,.67,45,9,.9},{371,.72,74,9,1.2},
             {478,.81,68,11,.96},{337,.91,56,10,1.3}};
-        double h=logical_height(); DWORD nacre=light ? 0xfffcf5 : 0xb7d2ce;
+        double h=logical_height(); DWORD nacre=0xfffcf5;
         for (size_t k=0;k<sizeof(streams)/sizeof(streams[0]);k++) {
             const double *s=streams[k];
             current((WIDTH-s[0]*1.26-s[2])+sin(phase+k)+52*fill,h*s[1]+1.4*sin(phase+k*.7),s[2],s[3],s[4],phase*.5+k,nacre);
         }
         double crest=unit((fill-.12)/.40);
-        if (crest>0) little_breaker(phase,crest,light ? 0xfffcf4 : 0xd4e4df);
+        if (crest>0) little_breaker(phase,crest,0xfffcf4);
         shore_sprite(top,173+324*fill+9*sin(phase*.5),h*.158+2*cos(phase*.5),8.2,FALSE,1);
         shore_sprite(top,153+324*fill+8*sin(phase*.5+.7),h*.204+1.7*cos(phase*.5+.7),6.4,FALSE,1);
         shore_sprite(top,531+5*sin(phase*.5+2),h*.88+1.8*cos(phase*.5+2),4.8,FALSE,1);
@@ -259,28 +259,28 @@ static BOOL ensure_art(int w,int h) {
         if (!contrast) {
             /* One sheet of water over sand. The copy side gets quieter ink, never
                a panel or a cut in the shoreline, even when options expand. */
-            sand=mix(light ? RGB(254,248,245) : RGB(46,43,53),light ? RGB(241,219,214) : RGB(61,52,66),.12+.58*v+.21*u);
-            sea=mix(light ? RGB(191,216,213) : RGB(40,65,68),light ? RGB(204,207,222) : RGB(58,69,82),
+            sand=mix(RGB(254,248,245),RGB(241,219,214),.12+.58*v+.21*u);
+            sea=mix(RGB(191,216,213),RGB(204,207,222),
                 unit(v*.81+.25*u+.07*sin(y/19+u*5)));
             shoal=mix(sand,sea,.51);
-            foam=light ? RGB(255,254,248) : issue ? RGB(92,100,103) : RGB(203,218,214);
+            foam=RGB(255,254,248);
             sand=cockle(sand,x-333,y-49,13,.05,ds);
             sand=cockle(sand,x-430,y-logical_height()*.91,12,-.55,ds);
             sand=sea_star(sand,x-571,y-logical_height()*.88,ds);
             if (x>base+9 && x<base+24) {
                 double sx=fmod(y+31,31)-15.5,sy=x-base-16+3*sin(y*.16);
                 double grit=unit(1.05-hypot(sx,sy))* .39+unit(.86-hypot(sx-3,sy+2))*.3;
-                sand=mix(sand,light ? RGB(148,130,133) : RGB(178,157,166),grit);
+                sand=mix(sand,RGB(148,130,133),grit);
             }
         }
         bits[(size_t)j*w+i]=dib(x<base ? sea : sand);
         if (coast) {
             BYTE along=0; short distance=mark_distance(x,y,&along);
             COLORREF hue=prism((x-380)/325+(y-22)/510);
-            COLORREF rim=light ? RGB(255,255,249) : RGB(220,232,225);
+            COLORREF rim=RGB(255,255,249);
             double tail=unit((x-649)/10)*unit(.68+.55*sin(.62*y+.34*x));
-            COLORREF ink=contrast ? text : mix(light ? RGB(27,128,134) : RGB(66,185,182),rim,tail);
-            COLORREF charged=contrast ? text : mix(hue,light ? RGB(225,242,237) : RGB(207,227,223),.60);
+            COLORREF ink=contrast ? text : mix(RGB(27,128,134),rim,tail);
+            COLORREF charged=contrast ? text : mix(hue,RGB(225,242,237),.60);
             if (issue && !contrast) ink=charged=mix(background,ink,.42);
             coast[(size_t)j*w+i]=(CoastPixel){dib(sand),dib(sea),dib(shoal),dib(foam),
                 dib(ink),dib(charged),distance,along};
@@ -407,9 +407,9 @@ static void paint_button(HWND control,HDC dc) {
     } else {
         RECT tx=r; UINT align=DT_CENTER;
         if (control==install || control==change) {
-            COLORREF fill=control==change ? panel : light ? RGB(248,246,255) : RGB(47,52,66);
-            fill=contrast ? GetSysColor(COLOR_BTNFACE) : mix(fill,accent,pushed ? .24 : hot ? .14 : 0);
-            ink=contrast ? GetSysColor(COLOR_BTNTEXT) : control==install ? (light ? RGB(52,47,85) : RGB(242,244,255)) : ink;
+            COLORREF fill=control==change ? panel : RGB(248,246,255);
+            fill=contrast ? panel : mix(fill,accent,pushed ? .24 : hot ? .14 : 0);
+            ink=contrast ? text : control==install ? RGB(52,47,85) : ink;
             pill(dc,r,6,fill,contrast ? text : control==install ? mix(accent,fill,.48) : divider);
             if (control==install && !busy && !issue && !completed) {
                 tx.right-=px(16);

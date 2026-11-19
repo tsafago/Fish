@@ -54,8 +54,8 @@ static WCHAR status[512]=L"Ready to install for your Windows account.";
 static DWORD parent_pid=0;
 static HANDLE parent_process=NULL;
 static HANDLE elevated_process=NULL;
-static BOOL demo=FALSE,demo_error=FALSE,demo_launch_error=FALSE,expanded=FALSE,issue=FALSE,fatal=FALSE,light=FALSE,contrast=FALSE;
-static int theme_override=0,progress_value=-1;
+static BOOL demo=FALSE,demo_error=FALSE,demo_launch_error=FALSE,expanded=FALSE,issue=FALSE,fatal=FALSE,contrast=FALSE;
+static int progress_value=-1;
 static HDC paint_dc=NULL;
 static HBITMAP paint_image=NULL;
 static HGDIOBJ paint_original=NULL;
@@ -65,19 +65,15 @@ static unsigned pulse=0;
 static int px(int value) { return MulDiv(value,(int)dpi,96); }
 
 static void reset_art(void);
-static void colors(BOOL force_system) {
+static void colors(BOOL force_contrast) {
     HIGHCONTRASTW high={0}; high.cbSize=sizeof(high);
-    BOOL system=force_system || (SystemParametersInfoW(SPI_GETHIGHCONTRAST,sizeof(high),&high,0) && (high.dwFlags&HCF_HIGHCONTRASTON));
-    DWORD apps_light=1,bytes=sizeof(apps_light);
-    RegGetValueW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-        L"AppsUseLightTheme",RRF_RT_REG_DWORD,NULL,&apps_light,&bytes);
-    light=theme_override ? theme_override>0 : apps_light!=0; contrast=system;
-    background=system ? GetSysColor(COLOR_WINDOW) : light ? RGB(246,247,252) : RGB(31,33,38);
-    panel=system ? background : light ? RGB(251,251,255) : RGB(43,46,54);
-    text=system ? GetSysColor(COLOR_WINDOWTEXT) : light ? RGB(22,25,36) : RGB(248,249,252);
-    muted=system ? text : light ? RGB(69,75,92) : RGB(196,202,214);
-    accent=system ? GetSysColor(COLOR_HIGHLIGHT) : light ? RGB(79,67,161) : RGB(166,183,233);
-    divider=system ? text : light ? RGB(155,162,183) : RGB(103,112,132);
+    contrast=force_contrast || (SystemParametersInfoW(SPI_GETHIGHCONTRAST,sizeof(high),&high,0) && (high.dwFlags&HCF_HIGHCONTRASTON));
+    background=contrast ? RGB(255,255,255) : RGB(246,247,252);
+    panel=contrast ? background : RGB(251,251,255);
+    text=contrast ? RGB(0,0,0) : RGB(22,25,36);
+    muted=contrast ? text : RGB(69,75,92);
+    accent=contrast ? text : RGB(79,67,161);
+    divider=contrast ? text : RGB(155,162,183);
     if (field_brush) DeleteObject(field_brush);
     field_brush=CreateSolidBrush(panel);
     reset_art();
@@ -87,7 +83,7 @@ static void coast_text(HDC dc,const WCHAR *s,RECT r,UINT flags,COLORREF ink) {
     SetBkMode(dc,TRANSPARENT);
     if (!contrast) {
         RECT shadow=r; OffsetRect(&shadow,0,max(1,px(1)));
-        SetTextColor(dc,light ? RGB(236,245,241) : RGB(28,42,48)); DrawTextW(dc,s,-1,&shadow,flags);
+        SetTextColor(dc,RGB(236,245,241)); DrawTextW(dc,s,-1,&shadow,flags);
     }
     SetTextColor(dc,ink); DrawTextW(dc,s,-1,&r,flags);
 }
@@ -100,7 +96,7 @@ static void paint_option(HWND control,HDC dc) {
     HBRUSH brush=CreateSolidBrush(checked ? accent : panel); FillRect(dc,&box,brush); DeleteObject(brush);
     brush=CreateSolidBrush(enabled ? (checked ? accent : divider) : muted); FrameRect(dc,&box,brush); DeleteObject(brush);
     if (checked) {
-        HPEN pen=CreatePen(PS_SOLID,max(1,px(2)),contrast ? GetSysColor(COLOR_HIGHLIGHTTEXT) : light ? RGB(255,255,255) : background);
+        HPEN pen=CreatePen(PS_SOLID,max(1,px(2)),RGB(255,255,255));
         HGDIOBJ old=SelectObject(dc,pen);
         MoveToEx(dc,box.left+px(3),box.top+px(7),NULL);
         LineTo(dc,box.left+px(6),box.top+px(10)); LineTo(dc,box.left+px(12),box.top+px(4));
@@ -987,8 +983,8 @@ static BOOL motion_test(void) {
             if (*nose!=base && *nose!=filled) blended=TRUE;
         }
     }
-    if (!valid || (!contrast && !blended)) fprintf(stderr,"Tide sweep failed: dpi=%u light=%d tip=%06lx/%06lx tail=%06lx/%06lx blended=%d swells=%d\n",
-        dpi,light,base,filled,thin_tail,*tail,blended,swells);
+    if (!valid || (!contrast && !blended)) fprintf(stderr,"Tide sweep failed: dpi=%u contrast=%d tip=%06lx/%06lx tail=%06lx/%06lx blended=%d swells=%d\n",
+        dpi,contrast,base,filled,thin_tail,*tail,blended,swells);
     valid=valid && m.shown==m.goal && (contrast || blended);
     /* With identical progress, only the water moves. Returning to the same phase
        must produce the exact same picture, including the shell and text ground. */
@@ -1039,11 +1035,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     if (preview || interactive || controls) {
         demo=TRUE;
         const WCHAR *theme=preview && count==5 ? args[4] : interactive && count==3 ? args[2] : NULL;
-        if (theme) {
-            if (!wcscmp(theme,L"light")) theme_override=1;
-            else if (!wcscmp(theme,L"dark")) theme_override=-1;
-            else { LocalFree(args); return 2; }
-        }
+        /* Older preview commands can still supply a theme name; neither changes the palette. */
+        if (theme && wcscmp(theme,L"light") && wcscmp(theme,L"dark")) { LocalFree(args); return 2; }
         if (preview) {
             if (wcslen(args[2])>=32768) { LocalFree(args); return 2; } wcscpy(preview_path,args[2]);
             if (count>=4) {
@@ -1110,17 +1103,17 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     int start_w=px(WIDTH),start_h=px(logical_height());
     SetWindowPos(window,NULL,work.left+(work.right-work.left-start_w)/2,work.top+(work.bottom-work.top-start_h)/2,
         start_w,start_h,SWP_NOZORDER|SWP_NOACTIVATE);
-    BOOL dark=!light; DwmSetWindowAttribute(window,20,&dark,sizeof(dark));
+    BOOL dark=FALSE; DwmSetWindowAttribute(window,20,&dark,sizeof(dark));
     DWORD corner=2; DwmSetWindowAttribute(window,33,&corner,sizeof(corner));
     CoCreateInstance(&CLSID_AccPropServices,NULL,CLSCTX_INPROC_SERVER,&IID_IAccPropServices,(void **)&accessible_properties);
     motion_preference(); set_progress(progress_value); layout();
     if (preview || controls) {
         BOOL valid=controls ? option_test() : render(preview_path);
         if (controls && !valid) fputs("Setup option geometry or state failed.\n",stderr);
-        if (controls) for (int theme=-1;theme<=1;theme+=2) for (UINT scale=96;scale<=144;scale+=48) {
-            theme_override=theme; dpi=scale; colors(FALSE); fonts();
+        if (controls) for (int hc=0;hc<=1;hc++) for (UINT scale=96;scale<=144;scale+=48) {
+            dpi=scale; colors(hc); fonts();
             BOOL pass=motion_test();
-            if (!pass) fprintf(stderr,"Setup motion check failed: theme %d at %u DPI.\n",theme,scale);
+            if (!pass) fprintf(stderr,"Setup motion check failed: high contrast %d at %u DPI.\n",hc,scale);
             valid=pass && valid;
         }
         DestroyWindow(window);

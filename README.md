@@ -29,7 +29,7 @@ Start with `Setup-Fish.cmd` in the complete source download, or clone this repos
 .\build.ps1 Installer -ImageDirectory dist\Fish-0.10.4\Fish
 ```
 
-`Package` creates a self-contained app image. `Installer` adds setup, portable ZIP, installation scripts and checksums beside it. To preview the update window without installing anything, run `Fish-0.10.4-setup.exe --preview-update dark`.
+`Package` creates a self-contained app image. `Installer` adds setup, portable ZIP, installation scripts and checksums beside it. Setup and updates always use the light theme. To preview the update window without installing anything, run `Fish-0.10.4-setup.exe --preview-update`.
 
 The [configuration reference](AI-CONFIG.md) documents the offline `--config` CLI. `src\fish` contains the Java application; `src\core-adapter` integrates TN5250J and `src\native` contains the Windows bridges and setup. See [DESIGN.md](DESIGN.md) for implementation details.
 

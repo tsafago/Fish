@@ -1,6 +1,6 @@
 # Exercises the real windows with simulated work only; never invokes an install command line.
 param([Parameter(Mandatory=$true)][string]$Bootstrapper,
-    [ValidateSet('light','dark')][string]$Theme='dark',
+    [ValidateSet('light','dark')][string]$Theme='light',
     [string]$EvidenceDirectory)
 $ErrorActionPreference='Stop'
 $exe=(Resolve-Path -LiteralPath $Bootstrapper).Path
@@ -60,6 +60,10 @@ public static class FishPreviewWindow {
         var original=SetThreadDpiAwarenessContext(new IntPtr(-4));
         try {
             using (var a=Frame(root)) {
+                var sea=a.GetPixel(a.Width/8,a.Height/8);
+                var sand=a.GetPixel(a.Width*19/20,a.Height*3/4);
+                if (Math.Min(sea.R,Math.Min(sea.G,sea.B))<150 || Math.Min(sand.R,Math.Min(sand.G,sand.B))<150)
+                    throw new Exception("Setup and updates must always use the light palette.");
                 if (!String.IsNullOrEmpty(file)) a.Save(file,ImageFormat.Png);
                 if (!installer) return;
                 System.Threading.Thread.Sleep(540);

@@ -32,7 +32,7 @@ public final class Session5250 {
     public Screen5250 getScreen() { return screen; }
     public boolean recoverableInputError() { return screen.hasInputError(); }
     public tnvt getVT() { return engine; }
-    public void accept(byte[] record) { engine.acceptRecord(record); }
+    public boolean accept(byte[] record) { return engine.acceptRecord(record); }
     public void fireSessionChanged(int state) {}
     public void fireScanned(String command, String remainder) {
         throw new IllegalStateException("Host command scanning is disabled.");

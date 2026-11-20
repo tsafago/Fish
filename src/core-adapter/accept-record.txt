@@ -9,10 +9,27 @@
         throw new IllegalStateException("Unsupported enhanced display structured field; session stopped to preserve synchronization.");
     }
 
-    public void acceptRecord(byte[] record) {
+    private boolean noticeReadOpen, noticeInvited;
+    private boolean noticeParsed, noticeDisplayChanged, noticeReadInRecord;
+
+    public void discardStartupNoticeInput() {
+        noticeReadOpen = noticeInvited = false;
+    }
+
+    public boolean startupNoticeInputReady() {
+        return noticeReadOpen && noticeInvited;
+    }
+
+    public String startupNoticeSequenceState() {
+        if (!noticeReadOpen) return "waiting for a host input-read record for this display";
+        return noticeInvited ? "host input read and invite received" : "waiting for a host invite record";
+    }
+
+    public boolean acceptRecord(byte[] record) {
         if (!javafx.application.Platform.isFxApplicationThread())
             throw new IllegalStateException("Core records must be processed on the JavaFX Application Thread.");
         bk.initialize(record);
+        noticeParsed = noticeDisplayChanged = noticeReadInRecord = false;
         screen52.setCursorActive(false);
         switch (bk.getOpCode()) {
             case 0: break;
@@ -63,4 +80,15 @@
             screen52.setCursorActive(true);
             cursorOn = false;
         }
+        int opcode = bk.getOpCode();
+        boolean invited = opcode == 1 || opcode == 3;
+        boolean complete = bk.streamSize == record.length && bk.getCurrentPos() == bk.streamSize;
+        if (complete && noticeParsed && (invited || opcode == 2)) {
+            // A fresh read commits the current buffer, regardless of how the host built it.
+            if (noticeDisplayChanged || noticeReadInRecord) noticeReadOpen = noticeReadInRecord;
+            if (invited) noticeInvited = true;
+        } else if (!(complete && bk.dataStart == bk.streamSize && (opcode == 11 || opcode == 12))) {
+            discardStartupNoticeInput();
+        }
+        return startupNoticeInputReady();
     }

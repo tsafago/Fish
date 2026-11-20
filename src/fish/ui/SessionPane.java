@@ -8,6 +8,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import javafx.animation.FadeTransition;
 import javafx.animation.KeyFrame;
+import javafx.animation.PauseTransition;
 import javafx.animation.Timeline;
 import javafx.collections.FXCollections;
 import javafx.geometry.*;
@@ -27,6 +28,7 @@ import javafx.util.Duration;
 import org.tn5250j.Session5250;
 import org.tn5250j.event.ScreenListener;
 import org.tn5250j.framework.tn5250.Screen5250;
+import org.tn5250j.framework.tn5250.ScreenOIA;
 import org.tn5250j.framework.tn5250.ScreenField;
 import org.tn5250j.keyboard.KeyMnemonic;
 import fish.model.*;
@@ -43,7 +45,7 @@ public final class SessionPane extends BorderPane {
     private final BorderPane header=new BorderPane();
     private final HBox headerControls=new HBox(4);
     private final BorderPane footer=new BorderPane();
-    private final Button reset,close;
+    private final Button close;
     private final Label title=new Label(),connection=new Label(),oia=new Label("Disconnected");
     private TerminalView view;
     private final ScrollPane scroll=new ScrollPane();
@@ -73,30 +75,10 @@ public final class SessionPane extends BorderPane {
                 double nh=noticeOverlay.prefHeight(nw);
                 noticeOverlay.resizeRelocate(8,8,nw,nh);
             }
-            if (reset.getParent()==this && reset.isVisible()) {
-                double rw=reset.prefWidth(-1),rh=reset.prefHeight(-1);
-                boolean bottom=screen()==null || screen().getCurrentRow()<screen().getRows()/2;
-                double top=close.getParent()==this && close.isVisible() ? closeH+4 : 10;
-                if (noticeOverlay.isVisible()) top=Math.max(top,noticeOverlay.getHeight()+14);
-                reset.resizeRelocate(Math.max(4,w-rw-10),bottom ? Math.max(4,h-rh-10) : top,Math.min(rw,Math.max(0,w-8)),rh);
-            }
             if (resetCallout.isVisible()) {
-                double maxCw=Math.max(0,w-16);
-                double cw=Math.min(resetCallout.prefWidth(-1),maxCw);
+                double cw=Math.min(resetCallout.prefWidth(-1),Math.max(0,w-16));
                 double ch=resetCallout.prefHeight(cw);
-                boolean bottom=screen()==null || screen().getCurrentRow()<screen().getRows()/2;
-                double cx=Math.max(8,w-cw-10);
-                double cy;
-                if (bottom) {
-                    double reserveBottom=(reset.getParent()==this && reset.isVisible()) ? reset.prefHeight(-1)+16 : 10;
-                    cy=Math.max(8,h-ch-reserveBottom);
-                } else {
-                    double top=close.getParent()==this && close.isVisible() ? closeH+8 : 10;
-                    if (noticeOverlay.isVisible()) top=Math.max(top,noticeOverlay.getHeight()+14);
-                    if (reset.getParent()==this && reset.isVisible()) top+=reset.prefHeight(-1)+6;
-                    cy=Math.min(Math.max(8,h-ch-8),top);
-                }
-                resetCallout.resizeRelocate(cx,cy,cw,ch);
+                resetCallout.resizeRelocate(Math.max(8,w-cw-8),Math.max(8,h-ch-8),cw,ch);
             }
             if (zoomHud.isVisible()) {
                 double zw=Math.min(zoomHud.prefWidth(-1),Math.max(0,w-16));
@@ -126,7 +108,10 @@ public final class SessionPane extends BorderPane {
     private boolean updatingPresets;
     private NetworkSession network;
     private Session5250 core;
-    private boolean connecting,disposed,pasting;
+    private final PauseTransition startupNoticeQuiet=new PauseTransition(Duration.millis(350));
+    private boolean startupNoticePending,startupNoticeSeen,startupNoticeHandled;
+    private String startupNoticeResult;
+    private boolean connecting,disposed,pasting,pasteKeyRejected;
     private boolean attempted;
     private int credentialOperations;
     private Kerberos.Provider kerberosProvider=Kerberos::ticket;
@@ -230,19 +215,6 @@ public final class SessionPane extends BorderPane {
             }
         });
 
-        reset=Ui.button("Reset",() -> {
-            dismissResetCalloutImmediately();
-            activate();
-            send(KeyMnemonic.RESET);
-            focusTerminal();
-        });
-        reset.setTooltip(resetTooltip);
-        reset.setAccessibleText("Reset input error");
-        reset.setStyle("-fx-padding: 1 8 1 8; -fx-font-size: 11px;");
-        reset.setVisible(false);
-        reset.setManaged(false);
-        footer.setRight(reset);
-        BorderPane.setAlignment(reset,Pos.CENTER_RIGHT);
         setBottom(footer);
 
         resetCalloutButton=Ui.button("Reset",() -> {
@@ -251,7 +223,7 @@ public final class SessionPane extends BorderPane {
             send(KeyMnemonic.RESET);
             focusTerminal();
         });
-        resetCalloutButton.setFocusTraversable(false);
+        resetCalloutButton.setTooltip(resetTooltip);
         resetCalloutButton.setAccessibleText("Reset stuck input error");
         resetCalloutButton.setStyle("-fx-padding: 2 10 2 10; -fx-font-size: 11.5px; -fx-font-weight: bold;");
         resetCalloutLabel.setWrapText(true);
@@ -499,7 +471,6 @@ public final class SessionPane extends BorderPane {
 
     public Button closeButton() { return close; }
     public Button connectButton() { return connectButton; }
-    public Button resetButton() { return reset; }
     public HBox resetCalloutBox() { return resetCallout; }
     public Button resetCalloutButton() { return resetCalloutButton; }
     public Label resetCalloutLabel() { return resetCalloutLabel; }
@@ -583,7 +554,7 @@ public final class SessionPane extends BorderPane {
             addFocusStop(stops,presets);
             addFocusStop(stops,connectButton);
         }
-        addFocusStop(stops,reset);
+        addFocusStop(stops,resetCalloutButton);
         addFocusStop(stops,close);
         return stops;
     }
@@ -683,7 +654,7 @@ public final class SessionPane extends BorderPane {
         String closeKey=workspace.shortcutLabel("Close pane");
         Ui.setTooltipText(close,closeTooltip,"Close and disconnect; keep the last pane"+(closeKey.isEmpty() ? "" : " ("+closeKey+")"));
         String resetKey=workspace.shortcutLabel("RESET");
-        Ui.setTooltipText(reset,resetTooltip,"Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
+        Ui.setTooltipText(resetCalloutButton,resetTooltip,"Recover this input error without sending Enter"+(resetKey.isEmpty() ? "" : " ("+resetKey+")"));
         header.setCursor(!kiosk && workspace.canDragPane() ? Cursor.MOVE : Cursor.DEFAULT);
         if (kiosk) Tooltip.uninstall(header,headerTooltip);
         else Tooltip.install(header,headerTooltip);
@@ -859,7 +830,7 @@ public final class SessionPane extends BorderPane {
             notice="Connecting to "+connectionProfile.host()+":"+connectionProfile.port()+" - plain TCP";
             network=new NetworkSession(record -> {
                 if (generation==token && !disposed) {
-                    core.accept(record);
+                    acceptHostRecord(record);
                 }
             },text -> Ui.runLater(() -> {
                 if (generation==token && !disposed) {
@@ -901,6 +872,64 @@ public final class SessionPane extends BorderPane {
         }
     }
 
+    private void acceptHostRecord(byte[] record) {
+        cancelStartupNotice();
+        if (!startupNoticeHandled) startupNoticeResult=null;
+        boolean complete=core.accept(record);
+        if (!workspace.skipQueueNotice()) {
+            core.getVT().discardStartupNoticeInput();
+            return;
+        }
+        if (!complete || startupNoticeHandled || pasting || !connected() || !StartupQueueNotice.matches(core)) return;
+        startupNoticeSeen=true;
+        armStartupNotice();
+    }
+
+    private void armStartupNotice() {
+        startupNoticePending=true;
+        NetworkSession connection=network;
+        Session5250 terminal=core;
+        startupNoticeQuiet.setOnFinished(event -> {
+            startupNoticePending=false;
+            startupNoticeQuiet.setOnFinished(null);
+            if (connection!=network || terminal!=core || disposed || pasting || startupNoticeHandled
+                    || !workspace.skipQueueNotice()) return;
+            startupNoticeResult="connection closed or newer host data arrived before Enter";
+            connection.ifInboundIdle(() -> {
+                if (!terminal.getVT().startupNoticeInputReady() || !StartupQueueNotice.matches(terminal)) {
+                    startupNoticeResult="display or input state changed before Enter";
+                    return;
+                }
+                startupNoticeHandled=true;
+                startupNoticeResult=send(KeyMnemonic.ENTER) ? "automatic Enter sent" : "terminal rejected automatic Enter";
+            });
+        });
+        startupNoticeQuiet.playFromStart();
+    }
+
+    private void cancelStartupNotice() {
+        if (!startupNoticePending) return;
+        startupNoticePending=false;
+        startupNoticeQuiet.stop();
+        startupNoticeQuiet.setOnFinished(null);
+    }
+
+    void queueNoticeSettingChanged() {
+        if (!workspace.skipQueueNotice()) {
+            cancelStartupNotice();
+            if (core!=null) core.getVT().discardStartupNoticeInput();
+        }
+    }
+
+    private void manualStartupNoticeInput(boolean dismiss) {
+        if (core!=null) core.getVT().discardStartupNoticeInput();
+        if (!startupNoticeHandled && (startupNoticeSeen || dismiss && connected() && StartupQueueNotice.matches(core))) {
+            startupNoticeHandled=true;
+            startupNoticeResult="manual input took priority; automatic Enter canceled";
+        }
+        cancelStartupNotice();
+    }
+
     public void disconnect() { attempted=true; stopConnection(); }
     void disconnectForProfileChange() { stopConnection(); }
 
@@ -912,6 +941,9 @@ public final class SessionPane extends BorderPane {
     }
 
     private void disconnectNetwork() {
+        cancelStartupNotice();
+        startupNoticeHandled=startupNoticeSeen=false;
+        startupNoticeResult=null;
         if (kerberosDeadline!=null) { kerberosDeadline.stop(); kerberosDeadline=null; }
         if (network!=null) network.close();
         network=null;
@@ -1009,6 +1041,23 @@ public final class SessionPane extends BorderPane {
         Ui.message(workspace.stage(),details,"Last pane notice");
     }
 
+    void showStartupNoticeDiagnostic() {
+        Ui.message(workspace.stage(),startupNoticeDiagnostic(),"Startup notice diagnostic");
+    }
+
+    String startupNoticeDiagnostic() {
+        if (!connected() || core==null) return "Queue notice: pane is not connected.";
+        var screen=core.getScreen();
+        String display=StartupQueueNotice.displayBlock(core),input=StartupQueueNotice.inputBlock(core);
+        String result=startupNoticeHandled ? startupNoticeResult : !workspace.skipQueueNotice() ? "disabled in Settings"
+                : display!=null ? display : input!=null ? input : startupNoticePending ? "waiting for a quiet display"
+                : startupNoticeResult!=null ? startupNoticeResult : core.getVT().startupNoticeSequenceState();
+        return "Queue notice: "+result+"\n"
+                +"Display: "+screen.getRows()+" x "+screen.getColumns()+"; format fields: "+screen.getScreenFields().getSize()+"\n"
+                +"Host sequence: "+core.getVT().startupNoticeSequenceState()+"\n"
+                +"Input: "+(input==null ? "ready" : input);
+    }
+
     void updateOia() {
         if (!javafx.application.Platform.isFxApplicationThread() && Ui.isFxStarted()) {
             Ui.runLater(this::updateOia);
@@ -1036,25 +1085,9 @@ public final class SessionPane extends BorderPane {
                 : screen!=null && screen.getOIA().isKeyBoardLocked() ? ColorRole.STATUS_WAIT : ColorRole.FOOTER_TEXT;
         Ui.setStyleIfChanged(oia,"-fx-font-family: 'Consolas'; -fx-font-size: 11px; -fx-text-fill: "+Ui.hex(statusRole)+";");
 
-        if (showFooter) {
-            if (reset.getParent()!=footer) {
-                if (reset.getParent() instanceof Pane p) p.getChildren().remove(reset);
-                footer.setRight(reset);
-                layoutDirty=true;
-            }
-        } else {
-            if (reset.getParent()!=stage) {
-                if (reset.getParent()==footer) footer.setRight(null);
-                else if (reset.getParent() instanceof Pane p) p.getChildren().remove(reset);
-                stage.getChildren().add(reset);
-                layoutDirty=true;
-            }
-        }
         boolean rec=recoverableInputError();
         if (!rec) resetCalloutDismissedForCurrentLock=false;
-        if (reset.isVisible()!=rec) { reset.setVisible(rec); layoutDirty=true; }
-        boolean resetManaged=showFooter && rec;
-        if (reset.isManaged()!=resetManaged) { reset.setManaged(resetManaged); layoutDirty=true; }
+        else if (noticeOverlay.dismissToast()) layoutDirty=true;
         boolean showCallout=rec && !resetCalloutDismissedForCurrentLock;
         if (resetCallout.isVisible()!=showCallout) {
             resetCallout.setVisible(showCallout);
@@ -1085,6 +1118,7 @@ public final class SessionPane extends BorderPane {
     }
 
     public boolean send(KeyMnemonic key) {
+        manualStartupNoticeInput(key==KeyMnemonic.ENTER || key==KeyMnemonic.PF3 || key==KeyMnemonic.PF12);
         if (!pasting) view.restartCursor();
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
         if (key==KeyMnemonic.ENTER && recoverableInputError()) key=KeyMnemonic.RESET;
@@ -1092,15 +1126,19 @@ public final class SessionPane extends BorderPane {
         if (key==KeyMnemonic.RESET && screen().getOIA().isKeyBoardLocked() && !recoverableInputError()) {
             problem("Waiting for host. Reset cannot clear host-busy inhibition."); return false;
         }
-        if (screen().getOIA().isKeyBoardLocked() && key!=KeyMnemonic.RESET
-                && key!=KeyMnemonic.ATTN && key!=KeyMnemonic.SYSREQ) {
+        boolean ordinaryKey=key!=KeyMnemonic.RESET && key!=KeyMnemonic.ATTN && key!=KeyMnemonic.SYSREQ;
+        boolean localReset=ordinaryKey && workspace.autoResetTypingErrors();
+        var terminal=screen();
+        if (ordinaryKey && inputBlocked(terminal,localReset)) {
             problem(recoverableInputError() ? "Input error. Press Enter or Reset; no keys were queued."
                     : "Waiting for host. Attention / System Request available; no keys were queued.");
             return false;
         }
         try {
             notice="Connected";
-            screen().sendKeys(key);
+            if (localReset) {
+                if (terminal.sendWithLocalReset(key)) return automaticResetNotice();
+            } else terminal.sendKeys(key);
             if (!pasting) {
                 updateOia();
                 view.restartCursor();
@@ -1110,9 +1148,12 @@ public final class SessionPane extends BorderPane {
     }
 
     public boolean type(char character) {
+        manualStartupNoticeInput(false);
         if (!pasting) view.restartCursor();
         if (!connected()) { problem("Not connected. Ctrl+Alt+R connects this pane."); return false; }
-        if (screen().getOIA().isKeyBoardLocked()) {
+        var terminal=screen();
+        boolean localReset=workspace.autoResetTypingErrors();
+        if (inputBlocked(terminal,localReset)) {
             problem("Input inhibited. No characters were queued.");
             return false;
         }
@@ -1123,13 +1164,34 @@ public final class SessionPane extends BorderPane {
         String text=character=='[' ? "[[" : character==']' ? "]]" : String.valueOf(character);
         try {
             notice="Connected";
-            screen().sendKeys(text);
+            if (localReset) {
+                if (terminal.typeWithLocalReset(character)) return automaticResetNotice();
+            } else terminal.sendKeys(text);
             if (!pasting) {
                 updateOia();
                 view.restartCursor();
             }
             return !screen().getOIA().isKeyBoardLocked();
         } catch (RuntimeException e) { problem("Input failed: "+e.getMessage()); return false; }
+    }
+
+    private boolean inputBlocked(Screen5250 terminal,boolean localReset) {
+        var oia=terminal.getOIA();
+        return oia.isKeyBoardLocked() || (localReset && (recoverableInputError()
+                || oia.isKeysBuffered() || oia.getInputInhibited()!=ScreenOIA.INPUTINHIBITED_NOTINHIBITED));
+    }
+
+    private boolean automaticResetNotice() {
+        if (pasting) pasteKeyRejected=true;
+        else showAutomaticResetToast("Key rejected.");
+        return false;
+    }
+
+    private void showAutomaticResetToast(String detail) {
+        lastProblem=detail+" Input reset automatically.";
+        updateOia();
+        noticeOverlay.showToast(lastProblem);
+        stage.requestLayout();
     }
 
     public boolean paste(String text) {
@@ -1145,27 +1207,29 @@ public final class SessionPane extends BorderPane {
             }
         }
         pasting=true;
+        pasteKeyRejected=false;
         try {
             for (int i=0;i<text.length();i++) {
-                if (!connected() || screen().getOIA().isKeyBoardLocked()) {
-                    pasting=false;
-                    view.screenChanged();
-                    updateOia();
+                if (!connected() || inputBlocked(screen(),workspace.autoResetTypingErrors())) {
                     problem("Paste stopped at input inhibition after "+i+" characters.");
                     return false;
                 }
                 char c=text.charAt(i);
                 boolean accepted=c=='\n' ? send(KeyMnemonic.NEW_LINE) : c=='\t' ? send(KeyMnemonic.TAB) : type(c);
-                if (!accepted) return false;
+                if (!accepted || recoverableInputError()) {
+                    String stopped="Paste stopped after "+i+" character"+(i==1 ? "." : "s.");
+                    if (pasteKeyRejected) showAutomaticResetToast(stopped);
+                    else problem(stopped+" Check the field before trying again.");
+                    return false;
+                }
             }
             return true;
         } finally {
-            if (pasting) {
-                pasting=false;
-                view.screenChanged();
-                updateOia();
-                view.restartCursor();
-            }
+            pasting=false;
+            pasteKeyRejected=false;
+            view.screenChanged();
+            updateOia();
+            view.restartCursor();
         }
     }
 

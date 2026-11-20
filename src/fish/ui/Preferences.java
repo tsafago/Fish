@@ -29,7 +29,7 @@ public final class Preferences {
     private final ListView<String> navigation=new ListView<>(FXCollections.observableArrayList(CATEGORIES));
     private final StackPane pages=new StackPane();
     private final Map<String,Node> pageMap=new LinkedHashMap<>();
-    private final CheckBox startup,window,pane,tint,reducedMotion,checkUpdates;
+    private final CheckBox startup,skipQueueNotice,autoResetTypingErrors,window,pane,tint,reducedMotion,checkUpdates;
     private final List<CheckBox> info=new ArrayList<>();
     private final ComboBox<Object> theme=new ComboBox<>();
     private final CheckBox gradients=new CheckBox("Surface gradients");
@@ -64,15 +64,15 @@ public final class Preferences {
     private Draft saved;
     private Shared baseline;
 
-    private record Shared(Appearance appearance,AppTheme theme,boolean tint,boolean startup,UpdateSettings updates,Map<String,String> keys) {}
+    private record Shared(Appearance appearance,AppTheme theme,boolean tint,boolean startup,boolean skipQueueNotice,boolean autoResetTypingErrors,UpdateSettings updates,Map<String,String> keys) {}
     private Shared currentShared() {
         return new Shared(workspace.appearanceSettings(),Ui.theme(),workspace.highlightActive(),workspace.connectOnStartup(),
-                workspace.updateSettings(),workspace.shortcutOverrides());
+                workspace.skipQueueNotice(),workspace.autoResetTypingErrors(),workspace.updateSettings(),workspace.shortcutOverrides());
     }
     private record Display(String palette,String effect) {}
-    private record Draft(boolean startup,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,boolean reducedMotion,Set<AppTheme> flatThemes,
+    private record Draft(boolean startup,boolean skipQueueNotice,boolean autoResetTypingErrors,Object theme,Appearance.FontChoice font,boolean window,boolean pane,boolean tint,boolean reducedMotion,Set<AppTheme> flatThemes,
                          Appearance.PaneInfo info,Appearance.CursorStyle cursorStyle,UpdateSettings updates,Map<String,String> keys,Map<UUID,Display> displays) {
-        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,theme,font,window,pane,tint,reducedMotion,flatThemes,info,cursorStyle,updates,keys,Map.copyOf(value)); }
+        Draft withDisplays(Map<UUID,Display> value) { return new Draft(startup,skipQueueNotice,autoResetTypingErrors,theme,font,window,pane,tint,reducedMotion,flatThemes,info,cursorStyle,updates,keys,Map.copyOf(value)); }
     }
 
     public Preferences(Workspace workspace,String category) {
@@ -81,6 +81,14 @@ public final class Preferences {
         Appearance a=workspace.appearanceSettings();
         cursorStyle.setValue(a.cursorStyle());
         startup=new CheckBox("Connect restored panes on startup"); startup.setSelected(workspace.connectOnStartup());
+        skipQueueNotice=new CheckBox("Skip the message queue in-use notice");
+        skipQueueNotice.setId("prefs-skip-queue-notice");
+        skipQueueNotice.setSelected(workspace.skipQueueNotice());
+        skipQueueNotice.setTooltip(new Tooltip("Experimental: presses Enter once for this notice. Other program messages stay on screen."));
+        autoResetTypingErrors=new CheckBox("Automatically reset local input errors");
+        autoResetTypingErrors.setId("prefs-auto-reset-typing-errors");
+        autoResetTypingErrors.setSelected(workspace.autoResetTypingErrors());
+        autoResetTypingErrors.setTooltip(new Tooltip("Recovers from local input errors, including Backspace at a field boundary. A failed paste stops at its first rejected character. Host errors aren't reset."));
         window=new CheckBox("Show whole-window outline"); window.setSelected(a.windowOutline());
         pane=new CheckBox("Outline active pane"); pane.setSelected(a.outline());
         tint=new CheckBox("Tint active pane background"); tint.setSelected(workspace.highlightActive());
@@ -231,7 +239,7 @@ public final class Preferences {
         startup.selectedProperty().addListener((o,oldV,newV) -> {
             if (!loading) { edited(false); workspace.tutorialAction("startup-changed"); }
         });
-        for (CheckBox cb:List.of(window,pane,tint,reducedMotion,checkUpdates)) {
+        for (CheckBox cb:List.of(skipQueueNotice,autoResetTypingErrors,window,pane,tint,reducedMotion,checkUpdates)) {
             cb.selectedProperty().addListener((o,oldV,newV) -> edited(false));
         }
         for (int idx=0;idx<info.size();idx++) {
@@ -640,8 +648,10 @@ public final class Preferences {
     private VBox general() {
         VBox body=new VBox(8);
         body.getChildren().add(section("Startup"));
-        body.getChildren().add(startup);
+        body.getChildren().addAll(startup,skipQueueNotice);
         targets.put("startup",startup);
+
+        body.getChildren().addAll(section("Terminal input"),autoResetTypingErrors);
 
         body.getChildren().add(section("Installation"));
         Optional<Path> appImage=UserInstaller.currentAppImage();
@@ -812,7 +822,7 @@ public final class Preferences {
     }
 
     private Draft draft() {
-        return new Draft(startup.isSelected(),theme.getValue(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),Set.copyOf(flatThemes),
+        return new Draft(startup.isSelected(),skipQueueNotice.isSelected(),autoResetTypingErrors.isSelected(),theme.getValue(),fontChoice(),window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),Set.copyOf(flatThemes),
                 new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                         info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                 cursorStyle.getValue(),
@@ -875,7 +885,7 @@ public final class Preferences {
             Map<String,String> keys=saved.keys();
             try { keys=keyboard.draft(); }
             catch (IllegalArgumentException e) { validation=e.getMessage(); }
-            Draft next=new Draft(startup.isSelected(),theme.getValue(),font,window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),Set.copyOf(flatThemes),
+            Draft next=new Draft(startup.isSelected(),skipQueueNotice.isSelected(),autoResetTypingErrors.isSelected(),theme.getValue(),font,window.isSelected(),pane.isSelected(),tint.isSelected(),reducedMotion.isSelected(),Set.copyOf(flatThemes),
                     new Appearance.PaneInfo(info.get(0).isSelected(),info.get(5).isSelected(),info.get(1).isSelected(),info.get(2).isSelected(),
                             info.get(3).isSelected(),info.get(4).isSelected(),info.get(6).isSelected(),info.get(7).isSelected(),info.get(8).isSelected(),info.get(9).isSelected(),info.get(10).isSelected()),
                     cursorStyle.getValue(),
@@ -921,6 +931,8 @@ public final class Preferences {
                     if (next.theme() instanceof AppTheme app && (Ui.theme()!=app || Ui.customTheme())) workspace.applyTheme(app);
                     if (next.tint()!=workspace.highlightActive()) workspace.highlightActive(next.tint());
                     if (next.startup()!=workspace.connectOnStartup()) workspace.connectOnStartup(next.startup());
+                    if (next.skipQueueNotice()!=workspace.skipQueueNotice()) workspace.skipQueueNotice(next.skipQueueNotice());
+                    if (next.autoResetTypingErrors()!=workspace.autoResetTypingErrors()) workspace.autoResetTypingErrors(next.autoResetTypingErrors());
                     if (!next.updates().equals(workspace.updateSettings())) workspace.updateSettings(next.updates());
                     for (var entry:next.displays().entrySet()) if (!entry.getValue().equals(originalDisplays.get(entry.getKey()))) {
                         Profile profile=workspace.profileList().stream().filter(p -> p.id().equals(entry.getKey())).findFirst().orElseThrow();
@@ -976,6 +988,8 @@ public final class Preferences {
             Appearance a=workspace.appearanceSettings();
             cursorStyle.setValue(a.cursorStyle());
             startup.setSelected(workspace.connectOnStartup()); window.setSelected(a.windowOutline()); pane.setSelected(a.outline());
+            skipQueueNotice.setSelected(workspace.skipQueueNotice());
+            autoResetTypingErrors.setSelected(workspace.autoResetTypingErrors());
             tint.setSelected(workspace.highlightActive()); reducedMotion.setSelected(a.reducedMotion()); checkUpdates.setSelected(workspace.updateSettings().startup());
             loadThemes(); flatThemes.clear(); flatThemes.addAll(a.flatThemes()); syncGradientCheck();
             family.setValue(a.font().family()); fontPath.setText(a.font().file());
@@ -1011,6 +1025,8 @@ public final class Preferences {
                         && live.theme()==baseline.theme()
                         && live.tint()==baseline.tint()
                         && live.startup()==baseline.startup()
+                        && live.skipQueueNotice()==baseline.skipQueueNotice()
+                        && live.autoResetTypingErrors()==baseline.autoResetTypingErrors()
                         && Objects.equals(live.updates(),baseline.updates())
                         && Objects.equals(live.keys(),baseline.keys())) {
                     baseline=live;

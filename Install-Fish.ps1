@@ -23,7 +23,8 @@ if ($AllUsers -and -not $isAdmin -and $env:FISH_TEST_NO_ELEVATE -ne '1') {
     if ($NoStartMenuShortcut) { $argList += '-NoStartMenuShortcut' }
     if ($NoRegistry) { $argList += '-NoRegistry' }
     if ($Quiet) { $argList += '-Quiet' }
-    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList ($argList -join ' ') -Verb RunAs -Wait -PassThru
+    $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList ($argList -join ' ') -Verb RunAs -PassThru
+    $proc.WaitForExit()
     if ($proc.ExitCode -eq 0 -and $Launch) {
         try { Start-Process -FilePath (Join-Path $Destination 'Fish.exe') -WorkingDirectory $Destination }
         catch { Write-Warning "Fish is installed. Open it from the Start menu. Windows could not open it automatically: $($_.Exception.Message)" }
@@ -31,106 +32,99 @@ if ($AllUsers -and -not $isAdmin -and $env:FISH_TEST_NO_ELEVATE -ne '1') {
     exit $proc.ExitCode
 }
 
-function Initialize-ShellNotify {
-    if ('FishShell.Notify' -as [type]) { return }
-    try {
-        Add-Type -TypeDefinition @'
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-namespace FishShell {
-    public static class Notify {
-        private const int SHCNE_CREATE = 0x00000002;
-        private const int SHCNE_DELETE = 0x00000004;
-        private const int SHCNE_UPDATEDIR = 0x00001000;
-        private const int SHCNE_UPDATEITEM = 0x00002000;
-        private const uint SHCNF_PATHW = 0x0005;
-        private const uint SHCNF_FLUSHNOWAIT = 0x2000;
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-        private static extern void SHChangeNotify(int wEventId, uint uFlags, string dwItem1, string dwItem2);
-        public static void Saved(string path, bool existed) {
-            if (string.IsNullOrEmpty(path)) return;
-            SHChangeNotify(existed ? SHCNE_UPDATEITEM : SHCNE_CREATE, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path, null);
-            SHChangeNotify(SHCNE_UPDATEITEM, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path, null);
-            string dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, dir, null);
+function Assert-NoReparseParent([IO.DirectoryInfo]$Dir) {
+    while ($null -ne $Dir) {
+        if ([int]$Dir.Attributes -ne -1 -and ($Dir.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing to follow a link at '$($Dir.FullName)'."
         }
-        public static void Deleted(string path) {
-            if (string.IsNullOrEmpty(path)) return;
-            SHChangeNotify(SHCNE_DELETE, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, path, null);
-            string dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT, dir, null);
+        $Dir = $Dir.Parent
+    }
+}
+
+function Read-ImageInventory([IO.FileInfo]$File, [string]$Root) {
+    if ($File.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing a linked Fish inventory.' }
+    $lines = [IO.File]::ReadAllLines($File.FullName)
+    if ($lines.Length -lt 4 -or $lines[0] -cne 'Fish script image 1' -or $lines[1] -ine $Root -or $lines[2] -notin @('machine','user')) {
+        throw "Inventory does not identify a script installation at '$Root'."
+    }
+    $files = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    for ($i = 3; $i -lt $lines.Length; $i++) { [void]$files.Add($lines[$i]) }
+    [pscustomobject]@{ Scope = $lines[2]; Files = $files }
+}
+
+function Move-Image([string]$From,[string]$To) {
+    # Newly copied executables may be held briefly by an on-access scanner.
+    for ($i=0;;$i++) {
+        try { [IO.Directory]::Move($From,$To); return }
+        catch {
+            $code=$_.Exception.GetBaseException().HResult -band 0xffff
+            if ($i -ge 5 -or $code -notin @(5,32,33)) { throw }
+            Start-Sleep -Milliseconds (100*($i+1))
         }
     }
 }
-'@ -ErrorAction SilentlyContinue
-    } catch {}
-}
 
-function Remove-TreeForce([string]$Path) {
-    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return }
-    Get-ChildItem -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        try {
-            if ($_.Attributes -band [IO.FileAttributes]::ReadOnly) {
-                $_.Attributes = ($_.Attributes -bxor [IO.FileAttributes]::ReadOnly)
-            }
-        } catch {}
-    }
-    try {
-        $rootItem = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-        if ($rootItem -and ($rootItem.Attributes -band [IO.FileAttributes]::ReadOnly)) {
-            $rootItem.Attributes = ($rootItem.Attributes -bxor [IO.FileAttributes]::ReadOnly)
+# Inventory during the copy, preserving Windows file metadata.
+function Copy-Image([IO.DirectoryInfo]$Dir, [string]$Prefix) {
+    foreach ($entry in $Dir.EnumerateFileSystemInfos()) {
+        $rel = $Prefix + $entry.Name
+        if ($rel -ieq $inventoryName) { continue }
+        $key = if ($entry -is [IO.DirectoryInfo]) { $rel + '\' } else { $rel }
+        if ($sourceImage -and -not $sourceImage.Files.Contains($key)) { continue }
+        if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Image contains a link: $rel" }
+        $outPath = [IO.Path]::Combine($staging,$rel)
+        if ($entry -is [IO.DirectoryInfo]) {
+            [void][IO.Directory]::CreateDirectory($outPath)
+            $inventory.Add($rel + '\')
+            Copy-Image $entry ($rel + '\')
+        } else {
+            [IO.File]::Copy($entry.FullName,$outPath,$false)
+            $inventory.Add($rel)
         }
-    } catch {}
-    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
-function Remove-ZoneIdentifier([string]$Root) {
-    Get-ChildItem -LiteralPath $Root -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
-        try {
-            if ($_.Attributes -band [IO.FileAttributes]::ReadOnly) {
-                $_.Attributes = ($_.Attributes -bxor [IO.FileAttributes]::ReadOnly)
-            }
-        } catch {}
-        try { Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue } catch {}
-        try { Remove-Item -LiteralPath ($_.FullName + ':Zone.Identifier') -Force -ErrorAction SilentlyContinue } catch {}
+function Visit-OldImage([IO.DirectoryInfo]$Dir, [string]$Prefix, [switch]$Remove) {
+    foreach ($entry in $Dir.EnumerateFileSystemInfos()) {
+        $rel = $Prefix + $entry.Name
+        if ($entry -is [IO.DirectoryInfo]) { $rel += '\' }
+        if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $oldFiles.Contains($rel)) {
+            throw "Not replacing '$targetDir': '$rel' is not part of this script installation. Use an empty destination."
+        }
+        if ($entry -is [IO.DirectoryInfo]) { Visit-OldImage $entry $rel -Remove:$Remove }
+        if ($Remove) {
+            if ($entry.Attributes -band [IO.FileAttributes]::ReadOnly) { $entry.Attributes = $entry.Attributes -bxor [IO.FileAttributes]::ReadOnly }
+            $entry.Delete() # Nonrecursive: do not sweep up newly added files in the backup.
+        }
     }
 }
 
 function New-FishShortcut([string]$ShortcutPath, [string]$TargetExe) {
     $parent = Split-Path -Parent $ShortcutPath
     if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-    $existed = Test-Path -LiteralPath $ShortcutPath
     $shell = New-Object -ComObject WScript.Shell
+    $file = [IO.FileInfo]::new($ShortcutPath)
+    if ([int]$file.Attributes -ne -1 -and ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return }
     $link = $shell.CreateShortcut($ShortcutPath)
+    if ($file.Exists -and ($link.TargetPath -ine $TargetExe -or $link.Arguments -or $link.Description -cne 'Fish 5250 Workspace')) {
+        Write-Warning "Leaving existing shortcut '$ShortcutPath' unchanged."
+        return
+    }
     $link.TargetPath = $TargetExe
     $link.WorkingDirectory = (Split-Path -Parent $TargetExe)
     $link.IconLocation = "$TargetExe,0"
     $link.Description = 'Fish 5250 Workspace'
     $link.Save()
-    try { [IO.File]::SetAttributes($ShortcutPath, [IO.FileAttributes]::Archive) } catch {}
-    Initialize-ShellNotify
-    if ('FishShell.Notify' -as [type]) { [FishShell.Notify]::Saved($ShortcutPath, [bool]$existed) }
 }
 
-function Remove-FishShortcut([string]$ShortcutPath) {
-    if (-not $ShortcutPath -or -not (Test-Path -LiteralPath $ShortcutPath)) { return }
-    try {
-        $item = Get-Item -LiteralPath $ShortcutPath -Force -ErrorAction SilentlyContinue
-        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReadOnly)) {
-            $item.Attributes = ($item.Attributes -bxor [IO.FileAttributes]::ReadOnly)
-        }
-    } catch {}
-    Remove-Item -LiteralPath $ShortcutPath -Force -ErrorAction SilentlyContinue
-    Initialize-ShellNotify
-    if ('FishShell.Notify' -as [type]) { [FishShell.Notify]::Deleted($ShortcutPath) }
-}
-
-$targetDir = [IO.Path]::GetFullPath($Destination.TrimEnd('\'))
-if ($targetDir.Length -lt 4 -or $targetDir[1] -ne ':') {
+$targetDir = [IO.Path]::GetFullPath($Destination).TrimEnd('\')
+if ($targetDir -notmatch '^[A-Za-z]:\\.+') {
     throw 'Destination must be a full local Windows path.'
 }
+Assert-NoReparseParent $targetDir
 $targetExe = Join-Path $targetDir 'Fish.exe'
+$inventoryName = '.fish-script-image'
+$scope = if ($AllUsers) { 'machine' } else { 'user' }
 
 $running = Get-Process -Name 'Fish' -ErrorAction SilentlyContinue | Where-Object {
     try { $_.MainModule.FileName -ieq $targetExe } catch { $false }
@@ -139,13 +133,26 @@ if ($running) {
     throw "Fish is currently running from $targetDir. Close all Fish windows before updating this installation."
 }
 
-if ((Test-Path -LiteralPath $targetDir) -and -not (Test-Path -LiteralPath $targetExe)) {
-    $entries = @(Get-ChildItem -LiteralPath $targetDir -Force)
-    if ($entries.Count -gt 0) {
-        throw "Destination folder '$targetDir' is not empty and is not an existing Fish installation."
+$oldFiles = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+if ([IO.Directory]::Exists($targetDir)) {
+    $oldInventory = [IO.FileInfo]::new((Join-Path $targetDir $inventoryName))
+    if ($oldInventory.Exists) {
+        $oldImage = Read-ImageInventory $oldInventory $targetDir
+        if ($oldImage.Scope -ne $scope) { throw 'Existing script installation has a different scope.' }
+        $oldFiles = $oldImage.Files
+        [void]$oldFiles.Add($inventoryName)
+    } elseif ([IO.Directory]::GetFileSystemEntries($targetDir).Length) {
+        throw "Not replacing '$targetDir': it has files but no script inventory. Use an empty destination."
     }
 }
 
+$useRegistry = -not $NoRegistry -and $env:FISH_TEST_SKIP_REGISTRY -ne '1'
+$regPath = if ($AllUsers) { 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish' }
+           else { 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish' }
+if ($useRegistry -and (Test-Path -LiteralPath $regPath) -and (Get-ItemProperty -LiteralPath $regPath).InstallLocation -ine $targetDir) {
+    throw 'Another Fish script installation is registered for this scope. Uninstall it first or use -NoRegistry.'
+}
+$staging = $null
 $tempExtract = $null
 try {
     $resolvedSource = $null
@@ -159,7 +166,6 @@ try {
         } elseif ($candidate.EndsWith('.zip', [StringComparison]::OrdinalIgnoreCase)) {
             $tempExtract = Join-Path ([IO.Path]::GetTempPath()) ('Fish-install-' + [guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Force -Path $tempExtract | Out-Null
-            try { Unblock-File -LiteralPath $candidate -ErrorAction SilentlyContinue } catch {}
             Expand-Archive -LiteralPath $candidate -DestinationPath $tempExtract -Force
             if (Test-Path -LiteralPath (Join-Path $tempExtract 'Fish.exe')) { $resolvedSource = $tempExtract }
             elseif (Test-Path -LiteralPath (Join-Path $tempExtract 'Fish\Fish.exe')) { $resolvedSource = Join-Path $tempExtract 'Fish' }
@@ -177,7 +183,6 @@ try {
         if ($localZip) {
             $tempExtract = Join-Path ([IO.Path]::GetTempPath()) ('Fish-install-' + [guid]::NewGuid().ToString('N'))
             New-Item -ItemType Directory -Force -Path $tempExtract | Out-Null
-            try { Unblock-File -LiteralPath $localZip.FullName -ErrorAction SilentlyContinue } catch {}
             Expand-Archive -LiteralPath $localZip.FullName -DestinationPath $tempExtract -Force
             $resolvedSource = if (Test-Path -LiteralPath (Join-Path $tempExtract 'Fish\Fish.exe')) { Join-Path $tempExtract 'Fish' } else { $tempExtract }
         } else {
@@ -208,90 +213,79 @@ try {
         }
     }
 
-    $sourceFull = [IO.Path]::GetFullPath($resolvedSource.TrimEnd('\'))
-    if ($sourceFull -ieq $targetDir) {
-        throw 'Source and destination are the same directory.'
+    $sourceFull = [IO.Path]::GetFullPath($resolvedSource).TrimEnd('\')
+    Assert-NoReparseParent $sourceFull
+    if ($sourceFull -ieq $targetDir -or $targetDir.StartsWith($sourceFull + '\',[StringComparison]::OrdinalIgnoreCase) -or
+            $sourceFull.StartsWith($targetDir + '\',[StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Source and destination directories must not overlap.'
     }
     if (-not (Test-Path -LiteralPath (Join-Path $sourceFull 'Fish.exe'))) {
         throw "Invalid Fish image at '$sourceFull' (Fish.exe missing)."
     }
+    # Settings can promote a per-user script install to machine scope. Do not copy its
+    # inventory (which belongs to the old location), or data the user added beside it.
+    $sourceInventory = [IO.FileInfo]::new((Join-Path $sourceFull $inventoryName))
+    $sourceImage = if ($sourceInventory.Exists) { Read-ImageInventory $sourceInventory $sourceFull }
 
-    $staging = $targetDir + '.staging-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $targetDir) | Out-Null
-    Copy-Item -LiteralPath $sourceFull -Destination $staging -Recurse -Force
+    # Keep temporary sibling paths short enough for Windows PowerShell 5.1.
+    $parentDir = [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($targetDir))
+    $staging = (New-Item -ItemType Directory -Path (Join-Path $parentDir.FullName ([IO.Path]::GetRandomFileName())) -ErrorAction Stop).FullName
+    $inventory = [Collections.Generic.List[string]]::new()
+    $inventory.Add('Fish script image 1')
+    $inventory.Add($targetDir)
+    $inventory.Add($scope)
+    Copy-Image $sourceFull ''
+    foreach ($required in @('Fish.exe','app\Fish.cfg','app\Fish.jar','app\fish-native.dll','runtime\lib\modules','runtime\bin\jli.dll','runtime\bin\server\jvm.dll')) {
+        $file = [IO.FileInfo]::new((Join-Path $staging $required))
+        if (-not $file.Exists -or !$file.Length) { throw "Incomplete Fish image: '$required' is missing or empty. No installation was replaced." }
+    }
+    $cfg = [IO.File]::ReadAllLines((Join-Path $staging 'app\Fish.cfg'))
+    if ($cfg -cnotcontains 'app.mainclass=fish.Main' -or $cfg -cnotcontains 'app.classpath=$APPDIR\Fish.jar') {
+        throw 'Invalid Fish launcher configuration. Use the complete portable download.'
+    }
     $uninstallerSource = Join-Path $PSScriptRoot 'Uninstall-Fish.ps1'
-    if (Test-Path -LiteralPath $uninstallerSource) {
-        Copy-Item -LiteralPath $uninstallerSource -Destination (Join-Path $staging 'Uninstall-Fish.ps1') -Force
+    $stagedUninstaller = Join-Path $staging 'Uninstall-Fish.ps1'
+    if ([IO.File]::Exists($uninstallerSource)) {
+        [IO.File]::Copy($uninstallerSource,$stagedUninstaller,$true)
+        if (-not $inventory.Contains('Uninstall-Fish.ps1')) { $inventory.Add('Uninstall-Fish.ps1') }
     }
-    Remove-ZoneIdentifier -Root $staging
-
-    if ($env:FISH_TEST_SKIP_REGISTRY -ne '1') {
-        try {
-            $msi = New-Object -ComObject WindowsInstaller.Installer
-            $products = @($msi.RelatedProducts('{55B0674D-E226-46CB-852F-6BEDDD35A74B}'))
-            foreach ($code in $products) {
-                $assign = ''
-                try { $assign = [string]$msi.ProductInfo($code, 'AssignmentType') } catch {}
-                if ($assign -eq '1' -and -not $isAdmin) { continue }
-                $msiArgs = "/x $code /qn /norestart MSIRESTARTMANAGERCONTROL=Disable UPGRADINGPRODUCTCODE={55B0674D-E226-46CB-852F-6BEDDD35A74B}"
-                Start-Process -FilePath 'msiexec.exe' -ArgumentList $msiArgs -Wait -WindowStyle Hidden | Out-Null
-            }
-        } catch {}
+    if (-not [IO.File]::Exists($stagedUninstaller) -or -not [IO.File]::ReadAllText($stagedUninstaller).Contains('Fish script image 1')) {
+        throw 'Place the matching Uninstall-Fish.ps1 beside Install-Fish.ps1 or use a matching portable release.'
     }
+    [IO.File]::WriteAllLines((Join-Path $staging $inventoryName),$inventory)
 
     $backup = $null
     if (Test-Path -LiteralPath $targetDir) {
-        $backup = $targetDir + '.old-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
-        Move-Item -LiteralPath $targetDir -Destination $backup
+        Assert-NoReparseParent $targetDir
+        Visit-OldImage $targetDir ''
+        $backup = Join-Path ([IO.Path]::GetDirectoryName($targetDir)) ([IO.Path]::GetRandomFileName())
+        Move-Image $targetDir $backup
     }
     try {
-        Move-Item -LiteralPath $staging -Destination $targetDir
-        if ($backup -and (Test-Path -LiteralPath $backup)) {
-            Remove-TreeForce -Path $backup
-        }
+        Move-Image $staging $targetDir
+        $staging = $null
     } catch {
         if (-not (Test-Path -LiteralPath $targetDir) -and $backup -and (Test-Path -LiteralPath $backup)) {
-            Move-Item -LiteralPath $backup -Destination $targetDir
+            Move-Image $backup $targetDir
         }
         throw
     }
-
-    $localAppBase = if ($env:FISH_TEST_LOCALAPPDATA) {
-        $env:FISH_TEST_LOCALAPPDATA
-    } elseif ($env:FISH_TEST_SKIP_REGISTRY -ne '1') {
-        $env:LOCALAPPDATA
-    } else {
-        ''
-    }
-    if ($localAppBase) {
-        foreach ($alt in @((Join-Path $localAppBase 'Programs\Fish'), (Join-Path $localAppBase 'Fish'))) {
-            $altFull = [IO.Path]::GetFullPath($alt.TrimEnd('\'))
-            if ($altFull -ieq $targetDir) { continue }
-            $altExe = Join-Path $altFull 'Fish.exe'
-            if (-not (Test-Path -LiteralPath $altExe)) { continue }
-            $altRunning = Get-Process -Name 'Fish' -ErrorAction SilentlyContinue | Where-Object {
-                try { $_.MainModule.FileName -ieq $altExe } catch { $false }
-            }
-            if (-not $altRunning) {
-                Remove-TreeForce -Path $altFull
-            }
-        }
+    if ($backup) {
+        try {
+            Visit-OldImage $backup '' -Remove
+            [IO.Directory]::Delete($backup)
+        } catch { Write-Warning "Could not finish removing old files. Review '$backup': $($_.Exception.Message)" }
     }
 
     $version = (Get-Item -LiteralPath $targetExe).VersionInfo.ProductVersion
-    if (-not $version) { $version = '0.10.4' }
-    $sizeBytes = (Get-ChildItem -LiteralPath $targetDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
-    $sizeKb = [int][Math]::Ceiling($sizeBytes / 1024.0)
+    if (-not $version) { $version = '0.10.5' }
     $uninstallScript = Join-Path $targetDir 'Uninstall-Fish.ps1'
     $uninstallCmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$uninstallScript`""
     if ($AllUsers) { $uninstallCmd += ' -AllUsers' }
 
-    if (-not $NoRegistry -and $env:FISH_TEST_SKIP_REGISTRY -ne '1') {
-        $regPath = if ($AllUsers) {
-            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish'
-        } else {
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Fish'
-        }
+    if ($useRegistry) {
+        $sizeBytes = (Get-ChildItem -LiteralPath $targetDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
+        $sizeKb = [int][Math]::Ceiling($sizeBytes / 1024.0)
         New-Item -Path $regPath -Force | Out-Null
         Set-ItemProperty -Path $regPath -Name 'DisplayName' -Value 'Fish'
         Set-ItemProperty -Path $regPath -Name 'DisplayVersion' -Value $version
@@ -316,25 +310,11 @@ try {
         if ($env:FISH_TEST_USER_DESKTOP) { $env:FISH_TEST_USER_DESKTOP } else { [Environment]::GetFolderPath('Desktop') }
     }
 
-    if ($programsDir) {
-        $msiSubDir = Join-Path $programsDir 'Fish'
-        $msiSubShortcut = Join-Path $msiSubDir 'Fish.lnk'
-        if (Test-Path -LiteralPath $msiSubShortcut) {
-            Remove-FishShortcut -ShortcutPath $msiSubShortcut
-            if ((Test-Path -LiteralPath $msiSubDir) -and @(Get-ChildItem -LiteralPath $msiSubDir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
-                Remove-Item -LiteralPath $msiSubDir -Force -ErrorAction SilentlyContinue
-            }
-        }
-        if (-not $NoStartMenuShortcut) {
-            $startMenu = Join-Path $programsDir 'Fish.lnk'
-            New-FishShortcut -ShortcutPath $startMenu -TargetExe $targetExe
-        }
+    if ($programsDir -and -not $NoStartMenuShortcut) {
+        New-FishShortcut -ShortcutPath (Join-Path $programsDir 'Fish.lnk') -TargetExe $targetExe
     }
-    if ($desktopDir) {
-        $desktop = Join-Path $desktopDir 'Fish.lnk'
-        if ($DesktopShortcut -or (Test-Path -LiteralPath $desktop)) {
-            New-FishShortcut -ShortcutPath $desktop -TargetExe $targetExe
-        }
+    if ($desktopDir -and $DesktopShortcut) {
+        New-FishShortcut -ShortcutPath (Join-Path $desktopDir 'Fish.lnk') -TargetExe $targetExe
     }
 
     if (-not $Quiet) {
@@ -342,7 +322,7 @@ try {
             Write-Host "Fish $version installed system-wide for all users at: $targetDir"
         } else {
             Write-Host "Fish $version installed for current user at: $targetDir"
-            Write-Host 'No administrator privileges required; Mark-of-the-Web cleared to prevent SmartScreen prompts.'
+            Write-Host 'No administrator privileges required.'
         }
     }
     if ($Launch) {
@@ -353,6 +333,9 @@ try {
         }
     }
 } finally {
+    if ($staging -and [IO.Directory]::Exists($staging)) {
+        Remove-Item -LiteralPath $staging -Recurse -Force
+    }
     if ($tempExtract -and (Test-Path -LiteralPath $tempExtract)) {
         Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
     }

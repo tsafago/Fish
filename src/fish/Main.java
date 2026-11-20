@@ -8,7 +8,8 @@ import fish.security.KioskMode;
 import fish.ui.*;
 
 public final class Main {
-    public static final String VERSION = "0.10.4";
+    public static final String NOTICE_DIAGNOSTICS_PROPERTY="fish.diagnoseStartupNotice";
+    public static final String VERSION = "0.10.5";
     private Main() {}
     public static void main(String[] args) {
         System.setProperty("javafx.enablePreview", "true");
@@ -33,8 +34,7 @@ public final class Main {
             return;
         }
         if (args.length==1 && args[0].equals("--uninstall-cleanup")) {
-            uninstallCleanup();
-            System.exit(0);
+            // Older cached MSIs can still invoke this switch. Never start the UI or purge user data.
             return;
         }
         if (args.length>0 && args[0].equals("--config")) {
@@ -46,6 +46,7 @@ public final class Main {
         UUID requestedLayout=null;
         for (int i = 0; i < args.length; i++) {
             if (args[i].equals("--demo")) demonstration = true;
+            else if (args[i].equals("--diagnose-startup-notice")) System.setProperty(NOTICE_DIAGNOSTICS_PROPERTY,"true");
             else if (args[i].equals("--data-dir") && i + 1 < args.length) supplied = Path.of(args[++i]);
             else if (args[i].equals("--layout") && i+1<args.length) {
                 if (requestedLayout!=null) { System.err.println("Supply --layout only once."); System.exit(2); return; }
@@ -53,9 +54,10 @@ public final class Main {
                 catch (IllegalArgumentException e) { System.err.println(e.getMessage()); System.exit(2); return; }
             }
             else if (args[i].equals("--help")) {
-                System.out.println("Fish [--demo] [--data-dir DIRECTORY] [--layout UUID]\n"
+                System.out.println("Fish [--demo] [--data-dir DIRECTORY] [--layout UUID] [--diagnose-startup-notice]\n"
                         + "--layout opens exactly one new auto-connecting window from a named saved layout.\n"
                         + "--demo starts a loopback-only synthetic TN5250 host in a separate temporary workspace.\n"
+                        + "--diagnose-startup-notice adds a shareable, text-free diagnostic to the Host menu.\n"
                         + "Fish --config <command> ... provides offline configuration.\n"+Configuration.HELP);
                 return;
             } else {
@@ -100,6 +102,7 @@ public final class Main {
             });
             if (claim.forwarded()) return;
             openedClaim=claim;
+            StartupBanner.openOnce();
             Ui.FxBoot.startAsync();
             java.util.concurrent.CompletableFuture<Void> awtWarmup=java.util.concurrent.CompletableFuture.runAsync(() -> {
                 try {
@@ -155,6 +158,7 @@ public final class Main {
                     if (!store.loadNotice().isEmpty())
                         System.getLogger(Main.class.getName()).log(System.Logger.Level.INFO,"Workspace updated: "+store.loadNotice());
                 } catch (RuntimeException e) {
+                    StartupBanner.dismiss();
                     if (host != null) host.close();
                     if (!demo && allowFactoryReset
                             && WorkspaceRecovery.offerStartupFactoryReset(directory,claim.broker(),store,"Fish could not open its workspace: "+e.getMessage())) {
@@ -167,9 +171,13 @@ public final class Main {
                     catch (java.io.IOException closeError) { e.addSuppressed(closeError); }
                     if (demo || !allowFactoryReset) Ui.error(null,"Fish could not open its workspace: " + e.getMessage());
                     System.exit(1);
-                }
+                } finally { StartupBanner.dismiss(); }
             });
+        } catch (Error error) {
+            StartupBanner.dismiss();
+            throw error;
         } catch (Exception e) {
+            StartupBanner.dismiss();
             if (openedHost!=null) openedHost.close();
             if (!demonstration && allowFactoryReset) {
                 AutoCloseable brokerClose=openedClaim==null ? null : openedClaim.broker();
@@ -193,31 +201,6 @@ public final class Main {
         if (claim==null) return;
         try { if (claim.broker()!=null) claim.broker().close(); } catch (java.io.IOException ignored) {}
         try { if (claim.store()!=null) claim.store().close(); } catch (java.io.IOException ignored) {}
-    }
-
-    /** Invoked by MSI real uninstallation (`REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE`) to remove config, shortcuts, secondary installs, and stored credentials. */
-    public static void uninstallCleanup() {
-        boolean admin=KioskMode.isUserAdmin();
-        LayoutShortcuts.removeAutostartShortcuts(null);
-        LayoutShortcuts.removeApplicationShortcuts(admin);
-        KioskMode.deleteAllStoredCredentials();
-        Path runningDir=null;
-        try {
-            Path exe=LayoutShortcuts.executable().toAbsolutePath().normalize();
-            runningDir=exe.getParent();
-        } catch (java.io.IOException | RuntimeException ignored) {}
-        fish.install.UserInstaller.cleanSupersededUserInstallations(runningDir);
-        try {
-            new ProcessBuilder("reg.exe","delete",fish.install.UserInstaller.UNINSTALL_KEY,"/f")
-                    .redirectErrorStream(true).start().waitFor(5,java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception ignored) {}
-        String appData=System.getenv("APPDATA");
-        if (appData!=null && !appData.isBlank()) WorkspaceRecovery.deleteDirectoryTreeQuietly(defaultDirectory(Path.of(appData)));
-        if (admin) {
-            String programData=System.getenv("ProgramData");
-            if (programData!=null && !programData.isBlank()) WorkspaceRecovery.deleteDirectoryTreeQuietly(Path.of(programData).resolve("Fish"));
-            try { KioskMode.writeDirect(false); } catch (java.io.IOException ignored) {}
-        }
     }
 
     private static void runAotWarmup() {

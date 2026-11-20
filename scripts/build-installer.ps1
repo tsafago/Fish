@@ -1,7 +1,7 @@
 # Full setup is written next to -Image unless -OutputDirectory is supplied.
 # -BootstrapperOnly builds/tests the UI in build\ without creating an MSI or touching dist\.
 param([string]$Jdk,[string]$Image,[Parameter(Mandatory=$true)][string]$Version,
-    [string]$OutputDirectory,[switch]$BootstrapperOnly)
+    [string]$OutputDirectory,[switch]$BootstrapperOnly,[string]$LegacySetup)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Installer version must be numeric X.Y.Z.' }
@@ -18,7 +18,11 @@ $zig=Join-Path $root ('.tools\'+$tools.Native.Directory+'\zig.exe')
 if (-not (Test-Path -LiteralPath $zig)) { throw 'Build the application/native bridge before packaging setup.' }
 $output=Join-Path $root ('build\installer-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
 New-Item -ItemType Directory -Path $output | Out-Null
+& "$PSScriptRoot\setup-image.ps1" -Image $Image -Output (Join-Path $output 'fish-image.generated.h')
 if (!$BootstrapperOnly) {
+$checker=Join-Path $output 'fish-msi-check.dll'
+& $zig cc -shared -O2 -target x86_64-windows-gnu ("-I"+$output) (Join-Path $root 'src\native\fish-msi-check.c') -lmsi -lbcrypt -o $checker
+if ($LASTEXITCODE) { throw 'MSI startup verifier compilation failed.' }
 $wixTemp=Join-Path $output 'wix-temp'
 & "$Jdk\bin\jpackage.exe" --type msi --name Fish --app-version $Version --app-image $Image `
     --dest $output --temp $wixTemp --vendor Fish --win-per-user-install --install-dir Fish `
@@ -27,7 +31,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Base MSI staging failed.' }
 $msi=Join-Path $output "Fish-$Version.msi"
 
 # Upgrade the staged WiX definition to dual-scope (per-user default + all-users MSI support via ALLUSERS=2/MSIINSTALLPERUSER=1)
-# and wire real-uninstall config cleanup (Installed AND REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE).
+# Uninstall only MSI-owned components. Do not start Fish or recursively purge INSTALLDIR.
 $wixDir=Join-Path $root ('.tools\'+$tools.Installer.Directory)
 $configDir=Join-Path $wixTemp 'config'
 $bundleWxf=Join-Path $configDir 'bundle.wxf'
@@ -38,7 +42,12 @@ if ((Test-Path -LiteralPath $bundleWxf) -and (Test-Path -LiteralPath $mainWxs)) 
     $bundleXml=[regex]::Replace($bundleXml,
         '(<RegistrySearch\s+Id="([^"]+)"\s+Root="HKCU"([^>]*></RegistrySearch>))',
         '$1<RegistrySearch Id="$2_lm" Root="HKLM"$3')
-    [IO.File]::WriteAllText($bundleWxf,$bundleXml,[Text.UTF8Encoding]::new($false))
+    $bundleDoc=[xml]$bundleXml
+    foreach ($action in @($bundleDoc.SelectNodes("//*[local-name()='RemoveFolderEx']"))) {
+        if ($action.GetAttribute('On') -ne 'uninstall') { throw 'Unexpected jpackage recursive folder action.' }
+        [void]$action.ParentNode.RemoveChild($action)
+    }
+    [IO.File]::WriteAllText($bundleWxf,$bundleDoc.OuterXml,[Text.UTF8Encoding]::new($false))
 
     $mainXml=[IO.File]::ReadAllText($mainWxs,[Text.Encoding]::UTF8)
     $mainXml=$mainXml.Replace('<?define JpInstallerVersion=200 ?>','<?define JpInstallerVersion=500 ?>')
@@ -46,11 +55,28 @@ if ((Test-Path -LiteralPath $bundleWxf) -and (Test-Path -LiteralPath $mainWxs)) 
     $dualProps=@'
     <Property Id="ALLUSERS" Value="2"/>
     <Property Id="MSIINSTALLPERUSER" Value="1"/>
-    <CustomAction Id="FishUninstallCleanup" Directory="INSTALLDIR" ExeCommand="&quot;[INSTALLDIR]Fish.exe&quot; --uninstall-cleanup" Execute="deferred" Impersonate="yes" Return="ignore"/>
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="DisableShutdown"/>
 '@
     $mainXml=$mainXml.Replace('<Media Id="1"',($dualProps+"`r`n    <Media Id=`"1`""))
-    $cleanupSeq='      <Custom Action="FishUninstallCleanup" Before="RemoveFiles">Installed AND (REMOVE="ALL") AND (NOT UPGRADINGPRODUCTCODE)</Custom>'
-    $mainXml=$mainXml.Replace('</InstallExecuteSequence>',($cleanupSeq+"`r`n    </InstallExecuteSequence>"))
+    # Keep removal and replacement in one rollback boundary, including different builds of the same version.
+    $mainXml=$mainXml.Replace('<RemoveExistingProducts Before="CostInitialize"/>','<RemoveExistingProducts After="InstallInitialize"/>').
+        Replace('IncludeMaximum="$(var.JpUpgradeVersionOnlyDetectUpgrade)"','IncludeMaximum="yes"').
+        Replace('IncludeMinimum="$(var.JpUpgradeVersionOnlyDetectDowngrade)"','IncludeMinimum="no"')
+    $verifyActions=@'
+    <Condition Message="Windows Installer rollback must be enabled to replace Fish safely.">Installed OR NOT RollbackDisabled</Condition>
+    <Binary Id="FishVerifier" SourceFile="$(var.FishVerifier)"/>
+    <CustomAction Id="SetFishCheckDir" Property="CheckFishImage" Value="[INSTALLDIR]"/>
+    <CustomAction Id="CheckFishImage" BinaryKey="FishVerifier" DllEntry="CheckFishImage" Execute="deferred" Impersonate="yes" Return="check"/>
+'@
+    $mainXml=$mainXml.Replace('<InstallExecuteSequence>',($verifyActions+"`r`n    <InstallExecuteSequence>"+@'
+
+      <Custom Action="SetFishCheckDir" After="InstallFiles">NOT (REMOVE="ALL")</Custom>
+      <Custom Action="CheckFishImage" Before="InstallFinalize">NOT (REMOVE="ALL")</Custom>
+'@))
+    # Standard FindRelatedProducts is scoped to the invoking user/machine; the
+    # JDK extension also searches other installation contexts.
+    $mainXml=$mainXml.Replace('<Custom Action="JpFindRelatedProducts" After="FindRelatedProducts"/>','').
+        Replace('After="JpFindRelatedProducts"','After="FindRelatedProducts"')
     [IO.File]::WriteAllText($mainWxs,$mainXml,[Text.UTF8Encoding]::new($false))
 
     # Re-compile and link the patched dual-scope MSI using the exact candle/light flags jpackage prepared.
@@ -60,7 +86,7 @@ if ((Test-Path -LiteralPath $bundleWxf) -and (Test-Path -LiteralPath $mainWxs)) 
         "-dJpProductCode=$([guid]::NewGuid().ToString('B').ToUpperInvariant())",
         '-dJpProductUpgradeCode={55B0674D-E226-46CB-852F-6BEDDD35A74B}',
         '-dJpAppVendor=Fish','-dJpAppDescription=Fish',"-dJpConfigDir=$configDir",
-        '-dJpAllowUpgrades=yes','-dJpAllowDowngrades=yes','-dJpExecutableOSVersion=600')
+        '-dJpAllowUpgrades=yes',"-dFishVerifier=$checker",'-dJpExecutableOSVersion=600')
     $appIcon=Get-ChildItem -LiteralPath $configDir -Filter '*.ico' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($appIcon) { $candleArgs += "-dJpIcon=$($appIcon.FullName)" }
     $sizeKb=[int][Math]::Ceiling(((Get-ChildItem -LiteralPath $Image -Recurse -File | Measure-Object -Property Length -Sum).Sum)/1024.0)
@@ -141,6 +167,20 @@ $destination=Join-Path $OutputDirectory "Fish-$Version-setup.exe"
 Copy-Item -LiteralPath $bootstrapper -Destination $destination -Force
 $stream=[IO.File]::Open($destination,[IO.FileMode]::Append,[IO.FileAccess]::Write,[IO.FileShare]::None)
 try {
+    # Optional exact offline source for the public 0.10.4 package. It precedes
+    # the normal footer-indexed payload; the bootstrapper pins its MSI hash too.
+    if (!$LegacySetup) {
+        $candidate=Join-Path $root 'dist\Fish-0.10.4-light-release\Fish-0.10.4-setup.exe'
+        if (Test-Path -LiteralPath $candidate) { $LegacySetup=$candidate }
+    }
+    if ($LegacySetup) {
+        if ((Get-FileHash -LiteralPath $LegacySetup).Hash -ne '002c72c4c9e844e6ea5962c50f77513425e5c94a58cd537033ef11d44863f9d9') { throw 'Not the released Fish 0.10.4 setup.' }
+        $old=[IO.File]::OpenRead((Resolve-Path -LiteralPath $LegacySetup).Path)
+        try {
+            $remaining=61710948; $null=$old.Seek(-($remaining+56),[IO.SeekOrigin]::End); $buf=New-Object byte[] 65536
+            while ($remaining -gt 0) { $n=$old.Read($buf,0,[Math]::Min($remaining,$buf.Length)); if (!$n) {throw 'Truncated legacy MSI'}; $stream.Write($buf,0,$n); $remaining-=$n }
+        } finally { $old.Dispose() }
+    }
     $payload=[IO.File]::OpenRead($msi)
     try { $payload.CopyTo($stream) } finally { $payload.Dispose() }
     $stream.Write([Text.Encoding]::ASCII.GetBytes("FishMsiPayload1`0"),0,16)

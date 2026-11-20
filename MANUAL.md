@@ -11,6 +11,12 @@ Ask your administrator for your IBM i address and sign-in method. Use Fish on yo
 
 If Fish can't connect, check the address and your VPN, then click **Reconnect**.
 
+Under **Edit > Settings > General**, **Skip the message queue in-use notice** is on by default. This experimental option presses Enter once per connection for the specific English notice that the message queue is allocated to another job, after the host requests input on that display. Other program messages stay on screen.
+
+Under **Edit > Settings > General > Terminal input**, turn on **Automatically reset local input errors** to keep typing after a rejected key, such as a letter in a numeric-only field, Backspace at the start of a field, or Delete in a protected area. Fish briefly shows a notification instead of a Reset button. A paste stops at the first rejected character: what was already entered stays, and Fish doesn't retry or continue the paste. Host errors and host-busy states aren't cleared. This option is off by default.
+
+If Fish leaves that notice on screen, launch with `--diagnose-startup-notice`. Select the affected pane and open **Host > Startup notice diagnostic...** before pressing Enter. The dialog is safe to copy: it contains the reason, display dimensions, field count and input state, not the terminal text or connection identifiers.
+
 ## Using the terminal
 
 Click a pane to type. **Tab** moves between host fields; **Enter** sends your entry. If the keyboard locks after a typing mistake, press **Reset**.

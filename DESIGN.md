@@ -332,6 +332,14 @@ Windows or Fish theme. Water starts beneath
 the copy; the large Fish mark is cut into sand on the right. As work advances,
 the mark thickens from nose to tail, remaining visible beneath the moving tide.
 Text has a one-pixel contrasting shadow; high contrast uses black on white without decoration.
+Seafoam water shades into periwinkle; apricot sand warms to peach-pink. Soft
+caustic lines belong to the water, not the sand. Interactive Fish startup uses a
+rounded frame and gently refracts the water while keeping the opening shoreline
+in place. Three inset dots pulse in sequence, with no visible title. The banner
+takes no focus and yields to the first workspace or recovery prompt without a
+minimum display time. Setup, update and startup fade out for 125 ms without
+blocking Fish launch. Reduced motion disables movement and fades; high contrast
+uses three solid black dots on white for startup.
 Only verified success submerges the whole window. The final frame holds briefly
 before setup closes or opens Fish. Reduced motion keeps the same states without
 the moving waves; errors and restart notices stay open.

@@ -23,7 +23,15 @@ public final class StateStore implements AutoCloseable {
     public record State(List<Profile> profiles, Layout layout, int width, int height, AppTheme appTheme, UUID lastProfile,
                         Map<String,String> shortcuts, boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
                         UpdateSettings updates,Map<String,String> keyboardRecovery,List<WindowState> windows,
-                        UUID addProfile,List<SavedLayout> savedLayouts,UUID selectedLayout,Map<UUID,SavedLayout.Display> displays) {
+                        UUID addProfile,List<SavedLayout> savedLayouts,UUID selectedLayout,Map<UUID,SavedLayout.Display> displays,
+                        boolean skipQueueNotice,boolean autoResetTypingErrors) {
+        public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
+                     Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
+                     UpdateSettings updates,Map<String,String> keyboardRecovery,List<WindowState> windows,
+                     UUID addProfile,List<SavedLayout> savedLayouts,UUID selectedLayout,Map<UUID,SavedLayout.Display> displays) {
+            this(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,
+                    updates,keyboardRecovery,windows,addProfile,savedLayouts,selectedLayout,displays,true,false);
+        }
         public State(List<Profile> profiles,Layout layout,int width,int height,AppTheme appTheme,UUID lastProfile,
                      Map<String,String> shortcuts,boolean highlightActive,Appearance appearance,Tutorial tutorial,boolean connectOnStartup,
                      UpdateSettings updates,Map<String,String> keyboardRecovery,List<WindowState> windows,
@@ -132,16 +140,16 @@ public final class StateStore implements AutoCloseable {
             }
         }
         public State withTutorial(Tutorial value) {
-            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,value,connectOnStartup,updates,keyboardRecovery,windows,addProfile,savedLayouts,selectedLayout,displays);
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,value,connectOnStartup,updates,keyboardRecovery,windows,addProfile,savedLayouts,selectedLayout,displays,skipQueueNotice,autoResetTypingErrors);
         }
         public State withWindows(List<WindowState> value) {
-            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,value,addProfile,savedLayouts,selectedLayout,displays);
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,value,addProfile,savedLayouts,selectedLayout,displays,skipQueueNotice,autoResetTypingErrors);
         }
         public State forWindow(WindowState window) {
-            return new State(profiles,window.layout(),window.width(),window.height(),appTheme,window.lastProfile(),shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,List.of(),window.addProfile(),savedLayouts,selectedLayout,window.displays());
+            return new State(profiles,window.layout(),window.width(),window.height(),appTheme,window.lastProfile(),shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,List.of(),window.addProfile(),savedLayouts,selectedLayout,window.displays(),skipQueueNotice,autoResetTypingErrors);
         }
         public State withSavedLayouts(List<SavedLayout> value,UUID selected) {
-            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,windows,addProfile,value,selected,displays);
+            return new State(profiles,layout,width,height,appTheme,lastProfile,shortcuts,highlightActive,appearance,tutorial,connectOnStartup,updates,keyboardRecovery,windows,addProfile,value,selected,displays,skipQueueNotice,autoResetTypingErrors);
         }
     }
     private static void validateDisplays(Layout layout,Map<UUID,SavedLayout.Display> displays) {
@@ -328,15 +336,21 @@ public final class StateStore implements AutoCloseable {
                 String rawTheme=required(properties,key+"theme");
                 if (Integer.parseInt(version)<21 && Profile.isCustomColor(rawTheme.strip()))
                     throw new IllegalArgumentException("Custom profile primary colors require workspace version 21.");
+                String auth=kerberos ? required(properties,key+"authentication") : Profile.Authentication.PASSWORD.name();
+                boolean retiredPreviewMode=auth.equals("PASSWORD_SHA1");
+                boolean auto=bool(properties,key+"auto");
+                if (retiredPreviewMode)
+                    notice("Automatic sign-in was turned off for "+required(properties,key+"name")
+                            +" because its preview sign-in mode was removed. Its saved login was retained.");
                 profiles.add(new Profile(id, required(properties, key + "name"), required(properties, key + "host"),
                         Integer.parseInt(required(properties, key + "port")), required(properties, key + "device"),
-                        required(properties, key + "username"), bool(properties, key + "auto"), bool(properties, key + "remember"),
+                        required(properties, key + "username"), auto && !retiredPreviewMode, bool(properties, key + "remember"),
                         required(properties, key + "codePage"), rawTheme,
                         effect, Double.parseDouble(required(properties, key + "zoom")),
                         keys, profileLayout,
                         usability && !required(properties,key+"loginSource").isEmpty()
                                 ? UUID.fromString(required(properties,key+"loginSource")) : null,
-                        kerberos ? Profile.Authentication.valueOf(required(properties,key+"authentication")) : Profile.Authentication.PASSWORD,
+                        retiredPreviewMode ? Profile.Authentication.PASSWORD : Profile.Authentication.valueOf(auth),
                         kerberos ? required(properties,key+"kerberosServer") : ""));
             }
             UUID last=Integer.parseInt(version)>=3 ? UUID.fromString(required(properties,"lastProfile")) : profiles.getFirst().id();
@@ -442,11 +456,15 @@ public final class StateStore implements AutoCloseable {
                             UpdateSettings.Channel.valueOf(required(properties,"updates.channel")),required(properties,"updates.ignoredVersion"))
                             : UpdateSettings.defaults(),recovery,windows,
                     recipes ? UUID.fromString(required(properties,"addProfile")) : last,savedLayouts,selectedLayout,
-                    recipes ? readDisplays(properties,"",bounded,version) : Map.of());
+                    recipes ? readDisplays(properties,"",bounded,version) : Map.of(),
+                    !properties.containsKey("skipQueueNotice") || bool(properties,"skipQueueNotice"),
+                    properties.containsKey("autoResetTypingErrors") && bool(properties,"autoResetTypingErrors"));
             if (usability && (result.width()!=Integer.parseInt(required(properties,"width"))
                     || result.height()!=Integer.parseInt(required(properties,"height"))))
                 throw new IllegalArgumentException("Window dimensions exceed the supported bounds.");
             Properties known=properties(result);
+            known.setProperty("skipQueueNotice","");
+            known.setProperty("autoResetTypingErrors","");
             for (String action:retiredActions) known.setProperty((exact ? "binding." : "shortcut.")+action,"");
             if (!exact) for (String key:properties.stringPropertyNames()) {
                 if (key.startsWith("shortcut.")) known.setProperty(key,"");
@@ -532,6 +550,8 @@ public final class StateStore implements AutoCloseable {
         properties.setProperty("version", VERSION);
         properties.setProperty("tutorial.status",state.tutorial.name());
         properties.setProperty("connectOnStartup",Boolean.toString(state.connectOnStartup));
+        if (!state.skipQueueNotice) properties.setProperty("skipQueueNotice","false");
+        if (state.autoResetTypingErrors) properties.setProperty("autoResetTypingErrors","true");
         properties.setProperty("updates.startup",Boolean.toString(state.updates.startup()));
         properties.setProperty("updates.channel",state.updates.channel().name());
         properties.setProperty("updates.ignoredVersion",state.updates.ignoredVersion());

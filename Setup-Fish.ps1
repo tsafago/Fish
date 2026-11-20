@@ -35,8 +35,8 @@ try {
     Write-Host ''
     Write-Host 'Ready: dist\Fish\Fish.exe'
     Write-Host 'SmartScreen-free per-user installer: .\Install-Fish.ps1 -Source dist\Fish'
-    Write-Host 'Installer: dist\Fish-0.10.4-setup.exe (current user default, or all users with Administrator)'
-    Write-Host 'Portable ZIP: dist\Fish-0.10.4-windows-x64.zip'
+    Write-Host 'Installer: dist\Fish-0.10.5-setup.exe (current user default, or all users with Administrator)'
+    Write-Host 'Portable ZIP: dist\Fish-0.10.5-windows-x64.zip'
     if ($Install) { & "$PSScriptRoot\Install-Fish.ps1" -Source (Join-Path $PSScriptRoot 'dist\Fish') }
 } catch {
     Write-Error -ErrorAction Continue $_.Exception.Message

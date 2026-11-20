@@ -1,15 +1,19 @@
-param([Parameter(Mandatory=$true)][string]$Jdk,[switch]$Test)
+param([Parameter(Mandatory=$true)][string]$Jdk,[switch]$Test,[string]$Library)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
+if (-not $Library) { $Library = Join-Path $root 'build\fish-native.dll' }
 $manifest = Import-PowerShellDataFile (Join-Path $root 'tools.psd1')
 $zig = Join-Path $root ('.tools\' + $manifest.Native.Directory + '\zig.exe')
 if (-not (Test-Path -LiteralPath $zig)) { & "$PSScriptRoot\prepare-tools.ps1" -Kind Native }
 $env:ZIG_GLOBAL_CACHE_DIR = Join-Path $root '.tools\zig-cache'
+$frame=Join-Path $root 'build\start-frame'
+& "$PSScriptRoot\build-start-frame.ps1" -Zig $zig -OutputDirectory $frame
 & $zig cc -shared -O2 -Wall -Wextra -Werror -target x86_64-windows-gnu `
     ("-I" + (Join-Path $Jdk 'include')) ("-I" + (Join-Path $Jdk 'include\win32')) `
     (Join-Path $root 'src\native\fish-kerberos.c') `
     (Join-Path $root 'src\native\fish-updates.c') (Join-Path $root 'src\native\fish-shortcuts.c') `
-    -lsecur32 -ladvapi32 -lbcrypt -lwintrust -lole32 -lshell32 -luuid -ldwmapi -lgdi32 -luser32 -o (Join-Path $root 'build\fish-native.dll')
+    (Join-Path $root 'src\native\fish-start-banner.c') (Join-Path $frame 'start-frame.res') `
+    -lsecur32 -ladvapi32 -lbcrypt -lwintrust -lole32 -lshell32 -luuid -ldwmapi -lgdi32 -luser32 -o $Library
 if ($LASTEXITCODE -ne 0) { throw 'Windows integration compilation failed.' }
 if ($Test) {
     $fixture=Join-Path $root 'build\kerberos-native-smoke.exe'

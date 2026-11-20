@@ -326,6 +326,7 @@ public final class Ui {
             while (change.next()) {
                 for (Window w:change.getAddedSubList()) {
                     preparePopup(w);
+                    if (w instanceof Stage) StartupBanner.dismiss(); // First workspace or recovery prompt.
                     if (dark() && w instanceof Stage s && s.getScene()!=null) {
                         var classes=s.getScene().getRoot().getStyleClass();
                         if (classes.contains("fish-dialog-shell")) WindowBorder.prepareFirstFrame(s,ColorRole.DIALOG);

@@ -30,6 +30,7 @@ public final class ProfilesEditor extends BorderPane {
     private final ComboBox<Object> loginFrom=new ComboBox<>();
     private final GridPane connection=new GridPane();
     private final Label error=new Label(" ");
+    private final Label transport=new Label();
     private final Button save,done,use,discard,add,duplicate,up,down,delete;
     private Profile selected,credentialOrigin;
     private boolean loading,dirty,loginChanges,saving,credentialSaving,passwordModeInitialized;
@@ -91,6 +92,10 @@ public final class ProfilesEditor extends BorderPane {
         field(connection,row++,"Host",host);
         field(connection,row++,"Device (optional)",device);
         field(connection,row++,"Sign in with",authentication);
+        transport.setWrapText(true);
+        transport.setMaxWidth(Double.MAX_VALUE);
+        Ui.role(transport,"muted");
+        wide(connection,row++,transport);
         loginLabel=field(connection,row++,"Use login from...",loginFrom);
         usernameLabel=field(connection,row++,"Username",username);
         wide(connection,row++,automatic);
@@ -295,6 +300,8 @@ public final class ProfilesEditor extends BorderPane {
     private void updateLoginControls() {
         boolean independent=loginSource()==null;
         boolean windows=kerberos();
+        transport.setText(windows ? "Windows Kerberos sends a ticket, not your password. Terminal traffic is not encrypted."
+                : "This connection is not encrypted. Passwords and terminal traffic can be read in transit.");
         for (Node input:List.of(username,passwordWrapper,automatic,remember)) {
             input.setDisable(windows || credentialSaving || !independent);
             input.setVisible(!windows);

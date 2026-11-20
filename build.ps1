@@ -7,7 +7,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
-$version = '0.10.4'
+$version = '0.10.5'
 $image = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ImageDirectory)
 $distribution = Split-Path -Parent $image
 if ((Split-Path -Leaf $image) -ne 'Fish') { throw 'ImageDirectory must end in Fish (the jpackage application name).' }
@@ -43,12 +43,21 @@ if ($Task -eq 'Installer') {
     }
     & "$PSScriptRoot\scripts\build-installer.ps1" -Jdk $Jdk -Image $image -Version $version
     Copy-Item Install-Fish.ps1,Uninstall-Fish.ps1 $distribution -Force
-    Compress-Archive -Path $image -DestinationPath (Join-Path $distribution "Fish-$version-windows-x64.zip") -Force
+    $portable = Join-Path $distribution "Fish-$version-windows-x64.zip"
+    $stagedZip = Join-Path $distribution ("Fish-portable-" + [guid]::NewGuid().ToString('N') + '.zip')
+    try {
+        # Windows tar can read shared source files without the exclusive-sharing failures of Compress-Archive.
+        & (Join-Path ([Environment]::SystemDirectory) 'tar.exe') -a -c -f $stagedZip -C $distribution Fish
+        if ($LASTEXITCODE -ne 0) { throw 'Could not archive the Fish application image.' }
+        Move-Item -LiteralPath $stagedZip -Destination $portable -Force
+    } finally {
+        if (Test-Path -LiteralPath $stagedZip) { Remove-Item -LiteralPath $stagedZip -Force }
+    }
     $checksums = foreach ($file in @("Fish-$version-setup.exe","Fish-$version-windows-x64.zip",'Fish-source.zip','Install-Fish.ps1','Uninstall-Fish.ps1')) {
         (Get-FileHash (Join-Path $distribution $file) -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $file
     }
     [IO.File]::WriteAllLines((Join-Path $distribution 'SHA256SUMS.txt'),$checksums,[Text.UTF8Encoding]::new($false))
-    Write-Host "Fish $version user-wide installer, SmartScreen-free Install-Fish.ps1, and portable ZIP ready."
+    Write-Host "Fish $version installer, per-user installation script, and portable ZIP ready."
     return
 }
 if (-not (Test-Path 'vendor\tn5250j\src')) {
@@ -64,8 +73,14 @@ foreach ($directory in @('build\classes','build\generated','build\test-classes',
     if (Test-Path $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
 }
 New-Item -ItemType Directory -Force build\classes,build\generated,dist | Out-Null
+$binaryDir = Join-Path $PSScriptRoot 'dist'
+$native = Join-Path $PSScriptRoot 'build\fish-native.dll'
+if ($Task -eq 'Package') {
+    $binaryDir = (New-Item -ItemType Directory -Force build\package-input).FullName
+    $native = Join-Path $binaryDir 'fish-native.dll'
+}
 & "$PSScriptRoot\scripts\prepare-core.ps1"
-& "$PSScriptRoot\scripts\build-native.ps1" -Jdk $Jdk -Test:($Task -in @('Smoke','Check','Test'))
+& "$PSScriptRoot\scripts\build-native.ps1" -Jdk $Jdk -Library $native -Test:($Task -in @('Smoke','Check','Test'))
 $sources = @(
     Get-ChildItem src -Recurse -Filter *.java
     Get-ChildItem build\generated -Recurse -Filter *.java
@@ -78,17 +93,19 @@ Copy-Item MANUAL.md build\classes
 & "$Jdk\bin\java.exe" @fxJvmArgs -cp build\classes fish.Main --config schema --file build\classes\CONFIG-SCHEMA.json
 if ($LASTEXITCODE -ne 0) { throw 'Configuration catalog generation failed.' }
 Copy-Item build\classes\CONFIG-SCHEMA.json CONFIG-SCHEMA.json -Force
-& "$Jdk\bin\jar.exe" --create --file dist\Fish.jar --main-class fish.Main -C build\classes .
+& "$Jdk\bin\jar.exe" --create --file (Join-Path $binaryDir 'Fish.jar') --main-class fish.Main -C build\classes .
 if ($LASTEXITCODE -ne 0) { throw 'JAR creation failed.' }
-Copy-Item scripts\credential-store.ps1 dist\credential-store.ps1 -Force
-Copy-Item build\fish-native.dll dist\fish-native.dll -Force
-Copy-Item vendor\tn5250j\LICENSE dist\COPYING-TN5250J -Force
+Copy-Item scripts\credential-store.ps1 (Join-Path $binaryDir 'credential-store.ps1') -Force
+if ($Task -ne 'Package') { Copy-Item $native (Join-Path $binaryDir 'fish-native.dll') -Force }
+Copy-Item vendor\tn5250j\LICENSE (Join-Path $binaryDir 'COPYING-TN5250J') -Force
 if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task -eq 'Check') {
     $testFiles = Get-ChildItem tests -Recurse -Filter *.java
     $testSources = $testFiles | ForEach-Object { '"' + $_.FullName.Replace('\','\\') + '"' }
     [IO.File]::WriteAllLines((Join-Path $PSScriptRoot 'build\tests.txt'), $testSources, [Text.UTF8Encoding]::new($false))
     & "$Jdk\bin\javac.exe" --release 25 -encoding UTF-8 -Xlint:-deprecation,-removal --module-path $fxLib --add-modules $fxModules -cp build\classes -d build\test-classes '@build\tests.txt'
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed.' }
+    & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.StartupQueueNoticeSmoke
+    if ($LASTEXITCODE -ne 0) { throw 'Experimental startup queue notice fixture failed.' }
     if ($Task -eq 'Maintenance') {
         foreach ($fixture in @('fish.Tests','fish.update.MaintenanceSmoke','fish.ui.NoticeSmoke','fish.ui.MaintenanceUiSmoke','fish.ui.KeyboardPreferencesSmoke','fish.ui.SettingsTutorialSmoke','fish.LaunchBrokerSmoke','fish.ui.WindowRevisionSmoke','fish.ui.LayoutFeatureSmoke','fish.ui.ShortcutRefinementSmoke','fish.ui.UsabilityIterationSmoke','fish.ui.SimplePaneSmoke','fish.ui.CursorRenderingSmoke','fish.ui.BetaSettingsSmoke','fish.ui.BetaRecoverySmoke','fish.ui.BetaUiSmoke','fish.ui.ZeroTenFeaturesSmoke')) {
             $fixtureArgs=@()
@@ -126,7 +143,7 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.DpiAndLatencySmoke
     if ($LASTEXITCODE -ne 0) { throw 'DPI 1px border and latency smoke checks failed.' }
     & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.ui.ZeroTenFeaturesSmoke
-    if ($LASTEXITCODE -ne 0) { throw 'Fish 0.10.4 feature and stress checks failed.' }
+    if ($LASTEXITCODE -ne 0) { throw "Fish $version feature and stress checks failed." }
     if ($Task -eq 'Test') {
         & "$Jdk\bin\java.exe" -ea '-Dfish.testMode=true' @fxJvmArgs -cp 'build\classes;build\test-classes' fish.DesktopRendering
         if ($LASTEXITCODE -ne 0) { throw 'Desktop rendering/window tests failed.' }
@@ -137,7 +154,7 @@ if ($Task -eq 'Maintenance' -or $Task -eq 'Smoke' -or $Task -eq 'Test' -or $Task
 if ($Task -eq 'Package') {
     if (Test-Path -LiteralPath $image) { throw 'Application image exists. Close/preserve it first, or use -ImageDirectory dist\Fish-VERSION\Fish for a side-by-side build.' }
     New-Item -ItemType Directory -Force build\package-input | Out-Null
-    Copy-Item dist\Fish.jar,dist\fish-native.dll,dist\credential-store.ps1,dist\COPYING-TN5250J,Install-Fish.ps1,Uninstall-Fish.ps1,README.md,MANUAL.md,AI-CONFIG.md,CONFIG-SCHEMA.json,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
+    Copy-Item Install-Fish.ps1,Uninstall-Fish.ps1,README.md,MANUAL.md,AI-CONFIG.md,CONFIG-SCHEMA.json,COMPATIBILITY.md,LICENSE,NOTICE build\package-input -Force
     & "$Jdk\bin\java.exe" @fxJvmArgs -cp build\classes fish.ui.FishIcon build\Fish.ico
     if ($LASTEXITCODE -ne 0) { throw 'Fish icon generation failed.' }
     New-Item -ItemType Directory -Force (Split-Path -Parent $image) | Out-Null

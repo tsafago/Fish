@@ -243,7 +243,7 @@ public final class Workspace {
     private List<MenuItem> normalEditItems=List.of(),kioskEditItems=List.of();
     private StateStore.Tutorial tutorialStatus;
     private TutorialDialog tutorial;
-    private boolean connectOnStartup,startupHandled;
+    private boolean connectOnStartup,startupHandled,skipQueueNotice,autoResetTypingErrors;
     private UpdateSettings updateSettings;
     private Map<String,String> keyboardRecovery;
     private final UpdateController updates;
@@ -277,6 +277,8 @@ public final class Workspace {
         appearance=state.appearance();
         tutorialStatus=state.tutorial();
         connectOnStartup=state.connectOnStartup();
+        skipQueueNotice=state.skipQueueNotice();
+        autoResetTypingErrors=state.autoResetTypingErrors();
         updateSettings=state.updates();
         keyboardRecovery=state.keyboardRecovery();
         addProfile=state.addProfile();
@@ -768,6 +770,22 @@ public final class Workspace {
     public Map<String,String> keyboardRecovery() { return keyboardRecovery; }
     void keyboardRecovery(Map<String,String> value) { KeyboardMigration.validateRecovery(value); keyboardRecovery=Map.copyOf(value); changed(); }
     public boolean connectOnStartup() { return connectOnStartup; }
+    public boolean skipQueueNotice() { return skipQueueNotice; }
+    boolean autoResetTypingErrors() { return autoResetTypingErrors; }
+    void autoResetTypingErrors(boolean value) {
+        if (autoResetTypingErrors==value) return;
+        autoResetTypingErrors=value;
+        changed();
+    }
+    void skipQueueNotice(boolean value) {
+        if (applyQueueNoticeSetting(value)) changed();
+    }
+    private boolean applyQueueNoticeSetting(boolean value) {
+        if (skipQueueNotice==value) return false;
+        skipQueueNotice=value;
+        panes.values().forEach(SessionPane::queueNoticeSettingChanged);
+        return true;
+    }
     public void connectOnStartup(boolean value) {
         connectOnStartup=value; command("Connect panes on startup").setSelected(value); changed();
     }
@@ -1083,7 +1101,7 @@ public final class Workspace {
         stateBuildCount++;
         return new StateStore.State(profileList(),currentLayout(),getWidth(),getHeight(),Ui.theme(),lastProfile,
                 shortcuts.overrides(),highlightActive,appearance,tutorialStatus,connectOnStartup,updateSettings,keyboardRecovery,
-                List.of(),addProfile,savedLayouts,selectedLayout,displayState());
+                List.of(),addProfile,savedLayouts,selectedLayout,displayState(),skipQueueNotice,autoResetTypingErrors);
     }
 
     private Map<UUID,SavedLayout.Display> displayState() {
@@ -1897,6 +1915,13 @@ public final class Workspace {
         }
         host.getItems().add(new SeparatorMenuItem());
         action(host,"Last pane notice...",() -> active.showLastNotice());
+        if (Boolean.getBoolean(fish.Main.NOTICE_DIAGNOSTICS_PROPERTY)) {
+            MenuItem diagnostic=new MenuItem("Startup notice diagnostic...");
+            diagnostic.setOnAction(event -> {
+                if (active!=null && !closing && !KioskMode.isEnabled()) active.showStartupNoticeDiagnostic();
+            });
+            host.getItems().add(diagnostic);
+        }
 
         Menu help=menu(bar,"Help");
         this.helpMenu=help;
@@ -1914,7 +1939,7 @@ public final class Workspace {
             try { new ManualDialog(this).setVisible(true); }
             catch (java.io.IOException e) { Ui.error(stage,"The manual could not be opened: "+e.getMessage()); }
         });
-        help.getItems().addFirst(guideCommand.createMenuItem("Quick guide"));
+        help.getItems().add(guideCommand.createMenuItem("Quick guide"));
         action(help,"Keyboard reference",() -> preferences("Keyboard Shortcuts"));
 
         for (int i=1;i<=24;i++) {
@@ -2131,6 +2156,8 @@ public final class Workspace {
         Appearance previous=appearance;
         appearance=value.appearance(); highlightActive=value.highlightActive();
         connectOnStartup=value.connectOnStartup(); updateSettings=value.updates(); tutorialStatus=value.tutorial(); keyboardRecovery=value.keyboardRecovery();
+        applyQueueNoticeSetting(value.skipQueueNotice());
+        autoResetTypingErrors=value.autoResetTypingErrors();
         shortcuts.apply(value.shortcuts(),profileList());
         if (!previous.font().equals(appearance.font())) resolveFont();
         for (SessionPane pane:panes.values()) {

@@ -13,6 +13,8 @@ public final class NetworkSession implements AutoCloseable {
     private final Socket socket = new Socket();
     private final ArrayBlockingQueue<byte[]> outbound = new ArrayBlockingQueue<>(128);
     private final ArrayBlockingQueue<byte[]> inbound = new ArrayBlockingQueue<>(256);
+    private final Object inboundOrder = new Object();
+    private int inboundPending;
     private final AtomicBoolean drainScheduled = new AtomicBoolean();
     private final Consumer<byte[]> records;
     private final Consumer<String> status;
@@ -54,6 +56,12 @@ public final class NetworkSession implements AutoCloseable {
     public boolean isConnected() { return connected && !closed; }
     public String allocatedDevice() { return allocatedDevice; }
     public String connectionDetails() { return connectionDetails; }
+    /** Run only while no newer complete record is waiting to reach the terminal. */
+    public void ifInboundIdle(Runnable action) {
+        synchronized (inboundOrder) {
+            if (isConnected() && inboundPending==0) action.run();
+        }
+    }
 
     public void connect(String host, int port, Map<String, String> environment) {
         connect(host,port,environment,null);
@@ -91,16 +99,15 @@ public final class NetworkSession implements AutoCloseable {
                     while (!closed) {
                         byte[] record = codec.readRecord();
                         if (closed) return;
-                        enqueueInbound(record);
                         if (first) {
                             socket.setSoTimeout(0);
                             connected = true;
                             allocatedDevice=codec.allocatedDevice();
                             connectionDetails+=(connectionDetails.isEmpty() ? "" : "\n")+"IBM-3477-FC"
                                     +(allocatedDevice.isEmpty() ? "" : " - device "+allocatedDevice)+codec.authenticationStatus();
-                            status.accept("Connected");
-                            first = false;
                         }
+                        enqueueInbound(record);
+                        if (first) { status.accept("Connected"); first=false; }
                     }
                 }
             } catch (Exception e) {
@@ -120,6 +127,7 @@ public final class NetworkSession implements AutoCloseable {
             if (!closed) records.accept(record);
             return;
         }
+        synchronized (inboundOrder) { inboundPending++; }
         while (!closed && !inbound.offer(record, 40, TimeUnit.MILLISECONDS)) {
             scheduleDrain();
         }
@@ -137,7 +145,8 @@ public final class NetworkSession implements AutoCloseable {
             int processed = 0;
             byte[] record;
             while (!closed && processed < 64 && (record = inbound.poll()) != null) {
-                records.accept(record);
+                try { records.accept(record); }
+                finally { synchronized (inboundOrder) { inboundPending--; } }
                 processed++;
             }
         } finally {

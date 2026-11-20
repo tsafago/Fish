@@ -35,7 +35,7 @@ import fish.security.KioskMode;
  * Hermetic verification suite for all Fish 0.10.0 fixes and features:
  *  1. 8-pane 300% zoom viewport-clipped buffer sizing, zero crash/slowdown, per-pane relative 100% (auto) zoom, HUD popup & layout persistence
  *  2. scroll + / scroll - KeyChord parsing, KeyRecorder wheel capture, and hovered-pane Ctrl+Scroll dispatch
- *  3. Startup-error Factory reset (delete config) with Kiosk admin gate + Uninstall config/Startup deletion
+ *  3. Startup-error factory reset with Kiosk admin gate; uninstall preserves config and user layouts
  *  4. Independent Windows sign-in shortcuts and Settings export.
  *  5. Admin-controlled Kiosk mode full UI/menu/logo/splitter/zoom/persistence/launch lockdown + live admin unlock
  *  6. Stuck / Reset callout ("Are you stuck? Press Enter or press this button!") with 0ms dismissal on Enter & button
@@ -596,12 +596,25 @@ public final class ZeroTenFeaturesSmoke {
                 return null;
             });
 
-            // 4. Hermetic PowerShell Install-Fish.ps1 (-AllUsers & per-user) + Uninstall-Fish.ps1 config deletion test!
-            Path psSandbox = Files.createDirectory(root.resolve("ps-install-sandbox"));
+        } finally {
+            if (prevStartup == null) System.clearProperty("fish.test.startupDir"); else System.setProperty("fish.test.startupDir", prevStartup);
+            if (prevExe == null) System.clearProperty("fish.test.executable"); else System.setProperty("fish.test.executable", prevExe);
+        }
+        verifyInstallScripts(root);
+    }
+
+    private static void verifyInstallScripts(Path root) throws Exception {
+            Path psSandbox = Files.createDirectory(root.resolve("ps-install-sandbox")).toAbsolutePath();
             Path fakeSource = Files.createDirectory(psSandbox.resolve("src-image"));
             Files.createDirectories(fakeSource.resolve("app"));
             Files.createDirectories(fakeSource.resolve("runtime"));
             Files.writeString(fakeSource.resolve("Fish.exe"), "MZ-fake-app");
+            Files.writeString(fakeSource.resolve("app/Fish.cfg"), "app.mainclass=fish.Main\napp.classpath=$APPDIR\\Fish.jar\n");
+            for (String required : List.of("app/Fish.jar","app/fish-native.dll","runtime/lib/modules","runtime/bin/jli.dll","runtime/bin/server/jvm.dll")) {
+                var asset=fakeSource.resolve(required);
+                Files.createDirectories(asset.getParent());
+                Files.writeString(asset,"fixture");
+            }
             Files.copy(Path.of("Install-Fish.ps1"), fakeSource.resolve("Install-Fish.ps1"), StandardCopyOption.REPLACE_EXISTING);
             Files.copy(Path.of("Uninstall-Fish.ps1"), fakeSource.resolve("Uninstall-Fish.ps1"), StandardCopyOption.REPLACE_EXISTING);
 
@@ -629,53 +642,63 @@ public final class ZeroTenFeaturesSmoke {
             env.put("FISH_TEST_COMMON_PROGRAMS", testCommonProgs.toString());
             env.put("FISH_TEST_COMMON_DESKTOP", testCommonDesk.toString());
 
-            // Seed a stale MSI-style install at %LOCALAPPDATA%\Fish with a read-only Fish.aot + duplicate Programs\Fish\Fish.lnk
+            // Seed another MSI-style install at %LOCALAPPDATA%\Fish with its own shortcuts.
             Path staleMsiDir = Files.createDirectories(testLocalAppData.resolve("Fish").resolve("app"));
             Path staleExe = Files.writeString(testLocalAppData.resolve("Fish").resolve("Fish.exe"), "MZ-stale-msi");
             Path staleAot = Files.writeString(staleMsiDir.resolve("Fish.aot"), "stale-aot");
-            var dosView = Files.getFileAttributeView(staleAot, java.nio.file.attribute.DosFileAttributeView.class);
-            if (dosView != null) dosView.setReadOnly(true);
             LayoutShortcuts.createApplicationLink(testUserProgs.resolve("Fish").resolve("Fish.lnk"), staleExe);
             LayoutShortcuts.createApplicationLink(testUserDesk.resolve("Fish.lnk"), staleExe);
 
-            // Per-user install to %LOCALAPPDATA%\Programs\Fish reconciles old %LOCALAPPDATA%\Fish, read-only files, and duplicate shortcuts!
+            // A script install is not a request to retire a different copy.
             Path scriptUserDest = testLocalAppData.resolve("Programs").resolve("Fish");
             runPowerShell(env, "-File", Path.of("Install-Fish.ps1").toAbsolutePath().toString(),
                     "-Source", fakeSource.toString(), "-Destination", scriptUserDest.toString(), "-Quiet");
             check(Files.exists(scriptUserDest.resolve("Fish.exe"))
-                    && !Files.exists(testLocalAppData.resolve("Fish"))
+                    && Files.readString(staleAot).equals("stale-aot")
                     && Files.exists(testUserProgs.resolve("Fish.lnk"))
-                    && !Files.exists(testUserProgs.resolve("Fish").resolve("Fish.lnk"))
+                    && Files.exists(testUserProgs.resolve("Fish").resolve("Fish.lnk"))
                     && Files.exists(testUserDesk.resolve("Fish.lnk")),
-                    "Install-Fish.ps1 cleans superseded %LOCALAPPDATA%\\Fish (even with read-only Fish.aot) and reconciles duplicate Start Menu/Desktop shortcuts");
+                    "Install-Fish.ps1 leaves the separate installation and its shortcuts alone");
             runPowerShell(env, "-File", Path.of("Uninstall-Fish.ps1").toAbsolutePath().toString(),
                     "-Destination", scriptUserDest.toString(), "-Quiet");
             check(!Files.exists(scriptUserDest.resolve("Fish.exe"))
                     && !Files.exists(testUserProgs.resolve("Fish.lnk"))
-                    && !Files.exists(testUserDesk.resolve("Fish.lnk")),
-                    "Uninstall-Fish.ps1 removes reconciled %LOCALAPPDATA%\\Programs\\Fish and shortcuts");
+                    && Files.exists(testUserDesk.resolve("Fish.lnk")),
+                    "Uninstall removes its own application shortcut, not the other installation's");
+            Files.delete(testUserDesk.resolve("Fish.lnk"));
 
-            // Per-user install + seed %APPDATA%\Fish\workspace.xml + Startup .lnk -> Uninstall deletes config & shortcuts!
+            // User-created data under the image and in shell/profile folders survives.
             runPowerShell(env, "-File", Path.of("Install-Fish.ps1").toAbsolutePath().toString(),
                     "-Source", fakeSource.toString(), "-Destination", userDest.toString(), "-DesktopShortcut", "-Quiet");
             check(Files.exists(userDest.resolve("Fish.exe"))
                     && Files.exists(testUserProgs.resolve("Fish.lnk"))
                     && Files.exists(testUserDesk.resolve("Fish.lnk")),
                     "Per-user Install-Fish.ps1 installs Fish.exe and Start Menu/Desktop shortcuts");
+            Files.delete(userDest.resolve("Fish.exe"));
+            runPowerShell(env, "-File", Path.of("Install-Fish.ps1").toAbsolutePath().toString(),
+                    "-Source", fakeSource.toString(), "-Destination", userDest.toString(), "-Quiet");
+            check(Files.isRegularFile(userDest.resolve("Fish.exe")), "Rerun repairs a missing owned launcher");
 
             Files.createDirectories(testAppData.resolve("Fish"));
             Files.writeString(testAppData.resolve("Fish").resolve("workspace.xml"), "<properties/>");
             LayoutShortcuts.create(testStartup.resolve("Floor Auto.lnk"), userDest.resolve("Fish.exe"),
                     testAppData.resolve("Fish"), UUID.randomUUID());
+            Path extra = Files.writeString(userDest.resolve("app").resolve("notes.txt"), "keep");
+            runPowerShellExpect(false, env, "-File", Path.of("Install-Fish.ps1").toAbsolutePath().toString(),
+                    "-Source", fakeSource.toString(), "-Destination", userDest.toString(), "-Quiet");
+            check(Files.isRegularFile(userDest.resolve("Fish.exe")) && Files.readString(extra).equals("keep"),
+                    "Rerun refuses mixed destination without changing it");
+            Files.delete(userDest.resolve("Fish.exe")); // An incomplete image must still uninstall.
 
-            runPowerShell(env, "-File", Path.of("Uninstall-Fish.ps1").toAbsolutePath().toString(),
-                    "-Destination", userDest.toString(), "-Quiet");
+            runPowerShell(env, "-File", userDest.resolve("Uninstall-Fish.ps1").toAbsolutePath().toString(), "-Quiet");
             check(!Files.exists(userDest.resolve("Fish.exe"))
-                    && !Files.exists(testAppData.resolve("Fish"))
-                    && !Files.exists(testStartup.resolve("Floor Auto.lnk"))
+                    && Files.readString(extra).equals("keep")
+                    && !Files.exists(userDest.resolve("Uninstall-Fish.ps1"))
+                    && Files.readString(testAppData.resolve("Fish").resolve("workspace.xml")).equals("<properties/>")
+                    && Files.exists(testStartup.resolve("Floor Auto.lnk"))
                     && !Files.exists(testUserProgs.resolve("Fish.lnk"))
                     && !Files.exists(testUserDesk.resolve("Fish.lnk")),
-                    "Uninstall-Fish.ps1 deletes Fish installation, %APPDATA%\\Fish config, Startup layout .lnk, and shortcuts");
+                    "Incomplete script install removed without deleting user data or startup layout");
 
             // System-wide -AllUsers install + Uninstall -AllUsers!
             Files.createDirectories(testAppData.resolve("Fish"));
@@ -693,18 +716,18 @@ public final class ZeroTenFeaturesSmoke {
             runPowerShell(env, "-File", Path.of("Uninstall-Fish.ps1").toAbsolutePath().toString(),
                     "-Destination", sysDest.toString(), "-AllUsers", "-Quiet");
             check(!Files.exists(sysDest.resolve("Fish.exe"))
-                    && !Files.exists(testAppData.resolve("Fish"))
-                    && !Files.exists(testProgData.resolve("Fish"))
+                    && Files.readString(testAppData.resolve("Fish").resolve("workspace.xml")).equals("<properties/>")
+                    && Files.readString(testProgData.resolve("Fish").resolve("machine.xml")).equals("<properties/>")
                     && !Files.exists(testCommonProgs.resolve("Fish.lnk"))
                     && !Files.exists(testCommonDesk.resolve("Fish.lnk")),
-                    "Uninstall-Fish.ps1 -AllUsers deletes system-wide install, %APPDATA%\\Fish, %ProgramData%\\Fish, and Common shortcuts");
-        } finally {
-            if (prevStartup == null) System.clearProperty("fish.test.startupDir"); else System.setProperty("fish.test.startupDir", prevStartup);
-            if (prevExe == null) System.clearProperty("fish.test.executable"); else System.setProperty("fish.test.executable", prevExe);
-        }
+                    "Machine uninstall preserves user/machine data and removes its own Common shortcuts");
     }
 
     private static void runPowerShell(Map<String, String> extraEnv, String... psArgs) throws Exception {
+        runPowerShellExpect(true, extraEnv, psArgs);
+    }
+
+    private static void runPowerShellExpect(boolean success, Map<String, String> extraEnv, String... psArgs) throws Exception {
         List<String> cmd = new ArrayList<>();
         cmd.add("powershell.exe");
         cmd.add("-NoProfile");
@@ -715,9 +738,12 @@ public final class ZeroTenFeaturesSmoke {
         pb.environment().putAll(extraEnv);
         pb.redirectErrorStream(true);
         Process proc = pb.start();
+        if (!proc.waitFor(30, TimeUnit.SECONDS)) {
+            proc.destroyForcibly(); // Only this fixture's PowerShell.
+            throw new AssertionError("Fixture timed out: " + String.join(" ", psArgs));
+        }
         String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        int code = proc.waitFor();
-        check(code == 0, "PowerShell command failed (" + code + "): " + String.join(" ", psArgs) + "\n" + output);
+        check((proc.exitValue() == 0) == success, "Unexpected exit " + proc.exitValue() + ": " + String.join(" ", psArgs) + "\n" + output);
     }
 
     private static void verifyEightPaneSpatialTraversalAndCustomColorPersistence(Path root, int port) throws Exception {
@@ -987,8 +1013,15 @@ public final class ZeroTenFeaturesSmoke {
     }
 
     public static void main(String[] args) throws Exception {
+        if (Arrays.equals(args, new String[] {"--install-scripts-only"})) {
+            Path root = Files.createTempDirectory(Path.of("build"), "script-smoke-").toAbsolutePath();
+            try { verifyInstallScripts(root); }
+            finally { FxTestSupport.deleteTree(root); }
+            System.out.println("PASS isolated script install/uninstall checks: " + checks);
+            return;
+        }
         Ui.install();
-        check("0.10.4".equals(Main.VERSION), "Main.VERSION is 0.10.4: " + Main.VERSION);
+        check("0.10.5".equals(Main.VERSION), "Main.VERSION is 0.10.5: " + Main.VERSION);
         Path root = Files.createTempDirectory(Path.of("build"), "zero-ten-smoke-");
         try (ShortcutFixture ignored=new ShortcutFixture(root.resolve("shell-folders")); DemoHost host = new DemoHost()) {
             verifyScrollBindingsAndRecorder(root);
@@ -1006,7 +1039,7 @@ public final class ZeroTenFeaturesSmoke {
             FxTestSupport.closeAllWindows();
             FxTestSupport.deleteTree(root);
         }
-        System.out.println("PASS Fish 0.10.4 spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
+        System.out.println("PASS Fish "+Main.VERSION+" spatial-traversal/primary-color/zoom/wheel/autostart/kiosk/reset/system-install checks: " + checks);
         Ui.finishTestRun();
     }
 }

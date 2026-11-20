@@ -12,6 +12,7 @@
 #include <shobjidl.h>
 #include <objidl.h>
 #include <msi.h>
+#include <msiquery.h>
 #include <tlhelp32.h>
 #include <dwmapi.h>
 #include <commctrl.h>
@@ -22,6 +23,8 @@
 #include "fish-setup-common.h"
 #include "fish-user-launch.h"
 #include "fish-setup-version.h"
+#include "fish-image-check.h"
+#include "fish-window-fade.h"
 
 /* Restrained Fish chrome; supports per-user (no admin) by default and optional all-users (UAC) install. */
 #define WIDTH 680
@@ -36,13 +39,15 @@
 #define ALL_USERS 105
 #define OPTIONS 106
 #define MINIMIZE 107
+#define DETAILS 108
+#define FISH_PARTIAL_FOLDER 0x20000001
 #define FISH_UPGRADE L"{55B0674D-E226-46CB-852F-6BEDDD35A74B}"
 static COLORREF background=RGB(17,21,25),panel=RGB(25,31,37),text=RGB(229,234,240),
     muted=RGB(154,167,180),accent=RGB(123,188,203),divider=RGB(53,66,79);
 static unsigned option_paints=0;
 typedef struct { char magic[16]; ULONGLONG length; BYTE hash[32]; } Footer;
 _Static_assert(sizeof(Footer)==56,"Payload footer layout");
-static HWND window,folder,change,install,cancel,open_app,all_users,options,minimize,description,progress_bar;
+static HWND window,folder,change,install,cancel,open_app,all_users,options,minimize,description,progress_bar,details_button;
 static HFONT body_font,title_font,medium_font;
 static HBRUSH field_brush;
 static IAccPropServices *accessible_properties;
@@ -51,6 +56,11 @@ static BOOL busy=FALSE,completed=FALSE,reboot=FALSE,updating=FALSE,registered_in
 static BOOL system_wide_mode=FALSE,custom_folder_chosen=FALSE,elevated_autostart=FALSE,elevated_open_app=TRUE;
 static WCHAR destination[32768],user_default_dest[32768],system_default_dest[32768],data_directory[32768];
 static WCHAR status[512]=L"Ready to install for your Windows account.";
+static WCHAR problem_path[MAX_PATH],quarantine_path[MAX_PATH];
+static const WCHAR *problem_step;
+static DWORD problem_code;
+static BOOL allow_quarantine,offer_quarantine,can_retry;
+static DWORD setup_result;
 static DWORD parent_pid=0;
 static HANDLE parent_process=NULL;
 static HANDLE elevated_process=NULL;
@@ -136,46 +146,6 @@ static BOOL payload(HANDLE input,Footer *footer,ULONGLONG *offset) {
     BYTE actual[32];
     return fish_hash(input,*offset,footer->length,actual) && !memcmp(actual,footer->hash,32);
 }
-static BOOL extract(WCHAR *directory,WCHAR *msi,HANDLE *verified) {
-    WCHAR self[32768],temp[MAX_PATH],guid_text[40]; GUID guid;
-    DWORD length=GetModuleFileNameW(NULL,self,32768);
-    if (!length || length>=32768 || !GetTempPathW(MAX_PATH,temp) || FAILED(CoCreateGuid(&guid))) return FALSE;
-    StringFromGUID2(&guid,guid_text,40);
-    swprintf(directory,32768,L"%lsFish-Setup-%ls",temp,guid_text);
-    if (!CreateDirectoryW(directory,NULL)) return FALSE;
-    swprintf(msi,32768,L"%ls\\Fish-" FISH_VERSION L".msi",directory);
-    HANDLE input=CreateFileW(self,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);
-    if (input==INVALID_HANDLE_VALUE) return FALSE;
-    Footer footer; ULONGLONG offset; BOOL success=payload(input,&footer,&offset);
-    HANDLE output=INVALID_HANDLE_VALUE;
-    if (success) output=CreateFileW(msi,GENERIC_WRITE,0,NULL,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,NULL);
-    success=success && output!=INVALID_HANDLE_VALUE;
-    if (success) {
-        LARGE_INTEGER position; position.QuadPart=(LONGLONG)offset;
-        success=SetFilePointerEx(input,position,NULL,FILE_BEGIN);
-        BYTE buffer[65536]; ULONGLONG remaining=footer.length; int last=-1;
-        while (success && remaining) {
-            DWORD got=0,wrote=0,want=(DWORD)min(remaining,sizeof(buffer));
-            success=ReadFile(input,buffer,want,&got,NULL) && got && WriteFile(output,buffer,got,&wrote,NULL) && got==wrote;
-            remaining-=got;
-            int percent=(int)((footer.length-remaining)*100/footer.length);
-            if (window && success && percent!=last) { PostMessageW(window,PREPARING,percent,0); last=percent; }
-        }
-        if (success) success=FlushFileBuffers(output);
-    }
-    if (output!=INVALID_HANDLE_VALUE) CloseHandle(output);
-    if (success) {
-        output=CreateFileW(msi,GENERIC_READ,FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,NULL);
-        BY_HANDLE_FILE_INFORMATION info; LARGE_INTEGER size; BYTE actual[32];
-        success=output!=INVALID_HANDLE_VALUE && GetFileInformationByHandle(output,&info)
-            && !(info.dwFileAttributes&FILE_ATTRIBUTE_REPARSE_POINT) && GetFileSizeEx(output,&size)
-            && (ULONGLONG)size.QuadPart==footer.length && fish_hash(output,0,footer.length,actual)
-            && !memcmp(actual,footer.hash,32);
-        if (success) *verified=output;
-        else if (output!=INVALID_HANDLE_VALUE) CloseHandle(output);
-    }
-    CloseHandle(input); return success;
-}
 static BOOL running_target(const WCHAR *target) {
     HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
     if (snapshot==INVALID_HANDLE_VALUE) return TRUE;
@@ -237,199 +207,9 @@ static BOOL location_test(void) {
     }
     RemoveDirectoryW(second); RemoveDirectoryW(first); RemoveDirectoryW(root); return valid;
 }
-static void delete_tree(const WCHAR *dir) {
-    if (!dir || !*dir) return;
-    DWORD root_attr=GetFileAttributesW(dir);
-    if (root_attr==INVALID_FILE_ATTRIBUTES) return;
-    if (!(root_attr&FILE_ATTRIBUTE_DIRECTORY)) {
-        if (root_attr&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(dir,root_attr&~FILE_ATTRIBUTE_READONLY);
-        DeleteFileW(dir); return;
-    }
-    if (!(root_attr&FILE_ATTRIBUTE_REPARSE_POINT)) {
-        WCHAR *pattern=HeapAlloc(GetProcessHeap(),0,32768*sizeof(WCHAR));
-        WCHAR *child=HeapAlloc(GetProcessHeap(),0,32768*sizeof(WCHAR));
-        if (pattern && child && wcslen(dir)+6<32768) {
-            swprintf(pattern,32768,L"%ls\\*",dir);
-            WIN32_FIND_DATAW entry; HANDLE search=FindFirstFileW(pattern,&entry);
-            if (search!=INVALID_HANDLE_VALUE) {
-                do {
-                    if (!wcscmp(entry.cFileName,L".") || !wcscmp(entry.cFileName,L"..")) continue;
-                    if (wcslen(dir)+1+wcslen(entry.cFileName)>=32768) continue;
-                    swprintf(child,32768,L"%ls\\%ls",dir,entry.cFileName);
-                    if (entry.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY) delete_tree(child);
-                    else {
-                        if (entry.dwFileAttributes&FILE_ATTRIBUTE_READONLY)
-                            SetFileAttributesW(child,entry.dwFileAttributes&~FILE_ATTRIBUTE_READONLY);
-                        DeleteFileW(child);
-                    }
-                } while (FindNextFileW(search,&entry));
-                FindClose(search);
-            }
-        }
-        if (pattern) HeapFree(GetProcessHeap(),0,pattern);
-        if (child) HeapFree(GetProcessHeap(),0,child);
-    }
-    if (root_attr&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(dir,root_attr&~FILE_ATTRIBUTE_READONLY);
-    RemoveDirectoryW(dir);
-}
-static void clean_fish_install_dir(const WCHAR *dir,BOOL remove_root) {
-    if (!dir || !*dir) return;
-    WCHAR path[MAX_PATH];
-    if (wcslen(dir)+32>=MAX_PATH) return;
-    swprintf(path,MAX_PATH,L"%ls\\Fish.exe",dir);
-    if (GetFileAttributesW(path)==INVALID_FILE_ATTRIBUTES || running_target(path)) return;
-    swprintf(path,MAX_PATH,L"%ls\\app",dir); delete_tree(path);
-    swprintf(path,MAX_PATH,L"%ls\\runtime",dir); delete_tree(path);
-    if (!remove_root) return;
-    static const WCHAR *const owned[]={L"Fish.exe",L"Fish.ico",L"Fish-config.cmd",L"Install-Fish.ps1",L"Uninstall-Fish.ps1"};
-    for (unsigned i=0;i<sizeof(owned)/sizeof(owned[0]);i++) {
-        swprintf(path,MAX_PATH,L"%ls\\%ls",dir,owned[i]);
-        DWORD a=GetFileAttributesW(path);
-        if (a!=INVALID_FILE_ATTRIBUTES && !(a&FILE_ATTRIBUTE_DIRECTORY)) {
-            if (a&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(path,a&~FILE_ATTRIBUTE_READONLY);
-            DeleteFileW(path);
-        }
-    }
-    RemoveDirectoryW(dir);
-}
 static void trim_trailing_slash(WCHAR *s) {
     size_t n=wcslen(s);
     while (n>3 && (s[n-1]==L'\\' || s[n-1]==L'/')) s[--n]=0;
-}
-static void remove_conflicting_msi_products(const WCHAR *msiexec_path,const WCHAR *dest_dir,WCHAR *cmd_buf) {
-    WCHAR products[16][39]; unsigned found=0;
-    for (DWORD idx=0;idx<16;idx++) {
-        if (MsiEnumRelatedProductsW(FISH_UPGRADE,0,idx,products[found])!=ERROR_SUCCESS) break;
-        found++;
-    }
-    BOOL admin=IsUserAnAdmin();
-    for (unsigned i=0;i<found;i++) {
-        WCHAR assign[16]=L"",loc[MAX_PATH]=L"";
-        DWORD assign_len=16,loc_len=MAX_PATH;
-        MsiGetProductInfoW(products[i],INSTALLPROPERTY_ASSIGNMENTTYPE,assign,&assign_len);
-        MsiGetProductInfoW(products[i],INSTALLPROPERTY_INSTALLLOCATION,loc,&loc_len);
-        trim_trailing_slash(loc);
-        BOOL machine_assigned=!wcscmp(assign,L"1");
-        if (machine_assigned && !admin) continue;
-        BOOL same_scope=system_wide_mode ? machine_assigned : !machine_assigned;
-        BOOL diff_loc=loc[0] && _wcsicmp(loc,dest_dir)!=0;
-        if (!same_scope || diff_loc) {
-            cmd_buf[0]=0;
-            BOOL ok=fish_quote(cmd_buf,32768,msiexec_path);
-            if (ok && wcslen(cmd_buf)+180<32768) {
-                wcscat(cmd_buf,L" /x "); wcscat(cmd_buf,products[i]);
-                wcscat(cmd_buf,L" /qn /norestart MSIRESTARTMANAGERCONTROL=Disable UPGRADINGPRODUCTCODE=");
-                wcscat(cmd_buf,FISH_UPGRADE);
-                STARTUPINFOW si={0}; si.cb=sizeof(si); PROCESS_INFORMATION pi={0};
-                if (CreateProcessW(msiexec_path,cmd_buf,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&si,&pi)) {
-                    WaitForSingleObject(pi.hProcess,INFINITE);
-                    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-                }
-            }
-            if (diff_loc) clean_fish_install_dir(loc,TRUE);
-        }
-    }
-}
-static void update_existing_shortcut(const WCHAR *lnk_path,const WCHAR *exe_path) {
-    DWORD a=GetFileAttributesW(lnk_path);
-    if (a==INVALID_FILE_ATTRIBUTES || (a&FILE_ATTRIBUTE_DIRECTORY)) return;
-    IShellLinkW *sl=NULL;
-    if (FAILED(CoCreateInstance(&CLSID_ShellLink,NULL,CLSCTX_INPROC_SERVER,&IID_IShellLinkW,(void **)&sl))) return;
-    WCHAR work[MAX_PATH]=L""; wcsncpy(work,exe_path,MAX_PATH-1);
-    WCHAR *slash=wcsrchr(work,L'\\'); if (slash && slash>work+2) *slash=0;
-    IShellLinkW_SetPath(sl,exe_path);
-    IShellLinkW_SetWorkingDirectory(sl,work);
-    IShellLinkW_SetIconLocation(sl,exe_path,0);
-    IShellLinkW_SetDescription(sl,L"Fish 5250 Workspace");
-    IPersistFile *pf=NULL;
-    if (SUCCEEDED(IShellLinkW_QueryInterface(sl,&IID_IPersistFile,(void **)&pf))) {
-        if (SUCCEEDED(IPersistFile_Save(pf,lnk_path,TRUE))) {
-            IPersistFile_SaveCompleted(pf,lnk_path);
-            SetFileAttributesW(lnk_path,FILE_ATTRIBUTE_ARCHIVE);
-            SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,lnk_path,NULL);
-            WCHAR parent[MAX_PATH]=L""; wcsncpy(parent,lnk_path,MAX_PATH-1);
-            WCHAR *ps=wcsrchr(parent,L'\\');
-            if (ps) { *ps=0; SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,parent,NULL); }
-        }
-        IPersistFile_Release(pf);
-    }
-    IShellLinkW_Release(sl);
-}
-static void reconcile_shortcuts_in_known_folder(const GUID *folder_id,BOOL is_programs,const WCHAR *exe_path) {
-    PWSTR base=NULL;
-    if (FAILED(SHGetKnownFolderPath(folder_id,0,NULL,&base)) || !base) return;
-    WCHAR path[MAX_PATH];
-    if (wcslen(base)+32<MAX_PATH) {
-        if (is_programs) {
-            /* MSI installs Start Menu\Programs\Fish\Fish.lnk; remove duplicate flat Programs\Fish.lnk if present. */
-            swprintf(path,MAX_PATH,L"%ls\\Fish.lnk",base);
-            DWORD a=GetFileAttributesW(path);
-            if (a!=INVALID_FILE_ATTRIBUTES && !(a&FILE_ATTRIBUTE_DIRECTORY)) {
-                if (a&FILE_ATTRIBUTE_READONLY) SetFileAttributesW(path,a&~FILE_ATTRIBUTE_READONLY);
-                if (DeleteFileW(path)) SHChangeNotify(SHCNE_DELETE,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path,NULL);
-            }
-            swprintf(path,MAX_PATH,L"%ls\\Fish\\Fish.lnk",base);
-            if (GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES)
-                SHChangeNotify(SHCNE_UPDATEITEM,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path,NULL);
-            swprintf(path,MAX_PATH,L"%ls\\Fish",base);
-            if (GetFileAttributesW(path)!=INVALID_FILE_ATTRIBUTES)
-                SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,path,NULL);
-            SHChangeNotify(SHCNE_UPDATEDIR,SHCNF_PATHW|SHCNF_FLUSHNOWAIT,base,NULL);
-        } else {
-            swprintf(path,MAX_PATH,L"%ls\\Fish.lnk",base);
-            update_existing_shortcut(path,exe_path);
-        }
-    }
-    CoTaskMemFree(base);
-}
-static void reconcile_user_install(const WCHAR *installed_exe,const WCHAR *dest_dir) {
-    PWSTR local=NULL;
-    if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_LocalAppData,0,NULL,&local)) && local) {
-        WCHAR alt[MAX_PATH];
-        if (wcslen(local)+24<MAX_PATH) {
-            swprintf(alt,MAX_PATH,L"%ls\\Programs\\Fish",local);
-            if (_wcsicmp(alt,dest_dir)!=0) clean_fish_install_dir(alt,TRUE);
-            swprintf(alt,MAX_PATH,L"%ls\\Fish",local);
-            if (_wcsicmp(alt,dest_dir)!=0) clean_fish_install_dir(alt,TRUE);
-        }
-        CoTaskMemFree(local);
-    }
-    /* Remove stale script-installer Uninstall key if it points elsewhere so Installed Apps has one clean entry. */
-    HKEY key=NULL;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fish",0,KEY_QUERY_VALUE,&key)==ERROR_SUCCESS) {
-        WCHAR reg_loc[MAX_PATH]=L""; DWORD bytes=sizeof(reg_loc),type=0;
-        LONG q=RegQueryValueExW(key,L"InstallLocation",NULL,&type,(BYTE *)reg_loc,&bytes);
-        RegCloseKey(key);
-        trim_trailing_slash(reg_loc);
-        if (q!=ERROR_SUCCESS || _wcsicmp(reg_loc,dest_dir)!=0 || !system_wide_mode)
-            RegDeleteTreeW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Fish");
-    }
-    HRESULT hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
-    reconcile_shortcuts_in_known_folder(&FOLDERID_Programs,TRUE,installed_exe);
-    reconcile_shortcuts_in_known_folder(&FOLDERID_Desktop,FALSE,installed_exe);
-    if (SUCCEEDED(hr)) CoUninitialize();
-}
-static BOOL cleanup_test(void) {
-    WCHAR temp[MAX_PATH],root[MAX_PATH],app[MAX_PATH],aot[MAX_PATH],exe[MAX_PATH];
-    DWORD count=GetTempPathW(MAX_PATH,temp);
-    if (!count || count>MAX_PATH-80) return FALSE;
-    swprintf(root,MAX_PATH,L"%lsFish-clean-%lu",temp,GetCurrentProcessId());
-    delete_tree(root);
-    if (!CreateDirectoryW(root,NULL)) return FALSE;
-    swprintf(app,MAX_PATH,L"%ls\\app",root);
-    swprintf(aot,MAX_PATH,L"%ls\\app\\Fish.aot",root);
-    swprintf(exe,MAX_PATH,L"%ls\\Fish.exe",root);
-    BOOL ok=CreateDirectoryW(app,NULL);
-    HANDLE h1=ok ? CreateFileW(exe,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL) : INVALID_HANDLE_VALUE;
-    if (h1!=INVALID_HANDLE_VALUE) CloseHandle(h1); else ok=FALSE;
-    HANDLE h2=ok ? CreateFileW(aot,GENERIC_WRITE,0,NULL,CREATE_ALWAYS,FILE_ATTRIBUTE_READONLY,NULL) : INVALID_HANDLE_VALUE;
-    if (h2!=INVALID_HANDLE_VALUE) CloseHandle(h2); else ok=FALSE;
-    clean_fish_install_dir(root,FALSE);
-    ok=ok && GetFileAttributesW(app)==INVALID_FILE_ATTRIBUTES && GetFileAttributesW(exe)!=INVALID_FILE_ATTRIBUTES;
-    clean_fish_install_dir(root,TRUE);
-    ok=ok && GetFileAttributesW(root)==INVALID_FILE_ATTRIBUTES;
-    delete_tree(root);
-    return ok;
 }
 static BOOL version_ok(const WCHAR *path) {
     DWORD ignored=0,size=GetFileVersionInfoSizeW(path,&ignored);
@@ -443,59 +223,7 @@ static BOOL version_ok(const WCHAR *path) {
     }
     HeapFree(GetProcessHeap(),0,info); return result;
 }
-static DWORD run_msi(void) {
-    WCHAR *memory=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,4*32768*sizeof(WCHAR));
-    if (!memory) return ERROR_OUTOFMEMORY;
-    WCHAR *directory=memory,*msi=memory+32768,*command=memory+65536,*target=memory+98304;
-    swprintf(target,32768,L"%ls\\Fish.exe",destination);
-    DWORD result=ERROR_INSTALL_FAILURE; HANDLE verified=INVALID_HANDLE_VALUE;
-    if (running_target(target)) result=ERROR_INSTALL_ALREADY_RUNNING;
-    else if (!directory_ok(destination)) result=ERROR_DIR_NOT_EMPTY;
-    else if (extract(directory,msi,&verified)) {
-        if (window) PostMessageW(window,PHASE,1,0);
-        WCHAR system[MAX_PATH]; UINT count=GetSystemDirectoryW(system,MAX_PATH);
-        if (count && count<MAX_PATH) {
-            WCHAR program[MAX_PATH]; swprintf(program,MAX_PATH,L"%ls\\msiexec.exe",system);
-            remove_conflicting_msi_products(program,destination,command);
-            clean_fish_install_dir(destination,FALSE);
-            command[0]=0;
-            BOOL valid=fish_quote(command,32768,program);
-            if (valid) wcscat(command,L" /i ");
-            valid=valid && fish_quote(command,32768,msi);
-            if (valid && wcslen(command)+140<32768) {
-                wcscat(command,system_wide_mode
-                        ? L" /qn /norestart MSIRESTARTMANAGERCONTROL=Disable ALLUSERS=1 MSIINSTALLPERUSER=\"\" INSTALLDIR="
-                        : L" /qn /norestart MSIRESTARTMANAGERCONTROL=Disable MSIINSTALLPERUSER=1 ALLUSERS=2 INSTALLDIR=");
-            } else valid=FALSE;
-            valid=valid && fish_quote(command,32768,destination);
-            STARTUPINFOW startup={0}; startup.cb=sizeof(startup); PROCESS_INFORMATION process={0};
-            if (valid && CreateProcessW(program,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&process)) {
-                if (WaitForSingleObject(process.hProcess,INFINITE)!=WAIT_OBJECT_0 || !GetExitCodeProcess(process.hProcess,&result))
-                    result=GetLastError();
-                CloseHandle(process.hThread); CloseHandle(process.hProcess);
-                if (result==ERROR_SUCCESS) {
-                    if (window) PostMessageW(window,PHASE,2,0);
-                    if (!version_ok(target)) result=ERROR_PRODUCT_VERSION;
-                }
-                if (result==ERROR_SUCCESS) {
-                    if (system_wide_mode) {
-                        // A UAC credential prompt can select a different account. The
-                        // worker owns only the machine installation, never that account's profile.
-                        HRESULT hr=CoInitializeEx(NULL,COINIT_APARTMENTTHREADED);
-                        reconcile_shortcuts_in_known_folder(&FOLDERID_CommonPrograms,TRUE,target);
-                        reconcile_shortcuts_in_known_folder(&FOLDERID_PublicDesktop,FALSE,target);
-                        if (SUCCEEDED(hr)) CoUninitialize();
-                    } else reconcile_user_install(target,destination);
-                }
-            } else result=valid ? GetLastError() : ERROR_INVALID_PARAMETER;
-        }
-    }
-    if (verified!=INVALID_HANDLE_VALUE) CloseHandle(verified);
-    if (*msi) DeleteFileW(msi);
-    if (*directory) RemoveDirectoryW(directory);
-    HeapFree(GetProcessHeap(),0,memory);
-    return result;
-}
+#include "fish-setup-repair.h"
 static DWORD WINAPI install_worker(void *unused) {
     (void)unused; PostMessageW(window,RESULT,run_msi(),0); return 0;
 }
@@ -524,8 +252,14 @@ static DWORD elevate_for_all_users(void) {
     HeapFree(GetProcessHeap(),0,params);
     return error;
 }
+static void reset_location_issue(void) {
+    if (!issue) return;
+    issue=offer_quarantine=can_retry=FALSE;
+    SetWindowTextW(install,L"Install");
+}
 static void toggle_all_users(void) {
     system_wide_mode=SendMessageW(all_users,BM_GETCHECK,0,0)==BST_CHECKED;
+    reset_location_issue();
     if (!custom_folder_chosen && !registered_installation) {
         const WCHAR *target=system_wide_mode ? system_default_dest : user_default_dest;
         if (*target) {
@@ -536,17 +270,20 @@ static void toggle_all_users(void) {
     }
     layout();
 }
-static void start_install(void) {
+static void start_install(BOOL permit_quarantine) {
     if (busy || completed || parent_process || fatal) return;
     GetWindowTextW(folder,destination,32768);
     normalize_destination();
     system_wide_mode=all_users && SendMessageW(all_users,BM_GETCHECK,0,0)==BST_CHECKED;
-    busy=TRUE; issue=FALSE; pulse=0;
+    allow_quarantine=permit_quarantine;
+    busy=TRUE; issue=offer_quarantine=can_retry=FALSE; pulse=0;
+    issue_at(L"Start Windows Installer",destination,0);
     stop_frames(); motion=(FillMotion){0}; reset_art(); set_progress(-1);
     wcscpy(status,L"Verifying the installer\u2026");
     layout();
     if (demo) return;
     if (system_wide_mode && !IsUserAnAdmin()) {
+        issue_at(L"Request administrator permission",destination,0);
         DWORD error=elevate_for_all_users();
         if (error) PostMessageW(window,RESULT,error,0);
         else { wcscpy(status,L"Installing for everyone on this PC\u2026"); SetWindowTextW(description,status); }
@@ -594,9 +331,15 @@ static BOOL finish_launch(DWORD result,BOOL update,BOOL requested,BOOL (*launch)
     return result==ERROR_SUCCESS && ((!update && !requested) || launch());
 }
 static BOOL launch_after_wash;
+static ULONGLONG closing_since;
+static void close_coast(HWND hwnd) {
+    if (closing_since) return;
+    stop_frames();
+    if (!begin_exit_fade(hwnd,motion_enabled && !contrast,&closing_since)) DestroyWindow(hwnd);
+}
 static void end_wash(HWND hwnd) {
     finishing=FALSE; stop_frames();
-    if (finish_launch(ERROR_SUCCESS,updating,launch_after_wash,launch_app)) { DestroyWindow(hwnd); return; }
+    if (finish_launch(ERROR_SUCCESS,updating,launch_after_wash,launch_app)) { close_coast(hwnd); return; }
     issue=TRUE; SetWindowTextW(install,L"Open Fish"); layout(); SetFocus(install);
 }
 static void begin_wash(BOOL requested) {
@@ -619,11 +362,19 @@ static BOOL completion_test(void) {
     completion_success=TRUE;
     return finish_launch(ERROR_SUCCESS,TRUE,TRUE,completion_launch) && completion_attempts==4;
 }
+static void select_folder(const WCHAR *path) {
+    WCHAR previous[MAX_PATH];
+    wcsncpy(previous,destination,MAX_PATH-1); previous[MAX_PATH-1]=0;
+    wcscpy(destination,path); normalize_destination();
+    SetWindowTextW(folder,destination);
+    custom_folder_chosen=TRUE;
+    if (_wcsicmp(previous,destination)) reset_location_issue();
+    layout();
+}
 static void browse(void) {
     if (demo) {
         /* Don't even create a shell picker (it can persist its last visited folder). */
-        wcscpy(destination,L"C:\\Example\\Fish"); SetWindowTextW(folder,destination);
-        custom_folder_chosen=TRUE; return;
+        select_folder(L"C:\\Example\\Fish"); return;
     }
     IFileDialog *picker=NULL;
     if (SUCCEEDED(CoCreateInstance(&CLSID_FileOpenDialog,NULL,CLSCTX_INPROC_SERVER,&IID_IFileDialog,(void **)&picker))) {
@@ -634,10 +385,7 @@ static void browse(void) {
             if (SUCCEEDED(IFileDialog_GetResult(picker,&item))) {
                 PWSTR path=NULL;
                 if (SUCCEEDED(IShellItem_GetDisplayName(item,SIGDN_FILESYSPATH,&path))) {
-                    if (directory_ok(path)) {
-                        wcscpy(destination,path); normalize_destination(); SetWindowTextW(folder,destination);
-                        custom_folder_chosen=TRUE;
-                    }
+                    if (directory_ok(path)) select_folder(path);
                     else MessageBoxW(window,L"Choose an empty local folder or an existing Fish installation.",L"Install location",MB_OK|MB_ICONINFORMATION);
                     CoTaskMemFree(path);
                 }
@@ -680,6 +428,24 @@ static void installed_location(void) {
         } else *destination=0;
     }
     normalize_destination();
+    trim_trailing_slash(user_default_dest);
+}
+static void show_details(HWND hwnd) {
+    WCHAR explanation[330],message[2000],setup_path[MAX_PATH]=L"",transaction[80]=L"";
+    if (!*problem_path) GetModuleFileNameW(NULL,setup_path,MAX_PATH);
+    DWORD code=problem_code ? problem_code : setup_result;
+    DWORD chars=FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS,NULL,code,0,
+            explanation,330,NULL);
+    if (chars) while (chars && (explanation[chars-1]==L'\r' || explanation[chars-1]==L'\n')) explanation[--chars]=0;
+    else wcscpy(explanation,offer_quarantine ? L"An incomplete Fish image was found without a matching MSI registration."
+            : L"Windows did not provide an additional description.");
+    if (problem_code && setup_result && problem_code!=setup_result)
+        swprintf(transaction,80,L"\nOriginal setup result: %lu (0x%08lX)",(unsigned long)setup_result,(unsigned long)setup_result);
+    swprintf(message,2000,L"%ls\n\nStep: %ls\nInstall folder: %.259ls\nPath: %.259ls\nWindows code: %lu (0x%08lX)\n%ls%ls%ls%ls",
+        status,problem_step ? problem_step : L"Run Windows Installer",destination,
+        *problem_path ? problem_path : setup_path,(unsigned long)code,(unsigned long)code,explanation,transaction,
+        *quarantine_path ? L"\n\nOriginal files kept at:\n" : L"",quarantine_path);
+    MessageBoxW(hwnd,message,L"Fish setup details",MB_OK|MB_ICONINFORMATION);
 }
 static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
     switch (message) {
@@ -693,10 +459,11 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             all_users=BUTTON(ALL_USERS,L"Install for all users (requires administrator)",BS_AUTOCHECKBOX);
             open_app=BUTTON(OPEN_APP,L"Open Fish when finished",BS_AUTOCHECKBOX);
             install=BUTTON(INSTALL,L"Install",BS_PUSHBUTTON);
+            details_button=BUTTON(DETAILS,L"Details",BS_PUSHBUTTON);
             #undef BUTTON
             description=CreateWindowW(L"STATIC",L"",WS_CHILD|SS_OWNERDRAW,0,0,0,0,hwnd,NULL,NULL,NULL);
             progress_bar=CreateWindowW(PROGRESS_CLASSW,L"Installation progress",WS_CHILD|WS_CLIPSIBLINGS|PBS_MARQUEE,0,0,0,0,hwnd,NULL,NULL,NULL);
-            HWND buttons[]={change,options,install,cancel,minimize};
+            HWND buttons[]={change,options,install,cancel,minimize,details_button};
             for (unsigned i=0;i<sizeof(buttons)/sizeof(buttons[0]);i++)
                 if (!buttons[i] || !SetWindowSubclass(buttons[i],skin_proc,2,0)) return -1;
             if (!folder || !description || !progress_bar || !SetWindowSubclass(description,skin_proc,3,0)
@@ -762,6 +529,10 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             layout(); return 0;
         }
         case WM_TIMER:
+            if (closing_since) {
+                if (wp==EXIT_FADE_TIMER && (!motion_enabled || contrast || exit_fade_finished(hwnd,closing_since))) DestroyWindow(hwnd);
+                return 0;
+            }
             if (wp==FRAME_TIMER) {
                 if (frame_timer) advance_frame(TRUE);
                 return 0;
@@ -774,9 +545,10 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             if (parent_process && !issue) {
                 DWORD wait=WaitForSingleObject(parent_process,0);
                 if (wait==WAIT_OBJECT_0) {
-                    CloseHandle(parent_process); parent_process=NULL; start_install();
+                    CloseHandle(parent_process); parent_process=NULL; start_install(FALSE);
                 } else if (wait==WAIT_FAILED || GetTickCount64()-waiting_since>60000) {
-                    issue=TRUE; SetWindowTextW(install,L"Retry");
+                    issue=can_retry=TRUE; SetWindowTextW(install,L"Retry");
+                    issue_at(L"Wait for Fish to exit",NULL,ERROR_TIMEOUT);
                     wcscpy(status,L"Fish did not close. Close Fish, then retry. No files were changed."); layout();
                 }
             }
@@ -784,10 +556,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
                 DWORD result;
                 if (!GetExitCodeProcess(elevated_process,&result)) result=GetLastError();
                 CloseHandle(elevated_process); elevated_process=NULL;
-                if (result==ERROR_SUCCESS) {
-                    WCHAR target[32768]; swprintf(target,32768,L"%ls\\Fish.exe",destination);
-                    reconcile_user_install(target,destination);
-                }
+                issue_at(L"Run elevated setup (worker exit code)",destination,0);
                 PostMessageW(hwnd,RESULT,result,0);
             }
             if (busy && demo) {
@@ -812,45 +581,76 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM wp,LPARAM lp) {
             fill_toward(.48*unit(wp/100.)); return 0;
         case RESULT:
             if (!busy || completed) return 0;
+            setup_result=(DWORD)wp;
             busy=FALSE; stop_frames();
             if (wp==ERROR_SUCCESS || wp==ERROR_SUCCESS_REBOOT_REQUIRED) {
                 completed=TRUE; reboot=wp==ERROR_SUCCESS_REBOOT_REQUIRED;
                 wcscpy(status,reboot ? L"Installed. Restart Windows before opening Fish." : L"Fish " FISH_VERSION L" is installed.");
                 SetWindowTextW(install,L"Open Fish");
-                if (!reboot) { begin_wash(SendMessageW(open_app,BM_GETCHECK,0,0)==BST_CHECKED); return 0; }
+                if (!reboot && !*quarantine_path) { begin_wash(SendMessageW(open_app,BM_GETCHECK,0,0)==BST_CHECKED); return 0; }
+                if (*quarantine_path) wcscpy(status,reboot ? L"Installed. Restart Windows. The original folder is listed in Details."
+                        : L"Installed. The original folder was kept. See Details for its location.");
             } else {
-                if (wp==ERROR_CANCELLED || wp==ERROR_ACCESS_DENIED) wcscpy(status,L"Administrator access was not granted. Retry with permission to install for everyone.");
-                else if (wp==ERROR_INSTALL_ALREADY_RUNNING) wcscpy(status,L"Fish may still be running. Close it, then retry.");
-                else if (wp==ERROR_DIR_NOT_EMPTY) wcscpy(status,L"Choose an empty local folder or an existing Fish installation.");
+                offer_quarantine=wp==FISH_PARTIAL_FOLDER;
+                can_retry=wp==ERROR_CANCELLED || wp==ERROR_ACCESS_DENIED || wp==ERROR_SHARING_VIOLATION || wp==ERROR_LOCK_VIOLATION ||
+                    wp==ERROR_INSTALL_ALREADY_RUNNING || (demo && wp==ERROR_INSTALL_FAILURE);
+                if (offer_quarantine) wcscpy(status,L"An incomplete Fish folder is blocking installation. Set it aside to keep its files and install a fresh copy.");
+                else if (wp==ERROR_CANCELLED) wcscpy(status,L"Installation was cancelled. No permanent cleanup was performed.");
+                else if (wp==ERROR_ACCESS_DENIED) wcscpy(status,L"Windows denied access. See Details for the step and path before retrying.");
+                else if (wp==ERROR_SHARING_VIOLATION || wp==ERROR_LOCK_VIOLATION) wcscpy(status,L"Close Fish or any program using its files, then retry.");
+                else if (wp==ERROR_INSTALL_ALREADY_RUNNING) wcscpy(status,L"Windows Installer is busy (1618). Wait for it to finish, then retry.");
+                else if (wp==ERROR_INSTALL_SOURCE_ABSENT) wcscpy(status,L"Windows needs the original Fish MSI (1612). Use that build's repair source or run the portable ZIP.");
+                else if (wp==ERROR_FAIL_REBOOT_REQUIRED) wcscpy(status,L"Restart Windows, then run setup again to finish repairing Fish.");
+                else if (wp==ERROR_BAD_CONFIGURATION) wcscpy(status,L"Installation records disagree. Use the original folder and install scope, or run the portable ZIP.");
+                else if (wp==ERROR_DIR_NOT_EMPTY || wp==ERROR_REPARSE_POINT_ENCOUNTERED || wp==ERROR_BAD_PATHNAME) {
+                    wcscpy(status,wp==ERROR_DIR_NOT_EMPTY ? L"Setup cannot safely replace this folder."
+                        : wp==ERROR_REPARSE_POINT_ENCOUNTERED ? L"The folder contains a link or junction."
+                        : L"Setup needs a regular local folder.");
+                    wcscat(status,location_controls() ? L" Choose another folder in Installation options or use the portable ZIP."
+                        : L" See Details. Use the portable ZIP if the location cannot be repaired.");
+                }
+                else if (wp==ERROR_ALREADY_EXISTS) wcscpy(status,L"Check the Fish shortcuts on your Desktop and Start menu. Move any unrelated link aside, then retry.");
+                else if (wp==ERROR_TIMEOUT) wcscpy(status,L"Windows Installer is still working. Wait for it to finish before retrying.");
+                else if (wp==ERROR_CRC) wcscpy(status,L"Setup could not verify its repair source. Get a fresh copy of setup, then retry.");
                 else if (wp==ERROR_PRODUCT_VERSION) wcscpy(status,L"The installed version could not be verified. Fish was not opened.");
-                else swprintf(status,512,L"Installation failed (Windows code %lu). Close any other installer, then retry.",(unsigned long)wp);
-                SetWindowTextW(install,L"Retry");
+                else swprintf(status,512,L"Setup stopped (Windows code %lu). Check the Windows Application log under MsiInstaller.",(unsigned long)wp);
+                if (*quarantine_path) {
+                    can_retry=FALSE;
+                    wcscat(status,L" The original folder was kept; see Details.");
+                }
+                SetWindowTextW(install,offer_quarantine ? L"Set aside" : L"Retry");
             }
-            issue=TRUE; layout(); SetFocus(reboot ? cancel : install); return 0;
+            issue=TRUE; layout(); SetFocus(IsWindowVisible(install) ? install : details_button); return 0;
         case WM_COMMAND:
-            if (HIWORD(wp)!=BN_CLICKED) return 0;
+            if (closing_since || HIWORD(wp)!=BN_CLICKED) return 0;
             switch (LOWORD(wp)) {
                 case INSTALL:
                     if (busy || finishing || !IsWindowVisible(install)) break;
                     if (completed) {
                         if (finish_launch(reboot ? ERROR_SUCCESS_REBOOT_REQUIRED : ERROR_SUCCESS,updating,TRUE,launch_app))
-                            DestroyWindow(hwnd);
+                            close_coast(hwnd);
                         else SetWindowTextW(description,status);
                     } else if (parent_process) {
                         waiting_since=GetTickCount64(); issue=FALSE;
                         wcscpy(status,L"Waiting for Fish to close\u2026"); layout();
-                    } else start_install();
+                    } else if (offer_quarantine) {
+                        WCHAR prompt[640];
+                        swprintf(prompt,640,L"Move this incomplete Fish folder to a backup beside it and install here?\n\n%ls\n\nNothing in the old folder will be deleted.",destination);
+                        if (MessageBoxW(hwnd,prompt,L"Keep old files and install",MB_YESNO|MB_DEFBUTTON2|MB_ICONQUESTION)==IDYES)
+                            start_install(TRUE);
+                    } else start_install(FALSE);
                     break;
+                case DETAILS: if (issue && !busy) show_details(hwnd); break;
                 case CANCEL: SendMessageW(hwnd,WM_CLOSE,0,0); break;
                 case MINIMIZE: ShowWindow(hwnd,SW_MINIMIZE); break;
                 case OPTIONS:
-                    if (!compact_view()) { expanded=!expanded; layout(); }
+                    if (location_controls()) { expanded=!expanded; layout(); }
                     break;
-                case CHANGE: if (!compact_view() && expanded) browse(); break;
-                case ALL_USERS: if (!compact_view() && expanded) toggle_all_users(); break;
+                case CHANGE: if (location_controls() && expanded) browse(); break;
+                case ALL_USERS: if (location_controls() && expanded) toggle_all_users(); break;
             }
             return 0;
-        case WM_CLOSE: if (finishing) end_wash(hwnd); else if (!busy) DestroyWindow(hwnd); return 0;
+        case WM_CLOSE: if (finishing) end_wash(hwnd); else if (!busy) close_coast(hwnd); return 0;
         case WM_DESTROY:
             stop_frames(); KillTimer(hwnd,1);
             if (accessible_properties) {
@@ -949,6 +749,18 @@ static BOOL option_test(void) {
     updating=TRUE; position();
     valid=valid && !(GetWindowLongPtrW(install,GWL_STYLE)&WS_VISIBLE) && !(GetWindowLongPtrW(options,GWL_STYLE)&WS_VISIBLE);
     busy=updating=expanded=FALSE;
+    busy=TRUE;
+    SendMessageW(window,RESULT,ERROR_DIR_NOT_EMPTY,0);
+    valid=valid && issue && (GetWindowLongPtrW(options,GWL_STYLE)&WS_VISIBLE)
+        && (GetWindowLongPtrW(details_button,GWL_STYLE)&WS_VISIBLE) && !(GetWindowLongPtrW(install,GWL_STYLE)&WS_VISIBLE);
+    SendMessageW(window,WM_COMMAND,MAKEWPARAM(OPTIONS,BN_CLICKED),(LPARAM)options);
+    valid=valid && expanded && (GetWindowLongPtrW(change,GWL_STYLE)&WS_VISIBLE);
+    select_folder(L"C:\\Example\\Fish");
+    valid=valid && !issue && (GetWindowLongPtrW(install,GWL_STYLE)&WS_VISIBLE);
+    allow_quarantine=TRUE;
+    start_install(FALSE); /* Control tests always run in demo mode. */
+    valid=valid && busy && !allow_quarantine;
+    busy=expanded=FALSE;
     dpi=saved; fonts(); position(); return valid;
 }
 /* Drive the same UI-thread transition as the timer, without changing system settings. */
@@ -1012,10 +824,13 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     (void)previous; (void)command;
     int count=0; LPWSTR *args=CommandLineToArgvW(GetCommandLineW(),&count);
     if (!args) return 2;
+    if (count==3 && !wcscmp(args[1],L"--check-image")) {
+        BOOL valid=startup_intact(args[2]); LocalFree(args); return valid ? 0 : ERROR_INVALID_DATA;
+    }
     if (count==2 && !wcscmp(args[1],L"--self-test")) {
         WCHAR quote[100]=L"";
         BOOL valid=fish_quote(quote,100,L"C:\\path with space\\") && !wcscmp(quote,L"\"C:\\path with space\\\\\"");
-        valid=valid && !fish_quote(quote,4,L"too long") && location_test() && cleanup_test() && completion_test(); LocalFree(args); return valid ? 0 : 1;
+        valid=valid && !fish_quote(quote,4,L"too long") && location_test() && completion_test(); LocalFree(args); return valid ? 0 : 1;
     }
     if (count==2 && !wcscmp(args[1],L"--verify-payload")) {
         WCHAR self[32768]; GetModuleFileNameW(NULL,self,32768);
@@ -1140,14 +955,14 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,PWSTR command,int show
     }
     if (updating && demo) { wcscpy(status,L"Verifying the installer\u2026"); layout(); }
     ShowWindow(window,show); UpdateWindow(window);
-    if (elevated_autostart || (updating && !parent_process && !fatal)) start_install();
+    if (elevated_autostart || (updating && !parent_process && !fatal)) start_install(FALSE);
     if (!compact_view()) SetFocus(install);
     MSG message;
     while (GetMessageW(&message,NULL,0,0)>0) {
         if (message.message==WM_KEYDOWN && message.wParam==VK_RETURN) {
             HWND focused=GetFocus();
             if (focused && IsWindowVisible(focused) && IsWindowEnabled(focused) &&
-                (focused==cancel || focused==change || focused==open_app || focused==all_users || focused==install || focused==options || focused==minimize))
+                (focused==cancel || focused==change || focused==open_app || focused==all_users || focused==install || focused==options || focused==minimize || focused==details_button))
                 SendMessageW(focused,BM_CLICK,0,0);
             continue;
         }

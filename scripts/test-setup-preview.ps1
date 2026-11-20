@@ -37,10 +37,20 @@ public static class FishPreviewWindow {
     [DllImport("user32")] static extern bool GetWindowRect(IntPtr h,out Rect r);
     [DllImport("user32")] static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int w,int height,uint flags);
     [DllImport("user32")] static extern bool PrintWindow(IntPtr h,IntPtr dc,uint flags);
+    [DllImport("user32")] static extern bool GetLayeredWindowAttributes(IntPtr h,out uint key,out byte alpha,out uint flags);
     [DllImport("user32",EntryPoint="SystemParametersInfoW")] static extern bool Setting(uint action,uint arg,out int value,uint flags);
     [StructLayout(LayoutKind.Sequential)] struct HighContrast { public uint size, flags; public IntPtr scheme; }
     [DllImport("user32",EntryPoint="SystemParametersInfoW")] static extern bool Contrast(uint action,uint arg,ref HighContrast value,uint flags);
     [DllImport("gdi32")] static extern int GetObjectW(IntPtr obj,int bytes,[Out] byte[] value);
+    public static bool ClosingFade(IntPtr h) {
+        uint key,flags; byte a;
+        return GetLayeredWindowAttributes(h,out key,out a,out flags) && (flags&2)!=0 && a<255;
+    }
+    public static bool ExpectFade() {
+        var hc=new HighContrast(); hc.size=(uint)Marshal.SizeOf(typeof(HighContrast));
+        int motion;
+        return Setting(0x1042,0,out motion,0) && motion!=0 && !(Contrast(0x42,hc.size,ref hc,0) && (hc.flags&1)!=0);
+    }
     static int FontSize(IntPtr h) {
         var font=SendMessageW(h,0x31,IntPtr.Zero,IntPtr.Zero); var lf=new byte[92];
         if (GetObjectW(font,lf.Length,lf)!=lf.Length) throw new Exception("Missing live child font.");
@@ -215,12 +225,19 @@ foreach ($scenario in @('installer','update','update-error','launch-error')) {
                 if ((Visible 101) -or $proc.HasExited) { break }
                 Start-Sleep -Milliseconds 100
             } while ([DateTime]::UtcNow -lt $deadline)
-            if ($proc.HasExited -or !(Visible 101)) { throw 'Error should leave a recovery action.' }
+            if ($proc.HasExited -or !(Visible 101) -or !(Visible 108)) { throw 'Error should leave recovery and diagnostic actions.' }
             $expected=if ($scenario -eq 'launch-error') {'Open Fish'} else {'Retry'}
             if ([FishPreviewWindow]::Caption((Button 101)) -ne $expected) { throw "Expected $expected after $scenario." }
             Click 101
         }
-        if (!$proc.WaitForExit(12000) -or $proc.ExitCode -ne 0) { throw "Preview did not close on success: $scenario" }
+        $closeClock=[Diagnostics.Stopwatch]::StartNew()
+        $seenFade=$false
+        while ($closeClock.ElapsedMilliseconds -lt 12000 -and !$proc.HasExited) {
+            $seenFade=$seenFade -or [FishPreviewWindow]::ClosingFade($wnd)
+            Start-Sleep -Milliseconds 12
+        }
+        if (!$proc.HasExited -or $proc.ExitCode -ne 0) { throw "Preview did not close on success: $scenario" }
+        if ($seenFade -ne [FishPreviewWindow]::ExpectFade()) { throw "Unexpected exit-fade state: $scenario (seen=$seenFade)" }
         Write-Host "PASS: $scenario"
     } finally {
         if (!$proc.HasExited) { $proc.Kill(); $proc.WaitForExit() }

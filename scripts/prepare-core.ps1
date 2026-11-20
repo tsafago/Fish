@@ -24,6 +24,46 @@ function Replace-Exact([string]$path, [string]$before, [string]$after) {
 $vt = Join-Path $output 'framework\tn5250\tnvt.java'
 $entry = [IO.File]::ReadAllText((Join-Path $root 'src\core-adapter\accept-record.txt'))
 Replace-Exact $vt "    public void run() {`n`n        if (enhanced)" ($entry + "`n    public void run() {`n`n        if (enhanced)")
+# Track a successfully parsed input read without prescribing how the host paints the display.
+Replace-Exact $vt @'
+            while (bk.hasNext() && !done) {
+                byte b = bk.getNextByte();
+
+                switch (b) {
+'@ @'
+            while (bk.hasNext() && !done) {
+                byte b = bk.getNextByte();
+                if (b != ESC) {
+                    noticeReadInRecord = false;
+                    // Treat unfamiliar/control commands as a boundary for an earlier read, too.
+                    noticeDisplayChanged = true;
+                }
+
+                switch (b) {
+'@
+Replace-Exact $vt @'
+                    case CMD_READ_MDT_FIELDS: // 0x52 82 read MDT Fields
+                        bk.getNextByte();
+'@ @'
+                    case CMD_READ_MDT_FIELDS: // 0x52 82 read MDT Fields
+                        noticeReadInRecord = bk.getCurrentPos() + 2 == bk.streamSize;
+                        bk.getNextByte();
+'@
+Replace-Exact $vt @'
+                if (error)
+                    done = true;
+            }
+        } catch (Exception exc) {
+            log.warn("incoming " + exc.getMessage());
+'@ @'
+                if (error)
+                    done = true;
+            }
+            noticeParsed = !done && !bk.hasNext();
+        } catch (Exception exc) {
+            noticeParsed = false;
+            log.warn("incoming " + exc.getMessage());
+'@
 Replace-Exact $vt '                    strpccmd();' '                    throw new IllegalStateException("Host STRPCCMD execution is disabled.");'
 Replace-Exact $vt '                        error = sfParser.parseWriteToDisplayStructuredField(seg);' '                        error = rejectUnsupportedDisplayField();'
 Replace-Exact $vt @'
@@ -116,6 +156,57 @@ if (Test-Path $dbcs) { Remove-Item -LiteralPath $dbcs }
 $mapping = Join-Path $output 'encoding\CharMappings.java'
 Replace-Exact $mapping 'return BuiltInCodePageFactory.getInstance().getCodePage(DFT_ENC);' 'throw new IllegalArgumentException("Unsupported code page: " + encoding);'
 $screen = Join-Path $output 'framework\tn5250\Screen5250.java'
+Replace-Exact $screen '    private void displayError(int ec) {' @'
+    private boolean localResetInput, localInputRejected;
+
+    public synchronized boolean typeWithLocalReset(char key) {
+        return sendWithLocalReset(key == '[' ? "[[" : key == ']' ? "]]" : String.valueOf(key));
+    }
+
+    public synchronized boolean sendWithLocalReset(KeyMnemonic key) {
+        return sendWithLocalReset(key.mnemonic);
+    }
+
+    private boolean sendWithLocalReset(String key) {
+        localInputRejected = false;
+        localResetInput = !isStatusErrorCode() && !oia.isKeyBoardLocked() && !oia.isKeysBuffered()
+                && oia.getInputInhibited() == ScreenOIA.INPUTINHIBITED_NOTINHIBITED;
+        try {
+            sendKeys(key);
+            return localInputRejected;
+        } finally {
+            localResetInput = false;
+        }
+    }
+
+    private void displayError(int ec) {
+'@
+Replace-Exact $screen '        saveHomePos = homePos;' @'
+        if (localResetInput) {
+            // This path is synchronous operator validation, not a host Write Error Code.
+            localInputRejected = true;
+            return;
+        }
+        saveHomePos = homePos;
+'@
+Replace-Exact $screen @'
+                                || c == '.' || c == ' ')
+                            updateField = true;
+                        break;
+                    case 3: // Numeric only
+'@ @'
+                                || c == '.' || c == ' ')
+                            updateField = true;
+                        else if (localResetInput)
+                            localInputRejected = true;
+                        break;
+                    case 3: // Numeric only
+'@
+Replace-Exact $screen '        sessionVT.sendAidKey(aidKey);' @'
+        // Field-exit keys can attempt Auto Enter after local validation failed.
+        if (!localResetInput || !localInputRejected)
+            sessionVT.sendAidKey(aidKey);
+'@
 Replace-Exact $screen '    private boolean resetRequired = true;' "    private boolean prehelpError;`n    private boolean resetRequired = true;"
 Replace-Exact $screen @'
                                    boolean unlockIfLocked) {
@@ -162,6 +253,18 @@ for ($i = 0; $i -lt 7; $i++) {
     Replace-Exact $vt "abyte0[$position] = codePage.uni2ebcdic('$original');" "abyte0[$position] = codePage.uni2ebcdic('$($device[$i])');"
 }
 $fields = Join-Path $output 'framework\tn5250\ScreenFields.java'
+Replace-Exact $fields '    public ScreenField getField(int index) {' @'
+    public boolean hasUnsafeStartupNoticeFields() {
+        if (masterMDT)
+            return true;
+        for (int i = 0; i < sizeFields; i++)
+            if (!screenFields[i].isBypassField() || screenFields[i].mdt)
+                return true;
+        return false;
+    }
+
+    public ScreenField getField(int index) {
+'@
 Replace-Exact $fields 'import static org.tn5250j.TN5250jConstants.CMD_READ_MDT_FIELDS;' "import static org.tn5250j.TN5250jConstants.CMD_READ_MDT_FIELDS;`nimport static org.tn5250j.TN5250jConstants.CMD_READ_MDT_FIELDS_ALT;"
 Replace-Exact $fields 'readType == CMD_READ_MDT_FIELDS ||' 'readType == CMD_READ_MDT_FIELDS || readType == CMD_READ_MDT_FIELDS_ALT ||'
 Replace-Exact $fields @'

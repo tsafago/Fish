@@ -16,7 +16,9 @@ public final class TransientNotice extends BorderPane {
     private final Label text=new Label();
     private final HBox actions=new HBox(4);
     private final Timeline timer=new Timeline(new KeyFrame(Duration.millis(LIFETIME),e -> dismiss()));
+    private final Timeline toastTimer=new Timeline(new KeyFrame(Duration.millis(1500),e -> dismiss()));
     private final Button close;
+    private boolean toast;
 
     public TransientNotice(Runnable returnFocus) {
         getStyleClass().add("fish-notice");
@@ -51,6 +53,10 @@ public final class TransientNotice extends BorderPane {
     }
 
     public void showMessage(String value,boolean transientMessage) {
+        toastTimer.stop();
+        toast=false;
+        setMouseTransparent(false);
+        setRight(actions);
         text.setText(value);
         text.setTooltip(new Tooltip(value));
         setVisible(true);
@@ -60,8 +66,31 @@ public final class TransientNotice extends BorderPane {
         if (transientMessage) timer.playFromStart();
     }
 
+    void showToast(String value) {
+        if (!toast || !isVisible() || !value.equals(text.getText())) {
+            timer.stop();
+            toast=true;
+            setMouseTransparent(true);
+            setRight(null);
+            text.setText(value);
+            text.setTooltip(null);
+            setErrorStyle(false);
+            Ui.resetMotion(this);
+            setVisible(true);
+            setManaged(true);
+        }
+        toastTimer.playFromStart();
+    }
+
+    boolean dismissToast() {
+        if (!toast || !isVisible()) return false;
+        dismiss();
+        return true;
+    }
+
     public void dismiss() {
         timer.stop();
+        toastTimer.stop();
         Ui.resetMotion(this);
         setVisible(false);
         setManaged(false);
@@ -69,5 +98,6 @@ public final class TransientNotice extends BorderPane {
 
     public void dispose() {
         timer.stop();
+        toastTimer.stop();
     }
 }

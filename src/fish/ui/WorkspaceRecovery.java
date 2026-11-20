@@ -38,7 +38,11 @@ public final class WorkspaceRecovery {
         if (Ui.isFxStarted() && Platform.isFxApplicationThread())
             throw new IllegalStateException("Workspace startup I/O must run off the UI thread.");
         return load(store,new Decisions() {
-            @Override public Choice choose(String error,boolean retry) { return onFx(() -> chooseDialog(error,retry)); }
+            @Override public Choice choose(String error,boolean retry) {
+                StartupBanner.dismiss();
+                Ui.install(); // A failed read can beat the parallel toolkit bootstrap.
+                return onFx(() -> chooseDialog(error,retry));
+            }
             @Override public boolean confirm() {
                 return onFx(() -> Ui.confirm(null,"Restore factory settings for this workspace?\n"
                         +"The exact original workspace.xml is backed up beside it before replacement. Profiles, layouts and shortcuts reset; "
